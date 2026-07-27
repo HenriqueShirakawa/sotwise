@@ -7,7 +7,7 @@ import { supabaseAdmin } from "./client";
 import { fetchAll } from "./bubble";
 import {
   upsertByBubbleId, upsertJunction, loadIdMap, tableCount,
-  str, reqStr, bool, ref,
+  str, reqStr, bool, ref, dateOnly,
 } from "./upsert";
 
 type Row = Record<string, any>;
@@ -204,16 +204,168 @@ async function importCadastros() {
   return results;
 }
 
+// ---- mapeamento de status (labels do Bubble → enums) ----
+const norm = (v: unknown) => (str(v) || "").toLowerCase();
+function orderStatus(label: unknown): string {
+  const s = norm(label);
+  if (s.includes("negotiation")) return "in_negotiation";
+  if (s.includes("transit")) return "shipped";
+  if (s.includes("deliver")) return "delivered";
+  if (s.includes("pre-load") || s.includes("preload")) return "in_production";
+  if (s.includes("production")) return "in_production";
+  if (s.includes("stand")) return "in_negotiation";
+  if (s.includes("cancel") || s.includes("duplicate")) return "canceled";
+  return "in_negotiation";
+}
+function batchStatus(label: unknown): string {
+  const s = norm(label);
+  if (s.includes("transit")) return "in_transit";
+  if (s.includes("deliver")) return "delivered";
+  if (s.includes("pre-load") || s.includes("preload")) return "preloading";
+  if (s.includes("production")) return "in_production";
+  if (s.includes("cancel") || s.includes("duplicate")) return "canceled";
+  return "in_negotiation";
+}
+function loadingStatus(label: unknown): string | null {
+  const s = norm(label);
+  if (s === "total") return "total";
+  if (s === "partial") return "partial";
+  if (s === "none") return "none";
+  return null;
+}
+/** Descarta datas-lixo (epoch/1970) vindas do Bubble. */
+function safeDate(v: unknown): string | null {
+  const d = dateOnly(v);
+  return d && d >= "2000-01-01" ? d : null;
+}
+
+async function importTransactionalCore() {
+  const results: Record<string, { fetched: number; upserted: number; skipped?: number }> = {};
+  const orderTypeMap = await loadIdMap("order_types");
+  const clientMap = await loadIdMap("clients");
+  const buMap = await loadIdMap("business_units");
+  const userMap = await loadIdMap("profiles");
+  const catMap = await loadIdMap("categories");
+  const factMap = await loadIdMap("factories");
+
+  // ORDERS
+  const ordersRaw = await fetchAll("[vistapub]order");
+  const orderRows = ordersRaw.map((o) => ({
+    po_number: reqStr(o["Number PO text"]) || String(o["Number PO"] ?? o._id),
+    order_type_id: ref(orderTypeMap, o["Order Type"]),
+    schedule_requested: dateOnly(o["Schedule Requested"]),
+    asap: bool(o["ASAP?"]),
+    client_id: ref(clientMap, o["Clients"]),
+    client_reference: str(o["Cliente Reference"]),
+    business_unit_id: ref(buMap, o["Business Unit"]),
+    requester_id: ref(userMap, o["Order Resp"]),
+    leader_id: null,
+    status: orderStatus(o["Status Order OS [Vistapub]"]),
+    date_po: dateOnly(o["Date PO"]),
+    created_by: ref(userMap, o["Created By"]),
+    bubble_id: o._id,
+  }));
+  results.orders = { fetched: ordersRaw.length, upserted: await upsertByBubbleId("orders", orderRows) };
+  const orderMap = await loadIdMap("orders");
+
+  // BATCHES — da lista ORDENADA "Lista de Lotes x Orders" de cada order → .01/.02...
+  const batchRows: Row[] = [];
+  const seen = new Set<string>();
+  for (const o of ordersRaw) {
+    const orderId = orderMap.get(o._id);
+    const lotes = Array.isArray(o["Lista de Lotes x Orders"]) ? o["Lista de Lotes x Orders"] : [];
+    lotes.forEach((bid: string, i: number) => {
+      if (!orderId || typeof bid !== "string" || seen.has(bid)) return;
+      seen.add(bid);
+      batchRows.push({
+        order_id: orderId,
+        batch_number: "." + String(i + 1).padStart(2, "0"),
+        status: batchStatus(o["Status Order OS [Vistapub]"]),
+        bubble_id: bid,
+      });
+    });
+  }
+  results.batches = { fetched: batchRows.length, upserted: await upsertByBubbleId("batches", batchRows) };
+  const batchMap = await loadIdMap("batches");
+
+  // ORDER_FACTORY_CATEGORY
+  const ofcRaw = await fetchAll("[vistapub]listoffactoriesxcategoriesxlote");
+  let ofcSkip = 0;
+  const ofcRows = ofcRaw
+    .map((f) => {
+      const order_id = ref(orderMap, f["Order"]);
+      const category_id = ref(catMap, f["Category"]);
+      const factory_id = ref(factMap, f["Factories"]);
+      if (!order_id || !category_id || !factory_id) { ofcSkip++; return null; }
+      return {
+        order_id, category_id, factory_id,
+        batch_id: ref(batchMap, f["Lote x Order x PL"]),
+        ship_requirement: safeDate(f["Shipment Requirement"]),
+        loading_status: loadingStatus(f["[Vistapub] Status List of Categories x Factories"]),
+        bubble_id: f._id,
+      };
+    })
+    .filter(Boolean) as Row[];
+  results.order_factory_category = { fetched: ofcRaw.length, upserted: await upsertByBubbleId("order_factory_category", ofcRows), skipped: ofcSkip };
+  const ofcMap = await loadIdMap("order_factory_category");
+
+  // ETD_INFO — de etdfactorieslogs; 1:1 por ofc (dedupe pela última Modified Date)
+  const etdRaw = await fetchAll("[vistapub]etdfactorieslogs");
+  const byOfc = new Map<string, Row>();
+  for (const e of etdRaw) {
+    const ofcBid = e["[Vistapub] List of Factories x Categories x Lote"];
+    if (typeof ofcBid !== "string") continue;
+    const prev = byOfc.get(ofcBid);
+    if (!prev || String(e["Modified Date"] ?? "") > String(prev["Modified Date"] ?? "")) byOfc.set(ofcBid, e);
+  }
+  let etdSkip = 0;
+  const etdRows = [...byOfc.entries()]
+    .map(([ofcBid, e]) => {
+      const ofcId = ofcMap.get(ofcBid);
+      if (!ofcId) { etdSkip++; return null; }
+      return {
+        order_factory_category_id: ofcId,
+        remarks: str(e["Remarks"]),
+        ready: bool(e["Ready?"]),
+        inspection: bool(e["Inspection?"]),
+        initial_date: dateOnly(e["Initial Date"]),
+        current_date: dateOnly(e["Current Date"]),
+        bubble_id: e._id,
+      };
+    })
+    .filter(Boolean) as Row[];
+  results.etd_info = { fetched: etdRaw.length, upserted: await upsertByBubbleId("etd_info", etdRows), skipped: etdSkip };
+
+  return results;
+}
+
+const COUNT_TABLES = [
+  "profiles", "countries", "factories", "categories", "category_factories", "cities", "pols",
+  "city_pols", "pods", "contacts", "agents", "agent_contacts", "carriers", "clients", "exporters",
+  "business_units", "order_types", "shipment_models", "orders", "batches", "order_factory_category", "etd_info",
+];
+
 async function main() {
-  console.log("== Camada 1: usuários + cadastros ==\n");
-  const u = await importUsers();
-  console.log(`users/profiles: fetched ${u.fetched}, upserted ${u.upserted}`);
-  const cad = await importCadastros();
-  for (const [t, r] of Object.entries(cad)) console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}`);
+  const phase = process.argv[2] ?? "all"; // all | base | core
+
+  if (phase === "all" || phase === "base") {
+    console.log("== Camada 1: usuários + cadastros ==\n");
+    const u = await importUsers();
+    console.log(`users/profiles: fetched ${u.fetched}, upserted ${u.upserted}`);
+    const cad = await importCadastros();
+    for (const [t, r] of Object.entries(cad)) console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}`);
+  }
+
+  if (phase === "all" || phase === "core") {
+    console.log("\n== Camada 2: transacional (núcleo) ==\n");
+    const core = await importTransactionalCore();
+    for (const [t, r] of Object.entries(core)) {
+      console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
+    }
+  }
 
   console.log("\n== Contagens no Supabase ==");
-  const tables = ["profiles", "countries", "factories", "categories", "category_factories", "cities", "pols", "city_pols", "pods", "contacts", "agents", "agent_contacts", "carriers", "clients", "exporters", "business_units", "order_types", "shipment_models"];
-  for (const t of tables) console.log(`${t}: ${await tableCount(t)}`);
+  for (const t of COUNT_TABLES) console.log(`${t}: ${await tableCount(t)}`);
 }
 
 main().catch((e) => { console.error("FALHOU:", e); process.exit(1); });
