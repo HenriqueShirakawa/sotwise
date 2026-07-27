@@ -1790,9 +1790,22 @@ Todo código deve sobreviver a estas perguntas:
 - `.env.local` (gitignored) com URL + chaves do Supabase; `.env.example` versionado (`.gitignore` abre exceção para ele).
 - Scripts npm: `migrate` e `migrate:check`.
 
-### 12.7 Pendente (próximos passos)
-- [ ] **Endpoints do Bubble** → *Discovery* (de-para campo-a-campo contra a seção 3) → importador `run.ts` → validação (contagens + FKs órfãs).
+### 12.7 Migração de dados — CONCLUÍDA (Bubble LIVE → Supabase)
+
+Importador idempotente em `scripts/migrate/` (fetcher da Data API pública, sem token; upsert por `bubble_id`; ordem por FK). Data API descoberta via `/meta`; fonte = ambiente **live** (`https://agksystem.com/api/1.1`). Rodado em 4 camadas — contagens no Supabase:
+
+| Camada | Tabelas (contagem importada) |
+|---|---|
+| 1 — cadastros + users | profiles 52, factories 746, categories 115, category_factories 823, clients 113, agents 141, contacts 285, agent_contacts 284, carriers 24, cities 51, pols 72, city_pols 72, pods 25, exporters 4, business_units 6, order_types 4, shipment_models 5, countries 2 |
+| 2 — transacional | orders 1.565, batches 3.122, order_factory_category 9.441 *(+689 órfãos pulados)*, etd_info 1.317 |
+| 3 — pre-loading/shipment | pre_loadings 1.381, pre_loading_clients 1.409, pre_loading_batches 2.787, shipments 1.335 |
+| 4 — checklist | order_checklist_steps 3.246, pre_loading_checklist_steps 3.882 *(itens legados/órfãos do Bubble ignorados)* |
+
+**Reconciliações** (migrations `100000`/`101000`/`102000`): relaxados NOT NULLs sem dado na origem (`clients.country_id`, `order_types.color`/`icon_path`, `business_units.icon_path`, `order_factory_category.ship_requirement`, `pre_loadings.client_reference`/`pod_id`/`leader_id`); `bubble_id` virou **unique constraint** (habilita upsert idempotente). Templates de checklist (Sorted 1–24) mapeados 1:1 ao enum `checklist_step`; direções inconsistentes do Bubble (order→lista, shipment←item) normalizadas para FK única.
+
+### 12.8 Pendências pós-migração
+- [ ] **Uploads → Supabase Storage** (`generaldocs`/`*uploads` → `step_attachments`; buckets `business-units`, `order-types`, `order-documents`) — ainda não migrados.
+- [ ] **etd_history** (log completo do ETD; hoje só o snapshot mais recente entrou em `etd_info`) e **detalhes de agentes por etapa** (`checklistxitemxagents` → `pre_loading_checklist_steps.agent_*`/`contact_*`).
 - [ ] **Policies de RLS** por tabela (sair do deny-all).
-- [ ] **Buckets de Storage** (`business-units`, `order-types`, `order-documents`) para os uploads (ver 3.5.9 / 3.5.10 / 3.7.5).
-- [ ] Definir `company` (BR/China) para users sem o campo; valores reais dos enums (`agent_location`, `shipment_models`) confirmados na Discovery.
-- [ ] Revogar o PAT usado no acesso via Management API.
+- [ ] 🔒 **Travar a Data API pública do Bubble** (hoje lê tudo sem token); **regenerar** o token exposto; **revogar** o PAT do Supabase.
+- [ ] Reavaliar os ~68k itens de checklist legados/órfãos não importados (limpeza na origem).
