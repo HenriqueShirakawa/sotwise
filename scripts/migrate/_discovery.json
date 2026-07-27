@@ -1,0 +1,1791 @@
+{
+  "user": {
+    "count": 52,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "authentication": [
+        "object"
+      ],
+      "company": [
+        "string"
+      ],
+      "Conversion?": [
+        "boolean"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "master": [
+        "boolean"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Name": [
+        "string"
+      ],
+      "profile": [
+        "string"
+      ],
+      "user_profile": [
+        "id-ref"
+      ],
+      "user_signed_up": [
+        "boolean"
+      ],
+      "IsDisabled": [
+        "boolean"
+      ],
+      "hidden": [
+        "boolean"
+      ]
+    }
+  },
+  "clients": {
+    "count": 113,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "ClientID": [
+        "string"
+      ],
+      "Created By": [
+        "string",
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Country": [
+        "id-ref"
+      ]
+    }
+  },
+  "agents": {
+    "count": 141,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Agent": [
+        "string"
+      ],
+      "Country": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "E-mail": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "mykey": [
+        "id-ref"
+      ],
+      "Phone": [
+        "string"
+      ],
+      "disabled": [
+        "boolean"
+      ],
+      "List of Contacts": [
+        "array<id-ref>"
+      ]
+    }
+  },
+  "agentscontacts": {
+    "count": 0,
+    "fields": {}
+  },
+  "contacts": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Agent": [
+        "id-ref"
+      ],
+      "Contact": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Email": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Phone": [
+        "string"
+      ]
+    }
+  },
+  "carrier": {
+    "count": 24,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "carrier_name": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "factory": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "categories": [
+        "array<id-ref>"
+      ],
+      "Created By": [
+        "id-ref",
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "factory": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "category": {
+    "count": 115,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "category": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref",
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "factories": [
+        "array<id-ref>"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "cities": {
+    "count": 51,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "City": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "POL List": [
+        "array<id-ref>"
+      ]
+    }
+  },
+  "pol": {
+    "count": 72,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "City": [
+        "id-ref"
+      ],
+      "CityName": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "POL": [
+        "string"
+      ]
+    }
+  },
+  "pod": {
+    "count": 25,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "POD": [
+        "string"
+      ]
+    }
+  },
+  "businessunit": {
+    "count": 6,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "BusinessUnit": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "IconReference": [
+        "string"
+      ],
+      "label": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "ordertype": {
+    "count": 4,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "IconReference": [
+        "string"
+      ],
+      "label": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "OrderTypeDesc": [
+        "string"
+      ]
+    }
+  },
+  "shipmentmodel": {
+    "count": 5,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "ShipmentModel": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "exporters": {
+    "count": 4,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Acronym": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Exporter": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "[vistapub]order": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "ETD Date": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Number PO": [
+        "number"
+      ],
+      "Number PO text": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Business Unit": [
+        "id-ref"
+      ],
+      "Client Name": [
+        "string"
+      ],
+      "Cliente Reference": [
+        "string"
+      ],
+      "Clients": [
+        "id-ref"
+      ],
+      "Date PO": [
+        "string"
+      ],
+      "Order Resp": [
+        "id-ref"
+      ],
+      "Order Type": [
+        "id-ref"
+      ],
+      "Status Order OS [Vistapub]": [
+        "string"
+      ],
+      "Schedule Requested": [
+        "string"
+      ],
+      "Schedule Requested Yes/No": [
+        "boolean"
+      ],
+      "Status PO": [
+        "id-ref"
+      ],
+      "List of Checklist x Item": [
+        "array<id-ref>"
+      ],
+      "[Migration] DB": [
+        "id-ref"
+      ],
+      "ASAP?": [
+        "boolean"
+      ],
+      "Lista de Lotes x Orders": [
+        "array<id-ref>"
+      ],
+      "List of Factories x Categories": [
+        "array<id-ref>"
+      ],
+      "List of Sales": [
+        "array<string>"
+      ],
+      "Pre-Loading": [
+        "id-ref"
+      ],
+      "Data criação": [
+        "string"
+      ]
+    }
+  },
+  "[vistapub]orderxlotexpl": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ]
+    }
+  },
+  "[vistapub]listoffactoriesxcategoriesxlote": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Done": [
+        "boolean"
+      ],
+      "List of Logs": [
+        "array<id-ref>"
+      ],
+      "Lote x Order x PL": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Order": [
+        "id-ref"
+      ],
+      "Ready?": [
+        "boolean"
+      ],
+      "Ready Date": [
+        "string"
+      ],
+      "remarks": [
+        "string"
+      ],
+      "Shipment Requirement": [
+        "string"
+      ],
+      "[Vistapub] Status List of Categories x Factories": [
+        "string"
+      ],
+      "Category": [
+        "id-ref"
+      ],
+      "Category Text": [
+        "string"
+      ],
+      "Factories": [
+        "id-ref"
+      ],
+      "[migration] List of Status migration before": [
+        "array<string>"
+      ],
+      "[migration] Status migration before": [
+        "string"
+      ]
+    }
+  },
+  "[vistapub]checklist": {
+    "count": 24,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "List of Status OS": [
+        "array<string>"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Name": [
+        "string"
+      ],
+      "Sorted": [
+        "number"
+      ],
+      "Type [OS]": [
+        "string"
+      ]
+    }
+  },
+  "[vistapub]checklistxitem": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "[Old] DB": [
+        "id-ref"
+      ],
+      "[OLD] Status data type": [
+        "id-ref"
+      ],
+      "[Vistapub] OS Checklist types": [
+        "string"
+      ],
+      "[Vistapub] Checklist": [
+        "id-ref"
+      ],
+      "Checklist Name": [
+        "string"
+      ],
+      "Sorted": [
+        "number"
+      ],
+      "Completed date": [
+        "string"
+      ],
+      "Estimated date": [
+        "string"
+      ],
+      "Responsible": [
+        "id-ref"
+      ],
+      "Signed By": [
+        "id-ref"
+      ],
+      "Checklist Yes/no": [
+        "boolean"
+      ],
+      "Checklist Yes/no Green tag": [
+        "boolean"
+      ],
+      "List of Docs": [
+        "array<id-ref>"
+      ],
+      "[Vistapub] Status OS Clecklist": [
+        "string"
+      ],
+      "[Value] Factory": [
+        "id-ref"
+      ],
+      "[Value] City": [
+        "id-ref"
+      ],
+      "[Value] POL ": [
+        "id-ref"
+      ],
+      "Checklist x Pre Loadind x agents": [
+        "id-ref"
+      ],
+      "[Value] Text": [
+        "string"
+      ],
+      "[Value] Carrier": [
+        "id-ref"
+      ]
+    }
+  },
+  "[vistapub]checklistxitemxagents": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Aditional Information": [
+        "string"
+      ],
+      "Brazil Agents": [
+        "id-ref"
+      ],
+      "Brazil Contatcs": [
+        "id-ref"
+      ],
+      "Carrier": [
+        "id-ref"
+      ],
+      "China Agents": [
+        "id-ref"
+      ],
+      "China Contatcs": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "[vistapub]pre-loading": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Booking Number": [
+        "string"
+      ],
+      "Business Unit": [
+        "id-ref"
+      ],
+      "City": [
+        "id-ref"
+      ],
+      "Client": [
+        "id-ref"
+      ],
+      "Consolidation Point": [
+        "id-ref"
+      ],
+      "Loading Date Completed": [
+        "string"
+      ],
+      "Loading Date Estimated": [
+        "string"
+      ],
+      "Port of Land": [
+        "id-ref"
+      ],
+      "List of Clients": [
+        "array<id-ref>"
+      ],
+      "[Vistapub] Shippment": [
+        "id-ref"
+      ],
+      "PL Number": [
+        "number"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "[Headers] Cliente Reference": [
+        "string"
+      ],
+      "List of Order x Lote x PL": [
+        "array<id-ref>"
+      ],
+      "PL Number Txt": [
+        "string"
+      ],
+      "[Headers] POD": [
+        "id-ref"
+      ],
+      "[Vistapub] Checklist x Item": [
+        "array<id-ref>"
+      ],
+      "List of Orders": [
+        "array<id-ref>"
+      ],
+      "Confirm pre-loading": [
+        "boolean"
+      ],
+      "[agents] Brazil": [
+        "id-ref"
+      ],
+      "[agents] China": [
+        "id-ref"
+      ]
+    }
+  },
+  "[vistapub]shippment": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "[Filter] ATA Brazil": [
+        "string"
+      ],
+      "[Filter] BL Date": [
+        "string"
+      ],
+      "[Filter] Delivered": [
+        "string"
+      ],
+      "[Filter] ETA Brazil": [
+        "string"
+      ],
+      "[Filter] Shipping Date": [
+        "string"
+      ],
+      "[Filter] Business Unit": [
+        "id-ref"
+      ],
+      "[Filter] Client Reference": [
+        "string"
+      ],
+      "[Filter] Clients": [
+        "array<id-ref>"
+      ],
+      "[Filter] Consolidation Point": [
+        "id-ref"
+      ],
+      "[Filter] POL": [
+        "id-ref"
+      ],
+      "[Filter] Order": [
+        "id-ref"
+      ],
+      "[Filter] Loading Date": [
+        "string"
+      ],
+      "[Filter] Orders List": [
+        "array<id-ref>"
+      ],
+      "Preloading Text": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "[Header] Container Number": [
+        "string"
+      ],
+      "[Vistapub] Pre-Loading": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "[Header] Estimated": [
+        "string"
+      ],
+      "[Header] POD": [
+        "id-ref"
+      ],
+      "[Header] Responsible": [
+        "id-ref"
+      ],
+      "[Header] Signer": [
+        "id-ref"
+      ],
+      "[Header] Status_OS": [
+        "string"
+      ],
+      "[Header] Seal Number": [
+        "string"
+      ],
+      "[Vistapub] Checklist x Item": [
+        "id-ref"
+      ],
+      "Preloading number Sorted": [
+        "number"
+      ],
+      "[Header] Completed": [
+        "string"
+      ],
+      "Ordertype": [
+        "array<id-ref>"
+      ],
+      "[Header] Container Number List": [
+        "array<string>"
+      ],
+      "[Header] Seal Number List": [
+        "array<string>"
+      ],
+      "List of Seal / Container Number": [
+        "array<id-ref>"
+      ],
+      "[Filter] Agent Brazil": [
+        "id-ref"
+      ],
+      "[Filter] Agent China": [
+        "id-ref"
+      ]
+    }
+  },
+  "shipment_parts": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Category": [
+        "id-ref"
+      ],
+      "CategoryName": [
+        "string"
+      ],
+      "Confirmed_To_Shipment": [
+        "boolean"
+      ],
+      "Container_Number": [
+        "string"
+      ],
+      "created_or_inserted": [
+        "boolean"
+      ],
+      "Factory": [
+        "id-ref"
+      ],
+      "FactoryName": [
+        "string"
+      ],
+      "Is_Next_Order_Created": [
+        "boolean"
+      ],
+      "Is_Total": [
+        "boolean"
+      ],
+      "Next_PO_Batch_Int": [
+        "number"
+      ],
+      "Next_PO_Number_Int": [
+        "number"
+      ],
+      "Part": [
+        "string"
+      ],
+      "PO_Batch": [
+        "id-ref"
+      ],
+      "PO_Batch_Int": [
+        "number"
+      ],
+      "PO_Number": [
+        "id-ref"
+      ],
+      "PO_Number_Int": [
+        "number"
+      ],
+      "Shipping_ID": [
+        "id-ref"
+      ],
+      "PreShipmentCode": [
+        "string"
+      ],
+      "Next_Container_Number": [
+        "string"
+      ],
+      "Next_PO_Batch": [
+        "id-ref"
+      ],
+      "Next_PO_Number": [
+        "id-ref"
+      ],
+      "Next_Shipping_ID": [
+        "id-ref"
+      ],
+      "ClientID": [
+        "string"
+      ],
+      "Client": [
+        "id-ref"
+      ]
+    }
+  },
+  "[vistapub]etdfactorieslogs": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Current Date": [
+        "string"
+      ],
+      "Initial Date": [
+        "string"
+      ],
+      "Remarks": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Ready?": [
+        "boolean"
+      ],
+      "[Vistapub] List of Factories x Categories x Lote": [
+        "id-ref"
+      ],
+      "Inspection?": [
+        "boolean"
+      ]
+    }
+  },
+  "shipping": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref",
+        "string"
+      ],
+      "ATA-Brazil-CK": [
+        "boolean"
+      ],
+      "ATA-Brazil-Date-Comp": [
+        "string"
+      ],
+      "ATA-Brazil-Date-Prev": [
+        "string"
+      ],
+      "ATA-Brazil-Resp": [
+        "id-ref"
+      ],
+      "ATA-Brazil-Signature": [
+        "id-ref"
+      ],
+      "BL-CK": [
+        "boolean"
+      ],
+      "BL-Date-Comp": [
+        "string"
+      ],
+      "BL-Date-Prev": [
+        "string"
+      ],
+      "BL_Number": [
+        "string"
+      ],
+      "BL-Resp": [
+        "id-ref"
+      ],
+      "BL-Signature": [
+        "id-ref"
+      ],
+      "bl-upload": [
+        "array<string>"
+      ],
+      "Cliente-ID": [
+        "id-ref"
+      ],
+      "Container_Number": [
+        "string"
+      ],
+      "LoadingDate-Date-Comp": [
+        "string"
+      ],
+      "Delivery-CK": [
+        "boolean"
+      ],
+      "Delivery-Date-Comp": [
+        "string"
+      ],
+      "Delivery-Date-Prev": [
+        "string"
+      ],
+      "Delivery-Resp": [
+        "id-ref"
+      ],
+      "Delivery-Signature": [
+        "id-ref"
+      ],
+      "ETA-Brazil-Date-Comp": [
+        "string"
+      ],
+      "ETA-Brazil-Signature": [
+        "id-ref"
+      ],
+      "ETABrazil-CK": [
+        "boolean"
+      ],
+      "ETABrazil-Date-Prev": [
+        "string"
+      ],
+      "ETABrazil-Resp": [
+        "id-ref"
+      ],
+      "Loading-Date-Picture": [
+        "string"
+      ],
+      "Inspection-Report-Signature": [
+        "id-ref"
+      ],
+      "inspection-report-upload": [
+        "array<string>"
+      ],
+      "InspectionReport-CK": [
+        "boolean"
+      ],
+      "InspectionReport-Date-Comp": [
+        "string"
+      ],
+      "InspectionReport-Date-Prev": [
+        "string"
+      ],
+      "InspectionReport-Resp": [
+        "id-ref"
+      ],
+      "List of Agents Brazil": [
+        "array<id-ref>"
+      ],
+      "List of Agents China": [
+        "array<id-ref>"
+      ],
+      "List of Clients": [
+        "array<string>"
+      ],
+      "LoadingDate-CK": [
+        "boolean"
+      ],
+      "NotesOriginalDocs": [
+        "string"
+      ],
+      "order_numbers": [
+        "array<id-ref>"
+      ],
+      "Original-Docs-Signature": [
+        "id-ref"
+      ],
+      "original-docs-upload": [
+        "array<string>"
+      ],
+      "OriginalDocs-CK": [
+        "boolean"
+      ],
+      "OriginalDocs-Date-Comp": [
+        "string"
+      ],
+      "OriginalDocs-Date-Prev": [
+        "string"
+      ],
+      "OriginalDocs-Resp": [
+        "id-ref"
+      ],
+      "PendingInspectionReport": [
+        "boolean"
+      ],
+      "LoadingDate-Resp": [
+        "id-ref"
+      ],
+      "Shipment-Date-Signature": [
+        "id-ref"
+      ],
+      "ShipmentDate-CK": [
+        "boolean"
+      ],
+      "ShipmentDate-Date-Comp": [
+        "string"
+      ],
+      "ShipmentDate-Date-Prev": [
+        "string"
+      ],
+      "ShipmentDate-Resp": [
+        "id-ref"
+      ],
+      "Loading-Date-Signature": [
+        "id-ref"
+      ],
+      "status": [
+        "string"
+      ],
+      "Container_Number_List": [
+        "array<string>"
+      ],
+      "order_POnumbers": [
+        "array<number>"
+      ],
+      "order_POBatchnumbers": [
+        "array<number>"
+      ],
+      "AgentBrazil": [
+        "id-ref"
+      ],
+      "AgentChina": [
+        "id-ref"
+      ],
+      "PreShipmentCode": [
+        "string"
+      ],
+      "Agent-CK": [
+        "boolean"
+      ],
+      "Agent-Date-Comp": [
+        "string"
+      ],
+      "Agent-Date-Prev": [
+        "string"
+      ],
+      "Agent-Resp": [
+        "id-ref"
+      ],
+      "Agent-Signature": [
+        "id-ref"
+      ],
+      "Booking-CK": [
+        "boolean"
+      ],
+      "Booking-Date-Comp": [
+        "string"
+      ],
+      "Booking-Date-Prev": [
+        "string"
+      ],
+      "Booking-Resp": [
+        "id-ref"
+      ],
+      "Booking-Signature": [
+        "id-ref"
+      ],
+      "PreShipmentNumber": [
+        "number"
+      ],
+      "Shipping-Docs-Signature": [
+        "id-ref"
+      ],
+      "ShippingDocs-CK": [
+        "boolean"
+      ],
+      "ShippingDocs-Date-Comp": [
+        "string"
+      ],
+      "ShippingDocs-Date-Prev": [
+        "string"
+      ],
+      "ShippingDocs-Resp": [
+        "id-ref"
+      ],
+      "BusinessUnit": [
+        "array<id-ref>"
+      ],
+      "OrderType": [
+        "array<id-ref>"
+      ],
+      "LoadingDate-Date-Prev": [
+        "string"
+      ]
+    }
+  },
+  "status": {
+    "count": 8,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "hidden": [
+        "boolean"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "StatusPO": [
+        "string"
+      ]
+    }
+  },
+  "[vistapub]generaldocs": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "File": [
+        "string"
+      ],
+      "Modified Date": [
+        "string"
+      ]
+    }
+  },
+  "reportpendingtask": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref"
+      ],
+      "Client_ID": [
+        "id-ref"
+      ],
+      "ClientName": [
+        "string"
+      ],
+      "DateComplete": [
+        "string"
+      ],
+      "DatePreview": [
+        "string"
+      ],
+      "PO_Number_Batch": [
+        "id-ref"
+      ],
+      "PO_Number_Batch_Int": [
+        "number"
+      ],
+      "PO_Number": [
+        "id-ref"
+      ],
+      "PO_Number_Int": [
+        "number"
+      ],
+      "Responsible": [
+        "id-ref"
+      ],
+      "Signer": [
+        "id-ref"
+      ],
+      "Status": [
+        "id-ref"
+      ],
+      "Step": [
+        "string"
+      ],
+      "OriginType": [
+        "string"
+      ],
+      "Step_Name": [
+        "string"
+      ],
+      "Responsible_Name": [
+        "string"
+      ],
+      "Status_Name": [
+        "string"
+      ],
+      "discard_in_filter": [
+        "boolean"
+      ],
+      "Container_Number": [
+        "string"
+      ],
+      "Container_Number_List": [
+        "array<string>"
+      ],
+      "PL_Number": [
+        "string"
+      ]
+    }
+  },
+  "db": {
+    "count": 200,
+    "fields": {
+      "_id": [
+        "id-ref"
+      ],
+      "AgentContact": [
+        "string"
+      ],
+      "Agent-Date-Comp": [
+        "string"
+      ],
+      "Agent-Date-Prev": [
+        "string"
+      ],
+      "Agent-Resp": [
+        "id-ref"
+      ],
+      "Agent-Signature": [
+        "id-ref"
+      ],
+      "ATA-Brazil-Date-Comp": [
+        "string"
+      ],
+      "BalancePayment-Date-Comp": [
+        "string"
+      ],
+      "BalancePayment-Date-Prev": [
+        "string"
+      ],
+      "BalancePayment-Resp": [
+        "id-ref"
+      ],
+      "Balance-Payment-Signature": [
+        "id-ref"
+      ],
+      "BL-Date-Comp": [
+        "string"
+      ],
+      "BL-Date-Prev": [
+        "string"
+      ],
+      "BL-Resp": [
+        "id-ref"
+      ],
+      "BL-Signature": [
+        "id-ref"
+      ],
+      "bl-upload": [
+        "array<string>"
+      ],
+      "Booking-Date-Comp": [
+        "string"
+      ],
+      "Booking-Date-Prev": [
+        "string"
+      ],
+      "Booking-Resp": [
+        "id-ref"
+      ],
+      "Booking-Signature": [
+        "id-ref"
+      ],
+      "booking-upload": [
+        "array<string>"
+      ],
+      "BusinessUnit": [
+        "id-ref"
+      ],
+      "BusinessUnitName": [
+        "string"
+      ],
+      "Cliente-ID": [
+        "string"
+      ],
+      "ConditionConfirmation-Date-Comp": [
+        "string"
+      ],
+      "ConditionConfirmation-Date-Prev": [
+        "string"
+      ],
+      "ConditionConfirmation-Resp": [
+        "id-ref"
+      ],
+      "Condition-confirmation-Signature": [
+        "id-ref"
+      ],
+      "Container_Number": [
+        "string"
+      ],
+      "Created By": [
+        "id-ref",
+        "string"
+      ],
+      "Created Date": [
+        "string"
+      ],
+      "Date-PO": [
+        "string"
+      ],
+      "Delivery-Date-Comp": [
+        "string"
+      ],
+      "DepositPayment-Date-Comp": [
+        "string"
+      ],
+      "DepositPayment-Date-Prev": [
+        "string"
+      ],
+      "DepositPayment-Resp": [
+        "id-ref"
+      ],
+      "Deposit-Payment-Signature": [
+        "id-ref"
+      ],
+      "duplicable": [
+        "boolean"
+      ],
+      "ETA-Brazil-Date-Comp": [
+        "string"
+      ],
+      "ETABrazil-Date-Prev": [
+        "string"
+      ],
+      "ETABrazil-Resp": [
+        "id-ref"
+      ],
+      "ETA-Brazil-Signature": [
+        "id-ref"
+      ],
+      "ETDConfirmation-Date-Comp": [
+        "string"
+      ],
+      "ETDConfirmation-Date-Prev": [
+        "string"
+      ],
+      "ETDConfirmation-Resp": [
+        "id-ref"
+      ],
+      "ETD-Confirmation-Signature": [
+        "id-ref"
+      ],
+      "ETD-Date-Comp": [
+        "string"
+      ],
+      "ETD-Date-Prev": [
+        "string"
+      ],
+      "ETD-Resp": [
+        "id-ref"
+      ],
+      "ETD-Signature": [
+        "id-ref"
+      ],
+      "InspectionReport-Date-Comp": [
+        "string"
+      ],
+      "InspectionReport-Date-Prev": [
+        "string"
+      ],
+      "InspectionReport-Resp": [
+        "id-ref"
+      ],
+      "Inspection-Report-Signature": [
+        "id-ref"
+      ],
+      "inspection-report-upload": [
+        "array<string>"
+      ],
+      "LoadingDate-Date-Comp": [
+        "string"
+      ],
+      "LoadingDate-Date-Prev": [
+        "string"
+      ],
+      "LoadingDate-Resp": [
+        "id-ref"
+      ],
+      "Loading-Date-Signature": [
+        "id-ref"
+      ],
+      "Modified Date": [
+        "string"
+      ],
+      "NotesOriginalDocs": [
+        "string"
+      ],
+      "Number-PO-Base": [
+        "number"
+      ],
+      "Number-PO-Lote": [
+        "number"
+      ],
+      "Number-PO-Lote-Union": [
+        "number"
+      ],
+      "Number-PO": [
+        "number"
+      ],
+      "Number-PO-Text": [
+        "string"
+      ],
+      "Order-CK": [
+        "boolean"
+      ],
+      "Order-Date-Comp": [
+        "string"
+      ],
+      "Order-Date-Prev": [
+        "string"
+      ],
+      "Order-Resp": [
+        "id-ref"
+      ],
+      "Order-Signature": [
+        "id-ref"
+      ],
+      "OrderType": [
+        "id-ref"
+      ],
+      "OrderTypeName": [
+        "string"
+      ],
+      "Order-Uploads": [
+        "array<string>"
+      ],
+      "OriginalDocs-Date-Comp": [
+        "string"
+      ],
+      "OriginalDocs-Date-Prev": [
+        "string"
+      ],
+      "OriginalDocs-Resp": [
+        "id-ref"
+      ],
+      "Original-Docs-Signature": [
+        "id-ref"
+      ],
+      "original-docs-upload": [
+        "array<string>"
+      ],
+      "PackingConfirmation-Date-Comp": [
+        "string"
+      ],
+      "PAckingConfirmation-Date-Prev": [
+        "string"
+      ],
+      "PackingConfirmation-Resp": [
+        "id-ref"
+      ],
+      "Packing-Confirmation-Signature": [
+        "id-ref"
+      ],
+      "PendingDepositPay": [
+        "boolean"
+      ],
+      "PendingInspectionReport": [
+        "boolean"
+      ],
+      "PI-Date-Comp": [
+        "string"
+      ],
+      "PI-Date-Prev": [
+        "string"
+      ],
+      "PI-Resp": [
+        "id-ref"
+      ],
+      "PI-Signature": [
+        "id-ref"
+      ],
+      "PI-Uploads": [
+        "array<string>"
+      ],
+      "PlaceOrder-Date-Comp": [
+        "string"
+      ],
+      "PlaceOrder-Date-Prev": [
+        "string"
+      ],
+      "PlaceOrder-Resp": [
+        "id-ref"
+      ],
+      "Place-order-Signature": [
+        "id-ref"
+      ],
+      "place-order-upload": [
+        "array<string>"
+      ],
+      "PL_Number_Destination": [
+        "string"
+      ],
+      "PO-Date-Comp": [
+        "string"
+      ],
+      "PO-Date-Prev": [
+        "string"
+      ],
+      "Porcentagem": [
+        "number"
+      ],
+      "PO-Resp": [
+        "id-ref"
+      ],
+      "po-signature": [
+        "id-ref"
+      ],
+      "PO-Uploads": [
+        "array<string>"
+      ],
+      "ShipmentDate-Date-Comp": [
+        "string"
+      ],
+      "ShipmentDate-Date-Prev": [
+        "string"
+      ],
+      "ShipmentDate-Resp": [
+        "id-ref"
+      ],
+      "Shipment-Date-Signature": [
+        "id-ref"
+      ],
+      "ShippingDocs-Date-Comp": [
+        "string"
+      ],
+      "ShippingDocs-Date-Prev": [
+        "string"
+      ],
+      "ShippingDocs-Resp": [
+        "id-ref"
+      ],
+      "Shipping-Docs-Signature": [
+        "id-ref"
+      ],
+      "shipping-docs-upload": [
+        "array<string>"
+      ],
+      "StatusPO": [
+        "id-ref"
+      ],
+      "Vistapub-migration": [
+        "boolean"
+      ],
+      "ATA-Brazil-Date-Prev": [
+        "string"
+      ],
+      "ATA-Brazil-Resp": [
+        "id-ref"
+      ],
+      "ATA-Brazil-Signature": [
+        "id-ref"
+      ],
+      "BalancePayment-CK-NA": [
+        "boolean"
+      ],
+      "Categories": [
+        "array<string>"
+      ],
+      "Delivery-Date-Prev": [
+        "string"
+      ],
+      "Delivery-Resp": [
+        "id-ref"
+      ],
+      "Delivery-Signature": [
+        "id-ref"
+      ],
+      "Factories": [
+        "array<string>"
+      ],
+      "PendingBalancePayment": [
+        "boolean"
+      ],
+      "agent-upload": [
+        "array<string>"
+      ],
+      "AgentBrazil": [
+        "id-ref"
+      ],
+      "AgentChina": [
+        "id-ref"
+      ],
+      "AgentContactBrazil": [
+        "id-ref"
+      ],
+      "AgentContactChina": [
+        "id-ref"
+      ],
+      "Booking-CK-NA": [
+        "boolean"
+      ],
+      "Booking_Number": [
+        "string"
+      ],
+      "DepositPayment-CK-NA": [
+        "boolean"
+      ],
+      "DepositPayment-CK": [
+        "boolean"
+      ],
+      "Container_Number_Destination": [
+        "string"
+      ],
+      "deposit-payment-upload": [
+        "array<string>"
+      ],
+      "BalancePayment-CK": [
+        "boolean"
+      ],
+      "ClientReference": [
+        "string"
+      ],
+      "ConditionConfirmation-CK": [
+        "boolean"
+      ],
+      "ETD-CK": [
+        "boolean"
+      ],
+      "PackingConfirmation-CK": [
+        "boolean"
+      ],
+      "PI-CK": [
+        "boolean"
+      ],
+      "PlaceOrder-CK": [
+        "boolean"
+      ],
+      "PO-CK": [
+        "boolean"
+      ],
+      "PreShipment-CK": [
+        "boolean"
+      ],
+      "Schedule_Requested_ASAP": [
+        "boolean"
+      ],
+      "Schedule_Requested": [
+        "string"
+      ],
+      "ETD-CK-NA": [
+        "boolean"
+      ]
+    }
+  }
+}
