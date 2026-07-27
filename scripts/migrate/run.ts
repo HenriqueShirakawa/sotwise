@@ -339,14 +339,86 @@ async function importTransactionalCore() {
   return results;
 }
 
+function shipmentStatus(label: unknown): string {
+  const s = norm(label);
+  if (s.includes("deliver")) return "delivered";
+  if (s.includes("cancel")) return "canceled";
+  return "in_transit";
+}
+
+async function importPreloadingShipments() {
+  const results: Record<string, { fetched: number; upserted: number; skipped?: number }> = {};
+  const userMap = await loadIdMap("profiles");
+  const podMap = await loadIdMap("pods");
+  const clientMap = await loadIdMap("clients");
+  const batchMap = await loadIdMap("batches");
+
+  // PRE_LOADINGS
+  const plRaw = await fetchAll("[vistapub]pre-loading");
+  const plRows = plRaw.map((p) => ({
+    pl_number: reqStr(p["PL Number Txt"]) || String(p["PL Number"] ?? p._id),
+    created_date: dateOnly(p["Created Date"]) || new Date().toISOString().slice(0, 10),
+    client_reference: str(p["[Headers] Cliente Reference"]),
+    pod_id: ref(podMap, p["[Headers] POD"]),
+    leader_id: null,
+    created_by: ref(userMap, p["Created By"]),
+    bubble_id: p._id,
+  }));
+  results.pre_loadings = { fetched: plRaw.length, upserted: await upsertByBubbleId("pre_loadings", plRows) };
+  const plMap = await loadIdMap("pre_loadings");
+
+  // pre_loading_clients (List of Clients)
+  const plc: Row[] = [];
+  for (const p of plRaw) {
+    const plId = plMap.get(p._id); if (!plId) continue;
+    for (const cid of (Array.isArray(p["List of Clients"]) ? p["List of Clients"] : [])) {
+      const c = clientMap.get(cid as string); if (c) plc.push({ pre_loading_id: plId, client_id: c });
+    }
+  }
+  results.pre_loading_clients = { fetched: plc.length, upserted: await upsertJunction("pre_loading_clients", plc, "pre_loading_id,client_id") };
+
+  // pre_loading_batches (List of Order x Lote x PL)
+  const plb: Row[] = [];
+  for (const p of plRaw) {
+    const plId = plMap.get(p._id); if (!plId) continue;
+    for (const bid of (Array.isArray(p["List of Order x Lote x PL"]) ? p["List of Order x Lote x PL"] : [])) {
+      const b = batchMap.get(bid as string); if (b) plb.push({ pre_loading_id: plId, batch_id: b });
+    }
+  }
+  results.pre_loading_batches = { fetched: plb.length, upserted: await upsertJunction("pre_loading_batches", plb, "pre_loading_id,batch_id") };
+
+  // SHIPMENTS (1:1 com pre_loading)
+  const shipRaw = await fetchAll("[vistapub]shippment");
+  let shipSkip = 0;
+  const seenPl = new Set<string>();
+  const shipRows = shipRaw
+    .map((s) => {
+      const preId = ref(plMap, s["[Vistapub] Pre-Loading"]);
+      if (!preId || seenPl.has(preId)) { shipSkip++; return null; }
+      seenPl.add(preId);
+      return {
+        pre_loading_id: preId,
+        container_number: str(s["[Header] Container Number"]),
+        status: shipmentStatus(s["[Header] Status_OS"]),
+        created_by: ref(userMap, s["Created By"]),
+        bubble_id: s._id,
+      };
+    })
+    .filter(Boolean) as Row[];
+  results.shipments = { fetched: shipRaw.length, upserted: await upsertByBubbleId("shipments", shipRows), skipped: shipSkip };
+
+  return results;
+}
+
 const COUNT_TABLES = [
   "profiles", "countries", "factories", "categories", "category_factories", "cities", "pols",
   "city_pols", "pods", "contacts", "agents", "agent_contacts", "carriers", "clients", "exporters",
   "business_units", "order_types", "shipment_models", "orders", "batches", "order_factory_category", "etd_info",
+  "pre_loadings", "pre_loading_clients", "pre_loading_batches", "shipments",
 ];
 
 async function main() {
-  const phase = process.argv[2] ?? "all"; // all | base | core
+  const phase = process.argv[2] ?? "all"; // all | base | core | preload
 
   if (phase === "all" || phase === "base") {
     console.log("== Camada 1: usuários + cadastros ==\n");
@@ -360,6 +432,14 @@ async function main() {
     console.log("\n== Camada 2: transacional (núcleo) ==\n");
     const core = await importTransactionalCore();
     for (const [t, r] of Object.entries(core)) {
+      console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
+    }
+  }
+
+  if (phase === "all" || phase === "preload") {
+    console.log("\n== Camada 3: pre-loading + shipments ==\n");
+    const pl = await importPreloadingShipments();
+    for (const [t, r] of Object.entries(pl)) {
       console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
     }
   }
