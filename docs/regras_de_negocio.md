@@ -1803,9 +1803,13 @@ Importador idempotente em `scripts/migrate/` (fetcher da Data API pública, sem 
 
 **Reconciliações** (migrations `100000`/`101000`/`102000`): relaxados NOT NULLs sem dado na origem (`clients.country_id`, `order_types.color`/`icon_path`, `business_units.icon_path`, `order_factory_category.ship_requirement`, `pre_loadings.client_reference`/`pod_id`/`leader_id`); `bubble_id` virou **unique constraint** (habilita upsert idempotente). Templates de checklist (Sorted 1–24) mapeados 1:1 ao enum `checklist_step`; direções inconsistentes do Bubble (order→lista, shipment←item) normalizadas para FK única.
 
-### 12.8 Pendências pós-migração
+### 12.8 Pendências pós-migração (refinamento)
 - [ ] **Uploads → Supabase Storage** (`generaldocs`/`*uploads` → `step_attachments`; buckets `business-units`, `order-types`, `order-documents`) — ainda não migrados.
 - [ ] **etd_history** (log completo do ETD; hoje só o snapshot mais recente entrou em `etd_info`) e **detalhes de agentes por etapa** (`checklistxitemxagents` → `pre_loading_checklist_steps.agent_*`/`contact_*`).
-- [ ] **Policies de RLS** por tabela (sair do deny-all).
-- [ ] 🔒 **Travar a Data API pública do Bubble** (hoje lê tudo sem token); **regenerar** o token exposto; **revogar** o PAT do Supabase.
 - [ ] Reavaliar os ~68k itens de checklist legados/órfãos não importados (limpeza na origem).
+
+### 12.9 Decisões de segurança (confirmadas com o cliente)
+- ✅ **Supabase nasce fechado:** RLS **deny-all** em todas as tabelas → a chave `anon`/`publishable` não lê nada; acesso apenas via `service_role` (servidor). Sem exposição pública do banco.
+- ✅ **Policies de RLS por tabela:** adiadas para a **fase do app**, quando o modelo de acesso for definido (Opção A — segurança na camada de aplicação, ver seção 7). Até lá, o deny-all é o estado seguro.
+- ✅ **Travar a Data API do Bubble:** **dispensado** — o Bubble será descontinuado em breve; não vale investir em endurecê-lo.
+- ✅ **Rotação de credenciais** (PAT do Supabase e token do Bubble que apareceram no chat): cliente decidiu **não rotacionar agora** — o acesso ao histórico é restrito e o Bubble sai de cena. **Risco aceito.** _(Recomendação técnica: rotacionar quando conveniente.)_
