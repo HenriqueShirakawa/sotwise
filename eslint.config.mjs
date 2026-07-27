@@ -13,6 +13,14 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  // Tooling de migração (Bubble → Supabase): já cumpriu o papel e lida com
+  // payloads dinâmicos do Bubble — `any` é tolerado aqui, não no código do app.
+  {
+    files: ["scripts/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
