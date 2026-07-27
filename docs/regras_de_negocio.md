@@ -31,6 +31,7 @@
 9. [Stack técnica](#9-stack-técnica)
 10. [Versionamento (GitHub)](#10-versionamento-github)
 11. [Requisitos de Segurança](#11-requisitos-de-segurança)
+12. [Log de implementação — Supabase](#12-log-de-implementação--supabase)
 
 ---
 
@@ -48,6 +49,7 @@ Regras que valem para todas as tabelas, para não repetir em cada uma.
 - **Sem exclusão física (soft delete global):** o padrão do sistema é **nunca apagar de verdade**. Usuários e papéis usam status Active/Blocked; **todos os cadastros (Registration) usam soft delete** — "excluir" marca o registro como inativo. Convenção: coluna `deleted_at timestamptz` (NULL = ativo; preenchido = excluído). Registros soft-deleted **somem das listagens** mas continuam visíveis em registros antigos que já os referenciam (histórico preservado). Nunca usar `DELETE` físico em tabelas de negócio.
 - **Auth vs. Perfil:** o Supabase separa credenciais (`auth.users`, gerenciado) dos dados de negócio (`public.profiles`). Nunca duplicar email/senha em tabelas próprias.
 - **Trigger de `updated_at`:** função compartilhada `set_updated_at()` aplicada a todas as tabelas.
+- **Rastreio de origem (migração):** enquanto a migração do Bubble estiver em andamento, toda tabela de negócio tem uma coluna `bubble_id text` (nullable, com índice único parcial) que guarda o `_id` original do registro no Bubble — usada para resolver FKs, permitir upsert idempotente e auditar/reconciliar. Ver [seção 12](#12-log-de-implementação--supabase). Pode ser removida ao final da migração.
 - ⚠️ **Fonte de verdade: Bubble > Figma.** O **Bubble em produção** é a referência real de regra de negócio, campos e comportamento. O **Figma é apenas protótipo visual** — contém dados mockados, colunas que não existem, textos genéricos reaproveitados e typos. Sempre que houver divergência, **vale o Bubble**. Prints do Figma servem para entender intenção de layout, não para derivar schema.
 
 ---
@@ -1750,3 +1752,47 @@ Todo código deve sobreviver a estas perguntas:
 - E se eu inspecionar o response e encontrar dados de outros usuários? (vazamento)
 
 > **Preferência geral:** biblioteca madura e testada > implementar do zero. Não reinventar autenticação, criptografia ou sanitização.
+
+---
+
+## 12. Log de implementação — Supabase
+
+> Registro do que foi **efetivamente aplicado** no banco a partir deste MD, com as decisões e ajustes tomados na execução. Início: **2026-07-27**.
+
+### 12.1 Ambiente
+- **Projeto Supabase `AGK`** — ref `qqbeoljgpfllhcvqrsup`, região `sa-east-1`, org Vista (`vbtrfvrdsvvgyrktdtgh`), Postgres 17. (O repo `sotwise` e o projeto `AGK` são o mesmo produto.)
+- **Acesso:** o conector Supabase MCP disponível **não alcança** este projeto (fica na org pessoal). As migrations foram aplicadas via **Management API** (`POST /v1/projects/{ref}/database/query`) com um Personal Access Token.
+- **Repo:** `github.com/HenriqueShirakawa/sotwise`, branch `main`. Migrations versionadas em `supabase/migrations/`.
+
+### 12.2 Migrations aplicadas
+| Arquivo | O que faz |
+|---|---|
+| `20260727093000_init_schema.sql` | Schema inicial: **33 tabelas, 8 enums, 24 triggers `updated_at`, 68 FKs** — todo o modelo da seção 3 (menos o que foi pulado, ver 12.4). |
+| `20260727094000_add_bubble_id_and_seed_roles.sql` | Coluna `bubble_id text` (índice único parcial) em **25 tabelas** de negócio; **seed dos papéis** `admin` / `user`. |
+| `20260727095000_enable_rls_deny_all.sql` | **RLS habilitado (deny-all, sem policies)** nas 33 tabelas. |
+
+### 12.3 Ajuste vs. o SQL da seção 3
+- `etd_info.current_date` foi criada como **`"current_date"`** (com aspas): `current_date` é palavra reservada no Postgres e não pode ser nome de coluna sem aspas. Comportamento idêntico via `supabase-js`; apenas SQL manual precisa das aspas.
+
+### 12.4 Deliberadamente NÃO implementado nesta fase (conforme o próprio MD)
+- `role_permissions` (3.3) e `role_step_denies` (3.7.5) — RBAC granular; ver simplificação na seção 4.
+- Trigger `handle_new_user` (3.1) — quebraria os `NOT NULL` (`role_id`/`company`); a criação de profile é pela tela Users.
+- Views `etd_factories_view` (3.7.4) e `todo_list_view` (3.12.2) — a forma final se define na implementação.
+
+### 12.5 Decisões de execução (complementam as seções 4 e 7)
+- **RLS:** começou desligado (segurança na camada de aplicação) e depois foi habilitado em **deny-all** (fail closed) — some o aviso "UNRESTRICTED" do dashboard e fecha o acesso via chave `anon`. Acesso atual: só `service_role` (servidor / importador). **Policies por tabela ficam para a fase de RLS.**
+- **`bubble_id`:** convenção nova durante a migração (ver [seção 1](#1-convenções-gerais)).
+- **Usuários (import):** criar Auth users via **Admin API sem enviar e-mail**, com role `user` por padrão (admins reatribuídos depois). `profiles.id` = id do Auth; `bubble_id` = `_id` do User no Bubble.
+
+### 12.6 Tooling da migração (no repo)
+- Dependências: `@supabase/supabase-js`, `tsx`, `dotenv`.
+- `scripts/migrate/` — `client.ts` (client `service_role`, server-side), `check.ts` (smoke test de conexão). `run.ts` (importador) **a construir** após a Discovery.
+- `.env.local` (gitignored) com URL + chaves do Supabase; `.env.example` versionado (`.gitignore` abre exceção para ele).
+- Scripts npm: `migrate` e `migrate:check`.
+
+### 12.7 Pendente (próximos passos)
+- [ ] **Endpoints do Bubble** → *Discovery* (de-para campo-a-campo contra a seção 3) → importador `run.ts` → validação (contagens + FKs órfãs).
+- [ ] **Policies de RLS** por tabela (sair do deny-all).
+- [ ] **Buckets de Storage** (`business-units`, `order-types`, `order-documents`) para os uploads (ver 3.5.9 / 3.5.10 / 3.7.5).
+- [ ] Definir `company` (BR/China) para users sem o campo; valores reais dos enums (`agent_location`, `shipment_models`) confirmados na Discovery.
+- [ ] Revogar o PAT usado no acesso via Management API.
