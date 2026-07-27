@@ -410,11 +410,85 @@ async function importPreloadingShipments() {
   return results;
 }
 
+// Sorted (1..24) do template do Bubble → valor do enum checklist_step
+const STEP_BY_SORTED: (string | null)[] = [
+  null, "order", "po", "pi", "deposit_payment", "packing_confirm", "condition_confirm",
+  "place_the_order", "etd", "balance_payment", "pre_loading", "consolidation_point", "city",
+  "port_of_loading", "shipping_docs", "agents", "booking", "loading_date", "shipping_date",
+  "bl", "original_docs", "inspection_report", "eta_brazil", "ata_brazil", "delivered",
+];
+
+async function importChecklist() {
+  const results: Record<string, { fetched: number; upserted: number; skipped?: number }> = {};
+  const userMap = await loadIdMap("profiles");
+  const factMap = await loadIdMap("factories");
+  const cityMap = await loadIdMap("cities");
+  const polMap = await loadIdMap("pols");
+  const orderMap = await loadIdMap("orders");
+  const plMap = await loadIdMap("pre_loadings");
+
+  // template _id → Sorted (1..24)
+  const tmplSorted = new Map<string, number>();
+  for (const t of await fetchAll("[vistapub]checklist")) tmplSorted.set(t._id, Number(t.Sorted));
+
+  // item → order uuid  (order."List of Checklist x Item")
+  const itemToOrder = new Map<string, string>();
+  for (const o of await fetchAll("[vistapub]order")) {
+    const oid = orderMap.get(o._id); if (!oid) continue;
+    for (const it of (Array.isArray(o["List of Checklist x Item"]) ? o["List of Checklist x Item"] : [])) itemToOrder.set(it as string, oid);
+  }
+  // item → pre_loading uuid  (pre_loading."[Vistapub] Checklist x Item")
+  const itemToPl = new Map<string, string>();
+  for (const p of await fetchAll("[vistapub]pre-loading")) {
+    const pid = plMap.get(p._id); if (!pid) continue;
+    for (const it of (Array.isArray(p["[Vistapub] Checklist x Item"]) ? p["[Vistapub] Checklist x Item"] : [])) itemToPl.set(it as string, pid);
+  }
+
+  const items = await fetchAll("[vistapub]checklistxitem");
+  const orderSteps = new Map<string, Row>(); // orderId|step (dedupe pela PK lógica)
+  const plSteps = new Map<string, Row>();     // plId|step
+  let skip = 0;
+  for (const it of items) {
+    const sorted = tmplSorted.get(it["[Vistapub] Checklist"] as string);
+    const step = sorted ? STEP_BY_SORTED[sorted] : null;
+    if (!step || !sorted) { skip++; continue; }
+    const completed_on = dateOnly(it["Completed date"]);
+    const base = {
+      step,
+      done: completed_on != null,
+      estimated_date: dateOnly(it["Estimated date"]),
+      responsible_id: ref(userMap, it.Responsible),
+      completed_on,
+      signed_by_id: ref(userMap, it["Signed By"]),
+      bubble_id: it._id as string,
+    };
+    if (sorted <= 10) {
+      const orderId = itemToOrder.get(it._id);
+      if (!orderId) { skip++; continue; }
+      orderSteps.set(`${orderId}|${step}`, { order_id: orderId, enabled: it["Checklist Yes/no"] !== false, ...base });
+    } else {
+      const plId = itemToPl.get(it._id);
+      if (!plId) { skip++; continue; }
+      plSteps.set(`${plId}|${step}`, {
+        pre_loading_id: plId, ...base,
+        notes: str(it["[Value] Text"]),
+        consolidation_point_id: ref(factMap, it["[Value] Factory"]),
+        city_id: ref(cityMap, it["[Value] City"]),
+        pol_id: ref(polMap, it["[Value] POL "]),
+      });
+    }
+  }
+  results.order_checklist_steps = { fetched: orderSteps.size, upserted: await upsertByBubbleId("order_checklist_steps", [...orderSteps.values()]), skipped: skip };
+  results.pre_loading_checklist_steps = { fetched: plSteps.size, upserted: await upsertByBubbleId("pre_loading_checklist_steps", [...plSteps.values()]) };
+  return results;
+}
+
 const COUNT_TABLES = [
   "profiles", "countries", "factories", "categories", "category_factories", "cities", "pols",
   "city_pols", "pods", "contacts", "agents", "agent_contacts", "carriers", "clients", "exporters",
   "business_units", "order_types", "shipment_models", "orders", "batches", "order_factory_category", "etd_info",
   "pre_loadings", "pre_loading_clients", "pre_loading_batches", "shipments",
+  "order_checklist_steps", "pre_loading_checklist_steps",
 ];
 
 async function main() {
@@ -440,6 +514,14 @@ async function main() {
     console.log("\n== Camada 3: pre-loading + shipments ==\n");
     const pl = await importPreloadingShipments();
     for (const [t, r] of Object.entries(pl)) {
+      console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
+    }
+  }
+
+  if (phase === "all" || phase === "checklist") {
+    console.log("\n== Camada 4: checklist (order + pre-loading/shipment) ==\n");
+    const ck = await importChecklist();
+    for (const [t, r] of Object.entries(ck)) {
       console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
     }
   }
