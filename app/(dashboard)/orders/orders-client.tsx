@@ -39,12 +39,8 @@ import {
 import { toast } from "sonner";
 
 import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
-import {
-  ORDER_STATUS_LABELS,
-  STATUS_COLORS,
-  statusChipStyle,
-} from "@/lib/status-colors";
-import type { OrderStatus } from "@/types/database";
+import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import type { BatchStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -63,6 +59,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { StatusPill } from "@/components/status-pill";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -71,6 +68,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 import { deleteOrder } from "./actions";
 import { OrderFormModal } from "./order-form-modal";
@@ -85,7 +87,7 @@ export type OrderRow = {
   type_color: string | null;
   client: string | null;
   client_reference: string | null;
-  batches: string[];
+  batches: { batch_number: string; status: BatchStatus }[];
   leader: string | null;
   requester: string | null;
   exporter: string | null;
@@ -137,52 +139,48 @@ function TagChip({
   );
 }
 
-function StatusChip({ status }: { status: OrderStatus }) {
-  const label = ORDER_STATUS_LABELS[status];
-  const hex = STATUS_COLORS[label] ?? "#475569";
-  return (
-    <span
-      style={statusChipStyle(hex)}
-      className="inline-flex items-center rounded-[4px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap"
-    >
-      {label}
-    </span>
-  );
-}
-
 function BatchCell({
   batches,
-  focused,
-  onFocus,
 }: {
-  batches: string[];
-  focused: boolean;
-  onFocus: () => void;
+  batches: { batch_number: string; status: BatchStatus }[];
 }) {
   if (batches.length === 0)
     return <Eye className="size-4 text-slate-300" aria-hidden />;
-  const shown = batches.slice(0, 6).join("/");
+  const shown = batches
+    .slice(0, 6)
+    .map((b) => b.batch_number)
+    .join("/");
   const extra = batches.length > 6 ? ` +${batches.length - 6}` : "";
   return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onFocus();
-      }}
-      aria-pressed={focused}
-      className={`inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 whitespace-nowrap transition-colors ${
-        focused
-          ? "bg-primary/10 text-primary ring-1 ring-primary/30"
-          : "hover:bg-slate-100"
-      }`}
-    >
-      <Eye className="size-4 shrink-0 text-slate-400" aria-hidden />
-      <span className="text-primary underline underline-offset-2">
-        {shown}
-        {extra}
-      </span>
-    </button>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(event) => event.stopPropagation()}
+          className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 whitespace-nowrap transition-colors hover:bg-slate-100 data-[state=open]:bg-primary/10 data-[state=open]:text-primary data-[state=open]:ring-1 data-[state=open]:ring-primary/30"
+        >
+          <Eye className="size-4 shrink-0 text-slate-400" aria-hidden />
+          <span className="text-primary underline underline-offset-2">
+            {shown}
+            {extra}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        onClick={(event) => event.stopPropagation()}
+        className="overflow-hidden py-1"
+      >
+        {batches.map((b) => (
+          <div
+            key={b.batch_number}
+            className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
+          >
+            <span className="text-slate-600">{b.batch_number}</span>
+            <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -231,7 +229,6 @@ export function OrdersClient({
   const [buFilter, setBuFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<Set<OrderStatus>>(new Set());
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [focusedBatchRow, setFocusedBatchRow] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<OrderRow | null>(null);
@@ -351,17 +348,7 @@ export function OrdersClient({
         id: "batches",
         header: "Batch No.",
         enableSorting: false,
-        cell: ({ row }) => (
-          <BatchCell
-            batches={row.original.batches}
-            focused={focusedBatchRow === row.original.id}
-            onFocus={() =>
-              setFocusedBatchRow((id) =>
-                id === row.original.id ? null : row.original.id
-              )
-            }
-          />
-        ),
+        cell: ({ row }) => <BatchCell batches={row.original.batches} />,
       },
       {
         accessorKey: "leader",
@@ -396,7 +383,9 @@ export function OrdersClient({
       {
         accessorKey: "status",
         header: ({ column }) => <SortableHeader label="Status PO" column={column} />,
-        cell: ({ row }) => <StatusChip status={row.original.status} />,
+        cell: ({ row }) => (
+          <StatusPill label={ORDER_STATUS_LABELS[row.original.status]} />
+        ),
       },
       {
         accessorKey: "schedule_requested",
@@ -443,7 +432,7 @@ export function OrdersClient({
         ),
       },
     ],
-    [focusedBatchRow]
+    []
   );
 
   const table = useReactTable({

@@ -17,15 +17,11 @@ import {
 import { toast } from "sonner";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
-import {
-  BATCH_STATUS_LABELS,
-  ORDER_STATUS_LABELS,
-  STATUS_COLORS,
-  statusChipStyle,
-} from "@/lib/status-colors";
+import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { StatusPill } from "@/components/status-pill";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -79,18 +75,6 @@ type OrderDetail = {
 };
 
 const dash = <span className="text-slate-300">—</span>;
-
-function StatusBadge({ label }: { label: string }) {
-  const hex = STATUS_COLORS[label] ?? "#475569";
-  return (
-    <span
-      style={statusChipStyle(hex)}
-      className="inline-flex items-center rounded-[4px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap"
-    >
-      {label}
-    </span>
-  );
-}
 
 function InfoField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -191,7 +175,7 @@ export function OrderDetailClient({
               />
               <InfoField
                 label="Status PO"
-                value={<StatusBadge label={ORDER_STATUS_LABELS[order.status]} />}
+                value={<StatusPill label={ORDER_STATUS_LABELS[order.status]} />}
               />
             </div>
           </CollapsiblePrimitive.Content>
@@ -215,7 +199,7 @@ export function OrderDetailClient({
             >
               <span className="text-slate-700">{b.batch_number}</span>
               <div className="flex items-center justify-between pr-2">
-                <StatusBadge label={BATCH_STATUS_LABELS[b.status]} />
+                <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
                 <Eye className="size-4 text-slate-400" aria-hidden />
               </div>
             </div>

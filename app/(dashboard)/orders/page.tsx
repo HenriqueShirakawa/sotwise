@@ -48,8 +48,12 @@ export default async function OrdersPage() {
           .order("po_number", { ascending: false })
           .range(from, to)
       ),
-      fetchAll<{ order_id: string; batch_number: string }>((from, to) =>
-        admin.from("batches").select("order_id, batch_number").range(from, to)
+      fetchAll<{
+        order_id: string;
+        batch_number: string;
+        status: OrderRow["batches"][number]["status"];
+      }>((from, to) =>
+        admin.from("batches").select("order_id, batch_number, status").range(from, to)
       ),
       admin.from("business_units").select("id, name").is("deleted_at", null),
       admin.from("order_types").select("id, name, color").is("deleted_at", null),
@@ -70,10 +74,10 @@ export default async function OrdersPage() {
     (profileRes.data ?? []).map((p) => [p.id, p.full_name])
   );
 
-  const batchesByOrder = new Map<string, string[]>();
+  const batchesByOrder = new Map<string, OrderRow["batches"]>();
   for (const b of batches) {
     const arr = batchesByOrder.get(b.order_id) ?? [];
-    arr.push(b.batch_number);
+    arr.push({ batch_number: b.batch_number, status: b.status });
     batchesByOrder.set(b.order_id, arr);
   }
 
@@ -87,7 +91,9 @@ export default async function OrdersPage() {
       type_color: type?.color ?? null,
       client: o.client_id ? clientMap.get(o.client_id) ?? null : null,
       client_reference: o.client_reference,
-      batches: (batchesByOrder.get(o.id) ?? []).sort(),
+      batches: (batchesByOrder.get(o.id) ?? []).sort((a, b) =>
+        a.batch_number.localeCompare(b.batch_number)
+      ),
       leader: o.leader_id ? profileMap.get(o.leader_id) ?? null : null,
       requester: o.requester_id ? profileMap.get(o.requester_id) ?? null : null,
       exporter: o.exporter_id ? exporterMap.get(o.exporter_id) ?? null : null,
