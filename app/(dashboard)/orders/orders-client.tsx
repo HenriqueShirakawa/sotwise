@@ -6,8 +6,11 @@ import {
   flexRender,
   getCoreRowModel,
   getPaginationRowModel,
+  getSortedRowModel,
   useReactTable,
+  type Column,
   type ColumnDef,
+  type SortingState,
 } from "@tanstack/react-table";
 import {
   Search,
@@ -30,11 +33,17 @@ import {
   Gift,
   RefreshCw,
   Shapes,
+  ArrowUpDown,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatDate } from "@/lib/format";
+import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
+import {
+  ORDER_STATUS_LABELS,
+  STATUS_COLORS,
+  statusChipStyle,
+} from "@/lib/status-colors";
 import type { OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +63,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import { deleteOrder } from "./actions";
 import { OrderFormModal } from "./order-form-modal";
@@ -82,34 +99,6 @@ export type OrderRow = {
   requester_id: string | null;
   exporter_id: string | null;
   leader_id: string | null;
-};
-
-const STATUS: Record<OrderStatus, { label: string; cls: string }> = {
-  in_negotiation: {
-    label: "In Negotiation",
-    cls: "border-amber-200 bg-amber-50 text-amber-700",
-  },
-  in_production: {
-    label: "In Production",
-    cls: "border-red-200 bg-red-50 text-red-600",
-  },
-  partially_shipped: {
-    label: "Partially Shipped",
-    cls: "border-blue-200 bg-blue-50 text-blue-600",
-  },
-  shipped: { label: "Shipped", cls: "border-cyan-200 bg-cyan-50 text-cyan-700" },
-  partially_delivered: {
-    label: "Partially Delivered",
-    cls: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
-  },
-  delivered: {
-    label: "Delivered",
-    cls: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  },
-  canceled: {
-    label: "Canceled",
-    cls: "border-rose-200 bg-rose-50 text-rose-600",
-  },
 };
 
 function buIcon(name: string): LucideIcon {
@@ -149,29 +138,73 @@ function TagChip({
 }
 
 function StatusChip({ status }: { status: OrderStatus }) {
-  const s = STATUS[status];
+  const label = ORDER_STATUS_LABELS[status];
+  const hex = STATUS_COLORS[label] ?? "#475569";
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${s.cls}`}
+      style={statusChipStyle(hex)}
+      className="inline-flex items-center rounded-[4px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap"
     >
-      {s.label}
+      {label}
     </span>
   );
 }
 
-function BatchCell({ batches }: { batches: string[] }) {
+function BatchCell({
+  batches,
+  focused,
+  onFocus,
+}: {
+  batches: string[];
+  focused: boolean;
+  onFocus: () => void;
+}) {
   if (batches.length === 0)
     return <Eye className="size-4 text-slate-300" aria-hidden />;
   const shown = batches.slice(0, 6).join("/");
   const extra = batches.length > 6 ? ` +${batches.length - 6}` : "";
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onFocus();
+      }}
+      aria-pressed={focused}
+      className={`inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 whitespace-nowrap transition-colors ${
+        focused
+          ? "bg-primary/10 text-primary ring-1 ring-primary/30"
+          : "hover:bg-slate-100"
+      }`}
+    >
       <Eye className="size-4 shrink-0 text-slate-400" aria-hidden />
       <span className="text-primary underline underline-offset-2">
         {shown}
         {extra}
       </span>
-    </span>
+    </button>
+  );
+}
+
+function SortableHeader({
+  label,
+  column,
+}: {
+  label: string;
+  column: Column<OrderRow, unknown>;
+}) {
+  const sorted = column.getIsSorted();
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-slate-700"
+      onClick={column.getToggleSortingHandler()}
+    >
+      {label}
+      <ArrowUpDown
+        className={`size-3.5 ${sorted ? "text-primary" : "text-slate-400"}`}
+      />
+    </button>
   );
 }
 
@@ -195,6 +228,10 @@ export function OrdersClient({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [client, setClient] = useState("all");
+  const [buFilter, setBuFilter] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<Set<OrderStatus>>(new Set());
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [focusedBatchRow, setFocusedBatchRow] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<OrderRow | null>(null);
@@ -228,10 +265,23 @@ export function OrdersClient({
     });
   }
 
+  function toggleFilter<T>(setter: (fn: (prev: Set<T>) => Set<T>) => void, value: T) {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  }
+
+  const activeFilterCount = buFilter.size + statusFilter.size;
+
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (client !== "all" && r.client !== client) return false;
+      if (buFilter.size > 0 && (!r.bu || !buFilter.has(r.bu))) return false;
+      if (statusFilter.size > 0 && !statusFilter.has(r.status)) return false;
       if (!q) return true;
       return (
         r.po_number.toLowerCase().includes(q) ||
@@ -239,17 +289,17 @@ export function OrdersClient({
         (r.client ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, search, client]);
+  }, [rows, search, client, buFilter, statusFilter]);
 
   const columns = useMemo<ColumnDef<OrderRow>[]>(
     () => [
       {
         accessorKey: "bu",
-        header: "BU",
+        header: ({ column }) => <SortableHeader label="BU" column={column} />,
         cell: ({ row }) =>
           row.original.bu ? (
             <TagChip
-              label={row.original.bu}
+              label={displayBu(row.original.bu)}
               icon={buIcon(row.original.bu)}
               iconColor="#350065"
             />
@@ -259,7 +309,7 @@ export function OrdersClient({
       },
       {
         accessorKey: "type",
-        header: "Type",
+        header: ({ column }) => <SortableHeader label="Type" column={column} />,
         cell: ({ row }) =>
           row.original.type ? (
             <TagChip
@@ -272,7 +322,7 @@ export function OrdersClient({
       },
       {
         accessorKey: "client",
-        header: "Client",
+        header: ({ column }) => <SortableHeader label="Client" column={column} />,
         cell: ({ row }) => (
           <span className="font-medium text-slate-800">
             {row.original.client ?? dash}
@@ -281,7 +331,9 @@ export function OrdersClient({
       },
       {
         accessorKey: "po_number",
-        header: "PO No.",
+        header: ({ column }) => <SortableHeader label="PO No." column={column} />,
+        sortingFn: (a, b) =>
+          (Number(a.original.po_number) || 0) - (Number(b.original.po_number) || 0),
         cell: ({ row }) => (
           <span className="font-medium text-slate-800">
             {row.original.po_number}
@@ -290,32 +342,51 @@ export function OrdersClient({
       },
       {
         accessorKey: "client_reference",
-        header: "Client Ref.",
+        header: ({ column }) => (
+          <SortableHeader label="Client Ref." column={column} />
+        ),
         cell: ({ row }) => row.original.client_reference || dash,
       },
       {
         id: "batches",
         header: "Batch No.",
-        cell: ({ row }) => <BatchCell batches={row.original.batches} />,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <BatchCell
+            batches={row.original.batches}
+            focused={focusedBatchRow === row.original.id}
+            onFocus={() =>
+              setFocusedBatchRow((id) =>
+                id === row.original.id ? null : row.original.id
+              )
+            }
+          />
+        ),
       },
       {
         accessorKey: "leader",
-        header: "Leader",
+        header: ({ column }) => <SortableHeader label="Leader" column={column} />,
         cell: ({ row }) => row.original.leader ?? dash,
       },
       {
         accessorKey: "requester",
-        header: "Requester",
+        header: ({ column }) => (
+          <SortableHeader label="Requester" column={column} />
+        ),
         cell: ({ row }) => row.original.requester ?? dash,
       },
       {
         accessorKey: "exporter",
-        header: "Exporter",
+        header: ({ column }) => (
+          <SortableHeader label="Exporter" column={column} />
+        ),
         cell: ({ row }) => row.original.exporter ?? dash,
       },
       {
         accessorKey: "date_create",
-        header: "Date Create Order",
+        header: ({ column }) => (
+          <SortableHeader label="Date Create Order" column={column} />
+        ),
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-slate-600">
             {formatDate(row.original.date_create)}
@@ -324,23 +395,29 @@ export function OrdersClient({
       },
       {
         accessorKey: "status",
-        header: "Status PO",
+        header: ({ column }) => <SortableHeader label="Status PO" column={column} />,
         cell: ({ row }) => <StatusChip status={row.original.status} />,
       },
       {
         accessorKey: "schedule_requested",
-        header: "Schedule Req.",
+        header: ({ column }) => (
+          <SortableHeader label="Schedule Req." column={column} />
+        ),
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-slate-600">
-            {formatDate(row.original.schedule_requested)}
+            {formatDateNumeric(row.original.schedule_requested)}
           </span>
         ),
       },
       {
         id: "actions",
         header: "",
+        enableSorting: false,
         cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-0.5">
+          <div
+            className="flex items-center justify-end gap-0.5"
+            onClick={(event) => event.stopPropagation()}
+          >
             <Button
               variant="ghost"
               size="icon-sm"
@@ -366,7 +443,7 @@ export function OrdersClient({
         ),
       },
     ],
-    []
+    [focusedBatchRow]
   );
 
   const table = useReactTable({
@@ -374,6 +451,9 @@ export function OrdersClient({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: setSorting,
+    state: { sorting },
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -427,14 +507,62 @@ export function OrdersClient({
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          className="h-11 rounded-xl bg-white"
-          onClick={() => toast.info("Filters — coming soon.")}
-        >
-          <Filter />
-          Filters
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="h-11 rounded-xl bg-white">
+              <Filter />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>Business Unit</DropdownMenuLabel>
+            {businessUnits.map((b) => (
+              <DropdownMenuCheckboxItem
+                key={b.id}
+                checked={buFilter.has(b.name)}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={() => toggleFilter(setBuFilter, b.name)}
+              >
+                {displayBu(b.name)}
+              </DropdownMenuCheckboxItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Status</DropdownMenuLabel>
+            {(Object.entries(ORDER_STATUS_LABELS) as [OrderStatus, string][]).map(
+              ([value, label]) => (
+                <DropdownMenuCheckboxItem
+                  key={value}
+                  checked={statusFilter.has(value)}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={() => toggleFilter(setStatusFilter, value)}
+                >
+                  {label}
+                </DropdownMenuCheckboxItem>
+              )
+            )}
+            {activeFilterCount > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-center"
+                  onClick={() => {
+                    setBuFilter(new Set());
+                    setStatusFilter(new Set());
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="overflow-x-auto rounded-2xl border bg-white">
@@ -458,7 +586,11 @@ export function OrdersClient({
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className="hover:bg-slate-50/60">
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-slate-50/60"
+                  onClick={() => router.push(`/orders/${row.original.id}`)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
