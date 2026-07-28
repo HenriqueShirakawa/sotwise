@@ -7,7 +7,7 @@ import { supabaseAdmin } from "./client";
 import { fetchAll } from "./bubble";
 import {
   upsertByBubbleId, upsertJunction, loadIdMap, tableCount,
-  str, reqStr, bool, ref, dateOnly,
+  str, reqStr, bool, ref, dateOnly, tsz,
 } from "./upsert";
 
 type Row = Record<string, any>;
@@ -307,6 +307,41 @@ async function refreshOrderStatusesFromBatches() {
   return { fetched: statusesByOrder.size, upserted: changes.length };
 }
 
+/**
+ * Backfill pontual de `orders.created_at` a partir de "Data criação" do Bubble
+ * (campo custom do usuário — "Created Date" nativo foi resetado numa
+ * reimportação e não reflete a data real). Só toca essa coluna via
+ * `.update()` — NÃO usa upsert, pra não sobrescrever status/outros campos
+ * que já possam ter divergido do Bubble desde a migração inicial.
+ */
+async function backfillOrderCreatedAt() {
+  const ordersRaw = await fetchAll("[vistapub]order");
+  const orderMap = await loadIdMap("orders");
+
+  const updates = ordersRaw
+    .map((o) => {
+      const id = orderMap.get(o._id);
+      const createdAt = tsz(o["Data criação"]) ?? tsz(o["Created Date"]);
+      if (!id || !createdAt) return null;
+      return { id, created_at: createdAt };
+    })
+    .filter(Boolean) as { id: string; created_at: string }[];
+
+  const WRITE_BATCH = 25;
+  for (let i = 0; i < updates.length; i += WRITE_BATCH) {
+    const writes = updates.slice(i, i + WRITE_BATCH).map(async (u) => {
+      const { error } = await supabaseAdmin
+        .from("orders")
+        .update({ created_at: u.created_at })
+        .eq("id", u.id);
+      if (error) throw new Error(`backfill created_at order ${u.id}: ${error.message}`);
+    });
+    await Promise.all(writes);
+  }
+
+  return { fetched: ordersRaw.length, upserted: updates.length };
+}
+
 function loadingStatus(label: unknown): string | null {
   const s = norm(label);
   if (s === "total") return "total";
@@ -343,6 +378,10 @@ async function importTransactionalCore() {
     leader_id: null,
     status: orderStatus(o["Status Order OS [Vistapub]"]),
     date_po: dateOnly(o["Date PO"]),
+    // "Data criação" é um campo custom que o usuário criou pra preservar a
+    // data real de criação — "Created Date" (built-in do Bubble) foi resetado
+    // numa reimportação de dados e não reflete a data original.
+    created_at: tsz(o["Data criação"]) ?? tsz(o["Created Date"]) ?? undefined,
     created_by: ref(userMap, o["Created By"]),
     bubble_id: o._id,
   }));
@@ -580,7 +619,7 @@ const COUNT_TABLES = [
 ];
 
 async function main() {
-  const phase = process.argv[2] ?? "all"; // all | base | core | preload
+  const phase = process.argv[2] ?? "all"; // all | base | core | preload | checklist | dates
 
   if (phase === "all" || phase === "base") {
     console.log("== Camada 1: usuários + cadastros ==\n");
@@ -604,6 +643,12 @@ async function main() {
     for (const [t, r] of Object.entries(pl)) {
       console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
     }
+  }
+
+  if (phase === "dates") {
+    console.log("\n== Backfill: orders.created_at (Data criação) ==\n");
+    const bf = await backfillOrderCreatedAt();
+    console.log(`orders.created_at: fetched ${bf.fetched}, upserted ${bf.upserted}`);
   }
 
   if (phase === "all" || phase === "checklist") {
