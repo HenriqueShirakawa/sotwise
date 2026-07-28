@@ -226,6 +226,87 @@ function batchStatus(label: unknown): string {
   if (s.includes("cancel") || s.includes("duplicate")) return "canceled";
   return "in_negotiation";
 }
+
+/**
+ * Status materializado da Order. Lotes cancelados não participam do rollup;
+ * `preloading` continua sendo uma fase de produção para a Order.
+ */
+function rollupOrderStatus(statuses: string[], currentStatus: string): string {
+  // O cancelamento da Order é uma decisão explícita e não pode ser deduzido
+  // apenas pelos lotes, que são devolvidos a uma fase anterior antes de cancelar.
+  if (currentStatus === "canceled") return "canceled";
+
+  const active = statuses.filter((status) => status !== "canceled");
+  if (active.length === 0) return currentStatus;
+  if (active.every((status) => status === "delivered")) return "delivered";
+
+  const hasTransit = active.includes("in_transit");
+  const hasDelivered = active.includes("delivered");
+  const hasProduction = active.some(
+    (status) => status === "in_production" || status === "preloading"
+  );
+
+  if (hasTransit && hasDelivered) return "partially_delivered";
+  if (active.every((status) => status === "in_transit")) return "shipped";
+  if (hasTransit && hasProduction) return "partially_shipped";
+  if (active.every((status) => status === "in_production" || status === "preloading")) {
+    return "in_production";
+  }
+  return "in_negotiation";
+}
+
+/** Recalcula o rollup das Orders após importar/atualizar os lotes. */
+async function refreshOrderStatusesFromBatches() {
+  const statusesByOrder = new Map<string, string[]>();
+  const currentStatusByOrder = new Map<string, string>();
+  const PAGE = 1000;
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("batches")
+      .select("order_id, status")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`load batches for order rollup: ${error.message}`);
+    for (const batch of data ?? []) {
+      const statuses = statusesByOrder.get(batch.order_id) ?? [];
+      statuses.push(batch.status);
+      statusesByOrder.set(batch.order_id, statuses);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("orders")
+      .select("id, status")
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`load orders for status rollup: ${error.message}`);
+    for (const order of data ?? []) currentStatusByOrder.set(order.id, order.status);
+    if (!data || data.length < PAGE) break;
+  }
+
+  const changes = [...statusesByOrder.entries()]
+    .map(([id, statuses]) => ({
+      id,
+      status: rollupOrderStatus(statuses, currentStatusByOrder.get(id) ?? "in_negotiation"),
+    }))
+    .filter((order) => currentStatusByOrder.get(order.id) !== order.status);
+
+  const WRITE_BATCH = 25;
+  for (let i = 0; i < changes.length; i += WRITE_BATCH) {
+    const writes = changes.slice(i, i + WRITE_BATCH).map(async (order) => {
+      const { error } = await supabaseAdmin
+        .from("orders")
+        .update({ status: order.status })
+        .eq("id", order.id);
+      if (error) throw new Error(`roll up order ${order.id}: ${error.message}`);
+    });
+    await Promise.all(writes);
+  }
+
+  return { fetched: statusesByOrder.size, upserted: changes.length };
+}
+
 function loadingStatus(label: unknown): string | null {
   const s = norm(label);
   if (s === "total") return "total";
@@ -269,6 +350,10 @@ async function importTransactionalCore() {
   const orderMap = await loadIdMap("orders");
 
   // BATCHES — da lista ORDENADA "Lista de Lotes x Orders" de cada order → .01/.02...
+  // A lista da OS define a numeração; o registro do lote traz seu status próprio.
+  // O fallback preserva lotes antigos sem o campo exposto no Bubble.
+  const batchesRaw = await fetchAll("[vistapub]orderxlotexpl");
+  const batchByBubbleId = new Map(batchesRaw.map((b) => [b._id, b]));
   const batchRows: Row[] = [];
   const seen = new Set<string>();
   for (const o of ordersRaw) {
@@ -280,12 +365,15 @@ async function importTransactionalCore() {
       batchRows.push({
         order_id: orderId,
         batch_number: "." + String(i + 1).padStart(2, "0"),
-        status: batchStatus(o["Status Order OS [Vistapub]"]),
+        status: batchStatus(
+          batchByBubbleId.get(bid)?.["Status Batch OS"] ?? o["Status Order OS [Vistapub]"]
+        ),
         bubble_id: bid,
       });
     });
   }
   results.batches = { fetched: batchRows.length, upserted: await upsertByBubbleId("batches", batchRows) };
+  results.orders_status_rollup = await refreshOrderStatusesFromBatches();
   const batchMap = await loadIdMap("batches");
 
   // ORDER_FACTORY_CATEGORY

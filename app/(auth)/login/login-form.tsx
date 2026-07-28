@@ -16,7 +16,6 @@ import {
   requestPasswordReset,
   type AuthActionState,
 } from "@/lib/auth/actions";
-import { cn } from "@/lib/utils";
 import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,9 +109,9 @@ export function LoginForm({
           <button
             type="button"
             onClick={() => setRecoverOpen(true)}
-            className="text-sm font-medium text-blue-600 hover:underline"
+            className="text-sm font-medium text-primary hover:underline"
           >
-            Forgot password
+            Forgot your password?
           </button>
         </div>
 
@@ -125,15 +124,10 @@ export function LoginForm({
         <Button
           type="submit"
           disabled={!canSubmit}
-          className={cn(
-            "h-11 w-full rounded-lg text-base font-semibold",
-            canSubmit
-              ? "bg-violet-600 text-white hover:bg-violet-700"
-              : "bg-slate-200 text-slate-400"
-          )}
+          className="h-11 w-full rounded-lg text-base font-semibold"
         >
           {pending ? <Loader2 className="animate-spin" /> : null}
-          Access
+          Log in
         </Button>
       </form>
 
@@ -197,12 +191,7 @@ function RecoverPasswordDialog({
             <Button
               type="submit"
               disabled={!email.trim() || pending}
-              className={cn(
-                "h-11 w-full rounded-lg font-semibold",
-                email.trim() && !pending
-                  ? "bg-violet-600 text-white hover:bg-violet-700"
-                  : "bg-slate-200 text-slate-400"
-              )}
+              className="h-11 w-full rounded-lg font-semibold"
             >
               {pending ? <Loader2 className="animate-spin" /> : null}
               Send instructions
@@ -213,7 +202,7 @@ function RecoverPasswordDialog({
         <button
           type="button"
           onClick={() => onOpenChange(false)}
-          className="mx-auto flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:underline"
+          className="mx-auto flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
         >
           <ArrowLeft className="size-4" />
           Back to login

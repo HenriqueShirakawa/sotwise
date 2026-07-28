@@ -45,7 +45,7 @@ export function AppShell({
         {sidebarInner()}
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col bg-slate-50">
+      <div className="flex min-w-0 flex-1 flex-col bg-background">
         {/* Top bar — só mobile */}
         <header className="flex h-14 items-center gap-2 border-b bg-white px-4 md:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -12,6 +13,9 @@ import {
   Search,
   Filter,
   Plus,
+  Download,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   Pencil,
   Trash2,
@@ -49,6 +53,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+
+import { deleteOrder } from "./actions";
+import { OrderFormModal } from "./order-form-modal";
+
+export type Ref = { id: string; name: string };
 
 export type OrderRow = {
   id: string;
@@ -65,22 +75,41 @@ export type OrderRow = {
   date_create: string;
   status: OrderStatus;
   schedule_requested: string | null;
+  // FK ids — usados para pré-selecionar o modal de edição.
+  order_type_id: string | null;
+  client_id: string | null;
+  business_unit_id: string | null;
+  requester_id: string | null;
+  exporter_id: string | null;
+  leader_id: string | null;
 };
 
 const STATUS: Record<OrderStatus, { label: string; cls: string }> = {
-  in_negotiation: { label: "In Negotiation", cls: "border-amber-300 text-amber-600" },
-  in_production: { label: "In Production", cls: "border-blue-300 text-blue-600" },
+  in_negotiation: {
+    label: "In Negotiation",
+    cls: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  in_production: {
+    label: "In Production",
+    cls: "border-red-200 bg-red-50 text-red-600",
+  },
   partially_shipped: {
     label: "Partially Shipped",
-    cls: "border-indigo-300 text-indigo-600",
+    cls: "border-blue-200 bg-blue-50 text-blue-600",
   },
-  shipped: { label: "Shipped", cls: "border-cyan-300 text-cyan-600" },
+  shipped: { label: "Shipped", cls: "border-cyan-200 bg-cyan-50 text-cyan-700" },
   partially_delivered: {
     label: "Partially Delivered",
-    cls: "border-violet-300 text-violet-600",
+    cls: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
   },
-  delivered: { label: "Delivered", cls: "border-emerald-300 text-emerald-600" },
-  canceled: { label: "Canceled", cls: "border-rose-300 text-rose-500" },
+  delivered: {
+    label: "Delivered",
+    cls: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  canceled: {
+    label: "Canceled",
+    cls: "border-rose-200 bg-rose-50 text-rose-600",
+  },
 };
 
 function buIcon(name: string): LucideIcon {
@@ -102,10 +131,18 @@ function typeIcon(name: string): LucideIcon {
   return Shapes;
 }
 
-function TagChip({ label, icon: Icon }: { label: string; icon: LucideIcon }) {
+function TagChip({
+  label,
+  icon: Icon,
+  iconColor = "#9500A8",
+}: {
+  label: string;
+  icon: LucideIcon;
+  iconColor?: string;
+}) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium whitespace-nowrap text-slate-700">
-      <Icon className="size-3.5 text-violet-500" />
+    <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium whitespace-nowrap text-gray-700">
+      <Icon className="size-3.5" style={{ color: iconColor }} />
       {label}
     </span>
   );
@@ -115,7 +152,7 @@ function StatusChip({ status }: { status: OrderStatus }) {
   const s = STATUS[status];
   return (
     <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${s.cls}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${s.cls}`}
     >
       {s.label}
     </span>
@@ -130,7 +167,7 @@ function BatchCell({ batches }: { batches: string[] }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <Eye className="size-4 shrink-0 text-slate-400" aria-hidden />
-      <span className="text-violet-600 underline underline-offset-2">
+      <span className="text-primary underline underline-offset-2">
         {shown}
         {extra}
       </span>
@@ -143,12 +180,53 @@ const dash = <span className="text-slate-300">—</span>;
 export function OrdersClient({
   rows,
   clients,
+  orderTypes,
+  businessUnits,
+  exporters,
+  profiles,
 }: {
   rows: OrderRow[];
-  clients: { id: string; name: string }[];
+  clients: Ref[];
+  orderTypes: Ref[];
+  businessUnits: Ref[];
+  exporters: Ref[];
+  profiles: Ref[];
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [client, setClient] = useState("all");
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<OrderRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  // Próximo número de PO (auto-gerado) = maior número + 1, igual ao Bubble.
+  const nextPo = useMemo(
+    () =>
+      String(rows.reduce((m, r) => Math.max(m, Number(r.po_number) || 0), 0) + 1),
+    [rows]
+  );
+
+  function openCreate() {
+    setEditing(null);
+    setFormOpen(true);
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    startTransition(async () => {
+      const res = await deleteOrder(id);
+      if (res.ok) {
+        toast.success("Order deleted.");
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+      setDeleteTarget(null);
+    });
+  }
 
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -170,7 +248,11 @@ export function OrdersClient({
         header: "BU",
         cell: ({ row }) =>
           row.original.bu ? (
-            <TagChip label={row.original.bu} icon={buIcon(row.original.bu)} />
+            <TagChip
+              label={row.original.bu}
+              icon={buIcon(row.original.bu)}
+              iconColor="#350065"
+            />
           ) : (
             dash
           ),
@@ -257,14 +339,17 @@ export function OrdersClient({
       {
         id: "actions",
         header: "",
-        cell: () => (
+        cell: ({ row }) => (
           <div className="flex items-center justify-end gap-0.5">
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-violet-600 hover:text-violet-700"
+              className="text-primary hover:text-primary/80"
               aria-label="Edit"
-              onClick={() => toast.info("Edit order — coming soon.")}
+              onClick={() => {
+                setEditing(row.original);
+                setFormOpen(true);
+              }}
             >
               <Pencil />
             </Button>
@@ -273,7 +358,7 @@ export function OrdersClient({
               size="icon-sm"
               className="text-rose-500 hover:text-rose-600"
               aria-label="Delete"
-              onClick={() => toast.info("Delete order — coming soon.")}
+              onClick={() => setDeleteTarget(row.original)}
             >
               <Trash2 />
             </Button>
@@ -298,18 +383,25 @@ export function OrdersClient({
     <div>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Orders List
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Orders
           </h1>
           <p className="text-sm text-muted-foreground">Orders management</p>
         </div>
-        <Button
-          className="h-11 rounded-xl bg-violet-600 px-5 text-white hover:bg-violet-700"
-          onClick={() => toast.info("Create Order — coming soon.")}
-        >
-          <Plus />
-          Create Order
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl"
+            onClick={() => toast.info("Download XLS — coming soon.")}
+          >
+            <Download />
+            Download XLS
+          </Button>
+          <Button className="h-11 rounded-xl px-5" onClick={openCreate}>
+            <Plus />
+            Create Order
+          </Button>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -318,7 +410,7 @@ export function OrdersClient({
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Type some Order"
+            placeholder="PO number"
             className="h-11 rounded-xl bg-white pl-9"
           />
         </div>
@@ -390,32 +482,57 @@ export function OrdersClient({
 
       <div className="mt-4 flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          {data.length} order{data.length === 1 ? "" : "s"}
+          Page {pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">
-            Page {pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
-          </span>
           <Button
             variant="outline"
-            size="sm"
-            className="rounded-lg bg-white"
+            size="icon"
+            className="rounded-lg"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
+            aria-label="Previous page"
           >
-            Previous
+            <ChevronLeft />
           </Button>
           <Button
             variant="outline"
-            size="sm"
-            className="rounded-lg bg-white"
+            size="icon"
+            className="rounded-lg"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
+            aria-label="Next page"
           >
-            Next
+            <ChevronRight />
           </Button>
         </div>
       </div>
+
+      <OrderFormModal
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        editing={editing}
+        nextPo={nextPo}
+        orderTypes={orderTypes}
+        clients={clients}
+        businessUnits={businessUnits}
+        exporters={exporters}
+        profiles={profiles}
+      />
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete order?"
+        description={
+          deleteTarget
+            ? `Order ${deleteTarget.po_number} will be removed from the list.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={pending}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

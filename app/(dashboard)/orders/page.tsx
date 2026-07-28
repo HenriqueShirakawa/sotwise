@@ -94,15 +94,46 @@ export default async function OrdersPage() {
       date_create: o.created_at,
       status: o.status,
       schedule_requested: o.schedule_requested,
+      order_type_id: o.order_type_id,
+      client_id: o.client_id,
+      business_unit_id: o.business_unit_id,
+      requester_id: o.requester_id,
+      exporter_id: o.exporter_id,
+      leader_id: o.leader_id,
     };
   });
 
   // ordena por número de PO decrescente (1512, 1511, …) — igual ao Bubble
   rows.sort((a, b) => (Number(b.po_number) || 0) - (Number(a.po_number) || 0));
 
+  const byName = (a: { name: string }, b: { name: string }) =>
+    a.name.localeCompare(b.name);
+
   const clients = (clientRes.data ?? [])
     .map((c) => ({ id: c.id, name: c.name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(byName);
+  const orderTypes = (typeRes.data ?? [])
+    .map((t) => ({ id: t.id, name: t.name }))
+    .sort(byName);
+  const businessUnits = (buRes.data ?? [])
+    .map((b) => ({ id: b.id, name: b.name }))
+    .sort(byName);
+  const exporters = (exporterRes.data ?? [])
+    .map((e) => ({ id: e.id, name: e.acronym || e.name }))
+    .sort(byName);
+  const profiles = (profileRes.data ?? [])
+    .filter((p) => p.full_name)
+    .map((p) => ({ id: p.id, name: p.full_name as string }))
+    .sort(byName);
 
-  return <OrdersClient rows={rows} clients={clients} />;
+  return (
+    <OrdersClient
+      rows={rows}
+      clients={clients}
+      orderTypes={orderTypes}
+      businessUnits={businessUnits}
+      exporters={exporters}
+      profiles={profiles}
+    />
+  );
 }
