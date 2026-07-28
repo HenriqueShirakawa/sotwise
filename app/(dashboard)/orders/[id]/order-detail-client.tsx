@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatDate, formatDateNumeric } from "@/lib/format";
+import { formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -69,7 +69,7 @@ type OrderDetail = {
   requester: string | null;
   leader: string | null;
   exporter: string | null;
-  date_create: string;
+  date_po: string | null;
   status: OrderStatus;
   schedule_requested: string | null;
 };
@@ -81,6 +81,36 @@ function InfoField({ label, value }: { label: string; value: React.ReactNode }) 
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-medium text-slate-800">{value ?? dash}</p>
+    </div>
+  );
+}
+
+function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border p-4">
+      <p className="mb-3 border-b pb-2 text-sm font-semibold text-foreground">{title}</p>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function Avatar({ name }: { name: string | null }) {
+  const letter = name?.trim().charAt(0).toUpperCase() || "?";
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-500">
+      {letter}
+    </span>
+  );
+}
+
+function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
+      <Avatar name={name} />
+      <div>
+        <p className="text-sm font-medium text-slate-800">{name ?? dash}</p>
+        <p className="text-xs text-muted-foreground">{role}</p>
+      </div>
     </div>
   );
 }
@@ -102,7 +132,7 @@ export function OrderDetailClient({
   steps: ChecklistStepRow[];
 }) {
   const router = useRouter();
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(true);
   const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
 
@@ -148,7 +178,7 @@ export function OrderDetailClient({
                   Table information
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Open to see more information
+                  Informational data for consultation
                 </p>
               </div>
               <ChevronDown
@@ -159,24 +189,38 @@ export function OrderDetailClient({
             </button>
           </CollapsiblePrimitive.Trigger>
           <CollapsiblePrimitive.Content className="border-t px-6 py-5">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-              <InfoField label="PO No." value={order.po_number} />
-              <InfoField label="BU" value={order.bu} />
-              <InfoField label="Type" value={order.type} />
-              <InfoField label="Client" value={order.client} />
-              <InfoField label="Client Ref." value={order.client_reference} />
-              <InfoField label="Requester" value={order.requester} />
-              <InfoField label="Leader" value={order.leader} />
-              <InfoField label="Exporter" value={order.exporter} />
-              <InfoField label="Date Create Order" value={formatDate(order.date_create)} />
-              <InfoField
-                label="Schedule Req."
-                value={formatDateNumeric(order.schedule_requested)}
-              />
-              <InfoField
-                label="Status PO"
-                value={<StatusPill label={ORDER_STATUS_LABELS[order.status]} />}
-              />
+            <div className="grid gap-4 sm:grid-cols-3">
+              <InfoCard title="Main information">
+                <div className="grid grid-cols-2 gap-3">
+                  <InfoField label="PO Number" value={order.po_number} />
+                  <InfoField label="Date PO" value={formatDateNumeric(order.date_po)} />
+                </div>
+                <InfoField
+                  label="Status"
+                  value={<StatusPill label={ORDER_STATUS_LABELS[order.status]} />}
+                />
+                <InfoField label="Order Type" value={order.type} />
+                <InfoField
+                  label="Schedule Req."
+                  value={formatDateNumeric(order.schedule_requested)}
+                />
+              </InfoCard>
+              <InfoCard title="Customer information">
+                <div className="grid grid-cols-2 gap-3">
+                  <InfoField label="Client" value={order.client} />
+                  <InfoField
+                    label="Status"
+                    value={<StatusPill label={ORDER_STATUS_LABELS[order.status]} />}
+                  />
+                </div>
+                <InfoField label="Client reference" value={order.client_reference} />
+                <InfoField label="Business Unit" value={order.bu} />
+              </InfoCard>
+              <InfoCard title="Responsible">
+                <ResponsibleRow name={order.leader} role="Leader" />
+                <ResponsibleRow name={order.requester} role="Requester" />
+                <ResponsibleRow name={order.exporter} role="Exporter" />
+              </InfoCard>
             </div>
           </CollapsiblePrimitive.Content>
         </CollapsiblePrimitive.Root>
