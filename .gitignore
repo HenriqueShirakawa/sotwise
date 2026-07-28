@@ -41,4 +41,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# design references (Figma exports) — não são assets de produção, ver design/README.md
+/design/
+/Sotwise.zip
