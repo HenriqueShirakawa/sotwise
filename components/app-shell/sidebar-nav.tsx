@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { NAV, type NavGroup } from "./nav";
@@ -51,6 +51,12 @@ export function SidebarNav({
           >
             <Icon className="size-[18px] shrink-0" />
             <span className="flex-1">{item.title}</span>
+            <ExternalLink
+              className={cn(
+                "size-3.5 shrink-0",
+                active ? "text-white/70" : "text-slate-300"
+              )}
+            />
           </Link>
         );
       })}
