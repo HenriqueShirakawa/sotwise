@@ -587,6 +587,56 @@ export type Database = {
         >;
         Relationships: [];
       };
+      order_factory_category: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          category_id: UUID;
+          factory_id: UUID;
+          batch_id: UUID | null;
+          ship_requirement: DateStr;
+          loading_status: LoadingStatus | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          order_id: UUID;
+          category_id: UUID;
+          factory_id: UUID;
+          batch_id?: UUID | null;
+          ship_requirement: DateStr;
+          loading_status?: LoadingStatus | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["order_factory_category"]["Insert"]
+        >;
+        Relationships: [];
+      };
+      step_attachments: {
+        Row: {
+          id: UUID;
+          checklist_step_id: UUID;
+          file_path: string;
+          file_name: string | null;
+          uploaded_by: UUID | null;
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          checklist_step_id: UUID;
+          file_path: string;
+          file_name?: string | null;
+          uploaded_by?: UUID | null;
+          created_at?: Timestamp;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["step_attachments"]["Insert"]
+        >;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;

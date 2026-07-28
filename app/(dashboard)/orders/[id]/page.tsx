@@ -5,18 +5,18 @@ import { displayBu } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
-import { OrderDetailClient, type ChecklistStepRow } from "./order-detail-client";
+import { OrderDetailClient, type ChecklistStepRow, type OfcRow } from "./order-detail-client";
 
-// Ordem/curadoria igual à tela "Order progress" do Bubble — só os passos da
-// fase "order" (pre-loading/shipment têm suas próprias telas).
+// Ordem exata do Bubble — só os passos da fase "order" (pre-loading/shipment
+// têm suas próprias telas).
 const STEP_ORDER: ChecklistStep[] = [
   "order",
-  "packing_confirm",
   "po",
-  "condition_confirm",
   "pi",
-  "place_the_order",
   "deposit_payment",
+  "packing_confirm",
+  "condition_confirm",
+  "place_the_order",
   "etd",
   "balance_payment",
   "pre_loading",
@@ -42,53 +42,87 @@ export default async function OrderDetailPage({
 
   if (!order) notFound();
 
-  const [buRes, typeRes, clientRes, exporterRes, profileRes, batchesRes, stepsRes] =
-    await Promise.all([
-      order.business_unit_id
-        ? admin.from("business_units").select("name").eq("id", order.business_unit_id).single()
-        : Promise.resolve({ data: null }),
-      order.order_type_id
-        ? admin.from("order_types").select("name").eq("id", order.order_type_id).single()
-        : Promise.resolve({ data: null }),
-      order.client_id
-        ? admin.from("clients").select("name").eq("id", order.client_id).single()
-        : Promise.resolve({ data: null }),
-      order.exporter_id
-        ? admin.from("exporters").select("name, acronym").eq("id", order.exporter_id).single()
-        : Promise.resolve({ data: null }),
-      admin.from("profiles").select("id, full_name"),
-      admin
-        .from("batches")
-        .select("batch_number, status")
-        .eq("order_id", order.id)
-        .order("batch_number"),
-      admin
-        .from("order_checklist_steps")
-        .select(
-          "id, step, enabled, done, estimated_date, responsible_id, completed_on, signed_by_id"
-        )
-        .eq("order_id", order.id),
-    ]);
+  const [
+    buRes,
+    typeRes,
+    clientRes,
+    exporterRes,
+    profileRes,
+    batchesRes,
+    stepsRes,
+    ofcRes,
+    categoriesRes,
+    factoriesRes,
+  ] = await Promise.all([
+    order.business_unit_id
+      ? admin.from("business_units").select("name").eq("id", order.business_unit_id).single()
+      : Promise.resolve({ data: null }),
+    order.order_type_id
+      ? admin.from("order_types").select("name").eq("id", order.order_type_id).single()
+      : Promise.resolve({ data: null }),
+    order.client_id
+      ? admin.from("clients").select("name").eq("id", order.client_id).single()
+      : Promise.resolve({ data: null }),
+    order.exporter_id
+      ? admin.from("exporters").select("name, acronym").eq("id", order.exporter_id).single()
+      : Promise.resolve({ data: null }),
+    admin.from("profiles").select("id, full_name"),
+    admin
+      .from("batches")
+      .select("id, batch_number, status")
+      .eq("order_id", order.id)
+      .order("batch_number"),
+    admin
+      .from("order_checklist_steps")
+      .select(
+        "id, step, enabled, done, estimated_date, responsible_id, completed_on, signed_by_id"
+      )
+      .eq("order_id", order.id),
+    admin
+      .from("order_factory_category")
+      .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
+      .eq("order_id", order.id),
+    admin.from("categories").select("id, name").is("deleted_at", null).order("name"),
+    admin.from("factories").select("id, name").is("deleted_at", null).order("name"),
+  ]);
 
-  const profileMap = new Map(
-    (profileRes.data ?? []).map((p) => [p.id, p.full_name])
-  );
+  const profiles = (profileRes.data ?? [])
+    .filter((p) => p.full_name)
+    .map((p) => ({ id: p.id, name: p.full_name as string }));
+  const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
+  const categoryMap = new Map((categoriesRes.data ?? []).map((c) => [c.id, c.name]));
+  const factoryMap = new Map((factoriesRes.data ?? []).map((f) => [f.id, f.name]));
 
-  const stepByKey = new Map(
-    (stepsRes.data ?? []).map((s) => [s.step, s])
-  );
+  const stepRows = stepsRes.data ?? [];
+  const stepIds = stepRows.map((s) => s.id);
+  const attachmentsRes = stepIds.length
+    ? await admin
+        .from("step_attachments")
+        .select("id, checklist_step_id, file_name, file_path")
+        .in("checklist_step_id", stepIds)
+    : { data: [] };
+  const attachmentsByStep = new Map<string, { id: string; file_name: string | null }[]>();
+  for (const a of attachmentsRes.data ?? []) {
+    const arr = attachmentsByStep.get(a.checklist_step_id) ?? [];
+    arr.push({ id: a.id, file_name: a.file_name });
+    attachmentsByStep.set(a.checklist_step_id, arr);
+  }
+
+  const stepByKey = new Map(stepRows.map((s) => [s.step, s]));
 
   const steps: ChecklistStepRow[] = STEP_ORDER.filter((key) => stepByKey.has(key)).map(
     (key) => {
       const s = stepByKey.get(key)!;
       return {
+        id: s.id,
         step: s.step,
         enabled: s.enabled,
         done: s.done,
         estimated_date: s.estimated_date,
         completed_on: s.completed_on,
-        responsible: s.responsible_id ? profileMap.get(s.responsible_id) ?? null : null,
-        signed_by: s.signed_by_id ? profileMap.get(s.signed_by_id) ?? null : null,
+        responsible_id: s.responsible_id,
+        signed_by_id: s.signed_by_id,
+        attachments: attachmentsByStep.get(s.id) ?? [],
       };
     }
   );
@@ -98,8 +132,20 @@ export default async function OrderDetailPage({
     : null;
   const leaderName = order.leader_id ? profileMap.get(order.leader_id) ?? null : null;
 
+  const ofc: OfcRow[] = (ofcRes.data ?? []).map((o) => ({
+    id: o.id,
+    batch_id: o.batch_id,
+    category_id: o.category_id,
+    category_name: categoryMap.get(o.category_id) ?? "—",
+    factory_id: o.factory_id,
+    factory_name: factoryMap.get(o.factory_id) ?? "—",
+    ship_requirement: o.ship_requirement,
+    loading_status: o.loading_status,
+  }));
+
   return (
     <OrderDetailClient
+      orderId={order.id}
       order={{
         po_number: order.po_number,
         bu: buRes.data?.name ? displayBu(buRes.data.name) : null,
@@ -114,9 +160,14 @@ export default async function OrderDetailPage({
         schedule_requested: order.schedule_requested,
       }}
       batches={(batchesRes.data ?? []).map((b) => ({
+        id: b.id,
         batch_number: b.batch_number,
         status: b.status,
       }))}
+      ofc={ofc}
+      categories={(categoriesRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
+      factories={(factoriesRes.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
+      profiles={profiles}
       steps={steps}
     />
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
@@ -10,30 +10,58 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Circle,
-  AlertCircle,
   Download,
   Eye,
+  Paperclip,
+  Pencil,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
-import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
-import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
+import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
+import type { BatchStatus, ChecklistStep, LoadingStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
+import { SearchSelect } from "@/components/search-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+import {
+  createOrderFactoryCategory,
+  deleteOrderFactoryCategory,
+  updateBatchNumber,
+  updateBatchStatus,
+  updateChecklistStep,
+} from "./actions";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
   po: "PO",
   pi: "PI",
-  deposit_payment: "Deposit payment",
-  packing_confirm: "Packing confirmation",
-  condition_confirm: "Condition confirmation",
-  place_the_order: "Place the order",
+  deposit_payment: "Deposit Payment",
+  packing_confirm: "Packing Confirm.",
+  condition_confirm: "Condition Confirm.",
+  place_the_order: "Place the Order",
   etd: "ETD",
-  balance_payment: "Balance payment",
-  pre_loading: "Pre-loading",
+  balance_payment: "Balance Payment",
+  pre_loading: "Pre-Loading",
   consolidation_point: "Consolidation point",
   city: "City",
   port_of_loading: "Port of loading",
@@ -50,15 +78,42 @@ const STEP_LABELS: Record<ChecklistStep, string> = {
   delivered: "Delivered",
 };
 
+// Só estas 4 etapas têm toggle (podem ser desativadas p/ este pedido) — as
+// demais são fixas. Ver docs/regras_de_negocio.md §3.7.5.
+const TOGGLEABLE_STEPS = new Set<ChecklistStep>([
+  "deposit_payment",
+  "packing_confirm",
+  "condition_confirm",
+  "balance_payment",
+]);
+
+const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
+
 export type ChecklistStepRow = {
+  id: string;
   step: ChecklistStep;
   enabled: boolean;
   done: boolean;
   estimated_date: string | null;
   completed_on: string | null;
-  responsible: string | null;
-  signed_by: string | null;
+  responsible_id: string | null;
+  signed_by_id: string | null;
+  attachments: { id: string; file_name: string | null }[];
 };
+
+export type OfcRow = {
+  id: string;
+  batch_id: string | null;
+  category_id: string;
+  category_name: string;
+  factory_id: string;
+  factory_name: string;
+  ship_requirement: string;
+  loading_status: LoadingStatus | null;
+};
+
+type BatchRow = { id: string; batch_number: string; status: BatchStatus };
+type Ref = { id: string; name: string };
 
 type OrderDetail = {
   po_number: string;
@@ -117,24 +172,316 @@ function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
 
 function StepIcon({ enabled, done }: { enabled: boolean; done: boolean }) {
   if (!enabled) return <Circle className="size-5 fill-slate-300 text-slate-300" />;
-  if (done)
-    return <CheckCircle2 className="size-5 fill-emerald-600 text-white" />;
-  return <AlertCircle className="size-5 text-amber-500" />;
+  if (done) return <CheckCircle2 className="size-5 fill-emerald-600 text-white" />;
+  return <Circle className="size-5 fill-blue-500 text-blue-500" />;
+}
+
+function BatchStatusSelect({
+  value,
+  onChange,
+}: {
+  value: BatchStatus;
+  onChange: (value: BatchStatus) => void;
+}) {
+  const label = BATCH_STATUS_LABELS[value];
+  const hex = STATUS_COLORS[label] ?? "#475569";
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as BatchStatus)}
+      style={{ borderColor: `${hex}59`, color: hex }}
+      className="h-7 rounded-[4px] border bg-white px-1.5 text-xs font-medium"
+    >
+      {(Object.keys(BATCH_STATUS_LABELS) as BatchStatus[]).map((s) => (
+        <option key={s} value={s}>
+          {BATCH_STATUS_LABELS[s]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ViewBatchModal({
+  open,
+  onOpenChange,
+  batch,
+  rows,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  batch: BatchRow | null;
+  rows: OfcRow[];
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg text-primary">View batch</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Main information</p>
+            <Label className="text-foreground">Batch No.</Label>
+            <Input value={batch?.batch_number ?? ""} disabled className="mt-1.5 bg-muted" />
+          </div>
+          <div>
+            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
+            <div className="overflow-hidden rounded-lg border">
+              <div className="grid grid-cols-4 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                <span>Category</span>
+                <span>Factory</span>
+                <span>Ship req.</span>
+                <span>Batch No.</span>
+              </div>
+              {rows.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">No entries for this batch.</p>
+              ) : (
+                rows.map((r) => (
+                  <div key={r.id} className="grid grid-cols-4 border-t px-3 py-2.5 text-sm">
+                    <span className="text-slate-700">{r.category_name}</span>
+                    <span className="text-slate-700">{r.factory_name}</span>
+                    <span className="text-slate-700">{formatDateNumeric(r.ship_requirement)}</span>
+                    <span className="text-slate-700">{batch?.batch_number}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" className="sm:min-w-32" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditBatchModal({
+  open,
+  onOpenChange,
+  orderId,
+  batch,
+  rows,
+  categories,
+  factories,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  orderId: string;
+  batch: BatchRow | null;
+  rows: OfcRow[];
+  categories: Ref[];
+  factories: Ref[];
+  onSaved: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [batchNumber, setBatchNumber] = useState(batch?.batch_number ?? "");
+  const [categoryId, setCategoryId] = useState("");
+  const [factoryId, setFactoryId] = useState("");
+  const [shipRequirement, setShipRequirement] = useState("");
+
+  const openFor = open ? batch?.id ?? null : null;
+  const [syncedFor, setSyncedFor] = useState<string | null>(null);
+  if (openFor !== syncedFor) {
+    setSyncedFor(openFor);
+    setBatchNumber(batch?.batch_number ?? "");
+    setCategoryId("");
+    setFactoryId("");
+    setShipRequirement("");
+  }
+
+  function addRow() {
+    if (!batch || !categoryId || !factoryId || !shipRequirement) {
+      toast.error("Select a category, factory, and ship requirement date.");
+      return;
+    }
+    startTransition(async () => {
+      const res = await createOrderFactoryCategory(orderId, {
+        batch_id: batch.id,
+        category_id: categoryId,
+        factory_id: factoryId,
+        ship_requirement: shipRequirement,
+      });
+      if (res.ok) {
+        setCategoryId("");
+        setFactoryId("");
+        setShipRequirement("");
+        onSaved();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+
+  function removeRow(id: string) {
+    if (!batch) return;
+    startTransition(async () => {
+      const res = await deleteOrderFactoryCategory(orderId, batch.id, id);
+      if (res.ok) onSaved();
+      else toast.error(res.error);
+    });
+  }
+
+  function save() {
+    if (!batch) return;
+    startTransition(async () => {
+      const res = await updateBatchNumber(orderId, batch.id, batchNumber);
+      if (res.ok) {
+        toast.success("Batch updated.");
+        onSaved();
+        onOpenChange(false);
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg text-primary">Edit batch</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Main information</p>
+            <Label className="text-foreground">Batch No.</Label>
+            <Input
+              value={batchNumber}
+              onChange={(e) => setBatchNumber(e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label className="text-foreground">Category</Label>
+                <div className="mt-1.5">
+                  <SearchSelect
+                    value={categoryId}
+                    onChange={setCategoryId}
+                    options={categories}
+                    placeholder="Select category"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-foreground">Factory</Label>
+                  <div className="mt-1.5">
+                    <SearchSelect
+                      value={factoryId}
+                      onChange={setFactoryId}
+                      options={factories}
+                      placeholder="Select factory"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-foreground">Ship requirement</Label>
+                  <Input
+                    type="date"
+                    value={shipRequirement}
+                    onChange={(e) => setShipRequirement(e.target.value)}
+                    className="mt-1.5"
+                  />
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="mt-3 w-full"
+              onClick={addRow}
+              disabled={pending}
+            >
+              <Plus />
+              Add
+            </Button>
+
+            <div className="mt-3 overflow-hidden rounded-lg border">
+              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                <span>Category</span>
+                <span>Factory</span>
+                <span>Ship req.</span>
+                <span>Batch No.</span>
+                <span />
+              </div>
+              {rows.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
+              ) : (
+                rows.map((r) => (
+                  <div
+                    key={r.id}
+                    className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center border-t px-3 py-2 text-sm"
+                  >
+                    <span className="truncate text-slate-700">{r.category_name}</span>
+                    <span className="truncate text-slate-700">{r.factory_name}</span>
+                    <span className="text-slate-700">{formatDateNumeric(r.ship_requirement)}</span>
+                    <span className="text-slate-700">{batch?.batch_number}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-rose-500 hover:text-rose-600"
+                      aria-label="Delete"
+                      disabled={pending}
+                      onClick={() => removeRow(r.id)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="sm:min-w-32"
+            onClick={() => onOpenChange(false)}
+            disabled={pending}
+          >
+            Cancel
+          </Button>
+          <Button className="sm:min-w-32" onClick={save} disabled={pending}>
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function OrderDetailClient({
+  orderId,
   order,
   batches,
+  ofc,
+  categories,
+  factories,
+  profiles,
   steps,
 }: {
+  orderId: string;
   order: OrderDetail;
-  batches: { batch_number: string; status: BatchStatus }[];
+  batches: BatchRow[];
+  ofc: OfcRow[];
+  categories: Ref[];
+  factories: Ref[];
+  profiles: Ref[];
   steps: ChecklistStepRow[];
 }) {
   const router = useRouter();
   const [infoOpen, setInfoOpen] = useState(true);
   const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
+  const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
+  const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
@@ -145,6 +492,27 @@ export function OrderDetailClient({
       return next;
     });
   }
+
+  function saveBatchStatus(batch: BatchRow, status: BatchStatus) {
+    startBatchTransition(async () => {
+      const res = await updateBatchStatus(orderId, batch.id, status);
+      if (res.ok) router.refresh();
+      else toast.error(res.error);
+    });
+  }
+  const [, startBatchTransition] = useTransition();
+
+  function saveStepField(
+    step: ChecklistStepRow,
+    patch: Parameters<typeof updateChecklistStep>[2]
+  ) {
+    startStepTransition(async () => {
+      const res = await updateChecklistStep(orderId, step.id, patch);
+      if (res.ok) router.refresh();
+      else toast.error(res.error);
+    });
+  }
+  const [stepPending, startStepTransition] = useTransition();
 
   return (
     <div>
@@ -227,27 +595,79 @@ export function OrderDetailClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="grid grid-cols-2 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500">
-          <span>Batch No.</span>
-          <span>Status</span>
+        <div className="flex items-center justify-between border-b bg-slate-50/80 px-6 py-3">
+          <div className="grid flex-1 grid-cols-2 text-xs font-semibold text-slate-500">
+            <span>Batch No.</span>
+            <span>Status</span>
+          </div>
         </div>
         {batches.length === 0 ? (
           <p className="px-6 py-6 text-sm text-muted-foreground">
             No batches for this order.
           </p>
         ) : (
-          batches.map((b) => (
-            <div
-              key={b.batch_number}
-              className="grid grid-cols-2 items-center border-b px-6 py-3.5 text-sm last:border-b-0"
-            >
-              <span className="text-slate-700">{b.batch_number}</span>
-              <div className="flex items-center justify-between pr-2">
-                <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
-                <Eye className="size-4 text-slate-400" aria-hidden />
+          batches.map((b) => {
+            const editable = EDITABLE_BATCH_STATUSES.includes(b.status);
+            const rows = ofc.filter((r) => r.batch_id === b.id);
+            return (
+              <div
+                key={b.id}
+                className="grid grid-cols-2 items-center border-b px-6 py-3.5 text-sm last:border-b-0"
+              >
+                <span className="text-slate-700">{b.batch_number}</span>
+                <div className="flex items-center justify-between pr-2">
+                  {editable ? (
+                    <BatchStatusSelect
+                      value={b.status}
+                      onChange={(status) => saveBatchStatus(b, status)}
+                    />
+                  ) : (
+                    <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
+                  )}
+                  <div className="flex items-center gap-1">
+                    {editable && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Edit batch"
+                        onClick={() => setEditBatch(b)}
+                      >
+                        <Pencil className="size-4 text-slate-400" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="View batch"
+                      onClick={() => setViewBatch(b)}
+                    >
+                      <Eye className="size-4 text-slate-400" />
+                    </Button>
+                  </div>
+                </div>
+                {viewBatch?.id === b.id && (
+                  <ViewBatchModal
+                    open
+                    onOpenChange={(o) => !o && setViewBatch(null)}
+                    batch={b}
+                    rows={rows}
+                  />
+                )}
+                {editBatch?.id === b.id && (
+                  <EditBatchModal
+                    open
+                    onOpenChange={(o) => !o && setEditBatch(null)}
+                    orderId={orderId}
+                    batch={b}
+                    rows={rows}
+                    categories={categories}
+                    factories={factories}
+                    onSaved={() => router.refresh()}
+                  />
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -291,7 +711,15 @@ export function OrderDetailClient({
                     >
                       {STEP_LABELS[s.step]}
                     </button>
-                    <Switch checked={s.enabled} disabled />
+                    {TOGGLEABLE_STEPS.has(s.step) && (
+                      <Switch
+                        checked={s.enabled}
+                        disabled={stepPending}
+                        onCheckedChange={(checked) =>
+                          saveStepField(s, { enabled: checked })
+                        }
+                      />
+                    )}
                     <button
                       type="button"
                       aria-label={open ? "Collapse" : "Expand"}
@@ -305,17 +733,99 @@ export function OrderDetailClient({
                     </button>
                   </div>
                   {open && (
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 bg-slate-50/60 px-6 py-4 pl-15 sm:grid-cols-4">
-                      <InfoField
-                        label="Estimated Date"
-                        value={formatDateNumeric(s.estimated_date)}
-                      />
-                      <InfoField
-                        label="Completed On"
-                        value={formatDateNumeric(s.completed_on)}
-                      />
-                      <InfoField label="Responsible" value={s.responsible} />
-                      <InfoField label="Signed By" value={s.signed_by} />
+                    <div className="space-y-4 bg-slate-50/60 px-6 py-4 pl-15">
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">
+                            Estimated date
+                          </Label>
+                          <Input
+                            type="date"
+                            defaultValue={s.estimated_date ?? ""}
+                            disabled={stepPending}
+                            onChange={(e) =>
+                              saveStepField(s, { estimated_date: e.target.value || null })
+                            }
+                            className="mt-1 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">
+                            Responsible
+                          </Label>
+                          <Select
+                            value={s.responsible_id ?? ""}
+                            onValueChange={(v) =>
+                              saveStepField(s, { responsible_id: v || null })
+                            }
+                          >
+                            <SelectTrigger className="mt-1 w-full bg-white">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {profiles.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">
+                            Completed on
+                          </Label>
+                          <Input
+                            type="date"
+                            defaultValue={s.completed_on ?? ""}
+                            disabled={stepPending}
+                            onChange={(e) =>
+                              saveStepField(s, { completed_on: e.target.value || null })
+                            }
+                            className="mt-1 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">
+                            Signed by
+                          </Label>
+                          <Select
+                            value={s.signed_by_id ?? ""}
+                            onValueChange={(v) =>
+                              saveStepField(s, { signed_by_id: v || null })
+                            }
+                          >
+                            <SelectTrigger className="mt-1 w-full bg-white">
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {profiles.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Paperclip className="size-4 text-slate-400" />
+                        <span className="text-xs text-muted-foreground">
+                          Attached documents
+                        </span>
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
+                          {s.attachments.length} docs
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => toast.info("File upload — coming soon.")}
+                        >
+                          <Plus className="size-3.5" />
+                          Attach
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
