@@ -23,11 +23,10 @@ export const STATUS_COLORS: Record<string, string> = {
   Canceled: "#B91C1C",
 };
 
-/** Alpha aplicado por trás do hex (formato #RRGGBBAA). */
 export function statusChipStyle(hex: string): CSSProperties {
   return {
     borderColor: `${hex}59`, // ~35%
-    backgroundColor: `${hex}14`, // ~8%
+    backgroundColor: "#ffffff",
     color: hex,
   };
 }
