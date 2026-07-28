@@ -223,15 +223,23 @@ function RecoverPasswordDialog({
   );
 }
 
-/** Logos dos parceiros — PLACEHOLDER (trocar pelos SVGs oficiais AGK / RENCHUM). */
+/** Logos dos parceiros (auto-hospedados em /public). */
 function PartnerLogos() {
   return (
-    <div className="mt-8 flex items-center justify-center gap-4 opacity-70">
-      <span className="text-sm font-bold tracking-wide text-slate-700">AGK</span>
-      <span className="h-4 w-px bg-slate-300" />
-      <span className="text-sm font-semibold tracking-wide text-orange-500">
-        RENCHUM
-      </span>
+    <div className="mt-8 flex items-center justify-center gap-4">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/logo-agk.png"
+        alt="AGK Solution"
+        className="h-7 w-auto object-contain"
+      />
+      <span className="h-6 w-px bg-slate-200" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/logo-renchum.png"
+        alt="Renchum"
+        className="h-7 w-auto object-contain"
+      />
     </div>
   );
 }
