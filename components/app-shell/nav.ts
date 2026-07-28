@@ -1,15 +1,16 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  ClipboardList,
+  Package,
+  Factory,
   PackageOpen,
   Ship,
-  Factory,
   ListTodo,
-  Building2,
+  Layers,
   Users,
 } from "lucide-react";
 
-export type NavItem = {
+export type NavLink = {
+  type: "link";
   title: string;
   href: string;
   icon: LucideIcon;
@@ -17,32 +18,31 @@ export type NavItem = {
 };
 
 export type NavGroup = {
+  type: "group";
   title: string;
-  items: NavItem[];
+  icon: LucideIcon;
+  adminOnly?: boolean;
+  children: { title: string; href: string }[];
 };
 
-/** Navegação principal. `adminOnly` esconde o item para o papel `user`
- * (checagem cosmética — a autorização real é imposta no servidor). */
-export const NAV: NavGroup[] = [
+export type NavItem = NavLink | NavGroup;
+
+/** Menu principal — flat, no estilo Bubble. `adminOnly` esconde para `user`
+ * (cosmético; a autorização real é no servidor). */
+export const NAV: NavItem[] = [
+  { type: "link", title: "Orders", href: "/orders", icon: Package },
+  { type: "link", title: "ETD factories", href: "/etd-factories", icon: Factory },
+  { type: "link", title: "Pre-Loading", href: "/pre-loading", icon: PackageOpen },
+  { type: "link", title: "Shipments", href: "/shipments", icon: Ship },
+  { type: "link", title: "To do list", href: "/todo", icon: ListTodo },
   {
-    title: "Operations",
-    items: [
-      { title: "Orders", href: "/orders", icon: ClipboardList },
-      { title: "Pre-loading", href: "/pre-loading", icon: PackageOpen },
-      { title: "Shipments", href: "/shipments", icon: Ship },
-      { title: "ETD Factories", href: "/etd-factories", icon: Factory },
-      { title: "To do list", href: "/todo", icon: ListTodo },
-    ],
-  },
-  {
+    type: "group",
     title: "Registration",
-    items: [
-      { title: "Factories", href: "/registration/factories", icon: Factory },
-      { title: "Clients", href: "/registration/clients", icon: Building2 },
+    icon: Layers,
+    children: [
+      { title: "Factories", href: "/registration/factories" },
+      { title: "Clients", href: "/registration/clients" },
     ],
   },
-  {
-    title: "Administration",
-    items: [{ title: "Users", href: "/users", icon: Users, adminOnly: true }],
-  },
+  { type: "link", title: "Users", href: "/users", icon: Users, adminOnly: true },
 ];

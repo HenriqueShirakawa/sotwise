@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, ChevronsUpDown } from "lucide-react";
 
 import { signOut } from "@/lib/auth/actions";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -26,7 +24,8 @@ function initials(name: string) {
   );
 }
 
-export function UserMenu({
+/** Card do usuário no rodapé da sidebar (estilo Bubble). */
+export function UserCard({
   fullName,
   email,
   role,
@@ -38,26 +37,31 @@ export function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full">
-          <Avatar className="size-8">
-            <AvatarFallback className="text-xs">
+        <button
+          type="button"
+          className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-slate-100"
+        >
+          <Avatar className="size-9">
+            <AvatarFallback className="bg-violet-100 text-xs font-semibold text-violet-700">
               {initials(fullName)}
             </AvatarFallback>
           </Avatar>
-        </Button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-slate-800">
+              {fullName}
+            </p>
+            <p className="truncate text-xs capitalize text-slate-400">{role}</p>
+          </div>
+          <ChevronsUpDown className="size-4 shrink-0 text-slate-400" />
+        </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="grid gap-0.5">
-          <span className="truncate font-medium">{fullName}</span>
+      <DropdownMenuContent align="end" side="top" className="w-56">
+        <div className="px-2 py-1.5">
+          <p className="truncate text-sm font-medium">{fullName}</p>
           {email ? (
-            <span className="truncate text-xs font-normal text-muted-foreground">
-              {email}
-            </span>
+            <p className="truncate text-xs text-muted-foreground">{email}</p>
           ) : null}
-          <span className="text-xs font-normal capitalize text-muted-foreground">
-            {role}
-          </span>
-        </DropdownMenuLabel>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/profile">
