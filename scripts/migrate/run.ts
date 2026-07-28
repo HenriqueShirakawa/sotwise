@@ -342,6 +342,41 @@ async function backfillOrderCreatedAt() {
   return { fetched: ordersRaw.length, upserted: updates.length };
 }
 
+/**
+ * Backfill pontual de `orders.leader_id` a partir de "Order Resp" do Bubble
+ * (ver comentário em importTransactionalCore — "Order Resp" é o Leader, não
+ * um requester separado). Só toca essa coluna via `.update()`, mesmo
+ * cuidado do backfillOrderCreatedAt.
+ */
+async function backfillOrderLeader() {
+  const ordersRaw = await fetchAll("[vistapub]order");
+  const orderMap = await loadIdMap("orders");
+  const userMap = await loadIdMap("profiles");
+
+  const updates = ordersRaw
+    .map((o) => {
+      const id = orderMap.get(o._id);
+      const leaderId = ref(userMap, o["Order Resp"]);
+      if (!id || !leaderId) return null;
+      return { id, leader_id: leaderId };
+    })
+    .filter(Boolean) as { id: string; leader_id: string }[];
+
+  const WRITE_BATCH = 25;
+  for (let i = 0; i < updates.length; i += WRITE_BATCH) {
+    const writes = updates.slice(i, i + WRITE_BATCH).map(async (u) => {
+      const { error } = await supabaseAdmin
+        .from("orders")
+        .update({ leader_id: u.leader_id })
+        .eq("id", u.id);
+      if (error) throw new Error(`backfill leader_id order ${u.id}: ${error.message}`);
+    });
+    await Promise.all(writes);
+  }
+
+  return { fetched: ordersRaw.length, upserted: updates.length };
+}
+
 function loadingStatus(label: unknown): string | null {
   const s = norm(label);
   if (s === "total") return "total";
@@ -374,8 +409,14 @@ async function importTransactionalCore() {
     client_id: ref(clientMap, o["Clients"]),
     client_reference: str(o["Cliente Reference"]),
     business_unit_id: ref(buMap, o["Business Unit"]),
+    // "Order Resp" é, na prática, o "Leader" mostrado na tela do Bubble (não
+    // um requester distinto) — confirmado comparando a PO 1510 (Potenza), a
+    // única onde Bubble mostra Leader ≠ Requester: "Order Resp" resolve pro
+    // Leader (Regiane), não pro Requester (André Mazzuchelli). Não achamos o
+    // campo de origem do Requester real no objeto `order` do Bubble ainda,
+    // então requester_id continua espelhando o mesmo valor por enquanto.
     requester_id: ref(userMap, o["Order Resp"]),
-    leader_id: null,
+    leader_id: ref(userMap, o["Order Resp"]),
     status: orderStatus(o["Status Order OS [Vistapub]"]),
     date_po: dateOnly(o["Date PO"]),
     // "Data criação" é um campo custom que o usuário criou pra preservar a
@@ -619,7 +660,7 @@ const COUNT_TABLES = [
 ];
 
 async function main() {
-  const phase = process.argv[2] ?? "all"; // all | base | core | preload | checklist | dates
+  const phase = process.argv[2] ?? "all"; // all | base | core | preload | checklist | dates | leader
 
   if (phase === "all" || phase === "base") {
     console.log("== Camada 1: usuários + cadastros ==\n");
@@ -649,6 +690,12 @@ async function main() {
     console.log("\n== Backfill: orders.created_at (Data criação) ==\n");
     const bf = await backfillOrderCreatedAt();
     console.log(`orders.created_at: fetched ${bf.fetched}, upserted ${bf.upserted}`);
+  }
+
+  if (phase === "leader") {
+    console.log("\n== Backfill: orders.leader_id (Order Resp) ==\n");
+    const bf = await backfillOrderLeader();
+    console.log(`orders.leader_id: fetched ${bf.fetched}, upserted ${bf.upserted}`);
   }
 
   if (phase === "all" || phase === "checklist") {

@@ -168,12 +168,12 @@ function BatchCell({
       </PopoverTrigger>
       <PopoverContent
         onClick={(event) => event.stopPropagation()}
-        className="overflow-hidden py-1"
+        className="w-auto min-w-40 overflow-hidden py-1"
       >
         {batches.map((b) => (
           <div
             key={b.batch_number}
-            className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
+            className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
           >
             <span className="text-slate-600">{b.batch_number}</span>
             <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
