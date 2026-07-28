@@ -34,7 +34,7 @@ export default async function OrderDetailPage({
   const { data: order } = await admin
     .from("orders")
     .select(
-      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, created_at"
+      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, date_po"
     )
     .eq("id", id)
     .is("deleted_at", null)
@@ -109,7 +109,7 @@ export default async function OrderDetailPage({
         requester: requesterName,
         leader: leaderName,
         exporter: exporterRes.data ? exporterRes.data.acronym || exporterRes.data.name : null,
-        date_create: order.created_at,
+        date_po: order.date_po,
         status: order.status,
         schedule_requested: order.schedule_requested,
       }}
