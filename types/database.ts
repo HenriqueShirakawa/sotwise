@@ -485,6 +485,74 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["shipment_models"]["Insert"]>;
         Relationships: [];
       };
+      orders: {
+        Row: {
+          id: UUID;
+          po_number: string;
+          order_type_id: UUID | null;
+          schedule_requested: DateStr | null;
+          asap: boolean;
+          client_id: UUID | null;
+          client_reference: string | null;
+          business_unit_id: UUID | null;
+          requester_id: UUID | null;
+          exporter_id: UUID | null;
+          leader_id: UUID | null;
+          status: OrderStatus;
+          date_po: DateStr | null;
+          deleted_at: Timestamp | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          created_by: UUID | null;
+          bubble_id: string | null;
+        };
+        Insert: {
+          id?: UUID;
+          po_number: string;
+          order_type_id?: UUID | null;
+          schedule_requested?: DateStr | null;
+          asap?: boolean;
+          client_id?: UUID | null;
+          client_reference?: string | null;
+          business_unit_id?: UUID | null;
+          requester_id?: UUID | null;
+          exporter_id?: UUID | null;
+          leader_id?: UUID | null;
+          status?: OrderStatus;
+          date_po?: DateStr | null;
+          deleted_at?: Timestamp | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          created_by?: UUID | null;
+          bubble_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["orders"]["Insert"]>;
+        Relationships: [];
+      };
+      batches: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          batch_number: string;
+          status: BatchStatus;
+          split_from_batch_id: UUID | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          bubble_id: string | null;
+        };
+        Insert: {
+          id?: UUID;
+          order_id: UUID;
+          batch_number: string;
+          status?: BatchStatus;
+          split_from_batch_id?: UUID | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          bubble_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["batches"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
