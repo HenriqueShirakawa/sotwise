@@ -553,6 +553,40 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["batches"]["Insert"]>;
         Relationships: [];
       };
+      order_checklist_steps: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          step: ChecklistStep;
+          enabled: boolean;
+          done: boolean;
+          estimated_date: DateStr | null;
+          responsible_id: UUID | null;
+          completed_on: DateStr | null;
+          signed_by_id: UUID | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          bubble_id: string | null;
+        };
+        Insert: {
+          id?: UUID;
+          order_id: UUID;
+          step: ChecklistStep;
+          enabled?: boolean;
+          done?: boolean;
+          estimated_date?: DateStr | null;
+          responsible_id?: UUID | null;
+          completed_on?: DateStr | null;
+          signed_by_id?: UUID | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          bubble_id?: string | null;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["order_checklist_steps"]["Insert"]
+        >;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
