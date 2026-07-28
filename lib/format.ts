@@ -2,17 +2,37 @@ const TIME_ZONE = "America/Sao_Paulo";
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
-  month: "short",
+  month: "2-digit",
   year: "numeric",
   timeZone: TIME_ZONE,
 });
 
-/** Formata um timestamp/date do Postgres. Fuso America/Sao_Paulo. */
+/** Formata um timestamp/date do Postgres como dd/mm/yyyy. Fuso America/Sao_Paulo. */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return dateFormatter.format(date);
+}
+
+/** Datas de campos `date` do Postgres, sem conversão de fuso horário. */
+export function formatDateNumeric(value: string | null | undefined): string {
+  if (!value) return "—";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: TIME_ZONE,
+  }).format(date);
+}
+
+/** BU vem do banco como "Moto Parts", "Auto Parts"… a UI mostra só "Moto", "Auto". */
+export function displayBu(name: string): string {
+  return name.replace(/\s*parts$/i, "");
 }
 
 /** Moeda BRL (para uso futuro nos módulos transacionais). */
