@@ -653,6 +653,7 @@ export type Database = {
         Row: {
           id: UUID;
           checklist_step_id: UUID;
+          factory_id: UUID | null;
           file_path: string;
           file_name: string | null;
           uploaded_by: UUID | null;
@@ -661,6 +662,7 @@ export type Database = {
         Insert: {
           id?: UUID;
           checklist_step_id: UUID;
+          factory_id?: UUID | null;
           file_path: string;
           file_name?: string | null;
           uploaded_by?: UUID | null;

@@ -763,6 +763,8 @@ Dados de ETD (data estimada de saída da fábrica) por entrada fábrica×categor
 - ✅ **Ready date — NOVO campo (print do Bubble).** Além do boolean `ready`, existe uma **data** registrada **automaticamente no momento em que o checkbox "Ready Parts" é marcado**. Ela alimenta o cálculo do "Gap of Ready" na listagem.
 - ✅ **History — confirmado:** é um log de alterações que grava **apenas os campos que mudaram (diff)**, não o snapshot completo do registro a cada alteração.
 
+> ✅ **Etapa "ETD" do checklist — linha a linha, não agrupado (print da tela):** diferente da etapa "Place the Order" (agrupada por Factory, ver 3.7.5), a etapa ETD reexibe **uma linha por entrada `order_factory_category`** do pedido (Factory + Category + Batch, sem agrupar), com colunas editáveis inline: **Insp.** (`inspection`), **Ready?** (`ready`), **Initial Date**, **Current Date** (read-only, auto), **Dispatch loc.** (busca por Factory) e **Dispatch date**. O ícone de seta abre o drawer "ETD information" só com o campo **Remarks** (os demais campos já são editados direto na linha). Uma entrada sem `etd_info` ainda (comum — só ~1317 das 9441 entradas migradas do Bubble tinham ETD preenchido) fica com todos os campos em branco/desmarcado até o primeiro edit, que cria a linha (upsert por `order_factory_category_id`). `etd_history` continua não implementado (pendência já registrada em 12.8).
+
 ```sql
 create table public.etd_info (
   id                    uuid primary key default gen_random_uuid(),
@@ -956,12 +958,16 @@ create trigger trg_ocs_updated_at before update on public.order_checklist_steps
 create table public.step_attachments (
   id            uuid primary key default gen_random_uuid(),
   checklist_step_id uuid not null references public.order_checklist_steps(id) on delete cascade,
+  factory_id    uuid references public.factories(id),  -- só usado na etapa "Place the Order" (ver abaixo); null nas demais
   file_path     text not null,               -- bucket 'order-documents'
   file_name     text,
   uploaded_by   uuid references public.profiles(id),
   created_at    timestamptz not null default now()
 );
 ```
+
+> ✅ **Etapa "Place the Order" — visão agrupada por Factory (print da tela):** os campos padrão da etapa (Estimated date/Responsible/Completed on/Signed by) aparecem normalmente, e abaixo deles a **mesma entidade `order_factory_category`** da etapa PO é reexibida **agrupada por Factory**: uma linha por Factory com **"N° of categories"** = contagem de entradas daquela Factory neste pedido (não distinct — duas entradas com a mesma Category em lotes diferentes contam 2). Cada linha expande (chevron) pra uma sub-tabela **Categories | Batch Number**. Paginado (10 Factories por página).
+> - **Anexo por grupo:** o botão **"+ Attach"** de cada linha faz upload de documento vinculado a **essa combinação (Factory + etapa "Place the Order" + pedido)**, não à etapa inteira — por isso `step_attachments` ganhou a coluna `factory_id` (nullable; demais etapas continuam com anexo por etapa só, `factory_id = null`). A lista "Attached documents" some da UI genérica de etapa só pra "Place the Order" (substituída pelo anexo por Factory).
 
 #### Camada 2 do RBAC — "Profile Filters for Steps" (rua 25), 🔴 escopo indefinido
 

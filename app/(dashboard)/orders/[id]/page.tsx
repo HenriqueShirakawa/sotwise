@@ -5,7 +5,12 @@ import { displayBu } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
-import { OrderDetailClient, type ChecklistStepRow, type OfcRow } from "./order-detail-client";
+import {
+  OrderDetailClient,
+  type ChecklistStepRow,
+  type EtdInfoRow,
+  type OfcRow,
+} from "./order-detail-client";
 
 // Ordem exata do Bubble — só os passos da fase "order" (pre-loading/shipment
 // têm suas próprias telas).
@@ -108,16 +113,21 @@ export default async function OrderDetailPage({
   const attachmentsRes = stepIds.length
     ? await admin
         .from("step_attachments")
-        .select("id, checklist_step_id, file_name, file_path")
+        .select("id, checklist_step_id, factory_id, file_name, file_path")
         .in("checklist_step_id", stepIds)
     : { data: [] };
   const attachmentsByStep = new Map<
     string,
-    { id: string; file_name: string | null; file_path: string }[]
+    { id: string; factory_id: string | null; file_name: string | null; file_path: string }[]
   >();
   for (const a of attachmentsRes.data ?? []) {
     const arr = attachmentsByStep.get(a.checklist_step_id) ?? [];
-    arr.push({ id: a.id, file_name: a.file_name, file_path: a.file_path });
+    arr.push({
+      id: a.id,
+      factory_id: a.factory_id,
+      file_name: a.file_name,
+      file_path: a.file_path,
+    });
     attachmentsByStep.set(a.checklist_step_id, arr);
   }
 
@@ -156,6 +166,29 @@ export default async function OrderDetailPage({
     loading_status: o.loading_status,
   }));
 
+  const ofcIds = ofc.map((o) => o.id);
+  const etdRes = ofcIds.length
+    ? await admin
+        .from("etd_info")
+        .select(
+          "order_factory_category_id, inspection, ready, ready_date, initial_date, current_date, dispatch_location_id, dispatch_date, remarks"
+        )
+        .in("order_factory_category_id", ofcIds)
+    : { data: [] };
+  const etdByOfc: Record<string, EtdInfoRow> = {};
+  for (const e of etdRes.data ?? []) {
+    etdByOfc[e.order_factory_category_id] = {
+      inspection: e.inspection,
+      ready: e.ready,
+      ready_date: e.ready_date,
+      initial_date: e.initial_date,
+      current_date: e.current_date,
+      dispatch_location_id: e.dispatch_location_id,
+      dispatch_date: e.dispatch_date,
+      remarks: e.remarks,
+    };
+  }
+
   return (
     <OrderDetailClient
       orderId={order.id}
@@ -178,6 +211,7 @@ export default async function OrderDetailPage({
         status: b.status,
       }))}
       ofc={ofc}
+      etdByOfc={etdByOfc}
       categories={(categoriesRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
       factories={(factoriesRes.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
       profiles={profiles}
