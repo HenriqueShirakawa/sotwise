@@ -82,8 +82,18 @@ export default async function OrderDetailPage({
       .from("order_factory_category")
       .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
       .eq("order_id", order.id),
-    admin.from("categories").select("id, name").is("deleted_at", null).order("name"),
-    admin.from("factories").select("id, name").is("deleted_at", null).order("name"),
+    admin
+      .from("categories")
+      .select("id, name")
+      .is("deleted_at", null)
+      .neq("name", "")
+      .order("name"),
+    admin
+      .from("factories")
+      .select("id, name")
+      .is("deleted_at", null)
+      .neq("name", "")
+      .order("name"),
   ]);
 
   const profiles = (profileRes.data ?? [])

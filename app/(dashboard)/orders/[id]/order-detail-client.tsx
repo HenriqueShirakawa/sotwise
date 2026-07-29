@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/dialog";
 
 import {
+  createBatch,
   createOrderFactoryCategory,
   deleteOrderFactoryCategory,
   updateBatchNumber,
@@ -457,6 +458,218 @@ function EditBatchModal({
   );
 }
 
+type PendingRow = {
+  tempId: string;
+  category_id: string;
+  category_name: string;
+  factory_id: string;
+  factory_name: string;
+  ship_requirement: string;
+};
+
+function CreateBatchModal({
+  open,
+  onOpenChange,
+  orderId,
+  nextBatchNumber,
+  categories,
+  factories,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  orderId: string;
+  nextBatchNumber: string;
+  categories: Ref[];
+  factories: Ref[];
+  onCreated: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [batchNumber, setBatchNumber] = useState(nextBatchNumber);
+  const [categoryId, setCategoryId] = useState("");
+  const [factoryId, setFactoryId] = useState("");
+  const [shipRequirement, setShipRequirement] = useState("");
+  const [rows, setRows] = useState<PendingRow[]>([]);
+
+  const [syncedOpen, setSyncedOpen] = useState(false);
+  if (open !== syncedOpen) {
+    setSyncedOpen(open);
+    if (open) {
+      setBatchNumber(nextBatchNumber);
+      setCategoryId("");
+      setFactoryId("");
+      setShipRequirement("");
+      setRows([]);
+    }
+  }
+
+  const canAdd = !!categoryId && !!factoryId && !!shipRequirement;
+
+  function addRow() {
+    if (!canAdd) return;
+    const category_name = categories.find((c) => c.id === categoryId)?.name ?? "";
+    const factory_name = factories.find((f) => f.id === factoryId)?.name ?? "";
+    setRows((prev) => [
+      ...prev,
+      {
+        tempId: `${Date.now()}-${Math.random()}`,
+        category_id: categoryId,
+        category_name,
+        factory_id: factoryId,
+        factory_name,
+        ship_requirement: shipRequirement,
+      },
+    ]);
+    setCategoryId("");
+    setFactoryId("");
+    setShipRequirement("");
+  }
+
+  function removeRow(tempId: string) {
+    setRows((prev) => prev.filter((r) => r.tempId !== tempId));
+  }
+
+  function create() {
+    if (!batchNumber.trim()) {
+      toast.error("Batch No. is required.");
+      return;
+    }
+    startTransition(async () => {
+      const res = await createBatch(orderId, {
+        batch_number: batchNumber.trim(),
+        rows: rows.map(({ category_id, factory_id, ship_requirement }) => ({
+          category_id,
+          factory_id,
+          ship_requirement,
+        })),
+      });
+      if (res.ok) {
+        toast.success("Batch created.");
+        onCreated();
+        onOpenChange(false);
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg text-primary">Create batch</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Main information</p>
+            <Label className="text-foreground">Batch No.</Label>
+            <Input
+              value={batchNumber}
+              onChange={(e) => setBatchNumber(e.target.value)}
+              className="mt-1.5"
+            />
+          </div>
+
+          <div>
+            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label className="text-foreground">Category</Label>
+                <div className="mt-1.5">
+                  <SearchSelect
+                    value={categoryId}
+                    onChange={setCategoryId}
+                    options={categories}
+                    placeholder="Select category"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-foreground">Factory</Label>
+                  <div className="mt-1.5">
+                    <SearchSelect
+                      value={factoryId}
+                      onChange={setFactoryId}
+                      options={factories}
+                      placeholder="Select factory"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-foreground">Ship requirement</Label>
+                  <Input
+                    type="date"
+                    value={shipRequirement}
+                    onChange={(e) => setShipRequirement(e.target.value)}
+                    className="mt-1.5"
+                  />
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="mt-3 w-full"
+              onClick={addRow}
+              disabled={!canAdd}
+            >
+              <Plus />
+              Add
+            </Button>
+
+            <div className="mt-3 overflow-hidden rounded-lg border">
+              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                <span>Category</span>
+                <span>Factory</span>
+                <span>Ship req.</span>
+                <span>Batch No.</span>
+                <span />
+              </div>
+              {rows.length === 0 ? (
+                <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
+              ) : (
+                rows.map((r) => (
+                  <div
+                    key={r.tempId}
+                    className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center border-t px-3 py-2 text-sm"
+                  >
+                    <span className="truncate text-slate-700">{r.category_name}</span>
+                    <span className="truncate text-slate-700">{r.factory_name}</span>
+                    <span className="text-slate-700">{formatDateNumeric(r.ship_requirement)}</span>
+                    <span className="text-slate-700">{batchNumber}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-rose-500 hover:text-rose-600"
+                      aria-label="Delete"
+                      onClick={() => removeRow(r.tempId)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            className="sm:min-w-32"
+            onClick={() => onOpenChange(false)}
+            disabled={pending}
+          >
+            Cancel
+          </Button>
+          <Button className="sm:min-w-32" onClick={create} disabled={pending}>
+            Create
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OrderDetailClient({
   orderId,
   order,
@@ -482,6 +695,8 @@ export function OrderDetailClient({
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
   const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
+  const [createBatchOpen, setCreateBatchOpen] = useState(false);
+  const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
@@ -600,6 +815,10 @@ export function OrderDetailClient({
             <span>Batch No.</span>
             <span>Status</span>
           </div>
+          <Button variant="outline" size="sm" onClick={() => setCreateBatchOpen(true)}>
+            Create batch
+            <Plus className="size-3.5" />
+          </Button>
         </div>
         {batches.length === 0 ? (
           <p className="px-6 py-6 text-sm text-muted-foreground">
@@ -669,6 +888,15 @@ export function OrderDetailClient({
             );
           })
         )}
+        <CreateBatchModal
+          open={createBatchOpen}
+          onOpenChange={setCreateBatchOpen}
+          orderId={orderId}
+          nextBatchNumber={nextBatchNumber}
+          categories={categories}
+          factories={factories}
+          onCreated={() => router.refresh()}
+        />
       </div>
 
       <div className="rounded-2xl border bg-white">
