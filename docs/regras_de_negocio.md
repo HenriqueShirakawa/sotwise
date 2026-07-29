@@ -733,6 +733,8 @@ As entradas Category + Factory + Batch + Ship requirement de um pedido. É a `Li
 > - Não há criação automática de Category/Factory a partir do CSV (comportamento *fail closed*, igual ao resto do sistema — ver seção 11): o usuário precisa **corrigir o valor na planilha e reenviar** o CSV, ou **cadastrar** a Factory/Category faltante em Registration antes de conseguir importar.
 > - Batch No. e Ship requirement (colunas também presentes no template do CSV, ver linha da tabela `order_factory_category` acima) não passam por essa mesma validação de "existe no cadastro" — são texto/data livres por linha, seguindo a mesma mecânica de "escolher existente ou criar novo" do seletor manual.
 
+> ✅ **Elegibilidade do lote pro seletor Batch No. — regra do Bubble confirmada:** um lote só aceita **novas** entradas Factory x Category (criação manual, CSV, ou troca de lote de uma entrada existente) enquanto está em **In Negotiation** ou **In Production**. A partir do momento em que avança pra **Pre-Loading** em diante (In Transit, Delivered, Canceled), ele "fecha" pra esse cadastro e some da lista de opções do seletor — mas se uma entrada já estiver ligada a ele, continua exibido normalmente (só não é mais possível trocar *para* ele). Mesmo critério que já valia no backend (`assertBatchEditable`); a mudança aqui é refletir isso na lista do seletor em vez de só rejeitar no servidor.
+
 ```sql
 create type public.loading_status as enum ('total', 'partial', 'none');
 

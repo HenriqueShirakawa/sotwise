@@ -92,7 +92,10 @@ const TOGGLEABLE_STEPS = new Set<ChecklistStep>([
   "balance_payment",
 ]);
 
-const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
+// Só lotes em In Negotiation/In Production aceitam novas entradas Factory x
+// Category (ou troca de lote de uma entrada existente) — uma vez em
+// Pre-Loading pra frente, o lote "fecha" pra esse cadastro (regra do Bubble).
+export const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
 
 export type ChecklistStepRow = {
   id: string;
