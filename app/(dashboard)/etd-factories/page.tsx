@@ -73,6 +73,7 @@ function buildRows(
 
     rows.push({
       id: ofc.id,
+      order_id: ofc.order_id,
       client: order.client_id ? (clientNameById.get(order.client_id) ?? null) : null,
       client_id: order.client_id,
       po_number: order.po_number,

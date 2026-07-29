@@ -35,11 +35,13 @@ import {
   FiltersModal,
   type EtdFactoriesFilters,
 } from "./filters-modal";
+import { EtdOrderModal } from "./etd-modal";
 
 export type Ref = { id: string; name: string };
 
 export type EtdFactoryRow = {
   id: string;
+  order_id: string;
   client: string | null;
   client_id: string | null;
   po_number: string;
@@ -111,6 +113,7 @@ export function EtdFactoriesClient({
   const [filters, setFilters] = useState<EtdFactoriesFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [modalOrder, setModalOrder] = useState<{ id: string; title: string } | null>(null);
 
   const filterCount = activeFilterCount(filters);
 
@@ -316,6 +319,14 @@ export function EtdFactoriesClient({
         categories={categories}
       />
 
+      <EtdOrderModal
+        orderId={modalOrder?.id ?? null}
+        title={modalOrder?.title ?? ""}
+        factories={factories}
+        open={!!modalOrder}
+        onOpenChange={(o) => !o && setModalOrder(null)}
+      />
+
       <div className="overflow-x-auto rounded-2xl border bg-white">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
@@ -337,7 +348,18 @@ export function EtdFactoriesClient({
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className="hover:bg-slate-50/60">
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-slate-50/60"
+                  onClick={() =>
+                    setModalOrder({
+                      id: row.original.order_id,
+                      title: `${row.original.client ? `${row.original.client} · ` : ""}PO ${
+                        row.original.po_number
+                      }`,
+                    })
+                  }
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
