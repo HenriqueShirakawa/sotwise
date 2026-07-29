@@ -615,6 +615,40 @@ export type Database = {
         >;
         Relationships: [];
       };
+      etd_info: {
+        Row: {
+          id: UUID;
+          order_factory_category_id: UUID;
+          remarks: string | null;
+          ready: boolean;
+          ready_date: DateStr | null;
+          inspection: boolean;
+          dispatch_location_id: UUID | null;
+          initial_date: DateStr | null;
+          dispatch_date: DateStr | null;
+          current_date: DateStr | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          bubble_id: string | null;
+        };
+        Insert: {
+          id?: UUID;
+          order_factory_category_id: UUID;
+          remarks?: string | null;
+          ready?: boolean;
+          ready_date?: DateStr | null;
+          inspection?: boolean;
+          dispatch_location_id?: UUID | null;
+          initial_date?: DateStr | null;
+          dispatch_date?: DateStr | null;
+          current_date?: DateStr | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          bubble_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["etd_info"]["Insert"]>;
+        Relationships: [];
+      };
       step_attachments: {
         Row: {
           id: UUID;

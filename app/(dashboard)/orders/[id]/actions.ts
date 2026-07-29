@@ -97,6 +97,108 @@ export async function createBatch(
   return { ok: true };
 }
 
+export async function deleteBatch(orderId: string, batchId: string): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  await assertBatchEditable(batchId);
+
+  const { error } = await admin.from("batches").delete().eq("id", batchId);
+  if (error) {
+    return {
+      ok: false,
+      error: "Can't delete this batch — it still has entries linked to it.",
+    };
+  }
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
+export async function updateOrderFactoryCategoryBatch(
+  orderId: string,
+  id: string,
+  batchId: string
+): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  await assertBatchEditable(batchId);
+
+  const { error } = await admin
+    .from("order_factory_category")
+    .update({ batch_id: batchId })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
+/**
+ * Bulk import do CSV "Factory x Category". Category/Factory já vêm validados
+ * (ids resolvidos) pelo cliente antes do Insert — aqui só resta o Batch No.,
+ * que segue a mesma mecânica do seletor manual: usa o lote existente (match
+ * por número) ou cria um novo na hora.
+ */
+export async function bulkImportOrderFactoryCategory(
+  orderId: string,
+  rows: {
+    category_id: string;
+    factory_id: string;
+    batch_number: string;
+    ship_requirement: string;
+  }[]
+): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  if (rows.length === 0) return { ok: false, error: "Nothing to import." };
+
+  const { data: existingBatches, error: batchesError } = await admin
+    .from("batches")
+    .select("id, batch_number")
+    .eq("order_id", orderId);
+  if (batchesError) return { ok: false, error: batchesError.message };
+
+  const batchIdByNumber = new Map(
+    (existingBatches ?? []).map((b) => [b.batch_number.trim().toLowerCase(), b.id])
+  );
+
+  const newBatchNumbers = Array.from(
+    new Set(
+      rows
+        .map((r) => r.batch_number.trim())
+        .filter((n) => n && !batchIdByNumber.has(n.toLowerCase()))
+    )
+  );
+
+  if (newBatchNumbers.length > 0) {
+    const { data: createdBatches, error: createError } = await admin
+      .from("batches")
+      .insert(newBatchNumbers.map((batch_number) => ({ order_id: orderId, batch_number })))
+      .select("id, batch_number");
+    if (createError) return { ok: false, error: createError.message };
+    for (const b of createdBatches ?? []) {
+      batchIdByNumber.set(b.batch_number.trim().toLowerCase(), b.id);
+    }
+  }
+
+  const { error: insertError } = await admin.from("order_factory_category").insert(
+    rows.map((r) => ({
+      order_id: orderId,
+      category_id: r.category_id,
+      factory_id: r.factory_id,
+      batch_id: batchIdByNumber.get(r.batch_number.trim().toLowerCase()) ?? null,
+      ship_requirement: r.ship_requirement,
+    }))
+  );
+  if (insertError) return { ok: false, error: insertError.message };
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
 export async function createOrderFactoryCategory(
   orderId: string,
   input: {
