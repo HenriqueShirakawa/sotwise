@@ -19,11 +19,20 @@ async function fetchAll<T>(
   return all;
 }
 
+// ETD do pedido = menor "Initial date" entre suas entradas Factory×Category.
+// Em vez de baixar order_factory_category inteiro (9.485 linhas) só pra mapear
+// ofc→order, embutimos o order_id no próprio etd_info (inner join) — traz só as
+// ~878 linhas de ETD com initial_date.
+type EtdOrderRow = {
+  initial_date: string | null;
+  order_factory_category: { order_id: string } | { order_id: string }[] | null;
+};
+
 export default async function OrdersPage() {
   await verifySession();
   const admin = createAdminClient();
 
-  const [orders, batches, ofcRows, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =
+  const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =
     await Promise.all([
       fetchAll<{
         id: string;
@@ -55,16 +64,13 @@ export default async function OrdersPage() {
       }>((from, to) =>
         admin.from("batches").select("order_id, batch_number, status").range(from, to)
       ),
-      fetchAll<{ id: string; order_id: string }>((from, to) =>
-        admin.from("order_factory_category").select("id, order_id").range(from, to)
-      ),
-      fetchAll<{ order_factory_category_id: string; initial_date: string | null }>(
-        (from, to) =>
-          admin
-            .from("etd_info")
-            .select("order_factory_category_id, initial_date")
-            .not("initial_date", "is", null)
-            .range(from, to)
+      fetchAll<EtdOrderRow>((from, to) =>
+        admin
+          .from("etd_info")
+          .select("initial_date, order_factory_category!inner(order_id)")
+          .not("initial_date", "is", null)
+          .range(from, to)
+          .returns<EtdOrderRow[]>()
       ),
       admin.from("business_units").select("id, name").is("deleted_at", null),
       admin.from("order_types").select("id, name, color").is("deleted_at", null),
@@ -94,11 +100,13 @@ export default async function OrdersPage() {
 
   // ETD do pedido = menor "Initial date" entre as entradas Factory x Category
   // dele (ver docs/regras_de_negocio.md §3.7.4) — usado só pro filtro da lista.
-  const orderByOfcId = new Map(ofcRows.map((o) => [o.id, o.order_id]));
   const etdByOrder = new Map<string, string>();
   for (const e of etdRows) {
     if (!e.initial_date) continue;
-    const orderId = orderByOfcId.get(e.order_factory_category_id);
+    const ofc = Array.isArray(e.order_factory_category)
+      ? e.order_factory_category[0]
+      : e.order_factory_category;
+    const orderId = ofc?.order_id;
     if (!orderId) continue;
     const current = etdByOrder.get(orderId);
     if (!current || e.initial_date < current) etdByOrder.set(orderId, e.initial_date);
