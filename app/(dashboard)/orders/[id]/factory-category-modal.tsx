@@ -34,7 +34,7 @@ import {
   deleteOrderFactoryCategory,
   updateOrderFactoryCategoryBatch,
 } from "./actions";
-import type { BatchRow, OfcRow, Ref } from "./order-detail-client";
+import { EDITABLE_BATCH_STATUSES, type BatchRow, type OfcRow, type Ref } from "./order-detail-client";
 
 const LOADING_STATUS_LABELS: Record<string, string> = {
   total: "Total",
@@ -70,6 +70,11 @@ function BatchPickerPopover({
   const [pending, startTransition] = useTransition();
   const selected = batches.find((b) => b.id === value);
   const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
+  // Uma vez em Pre-Loading pra frente o lote não aceita mais entradas novas —
+  // mas se a entrada já estiver nele (edição existente), mantém visível.
+  const selectableBatches = batches.filter(
+    (b) => EDITABLE_BATCH_STATUSES.includes(b.status) || b.id === value
+  );
 
   function addBatch() {
     startTransition(async () => {
@@ -109,8 +114,12 @@ function BatchPickerPopover({
         <div className="max-h-60 overflow-y-auto p-1">
           {batches.length === 0 ? (
             <p className="px-2 py-2 text-sm text-muted-foreground">No batches yet.</p>
+          ) : selectableBatches.length === 0 ? (
+            <p className="px-2 py-2 text-sm text-muted-foreground">
+              No batches eligible for new entries — create one below.
+            </p>
           ) : (
-            batches.map((b) => {
+            selectableBatches.map((b) => {
               const label = BATCH_STATUS_LABELS[b.status];
               const hex = STATUS_COLORS[label] ?? "#475569";
               return (
