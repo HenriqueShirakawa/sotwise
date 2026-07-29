@@ -8,6 +8,8 @@ import type { ActionResult } from "@/domain/orders/schema";
 import type { BatchStatus, TablesUpdate } from "@/types/database";
 
 const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
+const DOCUMENTS_BUCKET = "order-documents";
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 function path(orderId: string) {
   return `/orders/${orderId}`;
@@ -164,6 +166,76 @@ export async function updateChecklistStep(
 
   const { error } = await admin.from("order_checklist_steps").update(update).eq("id", stepId);
   if (error) return { ok: false, error: error.message };
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
+export async function uploadStepAttachment(
+  orderId: string,
+  stepId: string,
+  formData: FormData
+): Promise<ActionResult> {
+  const session = await verifySession();
+  const admin = createAdminClient();
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "No file selected." };
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return { ok: false, error: "File is larger than 20MB." };
+  }
+
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const filePath = `${orderId}/${stepId}/${Date.now()}-${safeName}`;
+
+  const { error: uploadError } = await admin.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(filePath, file, { contentType: file.type || undefined });
+  if (uploadError) return { ok: false, error: uploadError.message };
+
+  const { error: insertError } = await admin.from("step_attachments").insert({
+    checklist_step_id: stepId,
+    file_path: filePath,
+    file_name: file.name,
+    uploaded_by: session.userId,
+  });
+  if (insertError) {
+    await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
+    return { ok: false, error: insertError.message };
+  }
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
+export async function getAttachmentDownloadUrl(
+  filePath: string
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(filePath, 60);
+  if (error || !data) return { ok: false, error: error?.message ?? "Failed to sign URL." };
+
+  return { ok: true, url: data.signedUrl };
+}
+
+export async function deleteStepAttachment(
+  orderId: string,
+  attachmentId: string,
+  filePath: string
+): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
+  if (error) return { ok: false, error: error.message };
+
+  await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
   revalidatePath(path(orderId));
   return { ok: true };

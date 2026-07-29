@@ -111,10 +111,13 @@ export default async function OrderDetailPage({
         .select("id, checklist_step_id, file_name, file_path")
         .in("checklist_step_id", stepIds)
     : { data: [] };
-  const attachmentsByStep = new Map<string, { id: string; file_name: string | null }[]>();
+  const attachmentsByStep = new Map<
+    string,
+    { id: string; file_name: string | null; file_path: string }[]
+  >();
   for (const a of attachmentsRes.data ?? []) {
     const arr = attachmentsByStep.get(a.checklist_step_id) ?? [];
-    arr.push({ id: a.id, file_name: a.file_name });
+    arr.push({ id: a.id, file_name: a.file_name, file_path: a.file_path });
     attachmentsByStep.set(a.checklist_step_id, arr);
   }
 
