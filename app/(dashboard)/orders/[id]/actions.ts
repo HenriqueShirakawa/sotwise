@@ -417,7 +417,9 @@ export type EtdHistoryEntry = EtdHistorySnapshot & {
 /**
  * Edição "oficial" de UM campo do ETD, com motivo obrigatório — grava um
  * snapshot completo do estado em `etd_history` (ver print "ETD update").
- * Ready/Inspection seguem a mesma trava de `upsertEtdInfo`.
+ * Diferente de `upsertEtdInfo` (edição rápida na linha), aqui Ready/
+ * Inspection NÃO ficam travados — esse modal é justamente a via autorizada
+ * pra corrigir um valor já marcado, com motivo registrado no histórico.
  */
 export async function updateEtdInfoWithReason(
   orderId: string,
@@ -438,13 +440,6 @@ export async function updateEtdInfoWithReason(
     )
     .eq("order_factory_category_id", ofcId)
     .maybeSingle();
-
-  if (field === "ready" && existing?.ready) {
-    return { ok: false, error: "Ready is already locked." };
-  }
-  if (field === "inspection" && existing?.inspection) {
-    return { ok: false, error: "Inspection is already locked." };
-  }
 
   const update: TablesInsert<"etd_info"> = {
     order_factory_category_id: ofcId,

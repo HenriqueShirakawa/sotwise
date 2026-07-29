@@ -131,8 +131,16 @@ function EtdUpdateModal({
     }
   }
 
-  const locked = field === "ready" ? etd.ready : field === "inspection" ? etd.inspection : false;
-  const canSave = !!row && !!field && !locked && remarks.trim() !== "";
+  const canSave = !!row && !!field && remarks.trim() !== "";
+
+  function selectField(next: FieldKey) {
+    setField(next);
+    if (next === "ready") setBoolValue(etd.ready);
+    else if (next === "inspection") setBoolValue(etd.inspection);
+    else if (next === "current_date") setDateValue(etd.current_date ?? "");
+    else if (next === "dispatch_date") setDateValue(etd.dispatch_date ?? "");
+    else if (next === "dispatch_location_id") setLocationId(etd.dispatch_location_id ?? "");
+  }
 
   function save() {
     if (!row || !field) return;
@@ -184,7 +192,7 @@ function EtdUpdateModal({
             <div>
               <Label className="text-foreground">Select what you want to change:</Label>
               <div className="mt-1.5">
-                <Select value={field} onValueChange={(v) => setField(v as FieldKey)}>
+                <Select value={field} onValueChange={(v) => selectField(v as FieldKey)}>
                   <SelectTrigger className="w-full bg-white">
                     <SelectValue placeholder="Select a field" />
                   </SelectTrigger>
@@ -213,15 +221,9 @@ function EtdUpdateModal({
               </div>
             ) : field === "ready" || field === "inspection" ? (
               <div>
-                {locked && (
-                  <p className="mb-1.5 text-xs text-amber-600">
-                    Already set to yes — locked, can’t be changed here.
-                  </p>
-                )}
                 <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                   <Checkbox
                     checked={boolValue}
-                    disabled={locked}
                     onCheckedChange={(checked) => setBoolValue(!!checked)}
                   />
                   {field === "ready" ? "Ready" : "Inspection"}
