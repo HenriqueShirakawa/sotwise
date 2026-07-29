@@ -208,6 +208,15 @@ function BatchStatusSelect({
 
 const ROWS_PAGE_SIZE = 10;
 
+/** Ordena por Category, depois Factory — mesmo critério do modal Factory x Category. */
+function sortByCategoryFactory(rows: OfcRow[]): OfcRow[] {
+  return [...rows].sort(
+    (a, b) =>
+      a.category_name.localeCompare(b.category_name) ||
+      a.factory_name.localeCompare(b.factory_name)
+  );
+}
+
 function RowsPagination({
   page,
   setPage,
@@ -267,8 +276,12 @@ function ViewBatchModal({
     setSyncedFor(openFor);
     setPage(0);
   }
-  const safePage = Math.min(page, Math.max(0, Math.ceil(rows.length / ROWS_PAGE_SIZE) - 1));
-  const pageRows = rows.slice(safePage * ROWS_PAGE_SIZE, safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE);
+  const sortedRows = sortByCategoryFactory(rows);
+  const safePage = Math.min(page, Math.max(0, Math.ceil(sortedRows.length / ROWS_PAGE_SIZE) - 1));
+  const pageRows = sortedRows.slice(
+    safePage * ROWS_PAGE_SIZE,
+    safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -354,8 +367,12 @@ function EditBatchModal({
     setPage(0);
   }
 
-  const safePage = Math.min(page, Math.max(0, Math.ceil(rows.length / ROWS_PAGE_SIZE) - 1));
-  const pageRows = rows.slice(safePage * ROWS_PAGE_SIZE, safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE);
+  const sortedRows = sortByCategoryFactory(rows);
+  const safePage = Math.min(page, Math.max(0, Math.ceil(sortedRows.length / ROWS_PAGE_SIZE) - 1));
+  const pageRows = sortedRows.slice(
+    safePage * ROWS_PAGE_SIZE,
+    safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE
+  );
 
   function addRow() {
     if (!batch || !categoryId || !factoryId || !shipRequirement) {
