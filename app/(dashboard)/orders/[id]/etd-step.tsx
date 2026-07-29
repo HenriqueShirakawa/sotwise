@@ -129,6 +129,7 @@ function EtdUpdateModal({
   factories,
   open,
   onOpenChange,
+  onChanged,
 }: {
   orderId: string;
   row: OfcRow | null;
@@ -136,6 +137,7 @@ function EtdUpdateModal({
   factories: Ref[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -193,6 +195,7 @@ function EtdUpdateModal({
       if (res.ok) {
         toast.success("ETD updated.");
         router.refresh();
+        onChanged?.();
         const historyRes = await getEtdHistory(row.id);
         if (historyRes.ok) setHistory(historyRes.rows);
         setField("");
@@ -215,7 +218,7 @@ function EtdUpdateModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle className="text-lg text-primary">ETD update</DialogTitle>
           {row && (
@@ -225,8 +228,8 @@ function EtdUpdateModal({
           )}
         </DialogHeader>
 
-        <div className="min-w-0 space-y-4">
-          <div className="space-y-3 rounded-lg bg-slate-50 p-3">
+        <div className="min-w-0 space-y-5">
+          <div className="space-y-4 rounded-lg bg-slate-50 p-4">
             <div>
               <Label className="text-foreground">Select what you want to change:</Label>
               <div className="mt-1.5">
@@ -396,12 +399,14 @@ export function EtdStepTable({
   batches,
   etdByOfc,
   factories,
+  onChanged,
 }: {
   orderId: string;
   ofc: OfcRow[];
   batches: BatchRow[];
   etdByOfc: Record<string, EtdInfoRow>;
   factories: Ref[];
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -470,8 +475,10 @@ export function EtdStepTable({
   function save(ofcId: string, patch: Parameters<typeof upsertEtdInfo>[2]) {
     startTransition(async () => {
       const res = await upsertEtdInfo(orderId, ofcId, patch);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
+      if (res.ok) {
+        router.refresh();
+        onChanged?.();
+      } else toast.error(res.error);
     });
   }
 
@@ -620,6 +627,7 @@ export function EtdStepTable({
         factories={factories}
         open={!!modalRow}
         onOpenChange={(o) => !o && setModalRow(null)}
+        onChanged={onChanged}
       />
     </div>
   );

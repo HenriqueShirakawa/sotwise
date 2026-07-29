@@ -6,6 +6,7 @@ import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
 import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
+import type { BatchRow, EtdInfoRow, OfcRow } from "./order-detail-client";
 
 const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
 const DOCUMENTS_BUCKET = "order-documents";
@@ -486,6 +487,81 @@ export async function updateEtdInfoWithReason(
 
   revalidatePath(path(orderId));
   return { ok: true };
+}
+
+/**
+ * Carrega os dados da etapa ETD de um pedido na mesma forma consumida por
+ * `EtdStepTable` — usado pra abrir essa visualização fora do checklist (ex.: ao
+ * clicar numa linha da tela ETD Factories). Mesma lógica de `orders/[id]/page.tsx`.
+ */
+export async function getOrderEtdStepData(
+  orderId: string
+): Promise<
+  | { ok: true; ofc: OfcRow[]; batches: BatchRow[]; etdByOfc: Record<string, EtdInfoRow> }
+  | { ok: false; error: string }
+> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const [batchesRes, ofcRes, categoriesRes, factoriesRes] = await Promise.all([
+    admin
+      .from("batches")
+      .select("id, batch_number, status")
+      .eq("order_id", orderId)
+      .order("batch_number"),
+    admin
+      .from("order_factory_category")
+      .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
+      .eq("order_id", orderId),
+    admin.from("categories").select("id, name").is("deleted_at", null),
+    admin.from("factories").select("id, name").is("deleted_at", null),
+  ]);
+
+  const categoryMap = new Map((categoriesRes.data ?? []).map((c) => [c.id, c.name]));
+  const factoryMap = new Map((factoriesRes.data ?? []).map((f) => [f.id, f.name]));
+
+  const ofc: OfcRow[] = (ofcRes.data ?? []).map((o) => ({
+    id: o.id,
+    batch_id: o.batch_id,
+    category_id: o.category_id,
+    category_name: categoryMap.get(o.category_id) ?? "—",
+    factory_id: o.factory_id,
+    factory_name: factoryMap.get(o.factory_id) ?? "—",
+    ship_requirement: o.ship_requirement,
+    loading_status: o.loading_status,
+  }));
+
+  const ofcIds = ofc.map((o) => o.id);
+  const etdRes = ofcIds.length
+    ? await admin
+        .from("etd_info")
+        .select(
+          "order_factory_category_id, inspection, ready, ready_date, initial_date, current_date, dispatch_location_id, dispatch_date, remarks"
+        )
+        .in("order_factory_category_id", ofcIds)
+    : { data: [] };
+
+  const etdByOfc: Record<string, EtdInfoRow> = {};
+  for (const e of etdRes.data ?? []) {
+    etdByOfc[e.order_factory_category_id] = {
+      inspection: e.inspection,
+      ready: e.ready,
+      ready_date: e.ready_date,
+      initial_date: e.initial_date,
+      current_date: e.current_date,
+      dispatch_location_id: e.dispatch_location_id,
+      dispatch_date: e.dispatch_date,
+      remarks: e.remarks,
+    };
+  }
+
+  const batches: BatchRow[] = (batchesRes.data ?? []).map((b) => ({
+    id: b.id,
+    batch_number: b.batch_number,
+    status: b.status,
+  }));
+
+  return { ok: true, ofc, batches, etdByOfc };
 }
 
 export async function getEtdHistory(
