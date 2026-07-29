@@ -47,12 +47,14 @@ export function EtdOrderModal({
   const [data, setData] = useState<EtdStepData | null>(null);
   const [loading, setLoading] = useState(false);
 
-  function load(id: string) {
-    setLoading(true);
-    getOrderEtdStepData(id).then((res) => {
+  // `silent` recarrega sem trocar a tabela por "Loading…" — usado pra reconciliar
+  // os dados após uma edição, sem piscar o modal.
+  function load(id: string, silent = false) {
+    if (!silent) setLoading(true);
+    return getOrderEtdStepData(id).then((res) => {
       if (res.ok) setData({ ofc: res.ofc, batches: res.batches, etdByOfc: res.etdByOfc });
       else toast.error(res.error);
-      setLoading(false);
+      if (!silent) setLoading(false);
     });
   }
 
@@ -82,7 +84,9 @@ export function EtdOrderModal({
             batches={data.batches}
             etdByOfc={data.etdByOfc}
             factories={factories}
-            onChanged={() => orderId && load(orderId)}
+            onChanged={() => {
+              if (orderId) return load(orderId, true);
+            }}
           />
         )}
 
