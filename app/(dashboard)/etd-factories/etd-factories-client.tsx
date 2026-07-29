@@ -112,7 +112,7 @@ export function EtdFactoriesClient({
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<EtdFactoriesFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "po_batch", desc: false }]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "po_batch", desc: true }]);
   const [modalOrder, setModalOrder] = useState<{ id: string; title: string } | null>(null);
 
   const filterCount = activeFilterCount(filters);
