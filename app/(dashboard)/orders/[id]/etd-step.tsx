@@ -62,6 +62,7 @@ const EDITABLE_FIELDS = [
 type FieldKey = (typeof EDITABLE_FIELDS)[number]["value"];
 
 const HISTORY_PAGE_SIZE = 10;
+const ETD_PAGE_SIZE = 10;
 
 function RemarksCell({ remarks }: { remarks: string | null }) {
   const [open, setOpen] = useState(false);
@@ -368,6 +369,7 @@ export function EtdStepTable({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [modalRow, setModalRow] = useState<OfcRow | null>(null);
+  const [page, setPage] = useState(0);
 
   const batchNumberById = new Map(batches.map((b) => [b.id, b.batch_number]));
   const rows = [...ofc].sort(
@@ -380,6 +382,10 @@ export function EtdStepTable({
         { numeric: true }
       )
   );
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / ETD_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageRows = rows.slice(safePage * ETD_PAGE_SIZE, safePage * ETD_PAGE_SIZE + ETD_PAGE_SIZE);
 
   function save(ofcId: string, patch: Parameters<typeof upsertEtdInfo>[2]) {
     startTransition(async () => {
@@ -415,7 +421,7 @@ export function EtdStepTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((r) => {
+          {pageRows.map((r) => {
             const etd = etdByOfc[r.id] ?? EMPTY_ETD;
             return (
               <TableRow key={r.id}>
@@ -481,6 +487,31 @@ export function EtdStepTable({
           })}
         </TableBody>
       </Table>
+      <div className="flex items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
+        <span>
+          Page {safePage + 1} of {totalPages}
+        </span>
+        <div className="flex gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            disabled={safePage === 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+          >
+            ←
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+          >
+            →
+          </Button>
+        </div>
+      </div>
 
       <EtdUpdateModal
         orderId={orderId}
