@@ -318,15 +318,19 @@ function downloadTemplate() {
 
 function BulkImportPanel({
   orderId,
+  batches,
   categories,
   factories,
   onImported,
+  onBatchesChanged,
   onBack,
 }: {
   orderId: string;
+  batches: BatchRow[];
   categories: Ref[];
   factories: Ref[];
   onImported: () => void;
+  onBatchesChanged: () => void;
   onBack: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -384,6 +388,14 @@ function BulkImportPanel({
   const allRegistered = parsedRows.length > 0 && parsedRows.every((r) => r.categoryId && r.factoryId);
   const allComplete = parsedRows.every((r) => r.batchNumberRaw && r.shipRequirement);
   const canInsert = allRegistered && allComplete;
+
+  function setRowBatch(key: string, batchId: string) {
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch) return;
+    setParsedRows((prev) =>
+      prev.map((r) => (r.key === key ? { ...r, batchNumberRaw: batch.batch_number } : r))
+    );
+  }
 
   function submit() {
     if (!canInsert) return;
@@ -458,7 +470,7 @@ function BulkImportPanel({
 
       {parsedRows.length > 0 && (
         <div className="overflow-hidden rounded-lg border">
-          <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+          <div className="grid grid-cols-[1fr_1fr_140px_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
             <span>Category</span>
             <span>Factory</span>
             <span>Batch No.</span>
@@ -468,10 +480,13 @@ function BulkImportPanel({
           <div className="max-h-64 overflow-y-auto">
             {parsedRows.map((r) => {
               const ok = !!r.categoryId && !!r.factoryId;
+              const matchedBatch = batches.find(
+                (b) => b.batch_number.trim().toLowerCase() === r.batchNumberRaw.trim().toLowerCase()
+              );
               return (
                 <div
                   key={r.key}
-                  className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-2 border-t px-3 py-2 text-sm"
+                  className="grid grid-cols-[1fr_1fr_140px_1fr_auto] items-center gap-2 border-t px-3 py-2 text-sm"
                 >
                   <span className={ok ? "truncate text-slate-700" : "truncate text-rose-600"}>
                     {r.categoryRaw || "—"}
@@ -479,7 +494,13 @@ function BulkImportPanel({
                   <span className={ok ? "truncate text-slate-700" : "truncate text-rose-600"}>
                     {r.factoryRaw || "—"}
                   </span>
-                  <span className="truncate text-slate-700">{r.batchNumberRaw || "—"}</span>
+                  <BatchPickerPopover
+                    batches={batches}
+                    value={matchedBatch?.id ?? null}
+                    onChange={(id) => setRowBatch(r.key, id)}
+                    orderId={orderId}
+                    onBatchesChanged={onBatchesChanged}
+                  />
                   <span className="truncate text-slate-700">
                     {r.shipRequirement ? formatDateNumeric(r.shipRequirement) : "—"}
                   </span>
@@ -639,12 +660,14 @@ export function FactoryCategoryModal({
         {mode === "bulk" ? (
           <BulkImportPanel
             orderId={orderId}
+            batches={batches}
             categories={categories}
             factories={factories}
             onImported={() => {
               onChanged();
               setMode("entry");
             }}
+            onBatchesChanged={onChanged}
             onBack={() => setMode("entry")}
           />
         ) : (
