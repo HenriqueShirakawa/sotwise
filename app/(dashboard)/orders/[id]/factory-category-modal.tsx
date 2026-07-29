@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   Check,
   Plus,
@@ -40,6 +40,12 @@ const LOADING_STATUS_LABELS: Record<string, string> = {
   total: "Total",
   partial: "Partial",
   none: "None",
+};
+
+const LOADING_STATUS_STYLES: Record<string, string> = {
+  total: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  partial: "border-amber-200 bg-amber-50 text-amber-700",
+  none: "border-slate-200 bg-slate-50 text-slate-500",
 };
 
 const PAGE_SIZE = 8;
@@ -598,9 +604,30 @@ export function FactoryCategoryModal({
     });
   }
 
-  const totalPages = Math.max(1, Math.ceil(ofc.length / PAGE_SIZE));
+  const batchNumberById = useMemo(
+    () => new Map(batches.map((b) => [b.id, b.batch_number])),
+    [batches]
+  );
+
+  // Ordem fixa: Category → Factory → Batch No. (a listagem crua por ordem de
+  // criação ficava impossível de navegar em pedidos com muitas entradas).
+  const sortedOfc = useMemo(
+    () =>
+      [...ofc].sort((a, b) => {
+        const catCmp = a.category_name.localeCompare(b.category_name);
+        if (catCmp !== 0) return catCmp;
+        const facCmp = a.factory_name.localeCompare(b.factory_name);
+        if (facCmp !== 0) return facCmp;
+        const aBatch = batchNumberById.get(a.batch_id ?? "") ?? "";
+        const bBatch = batchNumberById.get(b.batch_id ?? "") ?? "";
+        return aBatch.localeCompare(bBatch, undefined, { numeric: true });
+      }),
+    [ofc, batchNumberById]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(sortedOfc.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
-  const pageRows = ofc.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const pageRows = sortedOfc.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -690,7 +717,7 @@ export function FactoryCategoryModal({
             </Button>
 
             <div className="overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto_auto] items-center bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_100px_40px] items-center bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -704,7 +731,7 @@ export function FactoryCategoryModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-[1fr_1fr_1fr_1fr_auto_auto] items-center gap-2 border-t px-3 py-2 text-sm"
+                    className="grid grid-cols-[1fr_1fr_1fr_1fr_100px_40px] items-center gap-2 border-t px-3 py-2 text-sm"
                   >
                     <span className="truncate text-slate-700">{r.category_name}</span>
                     <span className="truncate text-slate-700">{r.factory_name}</span>
@@ -719,14 +746,22 @@ export function FactoryCategoryModal({
                         disabled={pending}
                       />
                     </div>
-                    <span className="text-xs text-slate-500">
-                      {r.loading_status ? LOADING_STATUS_LABELS[r.loading_status] : "—"}
-                    </span>
+                    <div>
+                      {r.loading_status ? (
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${LOADING_STATUS_STYLES[r.loading_status]}`}
+                        >
+                          {LOADING_STATUS_LABELS[r.loading_status]}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      className="text-rose-500 hover:text-rose-600"
+                      className="justify-self-end text-rose-500 hover:text-rose-600"
                       aria-label="Delete entry"
                       disabled={pending}
                       onClick={() => removeRow(r)}
@@ -736,7 +771,7 @@ export function FactoryCategoryModal({
                   </div>
                 ))
               )}
-              {ofc.length > PAGE_SIZE && (
+              {sortedOfc.length > PAGE_SIZE && (
                 <div className="flex items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
                   <span>
                     Page {safePage + 1} of {totalPages}
