@@ -54,6 +54,7 @@ import {
   updateChecklistStep,
   uploadStepAttachment,
 } from "./actions";
+import { FactoryCategoryModal } from "./factory-category-modal";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -116,8 +117,8 @@ export type OfcRow = {
   loading_status: LoadingStatus | null;
 };
 
-type BatchRow = { id: string; batch_number: string; status: BatchStatus };
-type Ref = { id: string; name: string };
+export type BatchRow = { id: string; batch_number: string; status: BatchStatus };
+export type Ref = { id: string; name: string };
 
 type OrderDetail = {
   po_number: string;
@@ -809,6 +810,7 @@ export function OrderDetailClient({
   const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [createBatchOpen, setCreateBatchOpen] = useState(false);
+  const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
@@ -1148,6 +1150,17 @@ export function OrderDetailClient({
                         </div>
                       </div>
                       <AttachmentsSection orderId={orderId} step={s} />
+                      {s.step === "po" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-center border-dashed bg-white"
+                          onClick={() => setFactoryCategoryOpen(true)}
+                        >
+                          <Plus className="size-3.5" />
+                          Factory x Category
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1156,6 +1169,17 @@ export function OrderDetailClient({
           )}
         </div>
       </div>
+
+      <FactoryCategoryModal
+        open={factoryCategoryOpen}
+        onOpenChange={setFactoryCategoryOpen}
+        orderId={orderId}
+        batches={batches}
+        ofc={ofc}
+        categories={categories}
+        factories={factories}
+        onChanged={() => router.refresh()}
+      />
     </div>
   );
 }

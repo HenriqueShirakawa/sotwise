@@ -61,14 +61,6 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StatusPill } from "@/components/status-pill";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -76,6 +68,7 @@ import {
 
 import { deleteOrder } from "./actions";
 import { OrderFormModal } from "./order-form-modal";
+import { activeFilterCount, EMPTY_FILTERS, FiltersModal, type OrdersFilters } from "./filters-modal";
 
 export type Ref = { id: string; name: string };
 
@@ -94,6 +87,7 @@ export type OrderRow = {
   date_create: string;
   status: OrderStatus;
   schedule_requested: string | null;
+  etd: string | null;
   // FK ids — usados para pré-selecionar o modal de edição.
   order_type_id: string | null;
   client_id: string | null;
@@ -208,6 +202,20 @@ function SortableHeader({
 
 const dash = <span className="text-slate-300">—</span>;
 
+function toDateOnly(v: string): string {
+  return v.length >= 10 ? v.slice(0, 10) : v;
+}
+
+/** Compara datas como string (funciona pra "YYYY-MM-DD" e ISO timestamp). */
+function inDateRange(value: string | null, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  if (!value) return false;
+  const d = toDateOnly(value);
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+}
+
 export function OrdersClient({
   rows,
   clients,
@@ -226,8 +234,8 @@ export function OrdersClient({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [client, setClient] = useState("all");
-  const [buFilter, setBuFilter] = useState<Set<string>>(new Set());
-  const [statusFilter, setStatusFilter] = useState<Set<OrderStatus>>(new Set());
+  const [filters, setFilters] = useState<OrdersFilters>(EMPTY_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -262,23 +270,36 @@ export function OrdersClient({
     });
   }
 
-  function toggleFilter<T>(setter: (fn: (prev: Set<T>) => Set<T>) => void, value: T) {
-    setter((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
-  }
-
-  const activeFilterCount = buFilter.size + statusFilter.size;
+  const filterCount = activeFilterCount(filters);
 
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (client !== "all" && r.client !== client) return false;
-      if (buFilter.size > 0 && (!r.bu || !buFilter.has(r.bu))) return false;
-      if (statusFilter.size > 0 && !statusFilter.has(r.status)) return false;
+      if (
+        filters.client_reference &&
+        !(r.client_reference ?? "")
+          .toLowerCase()
+          .includes(filters.client_reference.toLowerCase())
+      )
+        return false;
+      if (filters.business_unit_id && r.business_unit_id !== filters.business_unit_id)
+        return false;
+      if (filters.order_type_id && r.order_type_id !== filters.order_type_id) return false;
+      if (filters.leader_id && r.leader_id !== filters.leader_id) return false;
+      if (filters.exporter_id && r.exporter_id !== filters.exporter_id) return false;
+      if (filters.status && r.status !== filters.status) return false;
+      if (!inDateRange(r.date_create, filters.create_date_from, filters.create_date_to))
+        return false;
+      if (!inDateRange(r.etd, filters.etd_from, filters.etd_to)) return false;
+      if (
+        !inDateRange(
+          r.schedule_requested,
+          filters.schedule_from,
+          filters.schedule_to
+        )
+      )
+        return false;
       if (!q) return true;
       return (
         r.po_number.toLowerCase().includes(q) ||
@@ -286,7 +307,7 @@ export function OrdersClient({
         (r.client ?? "").toLowerCase().includes(q)
       );
     });
-  }, [rows, search, client, buFilter, statusFilter]);
+  }, [rows, search, client, filters]);
 
   const columns = useMemo<ColumnDef<OrderRow>[]>(
     () => [
@@ -496,63 +517,32 @@ export function OrdersClient({
             ))}
           </SelectContent>
         </Select>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-11 rounded-xl bg-white">
-              <Filter />
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                  {activeFilterCount}
-                </span>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            <DropdownMenuLabel>Business Unit</DropdownMenuLabel>
-            {businessUnits.map((b) => (
-              <DropdownMenuCheckboxItem
-                key={b.id}
-                checked={buFilter.has(b.name)}
-                onSelect={(e) => e.preventDefault()}
-                onCheckedChange={() => toggleFilter(setBuFilter, b.name)}
-              >
-                {displayBu(b.name)}
-              </DropdownMenuCheckboxItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Status</DropdownMenuLabel>
-            {(Object.entries(ORDER_STATUS_LABELS) as [OrderStatus, string][]).map(
-              ([value, label]) => (
-                <DropdownMenuCheckboxItem
-                  key={value}
-                  checked={statusFilter.has(value)}
-                  onSelect={(e) => e.preventDefault()}
-                  onCheckedChange={() => toggleFilter(setStatusFilter, value)}
-                >
-                  {label}
-                </DropdownMenuCheckboxItem>
-              )
-            )}
-            {activeFilterCount > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-center"
-                  onClick={() => {
-                    setBuFilter(new Set());
-                    setStatusFilter(new Set());
-                  }}
-                >
-                  Clear filters
-                </Button>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          variant="outline"
+          className="h-11 rounded-xl bg-white"
+          onClick={() => setFiltersOpen(true)}
+        >
+          <Filter />
+          Filters
+          {filterCount > 0 && (
+            <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+              {filterCount}
+            </span>
+          )}
+        </Button>
       </div>
+
+      <FiltersModal
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        filters={filters}
+        onApply={setFilters}
+        onClear={() => setFilters(EMPTY_FILTERS)}
+        orderTypes={orderTypes}
+        businessUnits={businessUnits}
+        exporters={exporters}
+        profiles={profiles}
+      />
 
       <div className="overflow-x-auto rounded-2xl border bg-white">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">

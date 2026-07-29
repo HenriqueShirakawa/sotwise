@@ -23,7 +23,7 @@ export default async function OrdersPage() {
   await verifySession();
   const admin = createAdminClient();
 
-  const [orders, batches, buRes, typeRes, clientRes, exporterRes, profileRes] =
+  const [orders, batches, ofcRows, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =
     await Promise.all([
       fetchAll<{
         id: string;
@@ -55,6 +55,17 @@ export default async function OrdersPage() {
       }>((from, to) =>
         admin.from("batches").select("order_id, batch_number, status").range(from, to)
       ),
+      fetchAll<{ id: string; order_id: string }>((from, to) =>
+        admin.from("order_factory_category").select("id, order_id").range(from, to)
+      ),
+      fetchAll<{ order_factory_category_id: string; initial_date: string | null }>(
+        (from, to) =>
+          admin
+            .from("etd_info")
+            .select("order_factory_category_id, initial_date")
+            .not("initial_date", "is", null)
+            .range(from, to)
+      ),
       admin.from("business_units").select("id, name").is("deleted_at", null),
       admin.from("order_types").select("id, name, color").is("deleted_at", null),
       admin.from("clients").select("id, name").is("deleted_at", null),
@@ -81,6 +92,18 @@ export default async function OrdersPage() {
     batchesByOrder.set(b.order_id, arr);
   }
 
+  // ETD do pedido = menor "Initial date" entre as entradas Factory x Category
+  // dele (ver docs/regras_de_negocio.md §3.7.4) — usado só pro filtro da lista.
+  const orderByOfcId = new Map(ofcRows.map((o) => [o.id, o.order_id]));
+  const etdByOrder = new Map<string, string>();
+  for (const e of etdRows) {
+    if (!e.initial_date) continue;
+    const orderId = orderByOfcId.get(e.order_factory_category_id);
+    if (!orderId) continue;
+    const current = etdByOrder.get(orderId);
+    if (!current || e.initial_date < current) etdByOrder.set(orderId, e.initial_date);
+  }
+
   const rows: OrderRow[] = orders.map((o) => {
     const type = o.order_type_id ? typeMap.get(o.order_type_id) : undefined;
     return {
@@ -100,6 +123,7 @@ export default async function OrdersPage() {
       date_create: o.created_at,
       status: o.status,
       schedule_requested: o.schedule_requested,
+      etd: etdByOrder.get(o.id) ?? null,
       order_type_id: o.order_type_id,
       client_id: o.client_id,
       business_unit_id: o.business_unit_id,
