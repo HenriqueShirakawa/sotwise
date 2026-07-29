@@ -206,6 +206,49 @@ function BatchStatusSelect({
   );
 }
 
+const ROWS_PAGE_SIZE = 10;
+
+function RowsPagination({
+  page,
+  setPage,
+  total,
+}: {
+  page: number;
+  setPage: (updater: (p: number) => number) => void;
+  total: number;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / ROWS_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  if (total <= ROWS_PAGE_SIZE) return null;
+  return (
+    <div className="flex items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
+      <span>
+        Page {safePage + 1} of {totalPages}
+      </span>
+      <div className="flex gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          disabled={safePage === 0}
+          onClick={() => setPage((p) => Math.max(0, p - 1))}
+        >
+          ←
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          disabled={safePage >= totalPages - 1}
+          onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+        >
+          →
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ViewBatchModal({
   open,
   onOpenChange,
@@ -217,9 +260,19 @@ function ViewBatchModal({
   batch: BatchRow | null;
   rows: OfcRow[];
 }) {
+  const [page, setPage] = useState(0);
+  const openFor = open ? batch?.id ?? null : null;
+  const [syncedFor, setSyncedFor] = useState<string | null>(null);
+  if (openFor !== syncedFor) {
+    setSyncedFor(openFor);
+    setPage(0);
+  }
+  const safePage = Math.min(page, Math.max(0, Math.ceil(rows.length / ROWS_PAGE_SIZE) - 1));
+  const pageRows = rows.slice(safePage * ROWS_PAGE_SIZE, safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-lg text-primary">View batch</DialogTitle>
         </DialogHeader>
@@ -238,10 +291,10 @@ function ViewBatchModal({
                 <span>Ship req.</span>
                 <span>Batch No.</span>
               </div>
-              {rows.length === 0 ? (
+              {pageRows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries for this batch.</p>
               ) : (
-                rows.map((r) => (
+                pageRows.map((r) => (
                   <div key={r.id} className="grid grid-cols-4 border-t px-3 py-2.5 text-sm">
                     <span className="text-slate-700">{r.category_name}</span>
                     <span className="text-slate-700">{r.factory_name}</span>
@@ -250,6 +303,7 @@ function ViewBatchModal({
                   </div>
                 ))
               )}
+              <RowsPagination page={page} setPage={setPage} total={rows.length} />
             </div>
           </div>
         </div>
@@ -287,6 +341,7 @@ function EditBatchModal({
   const [categoryId, setCategoryId] = useState("");
   const [factoryId, setFactoryId] = useState("");
   const [shipRequirement, setShipRequirement] = useState("");
+  const [page, setPage] = useState(0);
 
   const openFor = open ? batch?.id ?? null : null;
   const [syncedFor, setSyncedFor] = useState<string | null>(null);
@@ -296,7 +351,11 @@ function EditBatchModal({
     setCategoryId("");
     setFactoryId("");
     setShipRequirement("");
+    setPage(0);
   }
+
+  const safePage = Math.min(page, Math.max(0, Math.ceil(rows.length / ROWS_PAGE_SIZE) - 1));
+  const pageRows = rows.slice(safePage * ROWS_PAGE_SIZE, safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE);
 
   function addRow() {
     if (!batch || !categoryId || !factoryId || !shipRequirement) {
@@ -416,10 +475,10 @@ function EditBatchModal({
                 <span>Batch No.</span>
                 <span />
               </div>
-              {rows.length === 0 ? (
+              {pageRows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
               ) : (
-                rows.map((r) => (
+                pageRows.map((r) => (
                   <div
                     key={r.id}
                     className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center border-t px-3 py-2 text-sm"
@@ -441,6 +500,7 @@ function EditBatchModal({
                   </div>
                 ))
               )}
+              <RowsPagination page={page} setPage={setPage} total={rows.length} />
             </div>
           </div>
         </div>
