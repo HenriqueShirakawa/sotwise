@@ -761,9 +761,13 @@ Dados de ETD (data estimada de saída da fábrica) por entrada fábrica×categor
 - ✅ **Ready / Inspection — confirmado:** são apenas **booleans simples**, sem lógica adicional. Na rua ETD Factories esse mesmo campo `ready` aparece com o rótulo **"Ready parts"** — mesmo campo, nome de UI diferente.
 - ✅ **Initial date / Current date — confirmado.** O `initial_date` é preenchido **manualmente pelo usuário na etapa "ETD" do checklist da Order** (etapa #8, fase Order) — essa é a **origem** do dado. Ao ser preenchido, dispara automaticamente o `current_date` com a data do dia. O campo é depois apenas **exibido** em outras telas: coluna "Initial Date" na rua ETD Factories e coluna "ETD Initial" no modal de Confirm Shipping do Pre-loading (daí aparecer vazio quando ainda não foi preenchido na origem).
 - ✅ **Ready date — NOVO campo (print do Bubble).** Além do boolean `ready`, existe uma **data** registrada **automaticamente no momento em que o checkbox "Ready Parts" é marcado**. Ela alimenta o cálculo do "Gap of Ready" na listagem.
-- ✅ **History — confirmado:** é um log de alterações que grava **apenas os campos que mudaram (diff)**, não o snapshot completo do registro a cada alteração.
+- 🔄 **History — CORRIGIDO (print da tela "ETD update"):** a leitura anterior ("grava só o diff") estava **errada** — cada entrada de `etd_history` é um **snapshot completo** do estado do `etd_info` no momento daquela edição (Insp./Ready/Remarks/Current date/Dispatch location/Dispatch date), não só o campo que mudou. Prova: duas entradas de história do mesmo registro mostram `ready` diferente entre si (uma antes, outra depois de marcado) enquanto os demais campos se repetem — snapshot, não diff pontual.
 
-> ✅ **Etapa "ETD" do checklist — linha a linha, não agrupado (print da tela):** diferente da etapa "Place the Order" (agrupada por Factory, ver 3.7.5), a etapa ETD reexibe **uma linha por entrada `order_factory_category`** do pedido (Factory + Category + Batch, sem agrupar), com colunas editáveis inline: **Insp.** (`inspection`), **Ready?** (`ready`), **Initial Date**, **Current Date** (read-only, auto), **Dispatch loc.** (busca por Factory) e **Dispatch date**. O ícone de seta abre o drawer "ETD information" só com o campo **Remarks** (os demais campos já são editados direto na linha). Uma entrada sem `etd_info` ainda (comum — só ~1317 das 9441 entradas migradas do Bubble tinham ETD preenchido) fica com todos os campos em branco/desmarcado até o primeiro edit, que cria a linha (upsert por `order_factory_category_id`). `etd_history` continua não implementado (pendência já registrada em 12.8).
+> ✅ **Etapa "ETD" do checklist — linha a linha, não agrupado (print da tela):** diferente da etapa "Place the Order" (agrupada por Factory, ver 3.7.5), a etapa ETD reexibe **uma linha por entrada `order_factory_category`** do pedido (Factory + Category + Batch, sem agrupar), com colunas editáveis inline: **Insp.** (`inspection`), **Ready?** (`ready`), **Initial Date**, **Current Date** (read-only, auto), **Dispatch loc.** (busca por Factory) e **Dispatch date**. Uma entrada sem `etd_info` ainda (comum — só ~1317 das 9441 entradas migradas do Bubble tinham ETD preenchido) fica com todos os campos em branco/desmarcado até o primeiro edit, que cria a linha (upsert por `order_factory_category_id`).
+>
+> ✅ **Insp./Ready — trava confirmada:** os dois booleans só andam em uma direção (não marcado → marcado); uma vez `true`, o checkbox fica travado (não dá mais pra desmarcar), tanto na edição inline quanto no modal "ETD update".
+>
+> ✅ **Modal "ETD update" (ícone de seta) — confirmado com print:** é a via **auditada** de edição — um dropdown "Select what you want to change" com 5 opções (**Current Date, Ready, Inspection, Dispatch Location, Dispatch Date** — note que **Initial Date não está na lista**, só editável inline), o campo correspondente aparece abaixo, e um **Remarks obrigatório** (motivo da mudança) antes de "Save changes". Cada save grava uma linha em `etd_history` com o snapshot completo (ver acima) + `changed_at`. Abaixo do form, a própria tela lista esse histórico completo (mesmas colunas do snapshot + Factory/Category fixos da entrada + coluna "Date/Time"), paginado; Remarks truncado na tabela com ícone de olho abrindo o texto completo num popover "Full remarks".
 
 ```sql
 create table public.etd_info (
@@ -783,11 +787,12 @@ create table public.etd_info (
 create trigger trg_etd_info_updated_at before update on public.etd_info
   for each row execute function public.set_updated_at();
 
--- Log de alterações do ETD (History) — grava apenas o DIFF (campos alterados), não o snapshot completo
+-- Log de alterações do ETD (History) — grava um SNAPSHOT completo do etd_info
+-- a cada edição feita via modal "ETD update" (não um diff pontual — ver 3.7.4)
 create table public.etd_history (
   id           uuid primary key default gen_random_uuid(),
   etd_info_id  uuid not null references public.etd_info(id) on delete cascade,
-  changed_fields jsonb not null,               -- diff: { "campo": {"from": ..., "to": ...}, ... }
+  changed_fields jsonb not null,               -- snapshot: { field, inspection, ready, remarks, current_date, dispatch_location_name, dispatch_date }
   changed_by   uuid references public.profiles(id),
   changed_at   timestamptz not null default now()
 );
@@ -1824,9 +1829,9 @@ Importador idempotente em `scripts/migrate/` (fetcher da Data API pública, sem 
 
 ### 12.8 Pendências pós-migração (refinamento)
 - [ ] **Uploads → Supabase Storage** (`generaldocs`/`*uploads` → `step_attachments`; buckets `business-units`, `order-types`, `order-documents`) — ainda não migrados.
-- [ ] **etd_history** (log completo do ETD; hoje só o snapshot mais recente entrou em `etd_info`) e **detalhes de agentes por etapa** (`checklistxitemxagents` → `pre_loading_checklist_steps.agent_*`/`contact_*`).
+- [ ] **etd_history histórico do Bubble** (só o snapshot mais recente entrou em `etd_info` na migração de dados; o histórico *anterior* à migração não foi trazido) e **detalhes de agentes por etapa** (`checklistxitemxagents` → `pre_loading_checklist_steps.agent_*`/`contact_*`). *(O front-end que grava novas entradas em `etd_history` daqui pra frente já está implementado — ver 3.7.4, modal "ETD update".)*
 - [ ] Reavaliar os ~68k itens de checklist legados/órfãos não importados (limpeza na origem).
-- [ ] **Modal "Factory x Category" (frontend) — ainda não construído.** O botão "+ Factory x Category" da etapa PO em [order-detail-client.tsx](../app/(dashboard)/orders/%5Bid%5D/order-detail-client.tsx) hoje não existe (só há um placeholder de "Download CSV — coming soon" na listagem de anexos). Falta implementar, conforme especificado em 3.7.3: (1) modo "New entry" manual com busca de Category/Factory sem filtro por Company/BU; (2) seletor "Batch No." em popover com checkbox para trocar o lote da linha + "+ Add batch" para criar lote novo inline; (3) modo "Bulk import" via CSV com preview linha-a-linha, indicador verde/vermelho por validação de Category/Factory cadastrados, e bloqueio do botão "Insert (N)" enquanto houver linha inválida.
+- [x] ~~Modal "Factory x Category" (frontend) — ainda não construído.~~ Implementado: New entry, seletor de lote (popover com "+ Add batch"), Bulk import CSV com validação (ver 3.7.3).
 
 ### 12.9 Decisões de segurança (confirmadas com o cliente)
 - ✅ **Supabase nasce fechado:** RLS **deny-all** em todas as tabelas → a chave `anon`/`publishable` não lê nada; acesso apenas via `service_role` (servidor). Sem exposição pública do banco.

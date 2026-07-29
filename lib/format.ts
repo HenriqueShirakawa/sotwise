@@ -30,6 +30,21 @@ export function formatDateNumeric(value: string | null | undefined): string {
   }).format(date);
 }
 
+/** Timestamp completo (dd/mm/yyyy hh:mm) — usado em logs/histórico. Fuso America/Sao_Paulo. */
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const datePart = dateFormatter.format(date);
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: TIME_ZONE,
+  }).format(date);
+  return `${datePart} ${timePart}`;
+}
+
 /** BU vem do banco como "Moto Parts", "Auto Parts"… a UI mostra só "Moto", "Auto". */
 export function displayBu(name: string): string {
   return name.replace(/\s*parts$/i, "");
