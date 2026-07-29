@@ -367,9 +367,17 @@ export async function upsertEtdInfo(
 
   const { data: existing } = await admin
     .from("etd_info")
-    .select("current_date, ready_date")
+    .select("current_date, ready, ready_date, inspection")
     .eq("order_factory_category_id", ofcId)
     .maybeSingle();
+
+  // Ready/Inspection só vão de não-marcado pra marcado — uma vez true, travam.
+  if (patch.ready !== undefined && existing?.ready) {
+    return { ok: false, error: "Ready is already locked." };
+  }
+  if (patch.inspection !== undefined && existing?.inspection) {
+    return { ok: false, error: "Inspection is already locked." };
+  }
 
   const update: TablesInsert<"etd_info"> = {
     order_factory_category_id: ofcId,
@@ -389,4 +397,128 @@ export async function upsertEtdInfo(
 
   revalidatePath(path(orderId));
   return { ok: true };
+}
+
+export type EtdHistorySnapshot = {
+  field: "current_date" | "ready" | "inspection" | "dispatch_location_id" | "dispatch_date";
+  inspection: boolean;
+  ready: boolean;
+  remarks: string | null;
+  current_date: string | null;
+  dispatch_location_name: string | null;
+  dispatch_date: string | null;
+};
+
+export type EtdHistoryEntry = EtdHistorySnapshot & {
+  id: string;
+  changed_at: string;
+};
+
+/**
+ * Edição "oficial" de UM campo do ETD, com motivo obrigatório — grava um
+ * snapshot completo do estado em `etd_history` (ver print "ETD update").
+ * Ready/Inspection seguem a mesma trava de `upsertEtdInfo`.
+ */
+export async function updateEtdInfoWithReason(
+  orderId: string,
+  ofcId: string,
+  field: EtdHistorySnapshot["field"],
+  value: string | boolean | null,
+  remarks: string
+): Promise<ActionResult> {
+  const session = await verifySession();
+  const admin = createAdminClient();
+
+  if (!remarks.trim()) return { ok: false, error: "Remarks is required." };
+
+  const { data: existing } = await admin
+    .from("etd_info")
+    .select(
+      "id, inspection, ready, ready_date, current_date, dispatch_location_id, dispatch_date"
+    )
+    .eq("order_factory_category_id", ofcId)
+    .maybeSingle();
+
+  if (field === "ready" && existing?.ready) {
+    return { ok: false, error: "Ready is already locked." };
+  }
+  if (field === "inspection" && existing?.inspection) {
+    return { ok: false, error: "Inspection is already locked." };
+  }
+
+  const update: TablesInsert<"etd_info"> = {
+    order_factory_category_id: ofcId,
+    [field]: value,
+    remarks: remarks.trim(),
+  };
+  if (field === "ready" && value === true && !existing?.ready_date) {
+    update.ready_date = new Date().toISOString().slice(0, 10);
+  }
+
+  const { data: saved, error } = await admin
+    .from("etd_info")
+    .upsert(update, { onConflict: "order_factory_category_id" })
+    .select("id, inspection, ready, current_date, dispatch_location_id, dispatch_date")
+    .single();
+  if (error || !saved) return { ok: false, error: error?.message ?? "Failed to save." };
+
+  let dispatchLocationName: string | null = null;
+  if (saved.dispatch_location_id) {
+    const { data: factory } = await admin
+      .from("factories")
+      .select("name")
+      .eq("id", saved.dispatch_location_id)
+      .maybeSingle();
+    dispatchLocationName = factory?.name ?? null;
+  }
+
+  const snapshot: EtdHistorySnapshot = {
+    field,
+    inspection: saved.inspection,
+    ready: saved.ready,
+    remarks: remarks.trim(),
+    current_date: saved.current_date,
+    dispatch_location_name: dispatchLocationName,
+    dispatch_date: saved.dispatch_date,
+  };
+
+  const { error: historyError } = await admin.from("etd_history").insert({
+    etd_info_id: saved.id,
+    changed_fields: snapshot,
+    changed_by: session.userId,
+  });
+  if (historyError) return { ok: false, error: historyError.message };
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
+export async function getEtdHistory(
+  ofcId: string
+): Promise<{ ok: true; rows: EtdHistoryEntry[] } | { ok: false; error: string }> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const { data: info } = await admin
+    .from("etd_info")
+    .select("id")
+    .eq("order_factory_category_id", ofcId)
+    .maybeSingle();
+  if (!info) return { ok: true, rows: [] };
+
+  const { data, error } = await admin
+    .from("etd_history")
+    .select("id, changed_fields, changed_at")
+    .eq("etd_info_id", info.id)
+    .order("changed_at", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+
+  return {
+    ok: true,
+    rows: (data ?? []).map((r) => ({
+      id: r.id,
+      changed_at: r.changed_at,
+      ...(r.changed_fields as unknown as EtdHistorySnapshot),
+    })),
+  };
 }

@@ -649,6 +649,26 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["etd_info"]["Insert"]>;
         Relationships: [];
       };
+      etd_history: {
+        Row: {
+          id: UUID;
+          etd_info_id: UUID;
+          changed_fields: Record<string, unknown>;
+          changed_by: UUID | null;
+          changed_at: Timestamp;
+          bubble_id: string | null;
+        };
+        Insert: {
+          id?: UUID;
+          etd_info_id: UUID;
+          changed_fields: Record<string, unknown>;
+          changed_by?: UUID | null;
+          changed_at?: Timestamp;
+          bubble_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["etd_history"]["Insert"]>;
+        Relationships: [];
+      };
       step_attachments: {
         Row: {
           id: UUID;
