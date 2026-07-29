@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
@@ -47,9 +47,12 @@ import {
   createBatch,
   createOrderFactoryCategory,
   deleteOrderFactoryCategory,
+  deleteStepAttachment,
+  getAttachmentDownloadUrl,
   updateBatchNumber,
   updateBatchStatus,
   updateChecklistStep,
+  uploadStepAttachment,
 } from "./actions";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
@@ -99,7 +102,7 @@ export type ChecklistStepRow = {
   completed_on: string | null;
   responsible_id: string | null;
   signed_by_id: string | null;
-  attachments: { id: string; file_name: string | null }[];
+  attachments: { id: string; file_name: string | null; file_path: string }[];
 };
 
 export type OfcRow = {
@@ -193,7 +196,7 @@ function BatchStatusSelect({
       style={{ borderColor: `${hex}59`, color: hex }}
       className="h-7 rounded-[4px] border bg-white px-1.5 text-xs font-medium"
     >
-      {(Object.keys(BATCH_STATUS_LABELS) as BatchStatus[]).map((s) => (
+      {EDITABLE_BATCH_STATUSES.map((s) => (
         <option key={s} value={s}>
           {BATCH_STATUS_LABELS[s]}
         </option>
@@ -670,6 +673,116 @@ function CreateBatchModal({
   );
 }
 
+function AttachmentsSection({
+  orderId,
+  step,
+}: {
+  orderId: string;
+  step: ChecklistStepRow;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    startTransition(async () => {
+      const res = await uploadStepAttachment(orderId, step.id, formData);
+      if (res.ok) {
+        setOpen(true);
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+
+  function download(a: { file_path: string }) {
+    startTransition(async () => {
+      const res = await getAttachmentDownloadUrl(a.file_path);
+      if (res.ok) window.open(res.url, "_blank");
+      else toast.error(res.error);
+    });
+  }
+
+  function removeAttachment(a: { id: string; file_path: string }) {
+    startTransition(async () => {
+      const res = await deleteStepAttachment(orderId, a.id, a.file_path);
+      if (res.ok) router.refresh();
+      else toast.error(res.error);
+    });
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <Paperclip className="size-4 text-slate-400" />
+        <button
+          type="button"
+          className="text-xs text-muted-foreground enabled:hover:text-slate-700"
+          disabled={step.attachments.length === 0}
+          onClick={() => setOpen((v) => !v)}
+        >
+          Attached documents
+        </button>
+        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
+          {step.attachments.length} docs
+        </span>
+        {step.attachments.length > 0 && (
+          <ChevronDown
+            className={`size-3.5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        )}
+        <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          disabled={pending}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Plus className="size-3.5" />
+          Attach
+        </Button>
+      </div>
+      {open && step.attachments.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {step.attachments.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-sm"
+            >
+              <button
+                type="button"
+                className="truncate text-primary hover:underline"
+                disabled={pending}
+                onClick={() => download(a)}
+              >
+                {a.file_name ?? "File"}
+              </button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-rose-500 hover:text-rose-600"
+                aria-label="Delete attachment"
+                disabled={pending}
+                onClick={() => removeAttachment(a)}
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function OrderDetailClient({
   orderId,
   order,
@@ -810,11 +923,9 @@ export function OrderDetailClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="flex items-center justify-between border-b bg-slate-50/80 px-6 py-3">
-          <div className="grid flex-1 grid-cols-2 text-xs font-semibold text-slate-500">
-            <span>Batch No.</span>
-            <span>Status</span>
-          </div>
+        <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500">
+          <span>Batch No.</span>
+          <span>Status</span>
           <Button variant="outline" size="sm" onClick={() => setCreateBatchOpen(true)}>
             Create batch
             <Plus className="size-3.5" />
@@ -831,38 +942,36 @@ export function OrderDetailClient({
             return (
               <div
                 key={b.id}
-                className="grid grid-cols-2 items-center border-b px-6 py-3.5 text-sm last:border-b-0"
+                className="grid grid-cols-[1fr_1fr_auto] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
               >
                 <span className="text-slate-700">{b.batch_number}</span>
-                <div className="flex items-center justify-between pr-2">
-                  {editable ? (
-                    <BatchStatusSelect
-                      value={b.status}
-                      onChange={(status) => saveBatchStatus(b, status)}
-                    />
-                  ) : (
-                    <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
-                  )}
-                  <div className="flex items-center gap-1">
-                    {editable && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label="Edit batch"
-                        onClick={() => setEditBatch(b)}
-                      >
-                        <Pencil className="size-4 text-slate-400" />
-                      </Button>
-                    )}
+                {editable ? (
+                  <BatchStatusSelect
+                    value={b.status}
+                    onChange={(status) => saveBatchStatus(b, status)}
+                  />
+                ) : (
+                  <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
+                )}
+                <div className="flex items-center gap-1">
+                  {editable && (
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label="View batch"
-                      onClick={() => setViewBatch(b)}
+                      aria-label="Edit batch"
+                      onClick={() => setEditBatch(b)}
                     >
-                      <Eye className="size-4 text-slate-400" />
+                      <Pencil className="size-4 text-slate-400" />
                     </Button>
-                  </div>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="View batch"
+                    onClick={() => setViewBatch(b)}
+                  >
+                    <Eye className="size-4 text-slate-400" />
+                  </Button>
                 </div>
                 {viewBatch?.id === b.id && (
                   <ViewBatchModal
@@ -1036,24 +1145,7 @@ export function OrderDetailClient({
                           </Select>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Paperclip className="size-4 text-slate-400" />
-                        <span className="text-xs text-muted-foreground">
-                          Attached documents
-                        </span>
-                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
-                          {s.attachments.length} docs
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="ml-auto"
-                          onClick={() => toast.info("File upload — coming soon.")}
-                        >
-                          <Plus className="size-3.5" />
-                          Attach
-                        </Button>
-                      </div>
+                      <AttachmentsSection orderId={orderId} step={s} />
                     </div>
                   )}
                 </div>
