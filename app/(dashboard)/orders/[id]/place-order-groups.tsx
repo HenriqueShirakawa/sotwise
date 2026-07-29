@@ -169,7 +169,7 @@ export function PlaceOrderFactoryGroups({
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
-      <div className="grid grid-cols-[1fr_1fr_auto_auto] items-center bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+      <div className="grid grid-cols-[1fr_160px_auto_auto] items-center bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
         <span>Factory</span>
         <span>N° of categories</span>
         <span />
@@ -185,7 +185,7 @@ export function PlaceOrderFactoryGroups({
           const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
           return (
             <div key={g.factory_id} className="border-t">
-              <div className="grid grid-cols-[1fr_1fr_auto_auto] items-center gap-2 px-3 py-2.5 text-sm">
+              <div className="grid grid-cols-[1fr_160px_auto_auto] items-center gap-2 px-3 py-2.5 text-sm">
                 <span className="truncate font-medium text-slate-800">{g.factory_name}</span>
                 <span className="text-slate-700">{g.entries.length}</span>
                 <Button
