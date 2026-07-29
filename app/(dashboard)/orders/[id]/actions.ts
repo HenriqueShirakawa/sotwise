@@ -61,6 +61,40 @@ export async function updateBatchNumber(
   return { ok: true };
 }
 
+export async function createBatch(
+  orderId: string,
+  input: {
+    batch_number: string;
+    rows: { category_id: string; factory_id: string; ship_requirement: string }[];
+  }
+): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const { data: batch, error } = await admin
+    .from("batches")
+    .insert({ order_id: orderId, batch_number: input.batch_number })
+    .select("id")
+    .single();
+  if (error || !batch) return { ok: false, error: error?.message ?? "Failed to create batch." };
+
+  if (input.rows.length > 0) {
+    const { error: rowsError } = await admin.from("order_factory_category").insert(
+      input.rows.map((r) => ({
+        order_id: orderId,
+        batch_id: batch.id,
+        category_id: r.category_id,
+        factory_id: r.factory_id,
+        ship_requirement: r.ship_requirement,
+      }))
+    );
+    if (rowsError) return { ok: false, error: rowsError.message };
+  }
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
 export async function createOrderFactoryCategory(
   orderId: string,
   input: {
