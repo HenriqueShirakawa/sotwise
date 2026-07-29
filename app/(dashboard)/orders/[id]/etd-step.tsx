@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Eye } from "lucide-react";
+import { ArrowUpDown, ArrowUpRight, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateNumeric, formatDateTime } from "@/lib/format";
@@ -64,6 +64,43 @@ type FieldKey = (typeof EDITABLE_FIELDS)[number]["value"];
 const HISTORY_PAGE_SIZE = 10;
 const ETD_PAGE_SIZE = 10;
 
+type EtdSortKey =
+  | "inspection"
+  | "ready"
+  | "factory"
+  | "category"
+  | "batch"
+  | "initial_date"
+  | "current_date"
+  | "dispatch_location"
+  | "dispatch_date";
+
+function SortableTableHead({
+  label,
+  sortKey,
+  sort,
+  onSort,
+}: {
+  label: string;
+  sortKey: EtdSortKey;
+  sort: { key: EtdSortKey; dir: "asc" | "desc" } | null;
+  onSort: (key: EtdSortKey) => void;
+}) {
+  const active = sort?.key === sortKey;
+  return (
+    <TableHead>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 whitespace-nowrap hover:text-slate-700"
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        <ArrowUpDown className={`size-3.5 ${active ? "text-primary" : "text-slate-400"}`} />
+      </button>
+    </TableHead>
+  );
+}
+
 function RemarksCell({ remarks }: { remarks: string | null }) {
   const [open, setOpen] = useState(false);
   if (!remarks) return <span className="text-slate-300">—</span>;
@@ -76,9 +113,9 @@ function RemarksCell({ remarks }: { remarks: string | null }) {
             <Eye className="size-3.5" />
           </button>
         </PopoverTrigger>
-        <PopoverContent className="w-64">
+        <PopoverContent className="w-64 p-3">
           <p className="mb-1 text-sm font-medium text-foreground">Full remarks</p>
-          <p className="text-sm text-slate-600">{remarks}</p>
+          <p className="text-sm break-words text-slate-600">{remarks}</p>
         </PopoverContent>
       </Popover>
     </div>
@@ -188,7 +225,7 @@ function EtdUpdateModal({
           )}
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="space-y-3 rounded-lg bg-slate-50 p-3">
             <div>
               <Label className="text-foreground">Select what you want to change:</Label>
@@ -370,18 +407,61 @@ export function EtdStepTable({
   const [pending, startTransition] = useTransition();
   const [modalRow, setModalRow] = useState<OfcRow | null>(null);
   const [page, setPage] = useState(0);
+  const [sort, setSort] = useState<{ key: EtdSortKey; dir: "asc" | "desc" } | null>(null);
 
   const batchNumberById = new Map(batches.map((b) => [b.id, b.batch_number]));
-  const rows = [...ofc].sort(
-    (a, b) =>
-      a.factory_name.localeCompare(b.factory_name) ||
-      a.category_name.localeCompare(b.category_name) ||
-      (batchNumberById.get(a.batch_id ?? "") ?? "").localeCompare(
-        batchNumberById.get(b.batch_id ?? "") ?? "",
-        undefined,
-        { numeric: true }
-      )
-  );
+  const factoryNameById = new Map(factories.map((f) => [f.id, f.name]));
+
+  function sortValue(r: OfcRow, key: EtdSortKey): string | number {
+    const etd = etdByOfc[r.id] ?? EMPTY_ETD;
+    switch (key) {
+      case "inspection":
+        return etd.inspection ? 1 : 0;
+      case "ready":
+        return etd.ready ? 1 : 0;
+      case "factory":
+        return r.factory_name;
+      case "category":
+        return r.category_name;
+      case "batch":
+        return batchNumberById.get(r.batch_id ?? "") ?? "";
+      case "initial_date":
+        return etd.initial_date ?? "";
+      case "current_date":
+        return etd.current_date ?? "";
+      case "dispatch_location":
+        return factoryNameById.get(etd.dispatch_location_id ?? "") ?? "";
+      case "dispatch_date":
+        return etd.dispatch_date ?? "";
+    }
+  }
+
+  function toggleSort(key: EtdSortKey) {
+    setPage(0);
+    setSort((prev) => {
+      if (prev?.key === key) return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
+      return { key, dir: "asc" };
+    });
+  }
+
+  const rows = [...ofc].sort((a, b) => {
+    if (!sort) {
+      return (
+        a.factory_name.localeCompare(b.factory_name) ||
+        a.category_name.localeCompare(b.category_name) ||
+        (batchNumberById.get(a.batch_id ?? "") ?? "").localeCompare(
+          batchNumberById.get(b.batch_id ?? "") ?? "",
+          undefined,
+          { numeric: true }
+        )
+      );
+    }
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const av = sortValue(a, sort.key);
+    const bv = sortValue(b, sort.key);
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+    return String(av).localeCompare(String(bv), undefined, { numeric: true }) * dir;
+  });
 
   const totalPages = Math.max(1, Math.ceil(rows.length / ETD_PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -408,15 +488,35 @@ export function EtdStepTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Insp.</TableHead>
-            <TableHead>Ready?</TableHead>
-            <TableHead>Factory</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead>Batch</TableHead>
-            <TableHead>Initial Date</TableHead>
-            <TableHead>Current Date</TableHead>
-            <TableHead>Dispatch loc.</TableHead>
-            <TableHead>Dispatch date</TableHead>
+            <SortableTableHead label="Insp." sortKey="inspection" sort={sort} onSort={toggleSort} />
+            <SortableTableHead label="Ready?" sortKey="ready" sort={sort} onSort={toggleSort} />
+            <SortableTableHead label="Factory" sortKey="factory" sort={sort} onSort={toggleSort} />
+            <SortableTableHead label="Category" sortKey="category" sort={sort} onSort={toggleSort} />
+            <SortableTableHead label="Batch" sortKey="batch" sort={sort} onSort={toggleSort} />
+            <SortableTableHead
+              label="Initial Date"
+              sortKey="initial_date"
+              sort={sort}
+              onSort={toggleSort}
+            />
+            <SortableTableHead
+              label="Current Date"
+              sortKey="current_date"
+              sort={sort}
+              onSort={toggleSort}
+            />
+            <SortableTableHead
+              label="Dispatch loc."
+              sortKey="dispatch_location"
+              sort={sort}
+              onSort={toggleSort}
+            />
+            <SortableTableHead
+              label="Dispatch date"
+              sortKey="dispatch_date"
+              sort={sort}
+              onSort={toggleSort}
+            />
             <TableHead />
           </TableRow>
         </TableHeader>
