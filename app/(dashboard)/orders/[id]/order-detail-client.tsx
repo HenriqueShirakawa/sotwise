@@ -194,7 +194,7 @@ function BatchStatusSelect({
       value={value}
       onChange={(e) => onChange(e.target.value as BatchStatus)}
       style={{ borderColor: `${hex}59`, color: hex }}
-      className="h-7 rounded-[4px] border bg-white px-1.5 text-xs font-medium"
+      className="h-7 max-w-[220px] rounded-[4px] border bg-white px-1.5 text-xs font-medium"
     >
       {EDITABLE_BATCH_STATUSES.map((s) => (
         <option key={s} value={s}>
@@ -923,7 +923,7 @@ export function OrderDetailClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500">
+        <div className="grid grid-cols-[1fr_1fr_150px] items-center gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500">
           <span>Batch No.</span>
           <span>Status</span>
           <Button variant="outline" size="sm" onClick={() => setCreateBatchOpen(true)}>
@@ -942,17 +942,19 @@ export function OrderDetailClient({
             return (
               <div
                 key={b.id}
-                className="grid grid-cols-[1fr_1fr_auto] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
+                className="grid grid-cols-[1fr_1fr_150px] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
               >
                 <span className="text-slate-700">{b.batch_number}</span>
-                {editable ? (
-                  <BatchStatusSelect
-                    value={b.status}
-                    onChange={(status) => saveBatchStatus(b, status)}
-                  />
-                ) : (
-                  <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
-                )}
+                <div className="justify-self-start">
+                  {editable ? (
+                    <BatchStatusSelect
+                      value={b.status}
+                      onChange={(status) => saveBatchStatus(b, status)}
+                    />
+                  ) : (
+                    <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
+                  )}
+                </div>
                 <div className="flex items-center gap-1">
                   {editable && (
                     <Button
