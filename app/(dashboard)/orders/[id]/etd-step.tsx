@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUpDown, ArrowUpRight, Eye } from "lucide-react";
 import { toast } from "sonner";
@@ -137,7 +137,7 @@ function EtdUpdateModal({
   factories: Ref[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onChanged?: () => void;
+  onChanged?: () => void | Promise<void>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -195,7 +195,7 @@ function EtdUpdateModal({
       if (res.ok) {
         toast.success("ETD updated.");
         router.refresh();
-        onChanged?.();
+        await onChanged?.();
         const historyRes = await getEtdHistory(row.id);
         if (historyRes.ok) setHistory(historyRes.rows);
         setField("");
@@ -406,13 +406,34 @@ export function EtdStepTable({
   batches: BatchRow[];
   etdByOfc: Record<string, EtdInfoRow>;
   factories: Ref[];
-  onChanged?: () => void;
+  onChanged?: () => void | Promise<void>;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [modalRow, setModalRow] = useState<OfcRow | null>(null);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<{ key: EtdSortKey; dir: "asc" | "desc" } | null>(null);
+
+  // UI otimista dos checkboxes Ready/Inspection: marca na hora e mantém durante
+  // o server action + refresh; reconcilia com o dado do servidor quando chega e
+  // reverte sozinho se a ação falhar.
+  const [optimisticEtd, addOptimistic] = useOptimistic(
+    etdByOfc,
+    (
+      state: Record<string, EtdInfoRow>,
+      action: { ofcId: string; inspection?: boolean; ready?: boolean }
+    ) => {
+      const cur = state[action.ofcId] ?? EMPTY_ETD;
+      return {
+        ...state,
+        [action.ofcId]: {
+          ...cur,
+          ...(action.inspection !== undefined ? { inspection: action.inspection } : {}),
+          ...(action.ready !== undefined ? { ready: action.ready } : {}),
+        },
+      };
+    }
+  );
 
   const batchNumberById = new Map(batches.map((b) => [b.id, b.batch_number]));
   const factoryNameById = new Map(factories.map((f) => [f.id, f.name]));
@@ -474,11 +495,16 @@ export function EtdStepTable({
 
   function save(ofcId: string, patch: Parameters<typeof upsertEtdInfo>[2]) {
     startTransition(async () => {
+      if (patch.inspection !== undefined || patch.ready !== undefined) {
+        addOptimistic({ ofcId, inspection: patch.inspection, ready: patch.ready });
+      }
       const res = await upsertEtdInfo(orderId, ofcId, patch);
       if (res.ok) {
         router.refresh();
-        onChanged?.();
-      } else toast.error(res.error);
+        await onChanged?.();
+      } else {
+        toast.error(res.error);
+      }
     });
   }
 
@@ -529,20 +555,20 @@ export function EtdStepTable({
         </TableHeader>
         <TableBody>
           {pageRows.map((r) => {
-            const etd = etdByOfc[r.id] ?? EMPTY_ETD;
+            const etd = optimisticEtd[r.id] ?? EMPTY_ETD;
             return (
               <TableRow key={r.id}>
                 <TableCell>
                   <Checkbox
                     checked={etd.inspection}
-                    disabled={pending || etd.inspection}
+                    disabled={etd.inspection}
                     onCheckedChange={(checked) => save(r.id, { inspection: !!checked })}
                   />
                 </TableCell>
                 <TableCell>
                   <Checkbox
                     checked={etd.ready}
-                    disabled={pending || etd.ready}
+                    disabled={etd.ready}
                     onCheckedChange={(checked) => save(r.id, { ready: !!checked })}
                   />
                 </TableCell>
@@ -553,9 +579,11 @@ export function EtdStepTable({
                   <Input
                     type="date"
                     defaultValue={etd.initial_date ?? ""}
-                    disabled={pending}
                     className="h-8 w-36"
-                    onChange={(e) => save(r.id, { initial_date: e.target.value || null })}
+                    onBlur={(e) => {
+                      const v = e.target.value || null;
+                      if (v !== (etd.initial_date ?? null)) save(r.id, { initial_date: v });
+                    }}
                   />
                 </TableCell>
                 <TableCell className="text-slate-500">
@@ -573,9 +601,11 @@ export function EtdStepTable({
                   <Input
                     type="date"
                     defaultValue={etd.dispatch_date ?? ""}
-                    disabled={pending}
                     className="h-8 w-36"
-                    onChange={(e) => save(r.id, { dispatch_date: e.target.value || null })}
+                    onBlur={(e) => {
+                      const v = e.target.value || null;
+                      if (v !== (etd.dispatch_date ?? null)) save(r.id, { dispatch_date: v });
+                    }}
                   />
                 </TableCell>
                 <TableCell>

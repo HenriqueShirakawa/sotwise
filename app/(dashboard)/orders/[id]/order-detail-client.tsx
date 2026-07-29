@@ -1183,10 +1183,11 @@ export function OrderDetailClient({
                           <Input
                             type="date"
                             defaultValue={s.estimated_date ?? ""}
-                            disabled={stepPending}
-                            onChange={(e) =>
-                              saveStepField(s, { estimated_date: e.target.value || null })
-                            }
+                            onBlur={(e) => {
+                              const v = e.target.value || null;
+                              if (v !== (s.estimated_date ?? null))
+                                saveStepField(s, { estimated_date: v });
+                            }}
                             className="mt-1 bg-white"
                           />
                         </div>
@@ -1219,10 +1220,11 @@ export function OrderDetailClient({
                           <Input
                             type="date"
                             defaultValue={s.completed_on ?? ""}
-                            disabled={stepPending}
-                            onChange={(e) =>
-                              saveStepField(s, { completed_on: e.target.value || null })
-                            }
+                            onBlur={(e) => {
+                              const v = e.target.value || null;
+                              if (v !== (s.completed_on ?? null))
+                                saveStepField(s, { completed_on: v });
+                            }}
                             className="mt-1 bg-white"
                           />
                         </div>
