@@ -55,6 +55,8 @@ import {
   uploadStepAttachment,
 } from "./actions";
 import { FactoryCategoryModal } from "./factory-category-modal";
+import { PlaceOrderFactoryGroups } from "./place-order-groups";
+import { EtdStepTable } from "./etd-step";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -106,7 +108,12 @@ export type ChecklistStepRow = {
   completed_on: string | null;
   responsible_id: string | null;
   signed_by_id: string | null;
-  attachments: { id: string; file_name: string | null; file_path: string }[];
+  attachments: {
+    id: string;
+    factory_id: string | null;
+    file_name: string | null;
+    file_path: string;
+  }[];
 };
 
 export type OfcRow = {
@@ -118,6 +125,17 @@ export type OfcRow = {
   factory_name: string;
   ship_requirement: string;
   loading_status: LoadingStatus | null;
+};
+
+export type EtdInfoRow = {
+  inspection: boolean;
+  ready: boolean;
+  ready_date: string | null;
+  initial_date: string | null;
+  current_date: string | null;
+  dispatch_location_id: string | null;
+  dispatch_date: string | null;
+  remarks: string | null;
 };
 
 export type BatchRow = { id: string; batch_number: string; status: BatchStatus };
@@ -869,6 +887,7 @@ export function OrderDetailClient({
   order,
   batches,
   ofc,
+  etdByOfc,
   categories,
   factories,
   profiles,
@@ -878,6 +897,7 @@ export function OrderDetailClient({
   order: OrderDetail;
   batches: BatchRow[];
   ofc: OfcRow[];
+  etdByOfc: Record<string, EtdInfoRow>;
   categories: Ref[];
   factories: Ref[];
   profiles: Ref[];
@@ -1229,7 +1249,25 @@ export function OrderDetailClient({
                           </Select>
                         </div>
                       </div>
-                      <AttachmentsSection orderId={orderId} step={s} />
+                      {s.step === "place_the_order" ? (
+                        <PlaceOrderFactoryGroups
+                          orderId={orderId}
+                          stepId={s.id}
+                          ofc={ofc}
+                          batches={batches}
+                          attachments={s.attachments}
+                        />
+                      ) : s.step === "etd" ? (
+                        <EtdStepTable
+                          orderId={orderId}
+                          ofc={ofc}
+                          batches={batches}
+                          etdByOfc={etdByOfc}
+                          factories={factories}
+                        />
+                      ) : (
+                        <AttachmentsSection orderId={orderId} step={s} />
+                      )}
                       {s.step === "po" && (
                         <Button
                           type="button"

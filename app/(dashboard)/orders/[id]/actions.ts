@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
-import type { BatchStatus, TablesUpdate } from "@/types/database";
+import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
 
 const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
 const DOCUMENTS_BUCKET = "order-documents";
@@ -276,7 +276,8 @@ export async function updateChecklistStep(
 export async function uploadStepAttachment(
   orderId: string,
   stepId: string,
-  formData: FormData
+  formData: FormData,
+  factoryId?: string | null
 ): Promise<ActionResult> {
   const session = await verifySession();
   const admin = createAdminClient();
@@ -299,6 +300,7 @@ export async function uploadStepAttachment(
 
   const { error: insertError } = await admin.from("step_attachments").insert({
     checklist_step_id: stepId,
+    factory_id: factoryId ?? null,
     file_path: filePath,
     file_name: file.name,
     uploaded_by: session.userId,
@@ -338,6 +340,52 @@ export async function deleteStepAttachment(
   if (error) return { ok: false, error: error.message };
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
+
+  revalidatePath(path(orderId));
+  return { ok: true };
+}
+
+/**
+ * Upsert dos dados de ETD de UMA entrada Factory x Category (linha da etapa
+ * ETD). `current_date`/`ready_date` são preenchidos automaticamente na
+ * primeira vez que `initial_date`/`ready` são setados (ver docs/regras_de_negocio.md §3.7.4).
+ */
+export async function upsertEtdInfo(
+  orderId: string,
+  ofcId: string,
+  patch: {
+    inspection?: boolean;
+    ready?: boolean;
+    initial_date?: string | null;
+    dispatch_location_id?: string | null;
+    dispatch_date?: string | null;
+    remarks?: string | null;
+  }
+): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const { data: existing } = await admin
+    .from("etd_info")
+    .select("current_date, ready_date")
+    .eq("order_factory_category_id", ofcId)
+    .maybeSingle();
+
+  const update: TablesInsert<"etd_info"> = {
+    order_factory_category_id: ofcId,
+    ...patch,
+  };
+  if (patch.initial_date && !existing?.current_date) {
+    update.current_date = new Date().toISOString().slice(0, 10);
+  }
+  if (patch.ready === true && !existing?.ready_date) {
+    update.ready_date = new Date().toISOString().slice(0, 10);
+  }
+
+  const { error } = await admin
+    .from("etd_info")
+    .upsert(update, { onConflict: "order_factory_category_id" });
+  if (error) return { ok: false, error: error.message };
 
   revalidatePath(path(orderId));
   return { ok: true };
