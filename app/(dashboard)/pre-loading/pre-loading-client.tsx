@@ -38,6 +38,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 import { deletePreLoading } from "./actions";
+import { PreLoadingFormModal, type BatchOption } from "./pre-loading-form-modal";
 import {
   activeFilterCount,
   EMPTY_FILTERS,
@@ -49,9 +50,11 @@ import {
 export type PreLoadingRow = {
   id: string;
   pl_number: string;
+  created_date: string;
   client: string | null;
   client_ids: string[];
   client_reference: string | null;
+  responsible_signer_id: string | null;
   leader: string | null;
   leader_id: string | null;
   consolidation_point: string | null;
@@ -65,6 +68,7 @@ export type PreLoadingRow = {
   booking_confirmed: boolean;
   total_pos: number;
   order_ids: string[];
+  batch_ids: string[];
   agent_brazil_id: string | null;
   agent_china_id: string | null;
   carrier_ids: string[];
@@ -114,6 +118,9 @@ export function PreLoadingClient({
   pods,
   factories,
   orders,
+  batchOptions,
+  nextPlNumber,
+  today,
 }: {
   rows: PreLoadingRow[];
   clients: Ref[];
@@ -124,6 +131,9 @@ export function PreLoadingClient({
   pods: Ref[];
   factories: Ref[];
   orders: Ref[];
+  batchOptions: BatchOption[];
+  nextPlNumber: string;
+  today: string;
 }) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<PreLoadingFilters>(EMPTY_FILTERS);
@@ -131,6 +141,19 @@ export function PreLoadingClient({
   const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
   const [toDelete, setToDelete] = useState<PreLoadingRow | null>(null);
   const [isDeleting, startDelete] = useTransition();
+  // `formOpen` sem `editing` = criação; com `editing` = edição (mesmo modal,
+  // ver docs/regras_de_negocio.md §3.9.2).
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<PreLoadingRow | null>(null);
+
+  const openCreate = () => {
+    setEditing(null);
+    setFormOpen(true);
+  };
+  const openEdit = (row: PreLoadingRow) => {
+    setEditing(row);
+    setFormOpen(true);
+  };
 
   const filterCount = activeFilterCount(filters);
 
@@ -236,7 +259,7 @@ export function PreLoadingClient({
               className="size-8 text-slate-500 hover:text-primary"
               onClick={(e) => {
                 e.stopPropagation();
-                comingSoon();
+                openEdit(row.original);
               }}
               aria-label="Edit"
             >
@@ -303,7 +326,7 @@ export function PreLoadingClient({
             <Download />
             Download XLS
           </Button>
-          <Button className="h-11 rounded-xl px-5" onClick={comingSoon}>
+          <Button className="h-11 rounded-xl px-5" onClick={openCreate}>
             <Plus />
             Create pre-loading
           </Button>
@@ -334,6 +357,18 @@ export function PreLoadingClient({
           )}
         </Button>
       </div>
+
+      <PreLoadingFormModal
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        editing={editing}
+        nextPlNumber={nextPlNumber}
+        today={today}
+        clients={clients}
+        profiles={profiles}
+        pods={pods}
+        batchOptions={batchOptions}
+      />
 
       <FiltersModal
         open={filtersOpen}
