@@ -1232,14 +1232,11 @@ export function OrderDetailClient({
                           <Label className="text-xs text-muted-foreground">
                             Signed by
                           </Label>
-                          <Select
-                            value={s.signed_by_id ?? ""}
-                            onValueChange={(v) =>
-                              saveStepField(s, { signed_by_id: v || null })
-                            }
-                          >
+                          {/* Travado: quem conclui a etapa (Completed on) assina —
+                              preenchido pelo servidor, não editável aqui. */}
+                          <Select value={s.signed_by_id ?? ""} disabled>
                             <SelectTrigger className="mt-1 w-full bg-white">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue placeholder="—" />
                             </SelectTrigger>
                             <SelectContent>
                               {profiles.map((p) => (

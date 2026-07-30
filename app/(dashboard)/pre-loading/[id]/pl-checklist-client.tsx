@@ -266,17 +266,19 @@ function SelectField({
   options,
   onChange,
   placeholder = "Select",
+  disabled = false,
 }: {
   label: string;
   value: string | null;
   options: Ref[];
   onChange: (value: string | null) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
       <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value ?? ""} onValueChange={(v) => onChange(v || null)}>
+      <Select value={value ?? ""} onValueChange={(v) => onChange(v || null)} disabled={disabled}>
         <SelectTrigger className="mt-1 w-full bg-white">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
@@ -520,11 +522,15 @@ export function PlChecklistClient({
                           className="mt-1 bg-white"
                         />
                       </div>
+                      {/* Travado: quem conclui a etapa (Completed on) assina —
+                          preenchido pelo servidor, não editável aqui. */}
                       <SelectField
                         label="Signed by"
                         value={s.signed_by_id}
                         options={profiles}
-                        onChange={(v) => save(s.step, { signed_by_id: v })}
+                        placeholder="—"
+                        disabled
+                        onChange={() => {}}
                       />
                     </div>
 
