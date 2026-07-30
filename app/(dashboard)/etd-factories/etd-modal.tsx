@@ -27,18 +27,20 @@ type EtdStepData = {
 };
 
 /**
- * Abre a MESMA visualização de ETD do Order Checklist (`EtdStepTable`) num modal,
- * carregando os dados do pedido sob demanda. Usado ao clicar numa linha da tela
- * ETD Factories. Após cada edição, recarrega os dados pra refletir na tabela.
+ * Abre a visualização de ETD do Order Checklist (`EtdStepTable`) num modal,
+ * carregando os dados do pedido sob demanda e mostrando SÓ a entrada clicada
+ * (Factory×Category) para editar. O ↗ da linha abre o histórico completo dela.
  */
 export function EtdOrderModal({
   orderId,
+  ofcId,
   title,
   factories,
   open,
   onOpenChange,
 }: {
   orderId: string | null;
+  ofcId: string | null;
   title: string;
   factories: Ref[];
   open: boolean;
@@ -69,7 +71,7 @@ export function EtdOrderModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-7xl">
         <DialogHeader>
           <DialogTitle className="text-lg text-primary">ETD</DialogTitle>
           {title && <p className="text-sm text-muted-foreground">{title}</p>}
@@ -80,7 +82,7 @@ export function EtdOrderModal({
         ) : (
           <EtdStepTable
             orderId={orderId!}
-            ofc={data.ofc}
+            ofc={data.ofc.filter((o) => o.id === ofcId)}
             batches={data.batches}
             etdByOfc={data.etdByOfc}
             factories={factories}
