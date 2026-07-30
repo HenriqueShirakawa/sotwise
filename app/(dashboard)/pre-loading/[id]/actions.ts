@@ -173,3 +173,195 @@ export async function deletePreLoadingStepAttachment(
   revalidatePath(`/pre-loading/${preLoadingId}`);
   return { ok: true };
 }
+
+/** As 7 etapas da fase pre-loading — todas precisam estar concluídas p/ confirmar. */
+const PL_STEPS: ChecklistStep[] = [
+  "consolidation_point",
+  "city",
+  "port_of_loading",
+  "shipping_docs",
+  "agents",
+  "booking",
+  "loading_date",
+];
+
+export type ConfirmShippingInput = {
+  container_number: string;
+  seal_number: string;
+  estimated_date: string; // yyyy-mm-dd
+  shipment_leader_id: string;
+  preloading_leader_id: string;
+  carrier_id: string;
+  shipment_model_id: string;
+  signer_id: string;
+  /** loading_status por entrada order_factory_category (None não é opção aqui). */
+  statuses: { ofc_id: string; status: "partial" | "total" }[];
+};
+
+/**
+ * "Confirm Shipping": converte um Pre-loading concluído num Shipment (regra
+ * 3.9.6 + split 3.7.2). Cria o shipment 1:1, grava o loading_status de cada
+ * entrada Factory×Category, e roda o split por lote:
+ *   - entradas Total ficam no lote, que vai para `in_transit`;
+ *   - entradas Partial migram para um lote novo (nasce `in_production`).
+ * Por fim marca o PL como confirmado (sai da lista de Pre-loading).
+ *
+ * ⚠️ Sem transação (PostgREST não expõe uma pelo client): a criação do shipment
+ * é primeiro e trava re-execução pelo unique em pre_loading_id. Uma falha no meio
+ * do split exige limpeza manual — candidato a virar RPC/função no banco depois.
+ */
+export async function confirmShipping(
+  preLoadingId: string,
+  input: ConfirmShippingInput
+): Promise<ActionResult> {
+  const session = await verifySession();
+  const admin = createAdminClient();
+
+  const required = [
+    input.container_number,
+    input.seal_number,
+    input.estimated_date,
+    input.shipment_leader_id,
+    input.preloading_leader_id,
+    input.carrier_id,
+    input.shipment_model_id,
+    input.signer_id,
+  ];
+  if (required.some((v) => !v || !String(v).trim())) {
+    return { ok: false, error: "Fill in all required fields." };
+  }
+  if (input.statuses.some((s) => s.status !== "partial" && s.status !== "total")) {
+    return { ok: false, error: "Each line must be Partial or Total." };
+  }
+
+  const { data: pl, error: plErr } = await admin
+    .from("pre_loadings")
+    .select("id, shipping_confirmed_at")
+    .eq("id", preLoadingId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (plErr) return { ok: false, error: plErr.message };
+  if (!pl) return { ok: false, error: "Pre-loading not found." };
+  if (pl.shipping_confirmed_at) return { ok: false, error: "This Pre-loading was already shipped." };
+
+  // Reforça no servidor a trava do botão: as 7 etapas concluídas.
+  const { data: steps } = await admin
+    .from("pre_loading_checklist_steps")
+    .select("step, completed_on")
+    .eq("pre_loading_id", preLoadingId);
+  const done = new Set((steps ?? []).filter((s) => s.completed_on).map((s) => s.step));
+  if (PL_STEPS.some((s) => !done.has(s))) {
+    return { ok: false, error: "Complete all checklist steps before shipping." };
+  }
+
+  const { data: plBatches } = await admin
+    .from("pre_loading_batches")
+    .select("batch_id")
+    .eq("pre_loading_id", preLoadingId);
+  const batchIds = (plBatches ?? []).map((b) => b.batch_id);
+  if (batchIds.length === 0) return { ok: false, error: "This Pre-loading has no batches." };
+
+  const { data: batches } = await admin
+    .from("batches")
+    .select("id, order_id, batch_number")
+    .in("id", batchIds);
+
+  const { data: ofcRows } = await admin
+    .from("order_factory_category")
+    .select("id, batch_id, order_id")
+    .in("batch_id", batchIds);
+
+  const statusByOfc = new Map(input.statuses.map((s) => [s.ofc_id, s.status]));
+  if ((ofcRows ?? []).some((o) => !statusByOfc.has(o.id))) {
+    return { ok: false, error: "Set the loading status for every line." };
+  }
+
+  // 1. Shipment (1:1). O unique em pre_loading_id também barra confirmação dupla.
+  const { error: shipErr } = await admin.from("shipments").insert({
+    pre_loading_id: preLoadingId,
+    container_number: input.container_number.trim(),
+    carrier_id: input.carrier_id,
+    shipment_model_id: input.shipment_model_id,
+    leader_id: input.shipment_leader_id,
+    signer_id: input.signer_id,
+    estimated_date: input.estimated_date,
+    status: "in_transit",
+    created_by: session.userId,
+  });
+  if (shipErr) return { ok: false, error: shipErr.message };
+
+  // 2. loading_status por entrada.
+  for (const value of ["total", "partial"] as const) {
+    const ids = (ofcRows ?? []).filter((o) => statusByOfc.get(o.id) === value).map((o) => o.id);
+    if (ids.length) {
+      const { error } = await admin
+        .from("order_factory_category")
+        .update({ loading_status: value })
+        .in("id", ids);
+      if (error) return { ok: false, error: error.message };
+    }
+  }
+
+  // 3. Split: agrupa as entradas não-Total por lote de origem.
+  const nonTotalByBatch = new Map<string, string[]>();
+  for (const o of ofcRows ?? []) {
+    if (!o.batch_id || statusByOfc.get(o.id) === "total") continue;
+    const arr = nonTotalByBatch.get(o.batch_id) ?? [];
+    arr.push(o.id);
+    nonTotalByBatch.set(o.batch_id, arr);
+  }
+
+  // Próximo ".NN" por pedido (maior sufixo entre os lotes existentes + 1, por split).
+  const nextNumByOrder = new Map<string, number>();
+  for (const orderId of new Set((batches ?? []).map((b) => b.order_id))) {
+    const { data: all } = await admin.from("batches").select("batch_number").eq("order_id", orderId);
+    const max = (all ?? []).reduce((m, b) => {
+      const n = Number(String(b.batch_number).replace(/^\./, ""));
+      return Number.isFinite(n) && n > m ? n : m;
+    }, 0);
+    nextNumByOrder.set(orderId, max);
+  }
+
+  for (const batch of batches ?? []) {
+    const toMove = nonTotalByBatch.get(batch.id) ?? [];
+    if (toMove.length) {
+      const next = (nextNumByOrder.get(batch.order_id) ?? 0) + 1;
+      nextNumByOrder.set(batch.order_id, next);
+      const { data: newBatch, error: nbErr } = await admin
+        .from("batches")
+        .insert({
+          order_id: batch.order_id,
+          batch_number: "." + String(next).padStart(2, "0"),
+          status: "in_production",
+          split_from_batch_id: batch.id,
+        })
+        .select("id")
+        .single();
+      if (nbErr || !newBatch) return { ok: false, error: nbErr?.message ?? "Failed to split batch." };
+      const { error: mvErr } = await admin
+        .from("order_factory_category")
+        .update({ batch_id: newBatch.id })
+        .in("id", toMove);
+      if (mvErr) return { ok: false, error: mvErr.message };
+    }
+    // 4. O lote que carregou vai para in_transit.
+    const { error: stErr } = await admin.from("batches").update({ status: "in_transit" }).eq("id", batch.id);
+    if (stErr) return { ok: false, error: stErr.message };
+  }
+
+  // 5. Marca o PL como confirmado + grava seal/leader do embarque.
+  const { error: plUpdErr } = await admin
+    .from("pre_loadings")
+    .update({
+      seal_number: input.seal_number.trim(),
+      leader_id: input.preloading_leader_id,
+      shipping_confirmed_at: new Date().toISOString(),
+    })
+    .eq("id", preLoadingId);
+  if (plUpdErr) return { ok: false, error: plUpdErr.message };
+
+  revalidatePath(`/pre-loading/${preLoadingId}`);
+  revalidatePath("/pre-loading");
+  revalidatePath("/orders");
+  return { ok: true };
+}

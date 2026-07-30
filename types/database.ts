@@ -711,6 +711,7 @@ export type Database = {
           leader_id: UUID | null;
           booking_status: string | null;
           seal_number: string | null;
+          shipping_confirmed_at: Timestamp | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -726,12 +727,47 @@ export type Database = {
           leader_id?: UUID | null;
           booking_status?: string | null;
           seal_number?: string | null;
+          shipping_confirmed_at?: Timestamp | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
           created_by?: UUID | null;
         };
         Update: Partial<Database["public"]["Tables"]["pre_loadings"]["Insert"]>;
+        Relationships: [];
+      };
+      shipments: {
+        Row: {
+          id: UUID;
+          pre_loading_id: UUID;
+          shipment_model_id: UUID | null;
+          carrier_id: UUID | null;
+          container_number: string | null;
+          leader_id: UUID | null;
+          signer_id: UUID | null;
+          estimated_date: DateStr | null;
+          status: string;
+          deleted_at: Timestamp | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          created_by: UUID | null;
+        };
+        Insert: {
+          id?: UUID;
+          pre_loading_id: UUID;
+          shipment_model_id?: UUID | null;
+          carrier_id?: UUID | null;
+          container_number?: string | null;
+          leader_id?: UUID | null;
+          signer_id?: UUID | null;
+          estimated_date?: DateStr | null;
+          status?: string;
+          deleted_at?: Timestamp | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          created_by?: UUID | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["shipments"]["Insert"]>;
         Relationships: [];
       };
       pre_loading_clients: {

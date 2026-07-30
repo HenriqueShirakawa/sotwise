@@ -113,6 +113,7 @@ export default async function PreLoadingPage() {
           "id, pl_number, created_date, client_reference, pod_id, leader_id, responsible_signer_id"
         )
         .is("deleted_at", null)
+        .is("shipping_confirmed_at", null) // PL confirmado vira Shipment e sai da lista
         .range(from, to)
     ),
     fetchAll<StepRow>((from, to) =>

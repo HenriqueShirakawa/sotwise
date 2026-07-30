@@ -38,6 +38,7 @@ import {
   uploadPreLoadingStepAttachment,
   type StepPatch,
 } from "./actions";
+import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
 
 export type Ref = { id: string; name: string };
 
@@ -306,6 +307,12 @@ export function PlChecklistClient({
   agentsChina,
   agents,
   contactsByAgent,
+  carriers,
+  shipmentModels,
+  shipmentLines,
+  currentUserId,
+  preloadingLeaderId,
+  alreadyShipped,
 }: {
   preLoading: PreLoadingDetail;
   batches: PlBatchRow[];
@@ -318,11 +325,18 @@ export function PlChecklistClient({
   agentsChina: Ref[];
   agents: Ref[];
   contactsByAgent: Record<string, Ref[]>;
+  carriers: Ref[];
+  shipmentModels: Ref[];
+  shipmentLines: ShipmentLine[];
+  currentUserId: string;
+  preloadingLeaderId: string | null;
+  alreadyShipped: boolean;
 }) {
   const router = useRouter();
   const [infoOpen, setInfoOpen] = useState(true);
   const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
+  const [shipOpen, setShipOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
@@ -643,8 +657,8 @@ export function PlChecklistClient({
         </div>
       </div>
 
-      {/* Rodapé do Bubble: "Confirm Pre-Loading" só libera com as 7 etapas
-          concluídas (docs §3.9.6). A conversão em Shipment ainda não existe. */}
+      {/* "Confirm Shipping" só libera com as 7 etapas concluídas (docs §3.9.6);
+          abre o modal que cria o Shipment. Um PL já confirmado fica travado. */}
       <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
         <Button
           variant="outline"
@@ -655,12 +669,29 @@ export function PlChecklistClient({
         </Button>
         <Button
           className="h-11 min-w-64 rounded-xl"
-          disabled={doneCount < steps.length}
-          onClick={() => toast.info("Confirm Pre-Loading — coming soon.")}
+          disabled={alreadyShipped || doneCount < steps.length}
+          onClick={() => setShipOpen(true)}
         >
-          Confirm Pre-Loading
+          {alreadyShipped ? "Shipping confirmed" : "Confirm Shipping"}
         </Button>
       </div>
+
+      {shipOpen && (
+        <ConfirmShippingModal
+          onClose={() => setShipOpen(false)}
+          preLoadingId={preLoading.id}
+          plNumber={preLoading.pl_number}
+          clientReference={preLoading.client_reference}
+          sealNumber={preLoading.seal_number}
+          loadingDate={steps.find((s) => s.step === "loading_date")?.estimated_date ?? null}
+          preloadingLeaderId={preloadingLeaderId}
+          currentUserId={currentUserId}
+          profiles={profiles}
+          carriers={carriers}
+          shipmentModels={shipmentModels}
+          lines={shipmentLines}
+        />
+      )}
     </div>
   );
 }
