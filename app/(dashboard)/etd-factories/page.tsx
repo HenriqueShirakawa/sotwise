@@ -1,5 +1,6 @@
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readColumnVisibility } from "@/lib/column-prefs";
 import type { BatchStatus } from "@/types/database";
 
 import { EtdFactoriesClient, type EtdFactoryRow } from "./etd-factories-client";
@@ -103,7 +104,7 @@ function buildRows(
 }
 
 export default async function EtdFactoriesPage() {
-  await verifySession();
+  const { profile } = await verifySession();
   const admin = createAdminClient();
 
   // Uma query com inner join nos lotes ativos + pedido não-deletado, embutindo
@@ -155,6 +156,12 @@ export default async function EtdFactoriesPage() {
     .sort(byName);
 
   return (
-    <EtdFactoriesClient rows={rows} clients={clients} factories={factories} categories={categories} />
+    <EtdFactoriesClient
+      rows={rows}
+      clients={clients}
+      factories={factories}
+      categories={categories}
+      initialColumns={readColumnVisibility(profile.ui_preferences, "etd-factories")}
+    />
   );
 }

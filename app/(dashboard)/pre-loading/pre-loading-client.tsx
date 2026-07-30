@@ -11,7 +11,13 @@ import {
   type Column,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from "@tanstack/react-table";
+import {
+  ColumnsMenu,
+  useColumnVisibility,
+  type ColumnOption,
+} from "@/components/columns-menu";
 import {
   Search,
   Filter,
@@ -97,6 +103,21 @@ function SortableHeader({
 
 const dash = <span className="text-slate-300">—</span>;
 
+/** Colunas que o usuário pode esconder — "actions" fica sempre visível. */
+const COLUMN_OPTIONS: ColumnOption[] = [
+  { id: "pl_number", label: "PL No." },
+  { id: "client", label: "Client" },
+  { id: "client_reference", label: "Client Reference" },
+  { id: "leader", label: "Leader" },
+  { id: "consolidation_point", label: "Cons. Point" },
+  { id: "pol", label: "POL" },
+  { id: "pod", label: "POD" },
+  { id: "loading_date", label: "Loading Date" },
+  { id: "completed", label: "Preloading completed?" },
+  { id: "booking_confirmed", label: "Booking Status" },
+  { id: "total_pos", label: "Total PO's" },
+];
+
 const comingSoon = () => toast.info("Coming soon.");
 
 /** Compara datas como string "YYYY-MM-DD" (funciona pra date e timestamp ISO). */
@@ -122,6 +143,7 @@ export function PreLoadingClient({
   batchOptions,
   nextPlNumber,
   today,
+  initialColumns,
 }: {
   rows: PreLoadingRow[];
   clients: Ref[];
@@ -135,12 +157,14 @@ export function PreLoadingClient({
   batchOptions: BatchOption[];
   nextPlNumber: string;
   today: string;
+  initialColumns: VisibilityState;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<PreLoadingFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
+  const { visibility, save: saveVisibility } = useColumnVisibility("pre-loading", initialColumns);
   const [toDelete, setToDelete] = useState<PreLoadingRow | null>(null);
   const [isDeleting, startDelete] = useTransition();
   // `formOpen` sem `editing` = criação; com `editing` = edição (mesmo modal,
@@ -293,7 +317,9 @@ export function PreLoadingClient({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
-    state: { sorting },
+    onColumnVisibilityChange: (updater) =>
+      saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
+    state: { sorting, columnVisibility: visibility },
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -358,6 +384,13 @@ export function PreLoadingClient({
             </span>
           )}
         </Button>
+        <div className="ml-auto">
+          <ColumnsMenu
+            columns={COLUMN_OPTIONS}
+            visibility={visibility}
+            onSave={saveVisibility}
+          />
+        </div>
       </div>
 
       <PreLoadingFormModal
