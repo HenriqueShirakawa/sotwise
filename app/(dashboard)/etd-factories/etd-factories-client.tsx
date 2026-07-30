@@ -113,7 +113,11 @@ export function EtdFactoriesClient({
   const [filters, setFilters] = useState<EtdFactoriesFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "po_batch", desc: true }]);
-  const [modalOrder, setModalOrder] = useState<{ id: string; title: string } | null>(null);
+  const [modalTarget, setModalTarget] = useState<{
+    orderId: string;
+    ofcId: string;
+    title: string;
+  } | null>(null);
 
   const filterCount = activeFilterCount(filters);
 
@@ -320,11 +324,12 @@ export function EtdFactoriesClient({
       />
 
       <EtdOrderModal
-        orderId={modalOrder?.id ?? null}
-        title={modalOrder?.title ?? ""}
+        orderId={modalTarget?.orderId ?? null}
+        ofcId={modalTarget?.ofcId ?? null}
+        title={modalTarget?.title ?? ""}
         factories={factories}
-        open={!!modalOrder}
-        onOpenChange={(o) => !o && setModalOrder(null)}
+        open={!!modalTarget}
+        onOpenChange={(o) => !o && setModalTarget(null)}
       />
 
       <div className="overflow-x-auto rounded-2xl border bg-white">
@@ -352,10 +357,13 @@ export function EtdFactoriesClient({
                   key={row.id}
                   className="cursor-pointer hover:bg-slate-50/60"
                   onClick={() =>
-                    setModalOrder({
-                      id: row.original.order_id,
+                    setModalTarget({
+                      orderId: row.original.order_id,
+                      ofcId: row.original.id,
                       title: `${row.original.client ? `${row.original.client} · ` : ""}PO ${
                         row.original.po_number
+                      } ${row.original.batch_number} · ${row.original.factory} - ${
+                        row.original.category
                       }`,
                     })
                   }
