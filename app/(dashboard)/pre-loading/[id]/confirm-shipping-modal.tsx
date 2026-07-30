@@ -38,7 +38,7 @@ export type ShipmentLine = {
   batch_number: string;
 };
 
-type LoadStatus = "partial" | "total";
+type LoadStatus = "none" | "partial" | "total";
 
 /** Só campo obrigatório vazio bloqueia o Confirm. */
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
@@ -75,8 +75,8 @@ function SelectField({
 
 /**
  * Modal de "Confirm Shipping" — converte o PL num Shipment. Montado só quando
- * aberto (estado reseta a cada abertura). O status por linha só oferece
- * Partial/Total: não existe container sem carregamento, então None não se aplica.
+ * aberto (estado reseta a cada abertura). O status por linha é None/Partial/Total
+ * (docs §3.9.6): Total fica no lote; Partial/None migram pro lote novo do split.
  */
 export function ConfirmShippingModal({
   onClose,
@@ -276,6 +276,7 @@ export function ConfirmShippingModal({
                         <SelectValue placeholder="Choose status" />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
                         <SelectItem value="partial">Partial</SelectItem>
                         <SelectItem value="total">Total</SelectItem>
                       </SelectContent>

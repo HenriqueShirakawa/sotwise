@@ -194,8 +194,8 @@ export type ConfirmShippingInput = {
   carrier_id: string;
   shipment_model_id: string;
   signer_id: string;
-  /** loading_status por entrada order_factory_category (None não é opção aqui). */
-  statuses: { ofc_id: string; status: "partial" | "total" }[];
+  /** loading_status por entrada order_factory_category (None/Partial/Total). */
+  statuses: { ofc_id: string; status: "none" | "partial" | "total" }[];
 };
 
 /**
@@ -230,8 +230,9 @@ export async function confirmShipping(
   if (required.some((v) => !v || !String(v).trim())) {
     return { ok: false, error: "Fill in all required fields." };
   }
-  if (input.statuses.some((s) => s.status !== "partial" && s.status !== "total")) {
-    return { ok: false, error: "Each line must be Partial or Total." };
+  const VALID = new Set(["none", "partial", "total"]);
+  if (input.statuses.some((s) => !VALID.has(s.status))) {
+    return { ok: false, error: "Each line must be None, Partial or Total." };
   }
 
   const { data: pl, error: plErr } = await admin
@@ -291,7 +292,7 @@ export async function confirmShipping(
   if (shipErr) return { ok: false, error: shipErr.message };
 
   // 2. loading_status por entrada.
-  for (const value of ["total", "partial"] as const) {
+  for (const value of ["total", "partial", "none"] as const) {
     const ids = (ofcRows ?? []).filter((o) => statusByOfc.get(o.id) === value).map((o) => o.id);
     if (ids.length) {
       const { error } = await admin
