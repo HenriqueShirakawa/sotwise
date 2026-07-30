@@ -1,5 +1,230 @@
-import { ComingSoon } from "@/components/page-header";
+import { verifySession } from "@/lib/dal";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-export default function PreLoadingPage() {
-  return <ComingSoon title="Pre-loading" />;
+import { PreLoadingClient, type PreLoadingRow } from "./pre-loading-client";
+import type { Ref } from "./filters-modal";
+
+const PAGE = 1000; // limite de linhas por request do PostgREST
+
+/** Busca TODAS as linhas de uma query paginando em blocos de 1000. */
+async function fetchAll<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await build(from, from + PAGE - 1);
+    const chunk = data ?? [];
+    all.push(...chunk);
+    if (chunk.length < PAGE) break;
+  }
+  return all;
+}
+
+const LIST_STEPS = [
+  "consolidation_point",
+  "port_of_loading",
+  "loading_date",
+  "booking",
+  "agents",
+] as const;
+
+type PreLoadingBase = {
+  id: string;
+  pl_number: string;
+  client_reference: string | null;
+  pod_id: string | null;
+  leader_id: string | null;
+};
+
+type StepRow = {
+  pre_loading_id: string;
+  step: (typeof LIST_STEPS)[number];
+  completed_on: string | null;
+  estimated_date: string | null;
+  consolidation_point_id: string | null;
+  pol_id: string | null;
+  agent_brazil_id: string | null;
+  agent_china_id: string | null;
+  carrier_agent_id: string | null;
+};
+
+export default async function PreLoadingPage() {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const [
+    preLoadings,
+    stepRows,
+    plClients,
+    plBatches,
+    batchRes,
+    orderRes,
+    carrierAgentRes,
+    podRes,
+    factoryRes,
+    polRes,
+    clientRes,
+    profileRes,
+    agentRes,
+    carrierRes,
+  ] = await Promise.all([
+    fetchAll<PreLoadingBase>((from, to) =>
+      admin
+        .from("pre_loadings")
+        .select("id, pl_number, client_reference, pod_id, leader_id")
+        .is("deleted_at", null)
+        .range(from, to)
+    ),
+    fetchAll<StepRow>((from, to) =>
+      admin
+        .from("pre_loading_checklist_steps")
+        .select(
+          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_agent_id"
+        )
+        .in("step", LIST_STEPS)
+        .range(from, to)
+        .returns<StepRow[]>()
+    ),
+    fetchAll<{ pre_loading_id: string; client_id: string }>((from, to) =>
+      admin.from("pre_loading_clients").select("pre_loading_id, client_id").range(from, to)
+    ),
+    fetchAll<{ pre_loading_id: string; batch_id: string }>((from, to) =>
+      admin.from("pre_loading_batches").select("pre_loading_id, batch_id").range(from, to)
+    ),
+    fetchAll<{ id: string; order_id: string }>((from, to) =>
+      admin.from("batches").select("id, order_id").range(from, to)
+    ),
+    fetchAll<{ id: string; po_number: string }>((from, to) =>
+      admin.from("orders").select("id, po_number").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ carrier_id: string; agent_id: string }>((from, to) =>
+      admin.from("carrier_agents").select("carrier_id, agent_id").range(from, to)
+    ),
+    admin.from("pods").select("id, name").is("deleted_at", null),
+    admin.from("factories").select("id, name").is("deleted_at", null),
+    admin.from("pols").select("id, name").is("deleted_at", null),
+    admin.from("clients").select("id, name").is("deleted_at", null),
+    admin.from("profiles").select("id, full_name"),
+    admin.from("agents").select("id, name").is("deleted_at", null),
+    admin.from("carriers").select("id, name").is("deleted_at", null),
+  ]);
+
+  const podNameById = new Map((podRes.data ?? []).map((p) => [p.id, p.name]));
+  const factoryNameById = new Map((factoryRes.data ?? []).map((f) => [f.id, f.name]));
+  const polNameById = new Map((polRes.data ?? []).map((p) => [p.id, p.name]));
+  const clientNameById = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
+  const profileNameById = new Map((profileRes.data ?? []).map((p) => [p.id, p.full_name]));
+  const orderIdByBatchId = new Map(batchRes.map((b) => [b.id, b.order_id]));
+
+  // agente -> carriers que o carregam (M-N via carrier_agents) — usado pra
+  // resolver o filtro "Carrier" a partir do carrier_agent_id gravado na etapa Agents.
+  const carrierIdsByAgentId = new Map<string, string[]>();
+  for (const ca of carrierAgentRes) {
+    const arr = carrierIdsByAgentId.get(ca.agent_id) ?? [];
+    arr.push(ca.carrier_id);
+    carrierIdsByAgentId.set(ca.agent_id, arr);
+  }
+
+  const stepsByPreLoading = new Map<string, Partial<Record<(typeof LIST_STEPS)[number], StepRow>>>();
+  for (const s of stepRows) {
+    const entry = stepsByPreLoading.get(s.pre_loading_id) ?? {};
+    entry[s.step] = s;
+    stepsByPreLoading.set(s.pre_loading_id, entry);
+  }
+
+  const clientsByPreLoading = new Map<string, { id: string; name: string }[]>();
+  for (const pc of plClients) {
+    const arr = clientsByPreLoading.get(pc.pre_loading_id) ?? [];
+    const name = clientNameById.get(pc.client_id);
+    if (name) arr.push({ id: pc.client_id, name });
+    clientsByPreLoading.set(pc.pre_loading_id, arr);
+  }
+
+  const orderIdsByPreLoading = new Map<string, Set<string>>();
+  for (const pb of plBatches) {
+    const orderId = orderIdByBatchId.get(pb.batch_id);
+    if (!orderId) continue;
+    const set = orderIdsByPreLoading.get(pb.pre_loading_id) ?? new Set<string>();
+    set.add(orderId);
+    orderIdsByPreLoading.set(pb.pre_loading_id, set);
+  }
+
+  const rows: PreLoadingRow[] = [];
+  for (const pl of preLoadings) {
+    const steps = stepsByPreLoading.get(pl.id) ?? {};
+    const loadingDateStep = steps.loading_date;
+    // Regra da lista: só mostra Pre-loadings cuja etapa "Loading Date" ainda
+    // não foi concluída (completed_on vazio) — ver docs/regras_de_negocio.md §3.9.1/3.9.5.
+    if (loadingDateStep?.completed_on) continue;
+
+    const consPointId = steps.consolidation_point?.consolidation_point_id ?? null;
+    const polId = steps.port_of_loading?.pol_id ?? null;
+    const agentsStep = steps.agents;
+    const carrierIds = agentsStep?.carrier_agent_id
+      ? (carrierIdsByAgentId.get(agentsStep.carrier_agent_id) ?? [])
+      : [];
+    const plClientsList = clientsByPreLoading.get(pl.id) ?? [];
+    const plOrderIds = [...(orderIdsByPreLoading.get(pl.id) ?? [])];
+
+    rows.push({
+      id: pl.id,
+      pl_number: pl.pl_number,
+      client: plClientsList.map((c) => c.name).sort().join(", ") || null,
+      client_ids: plClientsList.map((c) => c.id),
+      client_reference: pl.client_reference,
+      leader: pl.leader_id ? (profileNameById.get(pl.leader_id) ?? null) : null,
+      leader_id: pl.leader_id,
+      consolidation_point: consPointId ? (factoryNameById.get(consPointId) ?? null) : null,
+      consolidation_point_id: consPointId,
+      pol: polId ? (polNameById.get(polId) ?? null) : null,
+      pol_id: polId,
+      pod: pl.pod_id ? (podNameById.get(pl.pod_id) ?? null) : null,
+      pod_id: pl.pod_id,
+      // Coluna "Loading Date" na lista mostra a data ESTIMADA da etapa — a
+      // "completed" fica sempre vazia aqui porque o filtro acima já exclui
+      // quem já a preencheu.
+      loading_date: loadingDateStep?.estimated_date ?? null,
+      completed: false,
+      // "Booking Status" = etapa "Booking" do checklist concluída (mesma
+      // regra de "done" das outras etapas: completed_on preenchido).
+      booking_confirmed: !!steps.booking?.completed_on,
+      total_pos: orderIdsByPreLoading.get(pl.id)?.size ?? 0,
+      order_ids: plOrderIds,
+      agent_brazil_id: agentsStep?.agent_brazil_id ?? null,
+      agent_china_id: agentsStep?.agent_china_id ?? null,
+      carrier_ids: carrierIds,
+    });
+  }
+
+  // Ordenação padrão: PL number decrescente — igual ao Bubble.
+  rows.sort((a, b) => (Number(b.pl_number) || 0) - (Number(a.pl_number) || 0));
+
+  const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
+  const clients: Ref[] = (clientRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName);
+  const profiles: Ref[] = (profileRes.data ?? [])
+    .filter((p) => p.full_name)
+    .map((p) => ({ id: p.id, name: p.full_name as string }))
+    .sort(byName);
+  const agents: Ref[] = (agentRes.data ?? []).map((a) => ({ id: a.id, name: a.name })).sort(byName);
+  const carriers: Ref[] = (carrierRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName);
+  const pols: Ref[] = (polRes.data ?? []).map((p) => ({ id: p.id, name: p.name })).sort(byName);
+  const pods: Ref[] = (podRes.data ?? []).map((p) => ({ id: p.id, name: p.name })).sort(byName);
+  const factories: Ref[] = (factoryRes.data ?? []).map((f) => ({ id: f.id, name: f.name })).sort(byName);
+  const orders: Ref[] = orderRes
+    .map((o) => ({ id: o.id, name: o.po_number }))
+    .sort((a, b) => (Number(b.name) || 0) - (Number(a.name) || 0));
+
+  return (
+    <PreLoadingClient
+      rows={rows}
+      clients={clients}
+      profiles={profiles}
+      agents={agents}
+      carriers={carriers}
+      pols={pols}
+      pods={pods}
+      factories={factories}
+      orders={orders}
+    />
+  );
 }
