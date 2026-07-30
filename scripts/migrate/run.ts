@@ -19,6 +19,16 @@ function mapCompany(v: unknown): "BR" | "China" {
   return "BR";
 }
 
+/** Country do agente (Bubble) -> enum agents.location. Usado no filtro
+ * Agent Brazil/Agent China do checklist do PL. */
+function mapAgentLocation(v: unknown): "brazil" | "china" | null {
+  const s = str(v);
+  if (!s) return null;
+  if (/chin/i.test(s)) return "china";
+  if (/bra[sz]il/i.test(s)) return "brazil";
+  return null;
+}
+
 /** email guardado em user.authentication (Bubble): { email: { email: "..." } }. */
 function userEmail(u: Row): string | null {
   const a = u.authentication as any;
@@ -157,7 +167,7 @@ async function importCadastros() {
   mark("agents", agentsRaw.length, await upsertByBubbleId("agents",
     agentsRaw.map((a) => ({
       name: reqStr(a.Agent), country_id: countryByName.get(str(a.Country) ?? "") ?? null,
-      location: null, email: str(a["E-mail"]), email_na: false, phone_number: str(a.Phone),
+      location: mapAgentLocation(a.Country), email: str(a["E-mail"]), email_na: false, phone_number: str(a.Phone),
       bubble_id: a._id, created_by: cb(a),
     }))));
 
