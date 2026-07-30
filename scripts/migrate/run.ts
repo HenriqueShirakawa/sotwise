@@ -543,7 +543,7 @@ async function importPreloadingShipments() {
     created_date: dateOnly(p["Created Date"]) || new Date().toISOString().slice(0, 10),
     client_reference: str(p["[Headers] Cliente Reference"]),
     pod_id: ref(podMap, p["[Headers] POD"]),
-    leader_id: null,
+    leader_id: ref(userMap, p["[Headers] Leader"]),
     created_by: ref(userMap, p["Created By"]),
     bubble_id: p._id,
   }));
@@ -614,6 +614,8 @@ async function importChecklist() {
   const tmplSorted = new Map<string, number>();
   for (const t of await fetchAll("[vistapub]checklist")) tmplSorted.set(t._id, Number(t.Sorted));
 
+  const plRaw = await fetchAll("[vistapub]pre-loading");
+
   // item → order uuid  (order."List of Checklist x Item")
   const itemToOrder = new Map<string, string>();
   for (const o of await fetchAll("[vistapub]order")) {
@@ -622,9 +624,35 @@ async function importChecklist() {
   }
   // item → pre_loading uuid  (pre_loading."[Vistapub] Checklist x Item")
   const itemToPl = new Map<string, string>();
-  for (const p of await fetchAll("[vistapub]pre-loading")) {
+  for (const p of plRaw) {
     const pid = plMap.get(p._id); if (!pid) continue;
     for (const it of (Array.isArray(p["[Vistapub] Checklist x Item"]) ? p["[Vistapub] Checklist x Item"] : [])) itemToPl.set(it as string, pid);
+  }
+
+  // O Bubble passou a gravar Consolidation Point / Port of Land / Loading Date /
+  // Booking Number como campos DIRETOS no objeto pre-loading (não mais só via
+  // "[Value] Factory"/"[Value] POL " do item de checklist). Pra PLs antigos os
+  // dois batem; pra PLs recentes só o campo direto tem valor. Usa o direto como
+  // fonte principal, com o item de checklist como fallback.
+  const plExtra = new Map<
+    string,
+    {
+      consolidation_point_id: string | null;
+      pol_id: string | null;
+      loading_date_estimated: string | null;
+      loading_date_completed: string | null;
+      booking_number: string | null;
+    }
+  >();
+  for (const p of plRaw) {
+    const pid = plMap.get(p._id); if (!pid) continue;
+    plExtra.set(pid, {
+      consolidation_point_id: ref(factMap, p["Consolidation Point"]),
+      pol_id: ref(polMap, p["Port of Land"]),
+      loading_date_estimated: dateOnly(p["Loading Date Estimated"]),
+      loading_date_completed: dateOnly(p["Loading Date Completed"]),
+      booking_number: str(p["Booking Number"]),
+    });
   }
 
   const items = await fetchAll("[vistapub]checklistxitem");
@@ -652,12 +680,24 @@ async function importChecklist() {
     } else {
       const plId = itemToPl.get(it._id);
       if (!plId) { skip++; continue; }
+      const extra = plExtra.get(plId);
+      // Loading Date: o campo direto do pre-loading é a fonte mais confiável
+      // (ver comentário acima de plExtra) — sobrepõe o "Completed/Estimated
+      // date" genérico do item quando disponível.
+      const completed_on =
+        step === "loading_date" ? (extra?.loading_date_completed ?? base.completed_on) : base.completed_on;
+      const estimated_date =
+        step === "loading_date" ? (extra?.loading_date_estimated ?? base.estimated_date) : base.estimated_date;
       plSteps.set(`${plId}|${step}`, {
         pre_loading_id: plId, ...base,
+        completed_on,
+        estimated_date,
+        done: completed_on != null,
         notes: str(it["[Value] Text"]),
-        consolidation_point_id: ref(factMap, it["[Value] Factory"]),
+        consolidation_point_id: extra?.consolidation_point_id ?? ref(factMap, it["[Value] Factory"]),
         city_id: ref(cityMap, it["[Value] City"]),
-        pol_id: ref(polMap, it["[Value] POL "]),
+        pol_id: extra?.pol_id ?? ref(polMap, it["[Value] POL "]),
+        booking_number: step === "booking" ? (extra?.booking_number ?? null) : null,
       });
     }
   }
