@@ -69,14 +69,14 @@ export default async function PreLoadingChecklistPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await verifySession();
+  const { userId } = await verifySession();
   const { id } = await params;
   const admin = createAdminClient();
 
   const { data: pl } = await admin
     .from("pre_loadings")
     .select(
-      "id, pl_number, created_date, client_reference, pod_id, leader_id, responsible_signer_id, booking_status, seal_number"
+      "id, pl_number, created_date, client_reference, pod_id, leader_id, responsible_signer_id, booking_status, seal_number, shipping_confirmed_at"
     )
     .eq("id", id)
     .is("deleted_at", null)
@@ -97,6 +97,8 @@ export default async function PreLoadingChecklistPage({
     contactRes,
     agentContactRes,
     clientRes,
+    shipmentModelRes,
+    carrierRes,
   ] = await Promise.all([
     pl.pod_id
       ? admin.from("pods").select("name").eq("id", pl.pod_id).single()
@@ -123,6 +125,8 @@ export default async function PreLoadingChecklistPage({
     admin.from("contacts").select("id, name").is("deleted_at", null),
     admin.from("agent_contacts").select("agent_id, contact_id"),
     admin.from("clients").select("id, name").is("deleted_at", null),
+    admin.from("shipment_models").select("id, name").is("deleted_at", null),
+    admin.from("carriers").select("id, name").is("deleted_at", null),
   ]);
 
   const profileNameById = new Map((profileRes.data ?? []).map((p) => [p.id, p.full_name]));
@@ -204,6 +208,40 @@ export default async function PreLoadingChecklistPage({
   }
   for (const list of Object.values(contactsByAgent)) list.sort(byName);
 
+  // Entradas Factory×Category dos lotes do PL — alimentam a tabela do modal
+  // Confirm Shipping (uma linha por entrada, com status de carregamento).
+  const plBatchIds = ((plBatchesRes.data ?? []) as unknown as { batch_id: string }[]).map(
+    (r) => r.batch_id
+  );
+  type OfcLineEmbed = {
+    id: string;
+    factories: { name: string } | null;
+    categories: { name: string } | null;
+    orders: { po_number: string } | null;
+    batches: { batch_number: string } | null;
+    etd_info: { initial_date: string | null } | { initial_date: string | null }[] | null;
+  };
+  const ofcLinesRes = plBatchIds.length
+    ? await admin
+        .from("order_factory_category")
+        .select(
+          "id, factories(name), categories(name), orders(po_number), batches(batch_number), etd_info(initial_date)"
+        )
+        .in("batch_id", plBatchIds)
+        .returns<OfcLineEmbed[]>()
+    : { data: [] as OfcLineEmbed[] };
+  const shipmentLines = (ofcLinesRes.data ?? []).map((o) => {
+    const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
+    return {
+      id: o.id,
+      factory: o.factories?.name ?? "—",
+      category: o.categories?.name ?? "—",
+      etd_initial: etd?.initial_date ?? null,
+      po_number: o.orders?.po_number ?? "—",
+      batch_number: o.batches?.batch_number ?? "—",
+    };
+  });
+
   return (
     <PlChecklistClient
       preLoading={{
@@ -239,6 +277,14 @@ export default async function PreLoadingChecklistPage({
         .sort(byName)}
       agents={allAgents.map((a) => ({ id: a.id, name: a.name })).sort(byName)}
       contactsByAgent={contactsByAgent}
+      carriers={(carrierRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName)}
+      shipmentModels={(shipmentModelRes.data ?? [])
+        .map((m) => ({ id: m.id, name: m.name }))
+        .sort(byName)}
+      shipmentLines={shipmentLines}
+      currentUserId={userId}
+      preloadingLeaderId={pl.leader_id}
+      alreadyShipped={pl.shipping_confirmed_at != null}
     />
   );
 }
