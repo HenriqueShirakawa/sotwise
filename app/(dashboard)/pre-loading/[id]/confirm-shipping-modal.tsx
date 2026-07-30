@@ -155,7 +155,7 @@ export function ConfirmShippingModal({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="text-primary">Create New Shipment</DialogTitle>
         </DialogHeader>
@@ -245,7 +245,7 @@ export function ConfirmShippingModal({
 
         <div className="mt-2 overflow-x-auto rounded-xl border">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-muted-foreground">
+            <thead className="bg-slate-50 text-left text-xs whitespace-nowrap text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">Factories</th>
                 <th className="px-3 py-2 font-medium">Categories</th>
