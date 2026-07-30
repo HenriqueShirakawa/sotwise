@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -10,6 +11,7 @@ import {
   type Column,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { Search, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
@@ -17,6 +19,11 @@ import { formatDateNumeric } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
+import {
+  ColumnsMenu,
+  useColumnVisibility,
+  type ColumnOption,
+} from "@/components/columns-menu";
 import {
   Table,
   TableBody,
@@ -64,13 +71,34 @@ const dash = <span className="text-slate-300">—</span>;
 const date = (v: string | null) => (v ? formatDateNumeric(v) : dash);
 const text = (v: string | null) => v || dash;
 
+const COLUMN_OPTIONS: ColumnOption[] = [
+  { id: "pl_number", label: "PL Number" },
+  { id: "client", label: "Client" },
+  { id: "order_type", label: "Order Type" },
+  { id: "pol", label: "POL" },
+  { id: "ship_model", label: "Ship Model" },
+  { id: "loading_date", label: "Loading Date" },
+  { id: "ship_date", label: "Ship Date" },
+  { id: "eta", label: "ETA" },
+  { id: "sum_of_orders", label: "Sum of Orders" },
+  { id: "status", label: "Status" },
+];
+
 /**
- * Lista de Shipments (docs §3.10). Sem "Create" (o Shipment nasce do Confirm
- * Shipping do PL) e, por ora, sem filtros/detalhe — fase 1 é só a visibilidade.
+ * Lista de Shipments (docs §3.10). Sem "Create" — o Shipment nasce do Confirm
+ * Shipping do PL. Clicar na linha abre o checklist completo do embarque.
  */
-export function ShipmentsClient({ rows }: { rows: ShipmentRow[] }) {
+export function ShipmentsClient({
+  rows,
+  initialColumns,
+}: {
+  rows: ShipmentRow[];
+  initialColumns: VisibilityState;
+}) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
+  const { visibility, save: saveVisibility } = useColumnVisibility("shipments", initialColumns);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -151,7 +179,9 @@ export function ShipmentsClient({ rows }: { rows: ShipmentRow[] }) {
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
-    state: { sorting },
+    onColumnVisibilityChange: (updater) =>
+      saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
+    state: { sorting, columnVisibility: visibility },
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -167,6 +197,13 @@ export function ShipmentsClient({ rows }: { rows: ShipmentRow[] }) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="PL number"
             className="h-11 rounded-xl bg-white pl-9"
+          />
+        </div>
+        <div className="ml-auto">
+          <ColumnsMenu
+            columns={COLUMN_OPTIONS}
+            visibility={visibility}
+            onSave={saveVisibility}
           />
         </div>
       </div>
@@ -192,7 +229,11 @@ export function ShipmentsClient({ rows }: { rows: ShipmentRow[] }) {
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className="hover:bg-slate-50/60">
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-slate-50/60"
+                  onClick={() => router.push(`/shipments/${row.original.id}`)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

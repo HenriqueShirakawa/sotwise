@@ -1,5 +1,6 @@
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readColumnVisibility } from "@/lib/column-prefs";
 import { PageHeader } from "@/components/page-header";
 
 import { ShipmentsClient, type ShipmentRow } from "./shipments-client";
@@ -39,7 +40,7 @@ type StepRow = {
 };
 
 export default async function ShipmentsPage() {
-  await verifySession();
+  const { profile } = await verifySession();
   const admin = createAdminClient();
 
   // Tabelas inteiras via fetchAll (há ~1.3k shipments) + os cadastros pequenos.
@@ -156,7 +157,10 @@ export default async function ShipmentsPage() {
   return (
     <div>
       <PageHeader title="Shipments" />
-      <ShipmentsClient rows={rows} />
+      <ShipmentsClient
+        rows={rows}
+        initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
+      />
     </div>
   );
 }
