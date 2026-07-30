@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -135,6 +136,7 @@ export function PreLoadingClient({
   nextPlNumber: string;
   today: string;
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<PreLoadingFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -407,7 +409,11 @@ export function PreLoadingClient({
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} className="hover:bg-slate-50/60">
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-slate-50/60"
+                  onClick={() => router.push(`/pre-loading/${row.original.id}`)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

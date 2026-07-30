@@ -121,6 +121,9 @@ export default async function OrderDetailPage({
     { id: string; factory_id: string | null; file_name: string | null; file_path: string }[]
   >();
   for (const a of attachmentsRes.data ?? []) {
+    // checklist_step_id é nullable desde que a tabela passou a servir também
+    // às etapas de Pre-loading — aqui o filtro `.in()` já garante que veio.
+    if (!a.checklist_step_id) continue;
     const arr = attachmentsByStep.get(a.checklist_step_id) ?? [];
     arr.push({
       id: a.id,
