@@ -42,7 +42,7 @@ export async function savePreLoadingStep(
   step: ChecklistStep,
   patch: StepPatch
 ): Promise<ActionResult> {
-  await verifySession();
+  const session = await verifySession();
   const admin = createAdminClient();
 
   const { data: existing, error: readError } = await admin
@@ -56,7 +56,14 @@ export async function savePreLoadingStep(
   // "completed_on" no patch redefine o `done`; fora isso mantém o que já valia.
   const completedOn =
     "completed_on" in patch ? (patch.completed_on ?? null) : (existing?.completed_on ?? null);
-  const values = { ...patch, done: completedOn != null };
+  const values: StepPatch & { done: boolean } = { ...patch, done: completedOn != null };
+
+  // Definir "Completed on" autopreenche "Signed by" com o usuário atual — quem
+  // conclui a etapa assina (mesma regra do checklist de Orders). Só ao definir,
+  // não ao limpar; o campo é travado na UI, então signed_by nunca vem no patch.
+  if (patch.completed_on && patch.signed_by_id === undefined) {
+    values.signed_by_id = session.userId;
+  }
 
   const { error } = existing
     ? await admin.from("pre_loading_checklist_steps").update(values).eq("id", existing.id)
