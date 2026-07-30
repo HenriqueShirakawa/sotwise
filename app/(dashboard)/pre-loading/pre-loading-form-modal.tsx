@@ -193,11 +193,18 @@ export function PreLoadingFormModal({
     setPage(0);
   };
 
+  // Os clientes escolhidos lá em cima também filtram a lista de lotes. Um lote
+  // já marcado nunca some do filtro — senão ele iria junto no submit sem estar
+  // visível pra ser desmarcado.
   const filtered = useMemo(() => {
     const q = orderQuery.trim().toLowerCase();
-    if (!q) return available;
-    return available.filter((b) => b.po_number.toLowerCase().includes(q));
-  }, [available, orderQuery]);
+    const clientSet = new Set(form.client_ids);
+    return available.filter((b) => {
+      if (selected.includes(b.id)) return true;
+      if (clientSet.size && !(b.client_id && clientSet.has(b.client_id))) return false;
+      return !q || b.po_number.toLowerCase().includes(q);
+    });
+  }, [available, orderQuery, form.client_ids, selected]);
 
   const pageCount = Math.max(Math.ceil(filtered.length / ROWS_PER_PAGE), 1);
   const pageIndex = Math.min(page, pageCount - 1);
@@ -264,7 +271,10 @@ export function PreLoadingFormModal({
             <Field label="Client:" required>
               <MultiSearchSelect
                 value={form.client_ids}
-                onChange={(v) => set("client_ids", v)}
+                onChange={(v) => {
+                  set("client_ids", v);
+                  setPage(0); // a lista de lotes abaixo também filtra por cliente
+                }}
                 options={clients}
                 placeholder="Choose some clients..."
               />
