@@ -669,10 +669,14 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["etd_history"]["Insert"]>;
         Relationships: [];
       };
+      // Serve às duas origens de checklist: exatamente UMA de
+      // checklist_step_id (Orders) / pre_loading_step_id (Pre-loading) é
+      // preenchida por linha — check `step_attachments_one_owner` no banco.
       step_attachments: {
         Row: {
           id: UUID;
-          checklist_step_id: UUID;
+          checklist_step_id: UUID | null;
+          pre_loading_step_id: UUID | null;
           factory_id: UUID | null;
           file_path: string;
           file_name: string | null;
@@ -681,7 +685,8 @@ export type Database = {
         };
         Insert: {
           id?: UUID;
-          checklist_step_id: UUID;
+          checklist_step_id?: UUID | null;
+          pre_loading_step_id?: UUID | null;
           factory_id?: UUID | null;
           file_path: string;
           file_name?: string | null;
