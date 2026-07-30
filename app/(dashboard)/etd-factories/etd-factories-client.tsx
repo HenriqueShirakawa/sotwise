@@ -10,6 +10,7 @@ import {
   type Column,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { Search, Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
@@ -28,6 +29,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
+import {
+  ColumnsMenu,
+  useColumnVisibility,
+  type ColumnOption,
+} from "@/components/columns-menu";
 
 import {
   activeFilterCount,
@@ -98,21 +104,40 @@ function inDateRange(value: string | null, from: string, to: string): boolean {
   return true;
 }
 
+const COLUMN_OPTIONS: ColumnOption[] = [
+  { id: "client", label: "Client" },
+  { id: "po_batch", label: "PO . Batches" },
+  { id: "factory", label: "Factories" },
+  { id: "category", label: "Categories" },
+  { id: "order_date", label: "Order date" },
+  { id: "shipment_req", label: "Shipment Req." },
+  { id: "initial_date", label: "Initial Date" },
+  { id: "current_date", label: "Current Date" },
+  { id: "days_delay", label: "Days Delay" },
+  { id: "last_updated", label: "Last Updated" },
+  { id: "batch_status", label: "Status Batches" },
+  { id: "ready_parts", label: "Ready Parts" },
+  { id: "gap_of_ready", label: "Gap of Ready" },
+];
+
 export function EtdFactoriesClient({
   rows,
   clients,
   factories,
   categories,
+  initialColumns,
 }: {
   rows: EtdFactoryRow[];
   clients: Ref[];
   factories: Ref[];
   categories: Ref[];
+  initialColumns: VisibilityState;
 }) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<EtdFactoriesFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "po_batch", desc: true }]);
+  const { visibility, save: saveVisibility } = useColumnVisibility("etd-factories", initialColumns);
   const [modalTarget, setModalTarget] = useState<{
     orderId: string;
     ofcId: string;
@@ -260,7 +285,9 @@ export function EtdFactoriesClient({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
-    state: { sorting },
+    onColumnVisibilityChange: (updater) =>
+      saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
+    state: { sorting, columnVisibility: visibility },
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -310,6 +337,13 @@ export function EtdFactoriesClient({
             </span>
           )}
         </Button>
+        <div className="ml-auto">
+          <ColumnsMenu
+            columns={COLUMN_OPTIONS}
+            visibility={visibility}
+            onSave={saveVisibility}
+          />
+        </div>
       </div>
 
       <FiltersModal

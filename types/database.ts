@@ -93,6 +93,7 @@ export type Database = {
           status: UserStatus;
           hidden: boolean;
           slug: string | null;
+          ui_preferences: Record<string, unknown>;
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
@@ -106,6 +107,7 @@ export type Database = {
           status?: UserStatus;
           hidden?: boolean;
           slug?: string | null;
+          ui_preferences?: Record<string, unknown>;
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;

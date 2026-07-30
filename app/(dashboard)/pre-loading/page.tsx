@@ -1,5 +1,6 @@
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readColumnVisibility } from "@/lib/column-prefs";
 import type { BatchStatus } from "@/types/database";
 
 import { PreLoadingClient, type PreLoadingRow } from "./pre-loading-client";
@@ -82,7 +83,7 @@ type StepRow = {
 };
 
 export default async function PreLoadingPage() {
-  await verifySession();
+  const { profile } = await verifySession();
   const admin = createAdminClient();
 
   const [
@@ -333,6 +334,7 @@ export default async function PreLoadingPage() {
       batchOptions={batchOptions}
       nextPlNumber={String(maxPl + 1)}
       today={todayInSaoPaulo()}
+      initialColumns={readColumnVisibility(profile.ui_preferences, "pre-loading")}
     />
   );
 }

@@ -11,6 +11,7 @@ import {
   type Column,
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import {
   Search,
@@ -60,6 +61,11 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { StatusPill } from "@/components/status-pill";
+import {
+  ColumnsMenu,
+  useColumnVisibility,
+  type ColumnOption,
+} from "@/components/columns-menu";
 import {
   Popover,
   PopoverContent,
@@ -216,6 +222,22 @@ function inDateRange(value: string | null, from: string, to: string): boolean {
   return true;
 }
 
+/** Colunas que o usuário pode esconder — "actions" fica sempre visível. */
+const COLUMN_OPTIONS: ColumnOption[] = [
+  { id: "bu", label: "BU" },
+  { id: "type", label: "Type" },
+  { id: "client", label: "Client" },
+  { id: "po_number", label: "PO No." },
+  { id: "client_reference", label: "Client Ref." },
+  { id: "batches", label: "Batches" },
+  { id: "leader", label: "Leader" },
+  { id: "requester", label: "Requester" },
+  { id: "exporter", label: "Exporter" },
+  { id: "date_create", label: "Date Create Order" },
+  { id: "status", label: "Status PO" },
+  { id: "schedule_requested", label: "Schedule Req." },
+];
+
 export function OrdersClient({
   rows,
   clients,
@@ -223,6 +245,7 @@ export function OrdersClient({
   businessUnits,
   exporters,
   profiles,
+  initialColumns,
 }: {
   rows: OrderRow[];
   clients: Ref[];
@@ -230,6 +253,7 @@ export function OrdersClient({
   businessUnits: Ref[];
   exporters: Ref[];
   profiles: Ref[];
+  initialColumns: VisibilityState;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -237,6 +261,7 @@ export function OrdersClient({
   const [filters, setFilters] = useState<OrdersFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const { visibility, save: saveVisibility } = useColumnVisibility("orders", initialColumns);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<OrderRow | null>(null);
@@ -463,7 +488,9 @@ export function OrdersClient({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
-    state: { sorting },
+    onColumnVisibilityChange: (updater) =>
+      saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
+    state: { sorting, columnVisibility: visibility },
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -530,6 +557,13 @@ export function OrdersClient({
             </span>
           )}
         </Button>
+        <div className="ml-auto">
+          <ColumnsMenu
+            columns={COLUMN_OPTIONS}
+            visibility={visibility}
+            onSave={saveVisibility}
+          />
+        </div>
       </div>
 
       <FiltersModal

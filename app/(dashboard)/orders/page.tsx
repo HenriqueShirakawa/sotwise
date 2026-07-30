@@ -1,5 +1,6 @@
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readColumnVisibility } from "@/lib/column-prefs";
 
 import { OrdersClient, type OrderRow } from "./orders-client";
 
@@ -29,7 +30,7 @@ type EtdOrderRow = {
 };
 
 export default async function OrdersPage() {
-  await verifySession();
+  const { profile } = await verifySession();
   const admin = createAdminClient();
 
   const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =
@@ -172,6 +173,7 @@ export default async function OrdersPage() {
       businessUnits={businessUnits}
       exporters={exporters}
       profiles={profiles}
+      initialColumns={readColumnVisibility(profile.ui_preferences, "orders")}
     />
   );
 }
