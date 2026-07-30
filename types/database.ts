@@ -693,6 +693,102 @@ export type Database = {
         >;
         Relationships: [];
       };
+      pre_loadings: {
+        Row: {
+          id: UUID;
+          pl_number: string;
+          created_date: DateStr;
+          client_reference: string | null;
+          pod_id: UUID | null;
+          responsible_signer_id: UUID | null;
+          leader_id: UUID | null;
+          booking_status: string | null;
+          seal_number: string | null;
+          deleted_at: Timestamp | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          created_by: UUID | null;
+        };
+        Insert: {
+          id?: UUID;
+          pl_number: string;
+          created_date?: DateStr;
+          client_reference?: string | null;
+          pod_id?: UUID | null;
+          responsible_signer_id?: UUID | null;
+          leader_id?: UUID | null;
+          booking_status?: string | null;
+          seal_number?: string | null;
+          deleted_at?: Timestamp | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          created_by?: UUID | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["pre_loadings"]["Insert"]>;
+        Relationships: [];
+      };
+      pre_loading_clients: {
+        Row: { pre_loading_id: UUID; client_id: UUID };
+        Insert: { pre_loading_id: UUID; client_id: UUID };
+        Update: Partial<{ pre_loading_id: UUID; client_id: UUID }>;
+        Relationships: [];
+      };
+      pre_loading_batches: {
+        Row: { pre_loading_id: UUID; batch_id: UUID };
+        Insert: { pre_loading_id: UUID; batch_id: UUID };
+        Update: Partial<{ pre_loading_id: UUID; batch_id: UUID }>;
+        Relationships: [];
+      };
+      pre_loading_checklist_steps: {
+        Row: {
+          id: UUID;
+          pre_loading_id: UUID;
+          step: ChecklistStep;
+          done: boolean;
+          estimated_date: DateStr | null;
+          responsible_id: UUID | null;
+          completed_on: DateStr | null;
+          signed_by_id: UUID | null;
+          notes: string | null;
+          consolidation_point_id: UUID | null;
+          city_id: UUID | null;
+          pol_id: UUID | null;
+          carrier_agent_id: UUID | null;
+          agent_brazil_id: UUID | null;
+          agent_china_id: UUID | null;
+          contact_brazil_id: UUID | null;
+          contact_china_id: UUID | null;
+          booking_number: string | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          pre_loading_id: UUID;
+          step: ChecklistStep;
+          done?: boolean;
+          estimated_date?: DateStr | null;
+          responsible_id?: UUID | null;
+          completed_on?: DateStr | null;
+          signed_by_id?: UUID | null;
+          notes?: string | null;
+          consolidation_point_id?: UUID | null;
+          city_id?: UUID | null;
+          pol_id?: UUID | null;
+          carrier_agent_id?: UUID | null;
+          agent_brazil_id?: UUID | null;
+          agent_china_id?: UUID | null;
+          contact_brazil_id?: UUID | null;
+          contact_china_id?: UUID | null;
+          booking_number?: string | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["pre_loading_checklist_steps"]["Insert"]
+        >;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
