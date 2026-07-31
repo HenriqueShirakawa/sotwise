@@ -206,7 +206,7 @@ export function AgentsClient({
             value={location}
             onValueChange={(v) => setLocation(v as "all" | AgentLocation)}
           >
-            <SelectTrigger className="h-11 w-44 rounded-xl bg-white">
+            <SelectTrigger className="!h-11 w-44 rounded-xl bg-white">
               <SelectValue placeholder="Location" />
             </SelectTrigger>
             <SelectContent>
@@ -329,7 +329,8 @@ function AgentForm({
         <div className="space-y-1.5">
           <Label>Location</Label>
           <Select value={location} onValueChange={(v) => setLocation(v as AgentLocation)}>
-            <SelectTrigger className="w-full">
+            {/* !h-10 para casar com o SearchSelect de Country, ao lado. */}
+            <SelectTrigger className="!h-10 w-full">
               <SelectValue placeholder="Select a location" />
             </SelectTrigger>
             <SelectContent>
