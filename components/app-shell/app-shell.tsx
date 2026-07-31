@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { MessageFab } from "@/components/messages/message-fab";
 import { SidebarNav } from "./sidebar-nav";
 import { UserCard } from "./user-menu";
 
@@ -14,12 +15,14 @@ export function AppShell({
   email,
   role,
   isAdmin,
+  unreadMessages,
   children,
 }: {
   fullName: string;
   email: string | null;
   role: string;
   isAdmin: boolean;
+  unreadMessages: number;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -64,6 +67,9 @@ export function AppShell({
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8">{children}</main>
       </div>
+
+      {/* Balão de mensagens — em todas as telas do sistema. */}
+      <MessageFab initialUnread={unreadMessages} />
     </div>
   );
 }
