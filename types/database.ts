@@ -35,6 +35,8 @@ export type BatchStatus =
   | "delivered"
   | "canceled";
 export type LoadingStatus = "total" | "partial" | "none";
+/** Registro ao qual uma thread de mensagens está ancorada. */
+export type MessageEntity = "order" | "pre_loading" | "shipment";
 export type ChecklistPhase = "order" | "preloading" | "shipment";
 export type ChecklistStep =
   | "order"
@@ -832,6 +834,32 @@ export type Database = {
         >;
         Relationships: [];
       };
+      messages: {
+        Row: {
+          id: UUID;
+          entity_type: MessageEntity;
+          entity_id: UUID;
+          author_id: UUID;
+          body: string;
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          entity_type: MessageEntity;
+          entity_id: UUID;
+          author_id: UUID;
+          body: string;
+          created_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
+        Relationships: [];
+      };
+      message_recipients: {
+        Row: { message_id: UUID; user_id: UUID; read_at: Timestamp | null };
+        Insert: { message_id: UUID; user_id: UUID; read_at?: Timestamp | null };
+        Update: Partial<Database["public"]["Tables"]["message_recipients"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
@@ -844,6 +872,7 @@ export type Database = {
       loading_status: LoadingStatus;
       checklist_phase: ChecklistPhase;
       checklist_step: ChecklistStep;
+      message_entity: MessageEntity;
     };
     CompositeTypes: Record<never, never>;
   };
