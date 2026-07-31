@@ -36,3 +36,42 @@ export const STEP_LABELS: Record<ChecklistStep, string> = {
 export const CHECKLIST_STEP_ORDER: ChecklistStep[] = Object.keys(
   STEP_LABELS
 ) as ChecklistStep[];
+
+/**
+ * Etapas por fase da esteira. Order = tabela `order_checklist_steps` (#1–10);
+ * Pre-loading (#11–17) e Shipment (#18–24) são o checklist único do PL
+ * (`pre_loading_checklist_steps`), separados só pela etapa. Usado pra classificar
+ * cada linha da To do list e para o filtro de Step acompanhar a aba ativa.
+ */
+export const ORDER_STEPS: ChecklistStep[] = [
+  "order",
+  "po",
+  "pi",
+  "deposit_payment",
+  "packing_confirm",
+  "condition_confirm",
+  "place_the_order",
+  "etd",
+  "balance_payment",
+  "pre_loading",
+];
+
+export const PRELOADING_STEPS: ChecklistStep[] = [
+  "consolidation_point",
+  "city",
+  "port_of_loading",
+  "shipping_docs",
+  "agents",
+  "booking",
+  "loading_date",
+];
+
+export const SHIPMENT_STEPS: ChecklistStep[] = [
+  "shipping_date",
+  "bl",
+  "original_docs",
+  "inspection_report",
+  "eta_brazil",
+  "ata_brazil",
+  "delivered",
+];

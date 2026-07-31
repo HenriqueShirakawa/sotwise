@@ -3,8 +3,14 @@
 import { useState } from "react";
 
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
-import { STEP_LABELS, CHECKLIST_STEP_ORDER } from "@/lib/checklist";
-import type { OrderStatus } from "@/types/database";
+import {
+  STEP_LABELS,
+  CHECKLIST_STEP_ORDER,
+  ORDER_STEPS,
+  PRELOADING_STEPS,
+  SHIPMENT_STEPS,
+} from "@/lib/checklist";
+import type { ChecklistStep, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +24,9 @@ import {
 } from "@/components/ui/dialog";
 
 export type Ref = { id: string; name: string };
+
+/** Aba ativa da To do list — restringe as opções do filtro de Step. */
+export type StepPhase = "all" | "order" | "preloading" | "shipment";
 
 export type TodoFilters = {
   client_id: string;
@@ -44,10 +53,26 @@ const STATUS_OPTIONS: Ref[] = (
   Object.entries(ORDER_STATUS_LABELS) as [OrderStatus, string][]
 ).map(([id, name]) => ({ id, name }));
 
-const STEP_OPTIONS: Ref[] = CHECKLIST_STEP_ORDER.map((step) => ({
-  id: step,
-  name: STEP_LABELS[step],
-}));
+const STEPS_BY_PHASE: Record<StepPhase, ChecklistStep[]> = {
+  all: CHECKLIST_STEP_ORDER,
+  order: ORDER_STEPS,
+  preloading: PRELOADING_STEPS,
+  shipment: SHIPMENT_STEPS,
+};
+
+/** Opções do filtro de Step conforme a aba ativa (§3.12.2). */
+function stepOptions(phase: StepPhase): Ref[] {
+  return STEPS_BY_PHASE[phase].map((step) => ({ id: step, name: STEP_LABELS[step] }));
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4">
+      <p className="border-b pb-2 text-sm text-muted-foreground">{title}</p>
+      {children}
+    </section>
+  );
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -65,6 +90,7 @@ export function FiltersModal({
   onApply,
   onClear,
   clients,
+  phase,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,6 +98,8 @@ export function FiltersModal({
   onApply: (filters: TodoFilters) => void;
   onClear: () => void;
   clients: Ref[];
+  /** Aba ativa — restringe as opções do filtro de Step. */
+  phase: StepPhase;
 }) {
   const [draft, setDraft] = useState<TodoFilters>(filters);
 
@@ -103,47 +131,52 @@ export function FiltersModal({
           <DialogTitle className="text-lg text-primary">Filters</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <Field label="Client">
-            <SearchSelect
-              value={draft.client_id}
-              onChange={(v) => set("client_id", v)}
-              options={clients}
-              placeholder="Choose some client"
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Status PO">
+        <div className="space-y-6">
+          <Section title="Order Information">
+            <Field label="Client">
+              <SearchSelect
+                value={draft.client_id}
+                onChange={(v) => set("client_id", v)}
+                options={clients}
+                placeholder="Choose some clients"
+              />
+            </Field>
+            <Field label="Status">
               <SearchSelect
                 value={draft.status}
                 onChange={(v) => set("status", v)}
                 options={STATUS_OPTIONS}
-                placeholder="Any status"
+                placeholder="Choose some statuses"
               />
             </Field>
+          </Section>
+
+          <Section title="Stage of the Process">
             <Field label="Step">
               <SearchSelect
                 value={draft.step}
                 onChange={(v) => set("step", v)}
-                options={STEP_OPTIONS}
-                placeholder="Any step"
+                options={stepOptions(phase)}
+                placeholder="Select Step"
               />
             </Field>
-          </div>
-          <Field label="Date preview">
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                type="date"
-                value={draft.date_from}
-                onChange={(e) => set("date_from", e.target.value)}
-              />
-              <Input
-                type="date"
-                value={draft.date_to}
-                onChange={(e) => set("date_to", e.target.value)}
-              />
-            </div>
-          </Field>
+            <Field label="Date Estimated">
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  type="date"
+                  value={draft.date_from}
+                  onChange={(e) => set("date_from", e.target.value)}
+                  placeholder="From"
+                />
+                <Input
+                  type="date"
+                  value={draft.date_to}
+                  onChange={(e) => set("date_to", e.target.value)}
+                  placeholder="To"
+                />
+              </div>
+            </Field>
+          </Section>
         </div>
 
         <DialogFooter>
