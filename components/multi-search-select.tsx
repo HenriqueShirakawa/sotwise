@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Search, X } from "lucide-react";
+import { Check, Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 /**
@@ -85,17 +84,30 @@ export function MultiSearchSelect({
           {filtered.length === 0 ? (
             <p className="px-2 py-1.5 text-sm text-muted-foreground">No results.</p>
           ) : (
-            filtered.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-100"
-                onClick={() => toggle(o.id)}
-              >
-                <Checkbox checked={value.includes(o.id)} className="pointer-events-none" />
-                {o.name}
-              </button>
-            ))
+            filtered.map((o) => {
+              const checked = value.includes(o.id);
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={checked}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-100"
+                  onClick={() => toggle(o.id)}
+                >
+                  {/* Caixinha decorativa: o próprio botão da linha é o checkbox.
+                      Usar o <Checkbox> aqui aninharia <button> dentro de <button>. */}
+                  <span
+                    aria-hidden
+                    data-checked={checked || undefined}
+                    className="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground"
+                  >
+                    {checked ? <Check className="size-3.5" /> : null}
+                  </span>
+                  {o.name}
+                </button>
+              );
+            })
           )}
         </div>
       </PopoverContent>
