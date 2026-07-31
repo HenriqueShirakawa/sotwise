@@ -442,12 +442,12 @@ export function ShipmentDetailClient({
         <p className="border-b bg-slate-50/80 px-6 py-3 text-sm font-medium text-slate-700">
           Batches in shipment container
         </p>
-        <div className="grid grid-cols-[1fr_1fr_1fr_2fr_auto] gap-3 border-b px-6 py-3 text-xs font-semibold text-slate-500">
+        <div className="grid grid-cols-[1fr_1fr_1fr_2fr_15rem] gap-3 border-b px-6 py-3 text-xs font-semibold text-slate-500">
           <span>Client</span>
           <span>PO Number . Batches</span>
           <span>Order date</span>
           <span>Factories</span>
-          <span className="w-28" />
+          <span />
         </div>
         {batches.length === 0 ? (
           <p className="px-6 py-6 text-sm text-muted-foreground">
@@ -457,7 +457,7 @@ export function ShipmentDetailClient({
           batches.map((b) => (
             <div
               key={b.id}
-              className="grid grid-cols-[1fr_1fr_1fr_2fr_auto] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
+              className="grid grid-cols-[1fr_1fr_1fr_2fr_15rem] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
             >
               <span className="text-slate-700">{b.client ?? "—"}</span>
               <span className="text-slate-700">
