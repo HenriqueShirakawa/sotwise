@@ -1,11 +1,14 @@
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
-import { PageHeader } from "@/components/page-header";
+import { SHIPMENT_STEPS } from "@/lib/checklist";
 import type { ChecklistStep, OrderStatus } from "@/types/database";
 
 import { TodoClient, type TodoRow } from "./todo-client";
 import type { Ref } from "./filters-modal";
+
+/** Etapas #18–24 (Shipment) do checklist único do PL — o resto do PL é Pre-loading. */
+const SHIPMENT_STEP_SET = new Set<ChecklistStep>(SHIPMENT_STEPS);
 
 /**
  * To do list (docs §3.12.2). VIEW read-only sobre as etapas de checklist
@@ -136,6 +139,7 @@ export default async function TodoPage() {
     return [
       {
         id: s.id,
+        phase: "order" as const,
         po_number: order.po_number,
         pl_number: null,
         step: s.step,
@@ -155,6 +159,7 @@ export default async function TodoPage() {
     const shipmentId = shipmentIdByPl.get(s.pre_loading_id);
     return {
       id: s.id,
+      phase: SHIPMENT_STEP_SET.has(s.step) ? ("shipment" as const) : ("preloading" as const),
       po_number: pos ? [...pos].sort().join(", ") : null,
       pl_number: plNumberById.get(s.pre_loading_id) ?? null,
       step: s.step,
@@ -181,16 +186,10 @@ export default async function TodoPage() {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div>
-      <PageHeader
-        title="To do list"
-        description="Your pending checklist steps across Orders, Pre-loading and Shipments"
-      />
-      <TodoClient
-        rows={rows}
-        clients={clientOptions}
-        initialColumns={readColumnVisibility(profile.ui_preferences, "todo")}
-      />
-    </div>
+    <TodoClient
+      rows={rows}
+      clients={clientOptions}
+      initialColumns={readColumnVisibility(profile.ui_preferences, "todo")}
+    />
   );
 }
