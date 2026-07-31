@@ -232,22 +232,45 @@ export async function loadMessagesBox(filters: BoxFilters): Promise<BoxPayload> 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
 /**
- * Pedidos oferecidos no "Choose an Order" quando se escreve fora de um
- * registro. Só os mais recentes — a busca do seletor filtra o resto.
+ * TODOS os pedidos oferecidos no "Choose an Order" quando se escreve fora de um
+ * registro — a lista precisa ser completa e descendente (o seletor filtra por
+ * texto em cima dela). Duas coisas a resolver:
+ *  - o PostgREST capa em 1000 linhas por resposta, então paginamos por `id`;
+ *  - `po_number` é TEXTO, e ordenar texto joga os PO de 4 dígitos (1000+) pro
+ *    meio ("999" > "1000"); a ordenação final é numérica, feita aqui.
  */
-export async function loadOrderOptions(): Promise<{ id: string; name: string }[]> {
+export async function loadOrderOptions(): Promise<Option[]> {
   await verifySession();
-
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("orders")
-    .select("id, po_number")
-    .is("deleted_at", null)
-    .order("po_number", { ascending: false })
-    .limit(300);
 
-  return (data ?? []).map((o) => ({ id: o.id, name: o.po_number }));
+  const PAGE = 1000;
+  const rows: { id: string; po_number: string }[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await admin
+      .from("orders")
+      .select("id, po_number")
+      .is("deleted_at", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (!data?.length) break;
+    rows.push(...data);
+    if (data.length < PAGE) break;
+  }
+
+  return rows.map((o) => ({ id: o.id, name: o.po_number })).sort(byOrderNumberDesc);
 }
+
+/** Descendente por número; PO numéricos primeiro, não-numéricos por texto. */
+const byOrderNumberDesc = (a: Option, b: Option) => {
+  const na = Number(a.name);
+  const nb = Number(b.name);
+  const aNum = a.name.trim() !== "" && Number.isFinite(na);
+  const bNum = b.name.trim() !== "" && Number.isFinite(nb);
+  if (aNum && bNum) return nb - na;
+  if (aNum) return -1;
+  if (bNum) return 1;
+  return b.name.localeCompare(a.name);
+};
 
 export async function sendMessage(
   input: SendMessageInput
