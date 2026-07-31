@@ -8,6 +8,7 @@ import {
   countUnreadMessages,
   hydrateMessages,
   loadEntityContext,
+  loadEntityContexts,
   type ThreadMessage,
 } from "@/lib/messages";
 import type { MessageEntity } from "@/types/database";
@@ -23,17 +24,20 @@ const sendSchema = z.object({
 });
 
 export type SendMessageInput = z.infer<typeof sendSchema>;
+export type Option = { id: string; name: string };
 
 export type ThreadPayload = {
   messages: ThreadMessage[];
   /** Rótulo travado no topo do modal quando se está dentro de um registro. */
   context: { number: string; client: string | null } | null;
-  people: { id: string; name: string }[];
+  people: Option[];
+  /** Usuário logado — é ele que aparece no 2º campo travado do modal. */
+  me: Option;
   unread: number;
 };
 
 /** Usuários selecionáveis no "Forward to" — ativos, não ocultos, menos eu. */
-async function loadPeople(currentUserId: string) {
+async function loadPeople(currentUserId: string): Promise<Option[]> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("profiles")
@@ -48,19 +52,20 @@ async function loadPeople(currentUserId: string) {
 }
 
 /**
- * Thread de UM registro. Dentro da tela do registro todo mundo vê o histórico
- * completo, tenha sido marcado ou não (regra confirmada com o cliente).
+ * Thread de UM registro (a view de dentro do checklist). Todo mundo que abre o
+ * registro vê o histórico completo, tenha sido marcado ou não.
  */
 export async function loadThread(
   entityType: MessageEntity,
   entityId: string
 ): Promise<ThreadPayload> {
   const session = await verifySession();
+  const me: Option = { id: session.userId, name: session.profile.full_name || "—" };
 
   const parsedType = entitySchema.safeParse(entityType);
   const parsedId = z.uuid().safeParse(entityId);
   if (!parsedType.success || !parsedId.success) {
-    return { messages: [], context: null, people: [], unread: 0 };
+    return { messages: [], context: null, people: [], me, unread: 0 };
   }
 
   const admin = createAdminClient();
@@ -76,57 +81,172 @@ export async function loadThread(
     countUnreadMessages(session.userId),
   ]);
 
-  return { messages: await hydrateMessages(rows ?? []), context, people, unread };
+  return { messages: await hydrateMessages(rows ?? []), context, people, me, unread };
 }
 
-/**
- * Caixa geral (balão fora de um registro): só as mensagens em que EU fui
- * marcado, de qualquer registro, com o rótulo do registro em cada uma.
- */
-export async function loadInbox(): Promise<ThreadPayload> {
+/* -------------------------------------------------------------------------- */
+/* Caixa geral (balão fora de um registro): abas Inbox / My messages           */
+/* -------------------------------------------------------------------------- */
+
+export type BoxTab = "inbox" | "mine";
+
+export type BoxFilters = {
+  tab: BoxTab;
+  /** "All Messages" / lidas / não lidas. */
+  status: "all" | "read" | "unread";
+  /** Remetente (Inbox) ou destinatário (My messages). */
+  personId: string | null;
+  /** Registro no formato "order:<uuid>". */
+  recordKey: string | null;
+  clientId: string | null;
+  from: string | null;
+  to: string | null;
+};
+
+export type BoxMessage = ThreadMessage & {
+  entity: { type: MessageEntity; id: string };
+  number: string;
+  client: string | null;
+  /** Só faz sentido no Inbox: se EU já li. */
+  read_by_me: boolean;
+};
+
+export type BoxPayload = {
+  messages: BoxMessage[];
+  options: {
+    people: Option[];
+    records: { key: string; label: string }[];
+    clients: Option[];
+  };
+  people: Option[];
+  me: Option;
+  unread: number;
+};
+
+const MAX_BOX_MESSAGES = 200;
+
+export async function loadMessagesBox(filters: BoxFilters): Promise<BoxPayload> {
   const session = await verifySession();
   const admin = createAdminClient();
+  const me: Option = { id: session.userId, name: session.profile.full_name || "—" };
 
-  const { data: mine } = await admin
-    .from("message_recipients")
-    .select("message_id")
-    .eq("user_id", session.userId);
+  // Base: no Inbox, o que foi endereçado a mim; em My messages, o que eu enviei.
+  const readByMe = new Map<string, boolean>();
+  let baseIds: string[] | null = null;
 
-  const ids = (mine ?? []).map((m) => m.message_id);
-  if (!ids.length) {
-    return { messages: [], context: null, people: await loadPeople(session.userId), unread: 0 };
+  if (filters.tab === "inbox") {
+    const { data: mine } = await admin
+      .from("message_recipients")
+      .select("message_id, read_at")
+      .eq("user_id", session.userId);
+    for (const r of mine ?? []) readByMe.set(r.message_id, !!r.read_at);
+    baseIds = [...readByMe.keys()];
   }
 
-  const { data: rows } = await admin
+  const query = admin
     .from("messages")
     .select("id, body, created_at, author_id, entity_type, entity_id")
-    .in("id", ids)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(MAX_BOX_MESSAGES);
 
-  const messages = await hydrateMessages(rows ?? []);
+  const { data: rows } = baseIds
+    ? baseIds.length
+      ? await query.in("id", baseIds)
+      : { data: [] }
+    : await query.eq("author_id", session.userId);
 
-  // Rótulo do registro de cada mensagem (a caixa geral mistura pedidos).
-  const contexts = new Map<string, string>();
-  for (const row of rows ?? []) {
-    const key = `${row.entity_type}:${row.entity_id}`;
-    if (contexts.has(key)) continue;
-    const ctx = await loadEntityContext(row.entity_type, row.entity_id);
-    contexts.set(key, ctx?.number ?? "—");
+  const base = rows ?? [];
+  const contexts = await loadEntityContexts(
+    base.map((r) => ({ type: r.entity_type, id: r.entity_id }))
+  );
+  const hydrated = await hydrateMessages(base);
+  const byId = new Map(hydrated.map((m) => [m.id, m]));
+
+  const all: BoxMessage[] = base.map((r) => {
+    const ctx = contexts.get(`${r.entity_type}:${r.entity_id}`);
+    const hydratedRow = byId.get(r.id);
+    return {
+      ...(hydratedRow ?? {
+        id: r.id,
+        body: r.body,
+        created_at: r.created_at,
+        author_id: r.author_id,
+        author_name: "—",
+        recipients: [],
+      }),
+      entity: { type: r.entity_type, id: r.entity_id },
+      number: ctx?.number ?? "—",
+      client: ctx?.client ?? null,
+      read_by_me: readByMe.get(r.id) ?? true,
+    };
+  });
+
+  // Opções dos filtros saem do conjunto inteiro — não encolhem ao filtrar.
+  const peopleSeen = new Map<string, string>();
+  const recordsSeen = new Map<string, string>();
+  const clientsSeen = new Map<string, string>();
+  for (const m of all) {
+    if (filters.tab === "inbox") peopleSeen.set(m.author_id, m.author_name);
+    else for (const r of m.recipients) peopleSeen.set(r.user_id, r.name);
+    recordsSeen.set(`${m.entity.type}:${m.entity.id}`, m.number);
+    const ctx = contexts.get(`${m.entity.type}:${m.entity.id}`);
+    if (ctx?.clientId && ctx.client) clientsSeen.set(ctx.clientId, ctx.client);
   }
-  const withContext = messages.map((m) => {
-    const row = (rows ?? []).find((r) => r.id === m.id);
-    return row
-      ? { ...m, context: contexts.get(`${row.entity_type}:${row.entity_id}`) }
-      : m;
+
+  const messages = all.filter((m) => {
+    if (filters.status === "read" && !m.read_by_me) return false;
+    if (filters.status === "unread" && m.read_by_me) return false;
+    if (filters.personId) {
+      const match =
+        filters.tab === "inbox"
+          ? m.author_id === filters.personId
+          : m.recipients.some((r) => r.user_id === filters.personId);
+      if (!match) return false;
+    }
+    if (filters.recordKey && `${m.entity.type}:${m.entity.id}` !== filters.recordKey) {
+      return false;
+    }
+    if (filters.clientId) {
+      const ctx = contexts.get(`${m.entity.type}:${m.entity.id}`);
+      if (ctx?.clientId !== filters.clientId) return false;
+    }
+    const day = m.created_at.slice(0, 10);
+    if (filters.from && day < filters.from) return false;
+    if (filters.to && day > filters.to) return false;
+    return true;
   });
 
   return {
-    messages: withContext,
-    context: null,
+    messages,
+    options: {
+      people: [...peopleSeen].map(([id, name]) => ({ id, name })).sort(byName),
+      records: [...recordsSeen].map(([key, label]) => ({ key, label })),
+      clients: [...clientsSeen].map(([id, name]) => ({ id, name })).sort(byName),
+    },
     people: await loadPeople(session.userId),
+    me,
     unread: await countUnreadMessages(session.userId),
   };
+}
+
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+
+/**
+ * Pedidos oferecidos no "Choose an Order" quando se escreve fora de um
+ * registro. Só os mais recentes — a busca do seletor filtra o resto.
+ */
+export async function loadOrderOptions(): Promise<{ id: string; name: string }[]> {
+  await verifySession();
+
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("orders")
+    .select("id, po_number")
+    .is("deleted_at", null)
+    .order("po_number", { ascending: false })
+    .limit(300);
+
+  return (data ?? []).map((o) => ({ id: o.id, name: o.po_number }));
 }
 
 export async function sendMessage(
@@ -163,6 +283,24 @@ export async function sendMessage(
   }
 
   return { ok: true };
+}
+
+/** "Mark as Read" / "Mark as Unread" de UMA mensagem da minha caixa. */
+export async function setMessageRead(
+  messageId: string,
+  read: boolean
+): Promise<{ ok: true; unread: number } | { ok: false; error: string }> {
+  const session = await verifySession();
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("message_recipients")
+    .update({ read_at: read ? new Date().toISOString() : null })
+    .eq("message_id", messageId)
+    .eq("user_id", session.userId);
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, unread: await countUnreadMessages(session.userId) };
 }
 
 /** Marca como lidas as minhas mensagens da thread aberta. */
