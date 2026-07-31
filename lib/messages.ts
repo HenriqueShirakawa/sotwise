@@ -70,6 +70,82 @@ export async function loadEntityContext(
   return { number: pl?.pl_number ?? "—", client: null };
 }
 
+export type EntityRef = { type: MessageEntity; id: string };
+export type EntityContext = { number: string; client: string | null; clientId: string | null };
+
+/**
+ * Contexto de VÁRIOS registros de uma vez — a caixa geral mistura pedidos, e
+ * resolver um a um seria uma consulta por mensagem.
+ */
+export async function loadEntityContexts(
+  refs: EntityRef[]
+): Promise<Map<string, EntityContext>> {
+  const admin = createAdminClient();
+  const out = new Map<string, EntityContext>();
+  const key = (r: EntityRef) => `${r.type}:${r.id}`;
+
+  const ids = (type: MessageEntity) =>
+    [...new Set(refs.filter((r) => r.type === type).map((r) => r.id))];
+
+  const orderIds = ids("order");
+  if (orderIds.length) {
+    const { data } = await admin
+      .from("orders")
+      .select("id, po_number, client_id")
+      .in("id", orderIds);
+    const clientIds = [...new Set((data ?? []).map((o) => o.client_id).filter(Boolean))];
+    const { data: clients } = clientIds.length
+      ? await admin.from("clients").select("id, name").in("id", clientIds as string[])
+      : { data: [] };
+    const clientById = new Map((clients ?? []).map((c) => [c.id, c.name]));
+    for (const o of data ?? []) {
+      out.set(key({ type: "order", id: o.id }), {
+        number: o.po_number,
+        client: o.client_id ? clientById.get(o.client_id) ?? null : null,
+        clientId: o.client_id,
+      });
+    }
+  }
+
+  const plIds = ids("pre_loading");
+  const shipmentIds = ids("shipment");
+  // Shipment é 1:1 com PL e exibe o número do PL — resolve os dois juntos.
+  const shipmentToPl = new Map<string, string>();
+  if (shipmentIds.length) {
+    const { data } = await admin
+      .from("shipments")
+      .select("id, pre_loading_id")
+      .in("id", shipmentIds);
+    for (const s of data ?? []) shipmentToPl.set(s.id, s.pre_loading_id);
+  }
+
+  const allPlIds = [...new Set([...plIds, ...shipmentToPl.values()])];
+  if (allPlIds.length) {
+    const { data } = await admin
+      .from("pre_loadings")
+      .select("id, pl_number")
+      .in("id", allPlIds);
+    const plNumber = new Map((data ?? []).map((p) => [p.id, p.pl_number]));
+
+    for (const id of plIds) {
+      out.set(key({ type: "pre_loading", id }), {
+        number: plNumber.get(id) ?? "—",
+        client: null,
+        clientId: null,
+      });
+    }
+    for (const [shipmentId, plId] of shipmentToPl) {
+      out.set(key({ type: "shipment", id: shipmentId }), {
+        number: plNumber.get(plId) ?? "—",
+        client: null,
+        clientId: null,
+      });
+    }
+  }
+
+  return out;
+}
+
 async function clientName(clientId: string | null): Promise<string | null> {
   if (!clientId) return null;
   const admin = createAdminClient();
