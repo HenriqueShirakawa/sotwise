@@ -19,7 +19,10 @@ export default async function AgentsPage() {
   ]);
 
   const countries = countriesRes.data ?? [];
-  const contacts = contactsRes.data ?? [];
+  /** A migração trouxe alguns contatos sem nome — viram linha em branco no
+   * seletor e no vínculo do agente. Ficam de fora daqui (seguem existindo e
+   * editáveis na tela de Contacts). */
+  const contacts = (contactsRes.data ?? []).filter((c) => c.name.trim());
   const countryName = new Map(countries.map((c) => [c.id, c.name]));
   const contactName = new Map(contacts.map((c) => [c.id, c.name]));
 
