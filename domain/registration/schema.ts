@@ -70,4 +70,31 @@ export const businessUnitSchema = z.object({
 
 export type BusinessUnitInput = z.infer<typeof businessUnitSchema>;
 
+/** Cadastros name-only ainda sem tela dedicada — usados pela API REST. */
+export const categorySchema = z.object({ name: nameSchema });
+export type CategoryInput = z.infer<typeof categorySchema>;
+
+export const citySchema = z.object({ name: nameSchema });
+export type CityInput = z.infer<typeof citySchema>;
+
+/** `acronym` é NOT NULL na base (ver init_schema.sql). */
+export const exporterSchema = z.object({
+  name: nameSchema,
+  acronym: z
+    .string()
+    .trim()
+    .min(1, "Acronym is required.")
+    .max(50, "Acronym is too long."),
+});
+export type ExporterInput = z.infer<typeof exporterSchema>;
+
+/** `color`/`icon_path` viraram nullable na migração de reconcile → opcionais aqui.
+ * O upload real do ícone (Storage) não passa por JSON — só o path, se vier. */
+export const orderTypeSchema = z.object({
+  name: nameSchema,
+  color: z.string().trim().min(1).max(50).optional(),
+  icon_path: z.string().trim().min(1).max(500).optional(),
+});
+export type OrderTypeInput = z.infer<typeof orderTypeSchema>;
+
 export type ActionResult = { ok: true } | { ok: false; error: string };

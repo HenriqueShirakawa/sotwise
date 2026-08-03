@@ -47,9 +47,12 @@ export async function proxy(request: NextRequest) {
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
   const isAuthRoute = pathname.startsWith("/auth/");
+  // A API REST não redireciona: os route handlers respondem 401 JSON
+  // (ver lib/api-auth.ts). O proxy só renova a sessão nesses paths.
+  const isApi = pathname.startsWith("/api/");
 
   // Sem sessão em área protegida → login (guardando o destino).
-  if (!user && !isPublic && !isAuthRoute) {
+  if (!user && !isPublic && !isAuthRoute && !isApi) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = "";
