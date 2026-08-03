@@ -43,7 +43,8 @@ export type ResourceTable =
   | "order_types"
   | "shipment_models";
 
-export type ResourceSession = { userId: string };
+/** `userId` é null quando a chamada veio por token de serviço (created_by null). */
+export type ResourceSession = { userId: string | null };
 
 export interface ResourceConfig<I = unknown> {
   table: ResourceTable;
