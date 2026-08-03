@@ -28,7 +28,7 @@ function dbErrorStatus(code?: string): number {
   return 500;
 }
 
-export async function GET(request: NextRequest, ctx: RouteContext<"/api/[resource]">) {
+export async function GET(request: NextRequest, ctx: { params: Promise<{ resource: string }> }) {
   const { resource } = await ctx.params;
   const cfg = RESOURCES[resource];
   if (!cfg) return json({ error: `Unknown resource '${resource}'.` }, 404);
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/[resourc
   return json({ data }, 200);
 }
 
-export async function POST(request: NextRequest, ctx: RouteContext<"/api/[resource]">) {
+export async function POST(request: NextRequest, ctx: { params: Promise<{ resource: string }> }) {
   const { resource } = await ctx.params;
   const cfg = RESOURCES[resource];
   if (!cfg) return json({ error: `Unknown resource '${resource}'.` }, 404);
