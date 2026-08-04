@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { factoriesForCategory } from "@/lib/factory-category";
 import {
   Dialog,
   DialogContent,
@@ -559,6 +560,7 @@ export function FactoryCategoryModal({
   ofc,
   categories,
   factories,
+  factoriesByCategory,
   onChanged,
 }: {
   open: boolean;
@@ -568,6 +570,7 @@ export function FactoryCategoryModal({
   ofc: OfcRow[];
   categories: Ref[];
   factories: Ref[];
+  factoriesByCategory: Record<string, string[]>;
   onChanged: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -591,7 +594,15 @@ export function FactoryCategoryModal({
     }
   }
 
+  const visibleFactories = factoriesForCategory(factories, categoryId, factoriesByCategory);
   const canInsertRow = !!categoryId && !!factoryId && !!batchId && !!shipRequirement;
+
+  /** Trocar de categoria descarta a fábrica que não pertence à nova. */
+  function selectCategory(id: string) {
+    setCategoryId(id);
+    const allowed = factoriesForCategory(factories, id, factoriesByCategory);
+    if (factoryId && !allowed.some((f) => f.id === factoryId)) setFactoryId("");
+  }
 
   function insertRow() {
     if (!canInsertRow) {
@@ -695,7 +706,7 @@ export function FactoryCategoryModal({
                 <div className="mt-1.5">
                   <CategoryFactorySelect
                     value={categoryId}
-                    onChange={setCategoryId}
+                    onChange={selectCategory}
                     options={categories}
                     placeholder="Select category"
                   />
@@ -707,7 +718,7 @@ export function FactoryCategoryModal({
                   <CategoryFactorySelect
                     value={factoryId}
                     onChange={setFactoryId}
-                    options={factories}
+                    options={visibleFactories}
                     placeholder="Select factory"
                   />
                 </div>
@@ -733,7 +744,9 @@ export function FactoryCategoryModal({
                   type="date"
                   value={shipRequirement}
                   onChange={(e) => setShipRequirement(e.target.value)}
-                  className="mt-1.5"
+                  // h-10 casa com o BatchPickerPopover ao lado (o Input padrão
+                  // do design system é h-8 e ficava mais baixo).
+                  className="mt-1.5 h-10"
                 />
               </div>
             </div>
