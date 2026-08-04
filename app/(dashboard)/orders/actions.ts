@@ -19,6 +19,31 @@ function friendlyError(error: { code?: string; message: string }, po?: string) {
   return error.message;
 }
 
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+/**
+ * Maior po_number ATIVO (ignora soft-deleted). po_number é texto, então busca só
+ * a coluna e calcula o máximo numérico aqui. Pagina de 1000 (limite PostgREST).
+ * Retorna null em erro de leitura.
+ */
+async function maxActivePo(admin: AdminClient): Promise<number | null> {
+  let max = 0;
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await admin
+      .from("orders")
+      .select("po_number")
+      .is("deleted_at", null)
+      .range(from, from + 999);
+    if (error || !data) return null;
+    for (const r of data) {
+      const n = Number(r.po_number) || 0;
+      if (n > max) max = n;
+    }
+    if (data.length < 1000) break;
+  }
+  return max;
+}
+
 export async function createOrder(input: OrderInput): Promise<ActionResult> {
   const session = await verifySession();
 
@@ -29,8 +54,7 @@ export async function createOrder(input: OrderInput): Promise<ActionResult> {
   const d = parsed.data;
 
   const admin = createAdminClient();
-  const { error } = await admin.from("orders").insert({
-    po_number: d.po_number,
+  const fields = {
     order_type_id: d.order_type_id,
     schedule_requested: d.schedule_requested,
     client_id: d.client_id,
@@ -40,11 +64,43 @@ export async function createOrder(input: OrderInput): Promise<ActionResult> {
     exporter_id: d.exporter_id,
     leader_id: d.leader_id,
     created_by: session.userId,
-  });
-  if (error) return { ok: false, error: friendlyError(error, d.po_number) };
+  };
 
-  revalidatePath(PATH);
-  return { ok: true };
+  // po_number autoritativo = maior ATIVO + 1 (sequencial, estilo Bubble). O valor
+  // vindo do client é ignorado (podia estar defasado). Se o número estiver preso
+  // por uma order SOFT-DELETED do topo (que foi excluída), libera com hard delete
+  // (cascata nos filhos) e reaproveita o número. NUNCA mexe em order ativa; e o
+  // retry cobre corrida entre dois usuários criando ao mesmo tempo.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const base = await maxActivePo(admin);
+    if (base === null) {
+      return { ok: false, error: "Could not read existing orders. Try again." };
+    }
+    const poNumber = String(base + 1);
+
+    const { error } = await admin.from("orders").insert({ ...fields, po_number: poNumber });
+    if (!error) {
+      revalidatePath(PATH);
+      return { ok: true };
+    }
+    if (error.code !== "23505") {
+      return { ok: false, error: friendlyError(error, poNumber) };
+    }
+
+    // Colisão nesse número: alguém já o tem. Se for uma order SOFT-DELETED (topo
+    // excluído), apaga de vez (cascata) e reaproveita. Se for ATIVA (corrida), o
+    // próximo loop recomputa o máximo e tenta o número seguinte.
+    const { data: clash } = await admin
+      .from("orders")
+      .select("id, deleted_at")
+      .eq("po_number", poNumber)
+      .maybeSingle();
+    if (clash?.deleted_at) {
+      await admin.from("orders").delete().eq("id", clash.id);
+    }
+  }
+
+  return { ok: false, error: "Could not assign an order number. Try again." };
 }
 
 export async function updateOrder(
