@@ -22,6 +22,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -196,14 +197,36 @@ export function sortableHeader<T>(label: string): ColumnDef<T>["header"] {
 }
 
 /** Botões de editar/excluir da última coluna — idênticos aos do simple-crud. */
-export function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+export function RowActions({
+  onEdit,
+  onDelete,
+  align = "end",
+  containerClassName,
+  tooltips = false,
+}: {
+  onEdit: () => void;
+  onDelete: () => void;
+  /** Alinhamento dos botões na célula. Default "end" (grudados na borda direita). */
+  align?: "start" | "end";
+  /** Classes extras no container — ex.: `w-[200px]` para largura fixa da coluna. */
+  containerClassName?: string;
+  /** Ativa o `title` (tooltip nativo no hover) nos botões. */
+  tooltips?: boolean;
+}) {
   return (
-    <div className="flex justify-end gap-1">
+    <div
+      className={cn(
+        "flex gap-1",
+        align === "start" ? "justify-start" : "justify-end",
+        containerClassName
+      )}
+    >
       <Button
         variant="ghost"
         size="icon-sm"
         className="text-slate-500 hover:text-primary"
         aria-label="Edit"
+        title={tooltips ? "Edit" : undefined}
         onClick={onEdit}
       >
         <Pencil className="size-4" />
@@ -213,6 +236,7 @@ export function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete:
         size="icon-sm"
         className="text-slate-500 hover:text-destructive"
         aria-label="Delete"
+        title={tooltips ? "Delete" : undefined}
         onClick={onDelete}
       >
         <Trash2 className="size-4" />
