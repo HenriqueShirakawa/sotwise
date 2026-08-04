@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
-  Circle,
   Eye,
   Lock,
   Paperclip,
@@ -185,11 +184,14 @@ function FactoryChips({ parts }: { parts: PartRow[] }) {
   );
 }
 
+/** Mesma bolinha do checklist de Orders: halo claro + miolo menor. */
 function StepIcon({ done }: { done: boolean }) {
   return done ? (
     <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />
   ) : (
-    <Circle className="size-5 shrink-0 fill-blue-500 text-blue-500" />
+    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-100">
+      <span className="size-2 rounded-full bg-blue-600" />
+    </span>
   );
 }
 
