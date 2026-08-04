@@ -58,6 +58,7 @@ export default async function OrderDetailPage({
     ofcRes,
     categoriesRes,
     factoriesRes,
+    categoryFactoriesRes,
   ] = await Promise.all([
     order.business_unit_id
       ? admin.from("business_units").select("name").eq("id", order.business_unit_id).single()
@@ -99,6 +100,9 @@ export default async function OrderDetailPage({
       .is("deleted_at", null)
       .neq("name", "")
       .order("name"),
+    // Vínculo Factory × Category (docs §3.5.2) — o seletor de Factory dos
+    // modais de lote só oferece as fábricas da categoria escolhida.
+    admin.from("category_factories").select("category_id, factory_id"),
   ]);
 
   const profiles = (profileRes.data ?? [])
@@ -192,6 +196,13 @@ export default async function OrderDetailPage({
     };
   }
 
+  // category_id → fábricas vinculadas. Categoria sem vínculo não entra no mapa;
+  // o client trata a ausência como "sem restrição" (ver order-detail-client).
+  const factoriesByCategory: Record<string, string[]> = {};
+  for (const link of categoryFactoriesRes.data ?? []) {
+    (factoriesByCategory[link.category_id] ??= []).push(link.factory_id);
+  }
+
   return (
     <OrderDetailClient
       orderId={order.id}
@@ -217,6 +228,7 @@ export default async function OrderDetailPage({
       etdByOfc={etdByOfc}
       categories={(categoriesRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
       factories={(factoriesRes.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
+      factoriesByCategory={factoriesByCategory}
       profiles={profiles}
       steps={steps}
     />

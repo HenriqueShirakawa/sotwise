@@ -54,6 +54,7 @@ import {
   updateChecklistStep,
   uploadStepAttachment,
 } from "./actions";
+import { factoriesForCategory } from "@/lib/factory-category";
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
@@ -359,6 +360,7 @@ function EditBatchModal({
   rows,
   categories,
   factories,
+  factoriesByCategory,
   onSaved,
 }: {
   open: boolean;
@@ -368,6 +370,7 @@ function EditBatchModal({
   rows: OfcRow[];
   categories: Ref[];
   factories: Ref[];
+  factoriesByCategory: Record<string, string[]>;
   onSaved: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -394,6 +397,16 @@ function EditBatchModal({
     safePage * ROWS_PAGE_SIZE,
     safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE
   );
+
+  const visibleFactories = factoriesForCategory(factories, categoryId, factoriesByCategory);
+  const canAdd = !!categoryId && !!factoryId && !!shipRequirement;
+
+  /** Trocar de categoria descarta a fábrica que não pertence à nova. */
+  function selectCategory(id: string) {
+    setCategoryId(id);
+    const allowed = factoriesForCategory(factories, id, factoriesByCategory);
+    if (factoryId && !allowed.some((f) => f.id === factoryId)) setFactoryId("");
+  }
 
   function addRow() {
     if (!batch || !categoryId || !factoryId || !shipRequirement) {
@@ -468,7 +481,7 @@ function EditBatchModal({
                 <div className="mt-1.5">
                   <SearchSelect
                     value={categoryId}
-                    onChange={setCategoryId}
+                    onChange={selectCategory}
                     options={categories}
                     placeholder="Select category"
                   />
@@ -480,7 +493,7 @@ function EditBatchModal({
                   <SearchSelect
                     value={factoryId}
                     onChange={setFactoryId}
-                    options={factories}
+                    options={visibleFactories}
                     placeholder="Select factory"
                   />
                 </div>
@@ -491,15 +504,19 @@ function EditBatchModal({
                   type="date"
                   value={shipRequirement}
                   onChange={(e) => setShipRequirement(e.target.value)}
-                  className="mt-1.5"
+                  // h-10 casa com o trigger do SearchSelect ao lado (o Input
+                  // padrão do design system é h-8 e ficava mais baixo).
+                  className="mt-1.5 h-10"
                 />
               </div>
             </div>
+            {/* Roxo (variant default) assim que Category+Factory+Ship req.
+                estão preenchidos; antes disso fica outline e desabilitado. */}
             <Button
-              variant="outline"
+              variant={canAdd ? "default" : "outline"}
               className="mt-3 w-full"
               onClick={addRow}
-              disabled={pending}
+              disabled={!canAdd || pending}
             >
               <Plus />
               Add
@@ -576,6 +593,7 @@ function CreateBatchModal({
   nextBatchNumber,
   categories,
   factories,
+  factoriesByCategory,
   onCreated,
 }: {
   open: boolean;
@@ -584,6 +602,7 @@ function CreateBatchModal({
   nextBatchNumber: string;
   categories: Ref[];
   factories: Ref[];
+  factoriesByCategory: Record<string, string[]>;
   onCreated: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -605,7 +624,15 @@ function CreateBatchModal({
     }
   }
 
+  const visibleFactories = factoriesForCategory(factories, categoryId, factoriesByCategory);
   const canAdd = !!categoryId && !!factoryId && !!shipRequirement;
+
+  /** Trocar de categoria descarta a fábrica que não pertence à nova. */
+  function selectCategory(id: string) {
+    setCategoryId(id);
+    const allowed = factoriesForCategory(factories, id, factoriesByCategory);
+    if (factoryId && !allowed.some((f) => f.id === factoryId)) setFactoryId("");
+  }
 
   function addRow() {
     if (!canAdd) return;
@@ -682,7 +709,7 @@ function CreateBatchModal({
                 <div className="mt-1.5">
                   <SearchSelect
                     value={categoryId}
-                    onChange={setCategoryId}
+                    onChange={selectCategory}
                     options={categories}
                     placeholder="Select category"
                   />
@@ -694,7 +721,7 @@ function CreateBatchModal({
                   <SearchSelect
                     value={factoryId}
                     onChange={setFactoryId}
-                    options={factories}
+                    options={visibleFactories}
                     placeholder="Select factory"
                   />
                 </div>
@@ -705,12 +732,14 @@ function CreateBatchModal({
                   type="date"
                   value={shipRequirement}
                   onChange={(e) => setShipRequirement(e.target.value)}
-                  className="mt-1.5"
+                  // h-10 casa com o trigger do SearchSelect ao lado (o Input
+                  // padrão do design system é h-8 e ficava mais baixo).
+                  className="mt-1.5 h-10"
                 />
               </div>
             </div>
             <Button
-              variant="outline"
+              variant={canAdd ? "default" : "outline"}
               className="mt-3 w-full"
               onClick={addRow}
               disabled={!canAdd}
@@ -890,6 +919,7 @@ export function OrderDetailClient({
   etdByOfc,
   categories,
   factories,
+  factoriesByCategory,
   profiles,
   steps,
 }: {
@@ -900,6 +930,7 @@ export function OrderDetailClient({
   etdByOfc: Record<string, EtdInfoRow>;
   categories: Ref[];
   factories: Ref[];
+  factoriesByCategory: Record<string, string[]>;
   profiles: Ref[];
   steps: ChecklistStepRow[];
 }) {
@@ -1094,6 +1125,7 @@ export function OrderDetailClient({
                     rows={rows}
                     categories={categories}
                     factories={factories}
+                    factoriesByCategory={factoriesByCategory}
                     onSaved={() => router.refresh()}
                   />
                 )}
@@ -1108,6 +1140,7 @@ export function OrderDetailClient({
           nextBatchNumber={nextBatchNumber}
           categories={categories}
           factories={factories}
+          factoriesByCategory={factoriesByCategory}
           onCreated={() => router.refresh()}
         />
       </div>
@@ -1295,6 +1328,7 @@ export function OrderDetailClient({
         ofc={ofc}
         categories={categories}
         factories={factories}
+        factoriesByCategory={factoriesByCategory}
         onChanged={() => router.refresh()}
       />
     </div>
