@@ -460,7 +460,9 @@ function EditBatchModal({
 
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* Três colunas irmãs de mesma largura — antes Factory e Ship
+                requirement dividiam metade da linha e saíam menores que Category. */}
+            <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-foreground">Category</Label>
                 <div className="mt-1.5">
@@ -472,27 +474,25 @@ function EditBatchModal({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-foreground">Factory</Label>
-                  <div className="mt-1.5">
-                    <SearchSelect
-                      value={factoryId}
-                      onChange={setFactoryId}
-                      options={factories}
-                      placeholder="Select factory"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-foreground">Ship requirement</Label>
-                  <Input
-                    type="date"
-                    value={shipRequirement}
-                    onChange={(e) => setShipRequirement(e.target.value)}
-                    className="mt-1.5"
+              <div>
+                <Label className="text-foreground">Factory</Label>
+                <div className="mt-1.5">
+                  <SearchSelect
+                    value={factoryId}
+                    onChange={setFactoryId}
+                    options={factories}
+                    placeholder="Select factory"
                   />
                 </div>
+              </div>
+              <div>
+                <Label className="text-foreground">Ship requirement</Label>
+                <Input
+                  type="date"
+                  value={shipRequirement}
+                  onChange={(e) => setShipRequirement(e.target.value)}
+                  className="mt-1.5"
+                />
               </div>
             </div>
             <Button
@@ -674,7 +674,9 @@ function CreateBatchModal({
 
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* Três colunas irmãs de mesma largura — antes Factory e Ship
+                requirement dividiam metade da linha e saíam menores que Category. */}
+            <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-foreground">Category</Label>
                 <div className="mt-1.5">
@@ -686,27 +688,25 @@ function CreateBatchModal({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-foreground">Factory</Label>
-                  <div className="mt-1.5">
-                    <SearchSelect
-                      value={factoryId}
-                      onChange={setFactoryId}
-                      options={factories}
-                      placeholder="Select factory"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-foreground">Ship requirement</Label>
-                  <Input
-                    type="date"
-                    value={shipRequirement}
-                    onChange={(e) => setShipRequirement(e.target.value)}
-                    className="mt-1.5"
+              <div>
+                <Label className="text-foreground">Factory</Label>
+                <div className="mt-1.5">
+                  <SearchSelect
+                    value={factoryId}
+                    onChange={setFactoryId}
+                    options={factories}
+                    placeholder="Select factory"
                   />
                 </div>
+              </div>
+              <div>
+                <Label className="text-foreground">Ship requirement</Label>
+                <Input
+                  type="date"
+                  value={shipRequirement}
+                  onChange={(e) => setShipRequirement(e.target.value)}
+                  className="mt-1.5"
+                />
               </div>
             </div>
             <Button
