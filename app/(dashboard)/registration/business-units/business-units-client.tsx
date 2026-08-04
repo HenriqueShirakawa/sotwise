@@ -65,6 +65,9 @@ export function BusinessUnitsClient({ data }: { data: BusinessUnitRow[] }) {
         enableSorting: false,
         cell: ({ row }) => (
           <RowActions
+            align="start"
+            containerClassName="w-[200px]"
+            tooltips
             onEdit={() => {
               setEditing(row.original);
               setFormOpen(true);
