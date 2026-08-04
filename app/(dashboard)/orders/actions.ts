@@ -8,6 +8,7 @@ import {
   orderSchema,
   type OrderInput,
   type ActionResult,
+  type CreateResult,
 } from "@/domain/orders/schema";
 
 const PATH = "/orders";
@@ -44,7 +45,7 @@ async function maxActivePo(admin: AdminClient): Promise<number | null> {
   return max;
 }
 
-export async function createOrder(input: OrderInput): Promise<ActionResult> {
+export async function createOrder(input: OrderInput): Promise<CreateResult> {
   const session = await verifySession();
 
   const parsed = orderSchema.safeParse(input);
@@ -78,10 +79,14 @@ export async function createOrder(input: OrderInput): Promise<ActionResult> {
     }
     const poNumber = String(base + 1);
 
-    const { error } = await admin.from("orders").insert({ ...fields, po_number: poNumber });
+    const { data, error } = await admin
+      .from("orders")
+      .insert({ ...fields, po_number: poNumber })
+      .select("id")
+      .single();
     if (!error) {
       revalidatePath(PATH);
-      return { ok: true };
+      return { ok: true, id: data.id };
     }
     if (error.code !== "23505") {
       return { ok: false, error: friendlyError(error, poNumber) };

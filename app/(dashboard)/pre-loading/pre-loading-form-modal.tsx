@@ -233,16 +233,27 @@ export function PreLoadingFormModal({
       batch_ids: selected,
     };
     startTransition(async () => {
-      const res = editing
-        ? await updatePreLoading(editing.id, payload)
-        : await createPreLoading(payload);
-      if (res.ok) {
-        toast.success(editing ? "Pre-loading updated." : "Pre-loading created.");
+      if (editing) {
+        const res = await updatePreLoading(editing.id, payload);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success("Pre-loading updated.");
         onOpenChange(false);
         router.refresh();
-      } else {
-        toast.error(res.error);
+        return;
       }
+      const res = await createPreLoading(payload);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Pre-loading created.");
+      onOpenChange(false);
+      // PL novo abre direto no próprio checklist — a lista atrás do modal é
+      // idêntica e voltar pra ela dava a impressão de que nada aconteceu.
+      router.push(`/pre-loading/${res.id}`);
     });
   }
 
