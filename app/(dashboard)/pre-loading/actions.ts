@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   preLoadingSchema,
   type ActionResult,
+  type CreateResult,
   type PreLoadingInput,
 } from "@/domain/pre-loadings/schema";
 
@@ -106,7 +107,7 @@ async function syncRelations(
   return null;
 }
 
-export async function createPreLoading(input: PreLoadingInput): Promise<ActionResult> {
+export async function createPreLoading(input: PreLoadingInput): Promise<CreateResult> {
   const session = await verifySession();
 
   const parsed = preLoadingSchema.safeParse(input);
@@ -147,7 +148,7 @@ export async function createPreLoading(input: PreLoadingInput): Promise<ActionRe
   if (relError) return { ok: false, error: relError };
 
   revalidatePath(PATH);
-  return { ok: true };
+  return { ok: true, id: created.id };
 }
 
 export async function updatePreLoading(

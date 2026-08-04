@@ -118,16 +118,27 @@ export function OrderFormModal({
       leader_id: form.leader_id || null,
     };
     startTransition(async () => {
-      const res = editing
-        ? await updateOrder(editing.id, payload)
-        : await createOrder(payload);
-      if (res.ok) {
-        toast.success(editing ? "Order updated." : "Order created.");
+      if (editing) {
+        const res = await updateOrder(editing.id, payload);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success("Order updated.");
         onOpenChange(false);
         router.refresh();
-      } else {
-        toast.error(res.error);
+        return;
       }
+      const res = await createOrder(payload);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Order created.");
+      onOpenChange(false);
+      // Pedido novo abre direto no próprio checklist — a lista atrás do modal
+      // é idêntica e voltar pra ela dava a impressão de que nada aconteceu.
+      router.push(`/orders/${res.id}`);
     });
   }
 

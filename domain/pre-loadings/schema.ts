@@ -27,3 +27,7 @@ export const preLoadingSchema = z.object({
 export type PreLoadingInput = z.infer<typeof preLoadingSchema>;
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
+
+/** Como o ActionResult, mas devolve o id do registro criado — o form usa esse
+ * id pra mandar o usuário direto pro checklist do novo PL. */
+export type CreateResult = { ok: true; id: string } | { ok: false; error: string };
