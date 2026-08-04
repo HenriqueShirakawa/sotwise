@@ -95,9 +95,16 @@ const TOGGLEABLE_STEPS = new Set<ChecklistStep>([
   "balance_payment",
 ]);
 
-// Etapas que exigem documento anexado — sinalizadas com o "i" laranja enquanto
-// não estão concluídas.
-const DOCUMENT_REQUIRED_STEPS = new Set<ChecklistStep>([
+/**
+ * Etapas com requisito próprio: enquanto ele não é cumprido aparece o "i"
+ * laranja; cumprido, a etapa fica verde sem depender de "Completed on".
+ *
+ *   po           → o pedido tem pelo menos um lote
+ *   pi           → documento anexado
+ *   etd          → todas as entradas Factory×Category com "Initial date"
+ *   pre_loading  → documento anexado
+ */
+const STEPS_WITH_REQUIREMENT = new Set<ChecklistStep>([
   "po",
   "pi",
   "etd",
@@ -207,21 +214,26 @@ function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
 }
 
 /**
- * Bolinha da etapa: halo claro por fora + miolo menor no centro. Concluída usa
- * o check verde; etapa que exige documento anexado usa o "i" laranja enquanto
- * está pendente (DOCUMENT_REQUIRED_STEPS).
+ * Bolinha da etapa: halo claro por fora + miolo menor no centro. Verde quando
+ * concluída ou quando o requisito da etapa foi cumprido; "i" laranja enquanto
+ * o requisito está pendente (ver STEPS_WITH_REQUIREMENT).
  */
 function StepIcon({
   step,
   enabled,
   done,
+  requirementMet,
 }: {
   step: ChecklistStep;
   enabled: boolean;
   done: boolean;
+  requirementMet: boolean;
 }) {
-  if (done) return <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />;
-  if (enabled && DOCUMENT_REQUIRED_STEPS.has(step)) {
+  const gated = enabled && STEPS_WITH_REQUIREMENT.has(step);
+  if (done || (gated && requirementMet)) {
+    return <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />;
+  }
+  if (gated) {
     return <Info className="size-5 shrink-0 fill-amber-500 text-white" />;
   }
   return (
@@ -976,6 +988,26 @@ export function OrderDetailClient({
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
 
+  // ETD: exige "Initial date" em TODAS as entradas Factory×Category. Sem
+  // nenhuma entrada não há o que preencher, então o requisito não é cumprido.
+  const etdInitialFilled =
+    ofc.length > 0 && ofc.every((o) => !!etdByOfc[o.id]?.initial_date);
+
+  /** Requisito da etapa cumprido? Só vale para STEPS_WITH_REQUIREMENT. */
+  function requirementMet(step: ChecklistStepRow): boolean {
+    switch (step.step) {
+      case "po":
+        return batches.length > 0;
+      case "etd":
+        return etdInitialFilled;
+      case "pi":
+      case "pre_loading":
+        return step.attachments.length > 0;
+      default:
+        return false;
+    }
+  }
+
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
     setOpenSteps((prev) => {
@@ -1207,7 +1239,12 @@ export function OrderDetailClient({
               return (
                 <div key={s.step} className="border-b last:border-b-0">
                   <div className="flex items-center gap-4 px-6 py-4">
-                    <StepIcon step={s.step} enabled={s.enabled} done={s.done} />
+                    <StepIcon
+                      step={s.step}
+                      enabled={s.enabled}
+                      done={s.done}
+                      requirementMet={requirementMet(s)}
+                    />
                     <button
                       type="button"
                       className={`flex-1 text-left text-sm font-medium ${
