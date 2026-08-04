@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   Download,
   Eye,
+  Info,
   Paperclip,
   Pencil,
   Plus,
@@ -92,6 +93,15 @@ const TOGGLEABLE_STEPS = new Set<ChecklistStep>([
   "packing_confirm",
   "condition_confirm",
   "balance_payment",
+]);
+
+// Etapas que exigem documento anexado — sinalizadas com o "i" laranja enquanto
+// não estão concluídas.
+const DOCUMENT_REQUIRED_STEPS = new Set<ChecklistStep>([
+  "po",
+  "pi",
+  "etd",
+  "pre_loading",
 ]);
 
 // Só lotes em In Negotiation/In Production aceitam novas entradas Factory x
@@ -197,12 +207,23 @@ function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
 }
 
 /**
- * Bolinha da etapa: halo claro por fora + miolo menor no centro. O disco
- * chapado de antes destoava do resto do design (docs: modelo do checklist).
- * Concluída continua com o check preenchido, que é o estado mais forte.
+ * Bolinha da etapa: halo claro por fora + miolo menor no centro. Concluída usa
+ * o check verde; etapa que exige documento anexado usa o "i" laranja enquanto
+ * está pendente (DOCUMENT_REQUIRED_STEPS).
  */
-function StepIcon({ enabled, done }: { enabled: boolean; done: boolean }) {
+function StepIcon({
+  step,
+  enabled,
+  done,
+}: {
+  step: ChecklistStep;
+  enabled: boolean;
+  done: boolean;
+}) {
   if (done) return <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />;
+  if (enabled && DOCUMENT_REQUIRED_STEPS.has(step)) {
+    return <Info className="size-5 shrink-0 fill-amber-500 text-white" />;
+  }
   return (
     <span
       className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${
@@ -1186,7 +1207,7 @@ export function OrderDetailClient({
               return (
                 <div key={s.step} className="border-b last:border-b-0">
                   <div className="flex items-center gap-4 px-6 py-4">
-                    <StepIcon enabled={s.enabled} done={s.done} />
+                    <StepIcon step={s.step} enabled={s.enabled} done={s.done} />
                     <button
                       type="button"
                       className={`flex-1 text-left text-sm font-medium ${
