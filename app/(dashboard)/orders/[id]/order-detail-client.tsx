@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
-  Circle,
   Download,
   Eye,
   Paperclip,
@@ -197,10 +196,22 @@ function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
   );
 }
 
+/**
+ * Bolinha da etapa: halo claro por fora + miolo menor no centro. O disco
+ * chapado de antes destoava do resto do design (docs: modelo do checklist).
+ * Concluída continua com o check preenchido, que é o estado mais forte.
+ */
 function StepIcon({ enabled, done }: { enabled: boolean; done: boolean }) {
-  if (!enabled) return <Circle className="size-5 fill-slate-300 text-slate-300" />;
-  if (done) return <CheckCircle2 className="size-5 fill-emerald-600 text-white" />;
-  return <Circle className="size-5 fill-blue-500 text-blue-500" />;
+  if (done) return <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />;
+  return (
+    <span
+      className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${
+        enabled ? "bg-blue-100" : "bg-slate-100"
+      }`}
+    >
+      <span className={`size-2 rounded-full ${enabled ? "bg-blue-600" : "bg-slate-400"}`} />
+    </span>
+  );
 }
 
 function BatchStatusSelect({
