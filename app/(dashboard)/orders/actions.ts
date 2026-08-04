@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { verifySession } from "@/lib/dal";
+import { ORDER_STEPS } from "@/lib/checklist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   orderSchema,
@@ -85,6 +86,15 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
       .select("id")
       .single();
     if (!error) {
+      // As 10 etapas da fase Order nascem junto com o pedido. A tela de detalhe
+      // só renderiza etapa que tem linha (page.tsx filtra por STEP_ORDER), então
+      // sem esse seed a order nova abre com "No checklist steps for this order."
+      // As orders vindas do Bubble já trouxeram as linhas na migração.
+      const { error: stepsError } = await admin
+        .from("order_checklist_steps")
+        .insert(ORDER_STEPS.map((step) => ({ order_id: data.id, step })));
+      if (stepsError) return { ok: false, error: stepsError.message };
+
       revalidatePath(PATH);
       return { ok: true, id: data.id };
     }
