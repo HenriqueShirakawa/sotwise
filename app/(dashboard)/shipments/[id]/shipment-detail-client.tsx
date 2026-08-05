@@ -33,8 +33,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 import {
+  deleteShipment,
   deleteShipmentStepAttachment,
   getShipmentAttachmentUrl,
   saveShipmentStep,
@@ -345,7 +347,21 @@ export function ShipmentDetailClient({
   const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
   const [partsOf, setPartsOf] = useState<ShipmentBatchRow | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  function handleDelete() {
+    startTransition(async () => {
+      const res = await deleteShipment(shipment.id);
+      if (res.ok) {
+        toast.success("Shipment deleted.");
+        router.push("/shipments");
+      } else {
+        toast.error(res.error);
+        setConfirmDelete(false);
+      }
+    });
+  }
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
@@ -370,14 +386,24 @@ export function ShipmentDetailClient({
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <Button
-          variant="outline"
-          className="h-11 rounded-xl"
-          onClick={() => router.push("/shipments")}
-        >
-          <ArrowLeft />
-          Back
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl"
+            onClick={() => router.push("/shipments")}
+          >
+            <ArrowLeft />
+            Back
+          </Button>
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl text-rose-600 hover:text-rose-700"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 />
+            Delete shipment
+          </Button>
+        </div>
         <div className="flex items-center gap-3">
           <StatusPill label={shipment.status} />
           <div className="text-right">
@@ -497,6 +523,17 @@ export function ShipmentDetailClient({
         poBatch={partsOf ? `${partsOf.po_number} ${partsOf.batch_number}` : ""}
         parts={partsOf?.parts ?? []}
         factories={factories}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={(o) => !o && setConfirmDelete(false)}
+        title="Delete shipment?"
+        description={`Shipment PL-${shipment.pl_number} will be deleted. Its batches return to the Pre-loading, which reappears in the list to be confirmed again.`}
+        confirmLabel="Delete"
+        destructive
+        loading={pending}
+        onConfirm={handleDelete}
       />
 
       <div className="rounded-2xl border bg-white">

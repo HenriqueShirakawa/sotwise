@@ -216,20 +216,24 @@ export async function deletePreLoading(id: string): Promise<ActionResult> {
   await verifySession();
 
   const admin = createAdminClient();
-  const { error } = await admin
-    .from("pre_loadings")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) return { ok: false, error: error.message };
 
-  // Libera os lotes de volta pra produção, senão ficariam presos em
-  // 'preloading' e invisíveis na seleção de qualquer outro PL. Os vínculos em
-  // pre_loading_batches ficam — o soft delete é reversível por um admin.
+  // Captura os lotes ANTES de apagar — o hard delete leva junto os vínculos em
+  // pre_loading_batches (ON DELETE CASCADE, migration 20260805130000).
   const { data: links } = await admin
     .from("pre_loading_batches")
     .select("batch_id")
     .eq("pre_loading_id", id);
   const batchIds = (links ?? []).map((l) => l.batch_id);
+
+  // Hard delete: o PL sai de vez e, em cascata, vão os vínculos (clients/batches/
+  // checklist) e o Shipment 1:1 (shipments.pre_loading_id ON DELETE CASCADE, também
+  // na migration 20260805130000). Sem a migration o delete trava na FK do Shipment.
+  const { error } = await admin.from("pre_loadings").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  // Os lotes não são apagados (pertencem às orders); devolve-os pra produção,
+  // senão ficariam presos em 'preloading'/'in_transit' e sumiriam da seleção de
+  // qualquer outro PL. O status da Order é recalculado em seguida.
   if (batchIds.length) {
     await admin.from("batches").update({ status: "in_production" }).in("id", batchIds);
     await syncOrderStatusForBatches(admin, batchIds);

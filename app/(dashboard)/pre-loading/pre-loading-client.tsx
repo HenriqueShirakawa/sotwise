@@ -516,7 +516,7 @@ export function PreLoadingClient({
         title="Delete pre-loading?"
         description={
           toDelete
-            ? `This will remove PL ${toDelete.pl_number} from the list. This action can be undone by an admin.`
+            ? `PL ${toDelete.pl_number} will be permanently deleted. Its batches return to production.`
             : undefined
         }
         confirmLabel="Delete"
