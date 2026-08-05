@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { verifySession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { BatchStatus, ChecklistStep } from "@/types/database";
+import type { BatchStatus, ChecklistStep, LoadingStatus } from "@/types/database";
 
 import {
   ShipmentDetailClient,
@@ -159,14 +159,44 @@ export default async function ShipmentDetailPage({
     .filter((b): b is NonNullable<BatchEmbed["batches"]> => !!b);
 
   // Entradas Factory × Category dos lotes do embarque — chips na tabela e
-  // linhas editáveis do modal "View parts".
+  // linhas do modal "View parts". `order_id` + ETD acompanham a linha: o modal
+  // de ETD (o mesmo da tela ETD Factories) é aberto por entrada, e o dado
+  // sobrevive ao split do embarque porque etd_info é 1:1 com a linha.
   const batchIds = batchRows.map((b) => b.id);
-  const ofcRes = batchIds.length
+  type OfcEmbed = {
+    id: string;
+    batch_id: string | null;
+    order_id: string;
+    factory_id: string;
+    category_id: string;
+    loading_status: LoadingStatus | null;
+    etd_info: { initial_date: string | null } | { initial_date: string | null }[] | null;
+  };
+  // Lotes-filhos do split: no Confirm Shipping, entrada marcada Partial/None sai
+  // do lote que embarcou e vai para um lote novo (docs §3.7.2). Quando TODAS as
+  // entradas são Partial/None o lote embarcado fica sem nenhuma linha própria —
+  // e era o que deixava o "View parts" vazio. As linhas do filho continuam
+  // sendo o que aquele lote carregou, então entram aqui pela linhagem.
+  const childRes = batchIds.length
+    ? await admin
+        .from("batches")
+        .select("id, batch_number, split_from_batch_id")
+        .in("split_from_batch_id", batchIds)
+    : { data: [] as { id: string; batch_number: string; split_from_batch_id: string | null }[] };
+  const childBatches = childRes.data ?? [];
+  const parentByChild = new Map(childBatches.map((b) => [b.id, b.split_from_batch_id as string]));
+  const childNumberById = new Map(childBatches.map((b) => [b.id, b.batch_number]));
+
+  const lookupIds = [...batchIds, ...childBatches.map((b) => b.id)];
+  const ofcRes = lookupIds.length
     ? await admin
         .from("order_factory_category")
-        .select("id, batch_id, factory_id, category_id, loading_status")
-        .in("batch_id", batchIds)
-    : { data: [] };
+        .select(
+          "id, batch_id, order_id, factory_id, category_id, loading_status, etd_info(initial_date)"
+        )
+        .in("batch_id", lookupIds)
+        .returns<OfcEmbed[]>()
+    : { data: [] as OfcEmbed[] };
 
   const categoryNameById = new Map(
     ((await admin.from("categories").select("id, name")).data ?? []).map((c) => [c.id, c.name])
@@ -175,14 +205,22 @@ export default async function ShipmentDetailPage({
   const partsByBatch = new Map<string, PartRow[]>();
   for (const o of ofcRes.data ?? []) {
     if (!o.batch_id) continue;
-    const arr = partsByBatch.get(o.batch_id) ?? [];
+    // Linha que migrou no split é atribuída ao lote de ORIGEM (o que embarcou),
+    // marcada com o lote para onde o saldo foi.
+    const parent = parentByChild.get(o.batch_id);
+    const targetBatchId = parent ?? o.batch_id;
+    const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
+    const arr = partsByBatch.get(targetBatchId) ?? [];
     arr.push({
       id: o.id,
+      order_id: o.order_id,
       factory: factoryNameById.get(o.factory_id) ?? "—",
       category: categoryNameById.get(o.category_id) ?? "—",
       loading_status: o.loading_status,
+      etd_initial: etd?.initial_date ?? null,
+      moved_to: parent ? (childNumberById.get(o.batch_id) ?? null) : null,
     });
-    partsByBatch.set(o.batch_id, arr);
+    partsByBatch.set(targetBatchId, arr);
   }
   for (const list of partsByBatch.values()) {
     list.sort((a, b) => a.factory.localeCompare(b.factory) || a.category.localeCompare(b.category));
@@ -303,6 +341,11 @@ export default async function ShipmentDetailPage({
     .map((p) => ({ id: p.id, name: p.full_name as string }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Cadastro de fábricas — o modal de ETD usa no campo "Dispatch location".
+  const factories: Ref[] = (factoryRes.data ?? [])
+    .map((f) => ({ id: f.id, name: f.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <ShipmentDetailClient
       shipment={{
@@ -323,6 +366,7 @@ export default async function ShipmentDetailPage({
       batches={batches}
       steps={steps}
       profiles={profiles}
+      factories={factories}
       dates={dates}
     />
   );

@@ -323,12 +323,15 @@ export function ShipmentDetailClient({
   batches,
   steps,
   profiles,
+  factories,
   dates,
 }: {
   shipment: ShipmentDetail;
   batches: ShipmentBatchRow[];
   steps: ShipmentStepRow[];
   profiles: Ref[];
+  /** Repassado ao modal de ETD aberto pelo "View parts". */
+  factories: Ref[];
   dates: {
     loading: string | null;
     shipment: string | null;
@@ -484,6 +487,7 @@ export function ShipmentDetailClient({
         onOpenChange={(o) => !o && setPartsOf(null)}
         poBatch={partsOf ? `${partsOf.po_number} ${partsOf.batch_number}` : ""}
         parts={partsOf?.parts ?? []}
+        factories={factories}
       />
 
       <div className="rounded-2xl border bg-white">
