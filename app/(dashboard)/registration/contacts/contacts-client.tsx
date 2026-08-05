@@ -132,6 +132,7 @@ export function ContactsClient({ data }: { data: ContactRow[] }) {
         columns={columns}
         data={filtered}
         defaultSorting={[{ id: "name", desc: false }]}
+        emptyMessage="No contacts found."
       />
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

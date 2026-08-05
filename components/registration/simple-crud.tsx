@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DataCards } from "@/components/data-cards";
 import {
   Dialog,
   DialogContent,
@@ -183,7 +184,7 @@ export function SimpleRegistrationCrud({
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <Button className="h-11 rounded-xl px-5" onClick={openCreate}>
+        <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={openCreate}>
           <Plus />
           {createLabel}
         </Button>
@@ -201,7 +202,13 @@ export function SimpleRegistrationCrud({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        labels={{ name: columnLabel }}
+        emptyMessage="No records found."
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

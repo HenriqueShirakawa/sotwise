@@ -243,7 +243,41 @@ export function ConfirmShippingModal({
           />
         </div>
 
-        <div className="mt-2 overflow-x-auto rounded-xl border">
+        {/* Abaixo de sm cada linha vira card — a tabela tem 5 colunas + select. */}
+        <div className="mt-2 divide-y rounded-xl border sm:hidden">
+          {lines.map((l) => (
+            <div key={l.id} className="space-y-3 px-3 py-3 text-sm">
+              <div>
+                <p className="font-medium text-slate-800">
+                  {l.po_number} / {l.batch_number}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {l.factory} · {l.category}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  ETD {l.etd_initial ? formatDateNumeric(l.etd_initial) : "—"}
+                </span>
+                <Select
+                  value={statuses[l.id] ?? ""}
+                  onValueChange={(v) => setStatuses((s) => ({ ...s, [l.id]: v as LoadStatus }))}
+                >
+                  <SelectTrigger className="h-9 w-36 bg-white">
+                    <SelectValue placeholder="Choose status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="total">Total</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-2 hidden overflow-x-auto rounded-xl border sm:block">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs whitespace-nowrap text-muted-foreground">
               <tr>

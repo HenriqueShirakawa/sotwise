@@ -43,6 +43,18 @@ const STATUS_LABELS: Record<LoadingStatus, string> = {
 
 const ROWS_PER_PAGE = 8;
 
+/** Campo do card de parte (só abaixo de sm). */
+function PartField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-slate-600">{children}</dd>
+    </div>
+  );
+}
+
 /**
  * "View parts": o que foi carregado por entrada Factory × Category do lote.
  * SOMENTE LEITURA — o status Total/Partial/None é definido no Confirm Shipping
@@ -94,7 +106,57 @@ export function ViewPartsModal({
               </div>
             </section>
 
-            <div className="overflow-hidden rounded-xl border">
+            {/* Abaixo de sm cada entrada vira card — a tabela some. */}
+            <div className="divide-y rounded-xl border sm:hidden">
+              {pageRows.length === 0 ? (
+                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  No Factory × Category entries for this batch.
+                </p>
+              ) : (
+                pageRows.map((p) => (
+                  <div key={p.id} className="space-y-2 px-4 py-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-slate-800">{p.factory}</span>
+                      <button
+                        type="button"
+                        onClick={() => setEtdTarget(p)}
+                        className="shrink-0 text-primary hover:opacity-70"
+                        aria-label={`Open ETD for ${p.factory} × ${p.category}`}
+                      >
+                        <SquareArrowOutUpRight className="size-3.5" />
+                      </button>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+                      <PartField label="Category">{p.category}</PartField>
+                      <PartField label="Part">
+                        {p.loading_status ? (
+                          STATUS_LABELS[p.loading_status]
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                        {p.moved_to && (
+                          <span
+                            className="ml-1 text-xs text-slate-400"
+                            title={`O saldo não carregado foi para o lote ${p.moved_to}`}
+                          >
+                            → {p.moved_to}
+                          </span>
+                        )}
+                      </PartField>
+                      <PartField label="ETD">
+                        {p.etd_initial ? (
+                          formatDateNumeric(p.etd_initial)
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </PartField>
+                    </dl>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="hidden overflow-hidden rounded-xl border sm:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50/80 text-xs font-semibold text-slate-500">

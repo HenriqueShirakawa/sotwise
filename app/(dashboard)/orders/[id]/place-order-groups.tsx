@@ -169,7 +169,7 @@ export function PlaceOrderFactoryGroups({
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
-      <div className="grid grid-cols-[1fr_160px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+      <div className="hidden grid-cols-[1fr_160px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
         <span>Factory</span>
         <span>N° of categories</span>
         <span />
@@ -185,14 +185,17 @@ export function PlaceOrderFactoryGroups({
           const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
           return (
             <div key={g.factory_id} className="border-t">
-              <div className="grid grid-cols-[1fr_160px_128px_40px] items-center gap-2 px-3 py-2.5 text-sm">
+              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_160px_128px_40px]">
                 <span className="truncate font-medium text-slate-800">{g.factory_name}</span>
-                <span className="text-slate-700">{g.entries.length}</span>
+                <span className="text-slate-700 max-sm:col-start-1 max-sm:text-xs max-sm:text-slate-500">
+                  {g.entries.length}
+                  <span className="sm:hidden"> categories</span>
+                </span>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="justify-self-start"
+                  className="justify-self-start max-sm:col-start-1 max-sm:row-start-3"
                   disabled={pending}
                   onClick={() => attachTo(g.factory_id)}
                 >
@@ -207,7 +210,7 @@ export function PlaceOrderFactoryGroups({
                 <button
                   type="button"
                   aria-label={open ? "Collapse" : "Expand"}
-                  className="justify-self-center"
+                  className="justify-self-center max-sm:col-start-2 max-sm:row-start-1"
                   onClick={() => toggle(g.factory_id)}
                 >
                   <ChevronDown

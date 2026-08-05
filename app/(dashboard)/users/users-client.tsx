@@ -238,6 +238,8 @@ export function UsersClient({
         columns={columns}
         data={filtered}
         defaultSorting={[{ id: "full_name", desc: false }]}
+        cardHeaderColumnIds={["status", "actions"]}
+        emptyMessage="No users found."
         filters={
           <Select value={status} onValueChange={(v) => setStatus(v as "all" | UserStatus)}>
             <SelectTrigger className="!h-11 w-44 rounded-xl bg-white">
