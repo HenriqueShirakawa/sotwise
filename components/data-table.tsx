@@ -13,6 +13,7 @@ import { Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DataCards } from "@/components/data-cards";
 import {
   Table,
   TableBody,
@@ -75,7 +76,9 @@ export function DataTable<TData, TValue>({
         {toolbar ? <div className="flex items-center gap-2">{toolbar}</div> : null}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
+      <DataCards rows={rows} emptyMessage={emptyMessage} />
+
+      <div className="hidden overflow-x-auto rounded-lg border lg:block">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

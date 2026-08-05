@@ -201,6 +201,7 @@ export function AgentsClient({
         columns={columns}
         data={filtered}
         defaultSorting={[{ id: "name", desc: false }]}
+        emptyMessage="No agents found."
         filters={
           <Select
             value={location}

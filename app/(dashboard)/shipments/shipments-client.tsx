@@ -13,12 +13,13 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Search, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
+import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
   useColumnVisibility,
@@ -83,6 +84,8 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "sum_of_orders", label: "Sum of Orders" },
   { id: "status", label: "Status" },
 ];
+
+const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 /**
  * Lista de Shipments (docs §3.10). Sem "Create" — o Shipment nasce do Confirm
@@ -189,26 +192,29 @@ export function ShipmentsClient({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="PL number"
-            className="h-11 rounded-xl bg-white pl-9"
-          />
-        </div>
-        <div className="ml-auto">
+      <ListToolbar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="PL number"
+        trailing={() => (
           <ColumnsMenu
             columns={COLUMN_OPTIONS}
             visibility={visibility}
             onSave={saveVisibility}
           />
-        </div>
-      </div>
+        )}
+      />
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        labels={CARD_LABELS}
+        titleColumnId="pl_number"
+        headerColumnIds={["status"]}
+        emptyMessage="No shipments found."
+        onRowClick={(row) => router.push(`/shipments/${row.original.id}`)}
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

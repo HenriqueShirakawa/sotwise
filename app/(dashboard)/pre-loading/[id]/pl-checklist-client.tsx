@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusPill } from "@/components/status-pill";
+import { RowField } from "@/components/data-cards";
 import {
   Select,
   SelectContent,
@@ -385,7 +386,7 @@ export function PlChecklistClient({
           <CollapsiblePrimitive.Trigger asChild>
             <button
               type="button"
-              className="flex w-full items-center justify-between px-6 py-5 text-left"
+              className="flex w-full items-center justify-between px-4 py-5 text-left sm:px-6"
             >
               <div>
                 <p className="text-lg font-semibold text-foreground">Table information</p>
@@ -400,7 +401,7 @@ export function PlChecklistClient({
               />
             </button>
           </CollapsiblePrimitive.Trigger>
-          <CollapsiblePrimitive.Content className="border-t px-6 py-5">
+          <CollapsiblePrimitive.Content className="border-t px-4 py-5 sm:px-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <InfoCard title="Main information">
                 <div className="grid grid-cols-2 gap-3">
@@ -429,7 +430,7 @@ export function PlChecklistClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500">
+        <div className="hidden grid-cols-[1fr_1fr_1fr] gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
           <span>Client</span>
           <span>Order Number . Batches</span>
           <span>Status</span>
@@ -442,22 +443,26 @@ export function PlChecklistClient({
           batches.map((b) => (
             <div
               key={b.id}
-              className="grid grid-cols-[1fr_1fr_1fr] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
+              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr] lg:items-center"
             >
-              <span className="text-slate-700">{b.client ?? "—"}</span>
-              <span className="text-slate-700">
-                {b.po_number} {b.batch_number}
-              </span>
-              <span className="justify-self-start">
+              <RowField label="Client">
+                <span className="text-slate-700">{b.client ?? "—"}</span>
+              </RowField>
+              <RowField label="Order Number . Batches">
+                <span className="text-slate-700">
+                  {b.po_number} {b.batch_number}
+                </span>
+              </RowField>
+              <RowField label="Status" className="max-lg:col-span-2">
                 <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
-              </span>
+              </RowField>
             </div>
           ))
         )}
       </div>
 
       <div className="rounded-2xl border bg-white">
-        <div className="flex items-center justify-between px-6 py-5">
+        <div className="flex items-center justify-between px-4 py-5 sm:px-6">
           <p className="text-lg font-semibold text-foreground">Order progress</p>
           <button
             type="button"
@@ -480,7 +485,7 @@ export function PlChecklistClient({
             const open = isStepOpen(s.step);
             return (
               <div key={s.step} className="border-b last:border-b-0">
-                <div className="flex items-center gap-4 px-6 py-4">
+                <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                   <StepIcon done={s.done} />
                   <button
                     type="button"
@@ -502,7 +507,7 @@ export function PlChecklistClient({
                   </button>
                 </div>
                 {open && (
-                  <div className="space-y-4 bg-slate-50/60 px-6 py-4 pl-15">
+                  <div className="space-y-4 bg-slate-50/60 px-4 py-4 sm:px-6 sm:pl-15">
                     <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                       <div>
                         <Label className="text-xs text-muted-foreground">Estimated date</Label>

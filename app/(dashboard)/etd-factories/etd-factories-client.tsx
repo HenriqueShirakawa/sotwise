@@ -12,14 +12,13 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Search, Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -29,6 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
+import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
   useColumnVisibility,
@@ -120,6 +121,8 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "gap_of_ready", label: "Gap of Ready" },
 ];
 
+const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
+
 export function EtdFactoriesClient({
   rows,
   clients,
@@ -145,6 +148,16 @@ export function EtdFactoriesClient({
   } | null>(null);
 
   const filterCount = activeFilterCount(filters);
+
+  /** Abre o modal de ETD da linha — usado pela tabela e pelos cards. */
+  const openRow = (r: EtdFactoryRow) =>
+    setModalTarget({
+      orderId: r.order_id,
+      ofcId: r.id,
+      title: `${r.client ? `${r.client} · ` : ""}PO ${r.po_number} ${r.batch_number} · ${
+        r.factory
+      } - ${r.category}`,
+    });
 
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -306,7 +319,7 @@ export function EtdFactoriesClient({
         </div>
         <Button
           variant="outline"
-          className="h-11 rounded-xl"
+          className="h-11 w-full rounded-xl sm:w-auto"
           onClick={() => toast.info("Download XLS — coming soon.")}
         >
           <Download />
@@ -314,37 +327,37 @@ export function EtdFactoriesClient({
         </Button>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="PO number"
-            className="h-11 rounded-xl bg-white pl-9"
-          />
-        </div>
-        <Button
-          variant="outline"
-          className="h-11 rounded-xl bg-white"
-          onClick={() => setFiltersOpen(true)}
-        >
-          <Filter />
-          Filters
-          {filterCount > 0 && (
-            <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-              {filterCount}
-            </span>
-          )}
-        </Button>
-        <div className="ml-auto">
+      <ListToolbar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="PO number"
+        activeCount={filterCount}
+        controls={(close) => (
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl bg-white"
+            onClick={() => {
+              close();
+              setFiltersOpen(true);
+            }}
+          >
+            <Filter />
+            Filters
+            {filterCount > 0 && (
+              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                {filterCount}
+              </span>
+            )}
+          </Button>
+        )}
+        trailing={() => (
           <ColumnsMenu
             columns={COLUMN_OPTIONS}
             visibility={visibility}
             onSave={saveVisibility}
           />
-        </div>
-      </div>
+        )}
+      />
 
       <FiltersModal
         open={filtersOpen}
@@ -366,7 +379,16 @@ export function EtdFactoriesClient({
         onOpenChange={(o) => !o && setModalTarget(null)}
       />
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        labels={CARD_LABELS}
+        titleColumnId="po_batch"
+        headerColumnIds={["batch_status"]}
+        emptyMessage="No entries found."
+        onRowClick={(row) => openRow(row.original)}
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -390,17 +412,7 @@ export function EtdFactoriesClient({
                 <TableRow
                   key={row.id}
                   className="cursor-pointer hover:bg-slate-50/60"
-                  onClick={() =>
-                    setModalTarget({
-                      orderId: row.original.order_id,
-                      ofcId: row.original.id,
-                      title: `${row.original.client ? `${row.original.client} · ` : ""}PO ${
-                        row.original.po_number
-                      } ${row.original.batch_number} · ${row.original.factory} - ${
-                        row.original.category
-                      }`,
-                    })
-                  }
+                  onClick={() => openRow(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">

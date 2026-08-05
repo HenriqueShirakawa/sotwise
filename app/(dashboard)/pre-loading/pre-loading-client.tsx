@@ -19,7 +19,6 @@ import {
   type ColumnOption,
 } from "@/components/columns-menu";
 import {
-  Search,
   Filter,
   Download,
   Plus,
@@ -33,7 +32,6 @@ import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -43,6 +41,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { ListToolbar } from "@/components/list-toolbar";
 
 import { deletePreLoading } from "./actions";
 import { PreLoadingFormModal, type BatchOption } from "./pre-loading-form-modal";
@@ -117,6 +117,8 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "booking_confirmed", label: "Booking Status" },
   { id: "total_pos", label: "Total PO's" },
 ];
+
+const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 const comingSoon = () => toast.info("Coming soon.");
 
@@ -349,49 +351,53 @@ export function PreLoadingClient({
             Manage and track the status of the scheduled shipments for each production
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" className="h-11 rounded-xl" onClick={comingSoon}>
+        <div className="flex w-full items-center gap-3 sm:w-auto">
+          <Button
+            variant="outline"
+            className="h-11 flex-1 rounded-xl sm:flex-none"
+            onClick={comingSoon}
+          >
             <Download />
             Download XLS
           </Button>
-          <Button className="h-11 rounded-xl px-5" onClick={openCreate}>
+          <Button className="h-11 flex-1 rounded-xl px-5 sm:flex-none" onClick={openCreate}>
             <Plus />
             Create pre-loading
           </Button>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="PL number"
-            className="h-11 rounded-xl bg-white pl-9"
-          />
-        </div>
-        <Button
-          variant="outline"
-          className="h-11 rounded-xl bg-white"
-          onClick={() => setFiltersOpen(true)}
-        >
-          <Filter />
-          Filters
-          {filterCount > 0 && (
-            <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-              {filterCount}
-            </span>
-          )}
-        </Button>
-        <div className="ml-auto">
+      <ListToolbar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="PL number"
+        activeCount={filterCount}
+        controls={(close) => (
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl bg-white"
+            onClick={() => {
+              close();
+              setFiltersOpen(true);
+            }}
+          >
+            <Filter />
+            Filters
+            {filterCount > 0 && (
+              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                {filterCount}
+              </span>
+            )}
+          </Button>
+        )}
+        trailing={() => (
           <ColumnsMenu
             columns={COLUMN_OPTIONS}
             visibility={visibility}
             onSave={saveVisibility}
           />
-        </div>
-      </div>
+        )}
+      />
 
       <PreLoadingFormModal
         open={formOpen}
@@ -421,7 +427,15 @@ export function PreLoadingClient({
         orders={orders}
       />
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        labels={CARD_LABELS}
+        titleColumnId="pl_number"
+        emptyMessage="No entries found."
+        onRowClick={(row) => router.push(`/pre-loading/${row.original.id}`)}
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

@@ -7,6 +7,7 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
+  type Column,
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
@@ -22,6 +23,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DataCards } from "@/components/data-cards";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -49,6 +51,9 @@ export function RegistrationTable<T>({
   data,
   defaultSorting = [],
   filters,
+  cardTitleColumnId,
+  cardHeaderColumnIds,
+  emptyMessage = "No records found.",
 }: {
   title: string;
   subtitle: string;
@@ -62,6 +67,11 @@ export function RegistrationTable<T>({
   defaultSorting?: SortingState;
   /** Controles extras ao lado da busca (ex.: filtro de Location em Agents). */
   filters?: ReactNode;
+  /** Coluna que titula o card no mobile. Default: a primeira visível. */
+  cardTitleColumnId?: string;
+  /** Colunas fixadas no topo do card. Default: só "actions". */
+  cardHeaderColumnIds?: string[];
+  emptyMessage?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>(defaultSorting);
 
@@ -85,7 +95,7 @@ export function RegistrationTable<T>({
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <Button className="h-11 rounded-xl px-5" onClick={onCreate}>
+        <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={onCreate}>
           <Plus />
           {createLabel}
         </Button>
@@ -104,7 +114,14 @@ export function RegistrationTable<T>({
         {filters}
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        titleColumnId={cardTitleColumnId}
+        headerColumnIds={cardHeaderColumnIds}
+        emptyMessage={emptyMessage}
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
@@ -139,7 +156,7 @@ export function RegistrationTable<T>({
                   colSpan={columns.length}
                   className="h-24 text-center text-sm text-muted-foreground"
                 >
-                  No records found.
+                  {emptyMessage}
                 </TableCell>
               </TableRow>
             )}
@@ -180,7 +197,7 @@ export function RegistrationTable<T>({
 
 /** Cabeçalho clicável de ordenação — uso: `header: sortableHeader("Name")`. */
 export function sortableHeader<T>(label: string): ColumnDef<T>["header"] {
-  const Header: ColumnDef<T>["header"] = ({ column }) => {
+  const Header = ({ column }: { column: Column<T, unknown> }) => {
     const sorted = column.getIsSorted();
     return (
       <button
@@ -193,7 +210,8 @@ export function sortableHeader<T>(label: string): ColumnDef<T>["header"] {
       </button>
     );
   };
-  return Header;
+  // O DataCards precisa do rótulo em texto — o header aqui é componente.
+  return Object.assign(Header, { cardLabel: label });
 }
 
 /** Botões de editar/excluir da última coluna — idênticos aos do simple-crud. */

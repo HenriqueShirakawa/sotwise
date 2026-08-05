@@ -122,6 +122,18 @@ function RemarksCell({ remarks }: { remarks: string | null }) {
   );
 }
 
+/** Campo do histórico em formato card (só abaixo de sm). */
+function HistoryField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-slate-700">{children}</dd>
+    </div>
+  );
+}
+
 function EtdUpdateModal({
   orderId,
   row,
@@ -303,7 +315,51 @@ function EtdUpdateModal({
           </div>
 
           <div className="overflow-hidden rounded-lg border">
-            <Table>
+            {/* Abaixo de sm o histórico vira cards — 9 colunas não cabem no modal. */}
+            <div className="divide-y sm:hidden">
+              {historyLoading ? (
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">Loading…</p>
+              ) : pageRows.length === 0 ? (
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  No changes logged yet.
+                </p>
+              ) : (
+                pageRows.map((h) => (
+                  <div key={h.id} className="px-3 py-3 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-medium text-slate-800">
+                        {row?.factory_name} · {row?.category_name}
+                      </span>
+                      <span className="shrink-0 text-xs text-slate-500">
+                        {formatDateTime(h.changed_at)}
+                      </span>
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                      <HistoryField label="Insp.">
+                        <Checkbox checked={h.inspection} disabled />
+                      </HistoryField>
+                      <HistoryField label="Ready?">
+                        <Checkbox checked={h.ready} disabled />
+                      </HistoryField>
+                      <HistoryField label="Current date">
+                        {formatDateNumeric(h.current_date)}
+                      </HistoryField>
+                      <HistoryField label="Dispatch lo.">
+                        {h.dispatch_location_name ?? "—"}
+                      </HistoryField>
+                      <HistoryField label="Dispatch da.">
+                        {formatDateNumeric(h.dispatch_date)}
+                      </HistoryField>
+                      <HistoryField label="Remarks">
+                        <RemarksCell remarks={h.remarks} />
+                      </HistoryField>
+                    </dl>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <Table className="hidden sm:table">
               <TableHeader>
                 <TableRow>
                   <TableHead>Insp.</TableHead>

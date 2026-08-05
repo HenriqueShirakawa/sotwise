@@ -13,16 +13,17 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Search, Filter, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Filter, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { STEP_LABELS } from "@/lib/checklist";
 import type { ChecklistStep, OrderStatus } from "@/types/database";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
+import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
   useColumnVisibility,
@@ -106,6 +107,8 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "date_preview", label: "Date preview" },
   { id: "client", label: "Client" },
 ];
+
+const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 /** Compara datas "YYYY-MM-DD" (mesmo helper das outras listas). */
 function inDateRange(value: string | null, from: string, to: string): boolean {
@@ -279,7 +282,7 @@ export function TodoClient({
             responsible party.
           </p>
         </div>
-        <div className="inline-flex rounded-xl border bg-white p-1">
+        <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border bg-white p-1">
           {PHASE_TABS.map((t) => (
             <button
               key={t.id}
@@ -292,7 +295,7 @@ export function TodoClient({
                 table.setPageIndex(0);
               }}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                "shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
                 tab === t.id
                   ? "bg-primary text-primary-foreground"
                   : "text-slate-600 hover:text-slate-800"
@@ -307,33 +310,33 @@ export function TodoClient({
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="PO or PL number"
-            className="h-11 rounded-xl bg-white pl-9"
-          />
-        </div>
-        <Button
-          variant="outline"
-          className="h-11 rounded-xl bg-white"
-          onClick={() => setFiltersOpen(true)}
-        >
-          <Filter />
-          Filters
-          {filterCount > 0 && (
-            <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-              {filterCount}
-            </span>
-          )}
-        </Button>
-        <div className="ml-auto">
+      <ListToolbar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="PO or PL number"
+        activeCount={filterCount}
+        controls={(close) => (
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl bg-white"
+            onClick={() => {
+              close();
+              setFiltersOpen(true);
+            }}
+          >
+            <Filter />
+            Filters
+            {filterCount > 0 && (
+              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                {filterCount}
+              </span>
+            )}
+          </Button>
+        )}
+        trailing={() => (
           <ColumnsMenu columns={COLUMN_OPTIONS} visibility={visibility} onSave={saveVisibility} />
-        </div>
-      </div>
+        )}
+      />
 
       <FiltersModal
         open={filtersOpen}
@@ -345,7 +348,16 @@ export function TodoClient({
         phase={tab}
       />
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        labels={CARD_LABELS}
+        titleColumnId="step"
+        headerColumnIds={["status", "actions"]}
+        emptyMessage="You have no pending tasks."
+        onRowClick={(row) => router.push(row.original.href)}
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

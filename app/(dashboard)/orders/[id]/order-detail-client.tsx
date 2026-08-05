@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep, LoadingStatus, OrderStatus } from "@/types/database";
@@ -179,6 +180,29 @@ function InfoField({ label, value }: { label: string; value: React.ReactNode }) 
     <div>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-medium text-slate-800">{value ?? dash}</p>
+    </div>
+  );
+}
+
+/**
+ * Célula das listinhas dentro dos modais: no mobile a linha vira card, então o
+ * rótulo do cabeçalho (escondido lá) reaparece junto do valor.
+ */
+function SmallField({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <p className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase sm:hidden">
+        {label}
+      </p>
+      <div className="mt-0.5 sm:mt-0">{children}</div>
     </div>
   );
 }
@@ -364,7 +388,7 @@ function ViewBatchModal({
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
             <div className="overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-4 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+              <div className="hidden grid-cols-4 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -374,11 +398,24 @@ function ViewBatchModal({
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries for this batch.</p>
               ) : (
                 pageRows.map((r) => (
-                  <div key={r.id} className="grid grid-cols-4 border-t px-3 py-2.5 text-sm">
-                    <span className="text-slate-700">{r.category_name}</span>
-                    <span className="text-slate-700">{r.factory_name}</span>
-                    <span className="text-slate-700">{formatDateNumeric(r.ship_requirement)}</span>
-                    <span className="text-slate-700">{batch?.batch_number}</span>
+                  <div
+                    key={r.id}
+                    className="grid grid-cols-2 gap-x-3 gap-y-2 border-t px-3 py-2.5 text-sm sm:grid-cols-4 sm:gap-y-0"
+                  >
+                    <SmallField label="Category">
+                      <span className="text-slate-700">{r.category_name}</span>
+                    </SmallField>
+                    <SmallField label="Factory">
+                      <span className="text-slate-700">{r.factory_name}</span>
+                    </SmallField>
+                    <SmallField label="Ship req.">
+                      <span className="text-slate-700">
+                        {formatDateNumeric(r.ship_requirement)}
+                      </span>
+                    </SmallField>
+                    <SmallField label="Batch No.">
+                      <span className="text-slate-700">{batch?.batch_number}</span>
+                    </SmallField>
                   </div>
                 ))
               )}
@@ -567,7 +604,7 @@ function EditBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -580,16 +617,26 @@ function EditBatchModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center border-t px-3 py-2 text-sm"
+                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
                   >
-                    <span className="truncate text-slate-700">{r.category_name}</span>
-                    <span className="truncate text-slate-700">{r.factory_name}</span>
-                    <span className="text-slate-700">{formatDateNumeric(r.ship_requirement)}</span>
-                    <span className="text-slate-700">{batch?.batch_number}</span>
+                    <SmallField label="Category" className="max-sm:col-start-1">
+                      <span className="block truncate text-slate-700">{r.category_name}</span>
+                    </SmallField>
+                    <SmallField label="Factory" className="max-sm:col-start-1">
+                      <span className="block truncate text-slate-700">{r.factory_name}</span>
+                    </SmallField>
+                    <SmallField label="Ship req." className="max-sm:col-start-1">
+                      <span className="text-slate-700">
+                        {formatDateNumeric(r.ship_requirement)}
+                      </span>
+                    </SmallField>
+                    <SmallField label="Batch No." className="max-sm:col-start-1">
+                      <span className="text-slate-700">{batch?.batch_number}</span>
+                    </SmallField>
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="text-rose-500 hover:text-rose-600"
+                      className="text-rose-500 hover:text-rose-600 max-sm:col-start-2 max-sm:row-start-1"
                       aria-label="Delete"
                       disabled={pending}
                       onClick={() => removeRow(r.id)}
@@ -793,7 +840,7 @@ function CreateBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -806,16 +853,26 @@ function CreateBatchModal({
                 rows.map((r) => (
                   <div
                     key={r.tempId}
-                    className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center border-t px-3 py-2 text-sm"
+                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
                   >
-                    <span className="truncate text-slate-700">{r.category_name}</span>
-                    <span className="truncate text-slate-700">{r.factory_name}</span>
-                    <span className="text-slate-700">{formatDateNumeric(r.ship_requirement)}</span>
-                    <span className="text-slate-700">{batchNumber}</span>
+                    <SmallField label="Category" className="max-sm:col-start-1">
+                      <span className="block truncate text-slate-700">{r.category_name}</span>
+                    </SmallField>
+                    <SmallField label="Factory" className="max-sm:col-start-1">
+                      <span className="block truncate text-slate-700">{r.factory_name}</span>
+                    </SmallField>
+                    <SmallField label="Ship req." className="max-sm:col-start-1">
+                      <span className="text-slate-700">
+                        {formatDateNumeric(r.ship_requirement)}
+                      </span>
+                    </SmallField>
+                    <SmallField label="Batch No." className="max-sm:col-start-1">
+                      <span className="text-slate-700">{batchNumber}</span>
+                    </SmallField>
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="text-rose-500 hover:text-rose-600"
+                      className="text-rose-500 hover:text-rose-600 max-sm:col-start-2 max-sm:row-start-1"
                       aria-label="Delete"
                       onClick={() => removeRow(r.tempId)}
                     >
@@ -1064,7 +1121,7 @@ export function OrderDetailClient({
           <CollapsiblePrimitive.Trigger asChild>
             <button
               type="button"
-              className="flex w-full items-center justify-between px-6 py-5 text-left"
+              className="flex w-full items-center justify-between px-4 py-5 text-left sm:px-6"
             >
               <div>
                 <p className="text-lg font-semibold text-foreground">
@@ -1081,7 +1138,7 @@ export function OrderDetailClient({
               />
             </button>
           </CollapsiblePrimitive.Trigger>
-          <CollapsiblePrimitive.Content className="border-t px-6 py-5">
+          <CollapsiblePrimitive.Content className="border-t px-4 py-5 sm:px-6">
             <div className="grid gap-4 sm:grid-cols-3">
               <InfoCard title="Main information">
                 <div className="grid grid-cols-2 gap-3">
@@ -1120,9 +1177,12 @@ export function OrderDetailClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="grid grid-cols-[1fr_1fr_150px] items-center gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500">
-          <span>Batch No.</span>
-          <span>Status</span>
+        <div className="flex items-center gap-3 border-b bg-slate-50/80 px-4 py-3 text-xs font-semibold text-slate-500 sm:px-6 lg:grid lg:grid-cols-[1fr_1fr_150px]">
+          <span className="flex-1 lg:flex-none">
+            <span className="lg:hidden">Batches</span>
+            <span className="hidden lg:inline">Batch No.</span>
+          </span>
+          <span className="hidden lg:inline">Status</span>
           <Button variant="outline" size="sm" onClick={() => setCreateBatchOpen(true)}>
             Create batch
             <Plus className="size-3.5" />
@@ -1139,10 +1199,12 @@ export function OrderDetailClient({
             return (
               <div
                 key={b.id}
-                className="grid grid-cols-[1fr_1fr_150px] items-center gap-3 border-b px-6 py-3.5 text-sm last:border-b-0"
+                className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid lg:grid-cols-[1fr_1fr_150px] lg:gap-3"
               >
-                <span className="text-slate-700">{b.batch_number}</span>
-                <div className="justify-self-start">
+                <span className="font-medium text-slate-700 lg:font-normal">
+                  {b.batch_number}
+                </span>
+                <div className="order-last w-full lg:order-none lg:w-auto lg:justify-self-start">
                   {editable ? (
                     <BatchStatusSelect
                       value={b.status}
@@ -1210,7 +1272,7 @@ export function OrderDetailClient({
       </div>
 
       <div className="rounded-2xl border bg-white">
-        <div className="flex items-center justify-between px-6 py-5">
+        <div className="flex items-center justify-between px-4 py-5 sm:px-6">
           <p className="text-lg font-semibold text-foreground">Order progress</p>
           <button
             type="button"
@@ -1238,7 +1300,7 @@ export function OrderDetailClient({
               const open = isStepOpen(s.step);
               return (
                 <div key={s.step} className="border-b last:border-b-0">
-                  <div className="flex items-center gap-4 px-6 py-4">
+                  <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                     <StepIcon
                       step={s.step}
                       enabled={s.enabled}
@@ -1276,7 +1338,7 @@ export function OrderDetailClient({
                     </button>
                   </div>
                   {open && (
-                    <div className="space-y-4 bg-slate-50/60 px-6 py-4 pl-15">
+                    <div className="space-y-4 bg-slate-50/60 px-4 py-4 sm:px-6 sm:pl-15">
                       <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                         <div>
                           <Label className="text-xs text-muted-foreground">

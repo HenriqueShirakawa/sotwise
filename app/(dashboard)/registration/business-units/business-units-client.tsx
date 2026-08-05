@@ -125,6 +125,9 @@ export function BusinessUnitsClient({ data }: { data: BusinessUnitRow[] }) {
         columns={columns}
         data={filtered}
         defaultSorting={[{ id: "name", desc: false }]}
+        cardTitleColumnId="name"
+        cardHeaderColumnIds={["icon", "actions"]}
+        emptyMessage="No business units found."
       />
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>

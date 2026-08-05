@@ -14,7 +14,6 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import {
-  Search,
   Filter,
   Plus,
   Download,
@@ -43,7 +42,6 @@ import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -60,6 +58,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
 import {
   ColumnsMenu,
@@ -237,6 +237,8 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "status", label: "Status PO" },
   { id: "schedule_requested", label: "Schedule Req." },
 ];
+
+const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 export function OrdersClient({
   rows,
@@ -505,66 +507,68 @@ export function OrdersClient({
           </h1>
           <p className="text-sm text-muted-foreground">Orders management</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full items-center gap-3 sm:w-auto">
           <Button
             variant="outline"
-            className="h-11 rounded-xl"
+            className="h-11 flex-1 rounded-xl sm:flex-none"
             onClick={() => toast.info("Download XLS — coming soon.")}
           >
             <Download />
             Download XLS
           </Button>
-          <Button className="h-11 rounded-xl px-5" onClick={openCreate}>
+          <Button className="h-11 flex-1 rounded-xl px-5 sm:flex-none" onClick={openCreate}>
             <Plus />
             Create Order
           </Button>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="PO number"
-            className="h-11 rounded-xl bg-white pl-9"
-          />
-        </div>
-        <Select value={client} onValueChange={setClient}>
-          <SelectTrigger className="!h-11 w-60 rounded-xl bg-white">
-            <SelectValue placeholder="Choose a client" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All clients</SelectItem>
-            {clients.map((c) => (
-              <SelectItem key={c.id} value={c.name}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          variant="outline"
-          className="h-11 rounded-xl bg-white"
-          onClick={() => setFiltersOpen(true)}
-        >
-          <Filter />
-          Filters
-          {filterCount > 0 && (
-            <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-              {filterCount}
-            </span>
-          )}
-        </Button>
-        <div className="ml-auto">
+      <ListToolbar
+        search={search}
+        onSearchChange={setSearch}
+        placeholder="PO number"
+        activeCount={filterCount}
+        controls={(close) => (
+          <>
+            <Select value={client} onValueChange={setClient}>
+              <SelectTrigger className="!h-11 rounded-xl bg-white min-[720px]:w-60">
+                <SelectValue placeholder="Choose a client" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All clients</SelectItem>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.name}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+          </>
+        )}
+        trailing={() => (
           <ColumnsMenu
             columns={COLUMN_OPTIONS}
             visibility={visibility}
             onSave={saveVisibility}
           />
-        </div>
-      </div>
+        )}
+      />
 
       <FiltersModal
         open={filtersOpen}
@@ -578,7 +582,16 @@ export function OrdersClient({
         profiles={profiles}
       />
 
-      <div className="overflow-x-auto rounded-2xl border bg-white">
+      <DataCards
+        rows={table.getRowModel().rows}
+        labels={CARD_LABELS}
+        titleColumnId="po_number"
+        headerColumnIds={["status", "actions"]}
+        emptyMessage="No orders found."
+        onRowClick={(row) => router.push(`/orders/${row.original.id}`)}
+      />
+
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
