@@ -177,17 +177,28 @@ export default async function ShipmentDetailPage({
   // entradas são Partial/None o lote embarcado fica sem nenhuma linha própria —
   // e era o que deixava o "View parts" vazio. As linhas do filho continuam
   // sendo o que aquele lote carregou, então entram aqui pela linhagem.
-  const childRes = batchIds.length
-    ? await admin
-        .from("batches")
-        .select("id, batch_number, split_from_batch_id")
-        .in("split_from_batch_id", batchIds)
-    : { data: [] as { id: string; batch_number: string; split_from_batch_id: string | null }[] };
-  const childBatches = childRes.data ?? [];
-  const parentByChild = new Map(childBatches.map((b) => [b.id, b.split_from_batch_id as string]));
-  const childNumberById = new Map(childBatches.map((b) => [b.id, b.batch_number]));
+  // A cadeia pode ter mais de um nível: o lote-filho também embarca e splita de
+  // novo, levando a linha para um "neto". Sobe a linhagem inteira até o lote
+  // deste embarque (limite defensivo, caso algum dado forme ciclo).
+  const shippedAncestorOf = new Map<string, string>();
+  const descendantNumberById = new Map<string, string>();
+  let frontier = batchIds;
+  for (let depth = 0; depth < 10 && frontier.length > 0; depth++) {
+    const { data } = await admin
+      .from("batches")
+      .select("id, batch_number, split_from_batch_id")
+      .in("split_from_batch_id", frontier);
+    const generation = (data ?? []).filter((b) => !shippedAncestorOf.has(b.id));
+    if (generation.length === 0) break;
+    for (const b of generation) {
+      const parent = b.split_from_batch_id as string;
+      shippedAncestorOf.set(b.id, shippedAncestorOf.get(parent) ?? parent);
+      descendantNumberById.set(b.id, b.batch_number);
+    }
+    frontier = generation.map((b) => b.id);
+  }
 
-  const lookupIds = [...batchIds, ...childBatches.map((b) => b.id)];
+  const lookupIds = [...batchIds, ...shippedAncestorOf.keys()];
   const ofcRes = lookupIds.length
     ? await admin
         .from("order_factory_category")
@@ -206,9 +217,9 @@ export default async function ShipmentDetailPage({
   for (const o of ofcRes.data ?? []) {
     if (!o.batch_id) continue;
     // Linha que migrou no split é atribuída ao lote de ORIGEM (o que embarcou),
-    // marcada com o lote para onde o saldo foi.
-    const parent = parentByChild.get(o.batch_id);
-    const targetBatchId = parent ?? o.batch_id;
+    // marcada com o lote onde ela está hoje.
+    const ancestor = shippedAncestorOf.get(o.batch_id);
+    const targetBatchId = ancestor ?? o.batch_id;
     const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
     const arr = partsByBatch.get(targetBatchId) ?? [];
     arr.push({
@@ -218,7 +229,7 @@ export default async function ShipmentDetailPage({
       category: categoryNameById.get(o.category_id) ?? "—",
       loading_status: o.loading_status,
       etd_initial: etd?.initial_date ?? null,
-      moved_to: parent ? (childNumberById.get(o.batch_id) ?? null) : null,
+      moved_to: ancestor ? (descendantNumberById.get(o.batch_id) ?? null) : null,
     });
     partsByBatch.set(targetBatchId, arr);
   }
