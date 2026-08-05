@@ -71,6 +71,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { deleteOrder } from "./actions";
 import { OrderFormModal } from "./order-form-modal";
@@ -207,6 +213,53 @@ function SortableHeader({
 }
 
 const dash = <span className="text-slate-300">—</span>;
+
+/** Order só é deletável nas fases iniciais ou cancelada (mesma regra do server
+ *  em orders/actions.ts) — depois disso há PL/Shipment dependentes. */
+const DELETABLE_ORDER_STATUSES: OrderStatus[] = [
+  "in_negotiation",
+  "in_production",
+  "canceled",
+];
+
+/** Lixeira da Order: desabilitada (com tooltip do porquê) quando o status não
+ *  permite excluir. Botão disabled não dispara hover, então o gatilho do tooltip
+ *  é um <span> em volta. */
+function DeleteOrderButton({
+  status,
+  onDelete,
+}: {
+  status: OrderStatus;
+  onDelete: () => void;
+}) {
+  const button = (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="text-rose-500 hover:text-rose-600 disabled:text-slate-300 disabled:hover:text-slate-300"
+      aria-label="Delete"
+      disabled={!DELETABLE_ORDER_STATUSES.includes(status)}
+      onClick={onDelete}
+    >
+      <Trash2 />
+    </Button>
+  );
+  if (DELETABLE_ORDER_STATUSES.includes(status)) return button;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex cursor-not-allowed">
+            {button}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          Only orders in Negotiation, Production or Canceled can be deleted.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function toDateOnly(v: string): string {
   return v.length >= 10 ? v.slice(0, 10) : v;
@@ -467,15 +520,10 @@ export function OrdersClient({
             >
               <Pencil />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-rose-500 hover:text-rose-600"
-              aria-label="Delete"
-              onClick={() => setDeleteTarget(row.original)}
-            >
-              <Trash2 />
-            </Button>
+            <DeleteOrderButton
+              status={row.original.status}
+              onDelete={() => setDeleteTarget(row.original)}
+            />
           </div>
         ),
       },
@@ -683,7 +731,7 @@ export function OrdersClient({
         title="Delete order?"
         description={
           deleteTarget
-            ? `Order ${deleteTarget.po_number} will be removed from the list.`
+            ? `Order ${deleteTarget.po_number} will be permanently deleted, along with its batches and checklist.`
             : undefined
         }
         confirmLabel="Delete"

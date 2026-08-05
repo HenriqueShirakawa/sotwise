@@ -218,3 +218,125 @@ export async function deleteShipmentStepAttachment(
   for (const p of paths(shipmentId)) revalidatePath(p);
   return { ok: true };
 }
+
+/**
+ * Exclui um Shipment desfazendo o "Confirm Shipping" (inverso de `confirmShipping`
+ * em pre-loading/[id]/actions.ts): os lotes voltam para `preloading`, o split é
+ * revertido e o Pre-loading é MANTIDO — some o `shipping_confirmed_at`, então ele
+ * reaparece na lista de Pre-loading pronto pra confirmar de novo (regra do QA).
+ *
+ * Só é possível quando os lotes criados pelo split ainda estão intactos
+ * (`in_production`, fora de qualquer PL, sem terem sido divididos de novo). Se um
+ * deles já avançou, reverter bagunçaria o estado — então bloqueia.
+ *
+ * Sem transação (mesma limitação de `confirmShipping`); a ordem minimiza estado
+ * inconsistente caso falhe no meio.
+ */
+export async function deleteShipment(shipmentId: string): Promise<ActionResult> {
+  await verifySession();
+  const admin = createAdminClient();
+
+  const { data: shipment, error: shipErr } = await admin
+    .from("shipments")
+    .select("id, pre_loading_id")
+    .eq("id", shipmentId)
+    .maybeSingle();
+  if (shipErr) return { ok: false, error: shipErr.message };
+  if (!shipment) return { ok: false, error: "Shipment not found." };
+
+  // Lotes embarcados = os lotes do PL.
+  const { data: links, error: linkErr } = await admin
+    .from("pre_loading_batches")
+    .select("batch_id")
+    .eq("pre_loading_id", shipment.pre_loading_id);
+  if (linkErr) return { ok: false, error: linkErr.message };
+  const origIds = (links ?? []).map((l) => l.batch_id);
+  if (origIds.length === 0) return { ok: false, error: "Shipment has no batches." };
+
+  // Lotes que o split criou (a parte que NÃO embarcou).
+  const { data: children, error: childErr } = await admin
+    .from("batches")
+    .select("id, status, split_from_batch_id")
+    .in("split_from_batch_id", origIds);
+  if (childErr) return { ok: false, error: childErr.message };
+  const childIds = (children ?? []).map((c) => c.id);
+
+  // Guard: só reverte se cada lote do split continua intacto.
+  if (childIds.length) {
+    if ((children ?? []).some((c) => c.status !== "in_production")) {
+      return {
+        ok: false,
+        error: "Can't undo this shipment: a batch created by the split already moved forward.",
+      };
+    }
+    const { data: childInPl, error: e1 } = await admin
+      .from("pre_loading_batches")
+      .select("batch_id")
+      .in("batch_id", childIds);
+    if (e1) return { ok: false, error: e1.message };
+    if (childInPl && childInPl.length) {
+      return {
+        ok: false,
+        error: "Can't undo this shipment: a split batch is already in another Pre-loading.",
+      };
+    }
+    const { data: grandkids, error: e2 } = await admin
+      .from("batches")
+      .select("id")
+      .in("split_from_batch_id", childIds);
+    if (e2) return { ok: false, error: e2.message };
+    if (grandkids && grandkids.length) {
+      return {
+        ok: false,
+        error: "Can't undo this shipment: a split batch was split again.",
+      };
+    }
+  }
+
+  // Desfaz o split: cada linha Factory×Category volta ao lote de origem...
+  for (const child of children ?? []) {
+    const { error } = await admin
+      .from("order_factory_category")
+      .update({ batch_id: child.split_from_batch_id })
+      .eq("batch_id", child.id);
+    if (error) return { ok: false, error: error.message };
+  }
+  // ...e os lotes do split somem.
+  if (childIds.length) {
+    const { error } = await admin.from("batches").delete().in("id", childIds);
+    if (error) return { ok: false, error: error.message };
+  }
+
+  // O loading_status era do embarque desfeito.
+  const { error: lsErr } = await admin
+    .from("order_factory_category")
+    .update({ loading_status: null })
+    .in("batch_id", origIds);
+  if (lsErr) return { ok: false, error: lsErr.message };
+
+  // Os lotes voltam para a fase de Pre-loading (revertem de in_transit ou delivered).
+  const { error: stErr } = await admin
+    .from("batches")
+    .update({ status: "preloading" })
+    .in("id", origIds);
+  if (stErr) return { ok: false, error: stErr.message };
+
+  const { error: rmErr } = await admin.from("shipments").delete().eq("id", shipmentId);
+  if (rmErr) return { ok: false, error: rmErr.message };
+
+  // Reabre o PL: sem shipping_confirmed_at ele volta à lista de Pre-loading.
+  const { error: plErr } = await admin
+    .from("pre_loadings")
+    .update({ shipping_confirmed_at: null })
+    .eq("id", shipment.pre_loading_id);
+  if (plErr) return { ok: false, error: plErr.message };
+
+  // Rollup: as Orders voltam de Shipped/Partially Shipped para pre_loading/partially.
+  const statusError = await syncOrderStatusForBatches(admin, origIds);
+  if (statusError) return { ok: false, error: statusError };
+
+  revalidatePath("/shipments");
+  revalidatePath("/pre-loading");
+  revalidatePath("/orders");
+  return { ok: true };
+}

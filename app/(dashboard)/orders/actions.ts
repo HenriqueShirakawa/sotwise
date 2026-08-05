@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { verifySession } from "@/lib/dal";
 import { ORDER_STEPS } from "@/lib/checklist";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { OrderStatus } from "@/types/database";
 import {
   orderSchema,
   type OrderInput,
@@ -14,27 +15,20 @@ import {
 
 const PATH = "/orders";
 
-/** Mensagem amigável para violação de unique no po_number (código PG 23505). */
-function friendlyError(error: { code?: string; message: string }, po?: string) {
-  if (error.code === "23505")
-    return `Order number ${po ?? ""} already exists.`.replace("  ", " ");
-  return error.message;
-}
-
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 /**
- * Maior po_number ATIVO (ignora soft-deleted). po_number é texto, então busca só
- * a coluna e calcula o máximo numérico aqui. Pagina de 1000 (limite PostgREST).
- * Retorna null em erro de leitura.
+ * Maior po_number entre TODAS as orders (inclui soft-deleted: o número segue
+ * ocupado no índice unique mesmo após um soft delete, então ignorá-las faria o
+ * próximo insert colidir). po_number é texto; pagina de 1000 (limite PostgREST) e
+ * calcula o máximo numérico aqui. Retorna null em erro de leitura.
  */
-async function maxActivePo(admin: AdminClient): Promise<number | null> {
+async function maxPo(admin: AdminClient): Promise<number | null> {
   let max = 0;
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin
       .from("orders")
       .select("po_number")
-      .is("deleted_at", null)
       .range(from, from + 999);
     if (error || !data) return null;
     for (const r of data) {
@@ -72,13 +66,13 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
     created_by: session.userId,
   };
 
-  // po_number autoritativo = maior ATIVO + 1 (sequencial, estilo Bubble). O valor
-  // vindo do client é ignorado (podia estar defasado). Se o número estiver preso
-  // por uma order SOFT-DELETED do topo (que foi excluída), libera com hard delete
-  // (cascata nos filhos) e reaproveita o número. NUNCA mexe em order ativa; e o
-  // retry cobre corrida entre dois usuários criando ao mesmo tempo.
+  // po_number autoritativo = maior existente + 1 (sequencial). Conta TODAS as
+  // orders, inclusive soft-deleted, senão o insert colide com um número que ainda
+  // ocupa o índice unique. O valor vindo do client é ignorado (podia estar
+  // defasado). O retry cobre a corrida entre dois usuários criando ao mesmo tempo:
+  // o segundo insert bate 23505, recalcula o máximo e tenta o número seguinte.
   for (let attempt = 0; attempt < 6; attempt++) {
-    const base = await maxActivePo(admin);
+    const base = await maxPo(admin);
     if (base === null) {
       return { ok: false, error: "Could not read existing orders. Try again." };
     }
@@ -102,21 +96,9 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
       revalidatePath(PATH);
       return { ok: true, id: data.id };
     }
-    if (error.code !== "23505") {
-      return { ok: false, error: friendlyError(error, poNumber) };
-    }
-
-    // Colisão nesse número: alguém já o tem. Se for uma order SOFT-DELETED (topo
-    // excluído), apaga de vez (cascata) e reaproveita. Se for ATIVA (corrida), o
-    // próximo loop recomputa o máximo e tenta o número seguinte.
-    const { data: clash } = await admin
-      .from("orders")
-      .select("id, deleted_at")
-      .eq("po_number", poNumber)
-      .maybeSingle();
-    if (clash?.deleted_at) {
-      await admin.from("orders").delete().eq("id", clash.id);
-    }
+    // Só a corrida de po_number (23505) justifica recalcular e tentar de novo;
+    // qualquer outro erro sai na hora.
+    if (error.code !== "23505") return { ok: false, error: error.message };
   }
 
   return { ok: false, error: "Could not assign an order number. Try again." };
@@ -155,14 +137,42 @@ export async function updateOrder(
   return { ok: true };
 }
 
+/**
+ * Status em que uma Order pode ser excluída. Depois de entrar num Pre-loading/
+ * embarque ela tem PL/Shipment dependentes — apagá-la deixaria órfãos, então só
+ * as fases iniciais (ou uma order cancelada) são deletáveis. A UI desabilita a
+ * lixeira nos demais status; aqui é a trava de servidor.
+ */
+const DELETABLE_ORDER_STATUSES = new Set<OrderStatus>([
+  "in_negotiation",
+  "in_production",
+  "canceled",
+]);
+
 export async function deleteOrder(id: string): Promise<ActionResult> {
   await verifySession();
 
   const admin = createAdminClient();
-  const { error } = await admin
+
+  const { data: order, error: readError } = await admin
     .from("orders")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+  if (readError) return { ok: false, error: readError.message };
+  if (!order) return { ok: false, error: "Order not found." };
+  if (!DELETABLE_ORDER_STATUSES.has(order.status)) {
+    return {
+      ok: false,
+      error: "Only orders in Negotiation, Production or Canceled can be deleted.",
+    };
+  }
+
+  // Hard delete: a order sai de vez e, em cascata, vão os lotes, OFC/ETD e o
+  // checklist (FKs order_id ON DELETE CASCADE). Se algum lote estiver dentro de um
+  // Pre-loading, o vínculo é solto pela migration 20260805130000
+  // (pre_loading_batches.batch_id ON DELETE CASCADE) — sem ela o delete trava em FK.
+  const { error } = await admin.from("orders").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
   revalidatePath(PATH);
