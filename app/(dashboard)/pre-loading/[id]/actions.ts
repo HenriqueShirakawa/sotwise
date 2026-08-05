@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { verifySession } from "@/lib/dal";
+import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
@@ -349,6 +350,14 @@ export async function confirmShipping(
     const { error: stErr } = await admin.from("batches").update({ status: "in_transit" }).eq("id", batch.id);
     if (stErr) return { ok: false, error: stErr.message };
   }
+
+  // Embarque muda a fase dos lotes (e o split pode ter criado outros): as
+  // Orders viram Shipped / Partially Shipped conforme o rollup (§3.7.1).
+  const statusError = await syncOrderStatus(
+    admin,
+    (batches ?? []).map((b) => b.order_id)
+  );
+  if (statusError) return { ok: false, error: statusError };
 
   // 5. Marca o PL como confirmado + grava seal/leader do embarque.
   const { error: plUpdErr } = await admin

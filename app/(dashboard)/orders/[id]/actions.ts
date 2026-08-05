@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { verifySession } from "@/lib/dal";
+import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
 import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
@@ -43,7 +44,12 @@ export async function updateBatchStatus(
   const { error } = await admin.from("batches").update({ status }).eq("id", batchId);
   if (error) return { ok: false, error: error.message };
 
+  // O status da Order é o rollup dos lotes (docs §3.7.1) — mudou lote, recalcula.
+  const statusError = await syncOrderStatus(admin, [orderId]);
+  if (statusError) return { ok: false, error: statusError };
+
   revalidatePath(path(orderId));
+  revalidatePath("/orders");
   return { ok: true };
 }
 
@@ -94,7 +100,13 @@ export async function createBatch(
     if (rowsError) return { ok: false, error: rowsError.message };
   }
 
+  // Lote novo nasce In Negotiation e entra no rollup — pode puxar a Order de
+  // volta para In Negotiation, que é a regra (nem todos os lotes em produção).
+  const statusError = await syncOrderStatus(admin, [orderId]);
+  if (statusError) return { ok: false, error: statusError };
+
   revalidatePath(path(orderId));
+  revalidatePath("/orders");
   return { ok: true };
 }
 
@@ -112,7 +124,12 @@ export async function deleteBatch(orderId: string, batchId: string): Promise<Act
     };
   }
 
+  // Sai um lote, muda o conjunto que alimenta o rollup.
+  const statusError = await syncOrderStatus(admin, [orderId]);
+  if (statusError) return { ok: false, error: statusError };
+
   revalidatePath(path(orderId));
+  revalidatePath("/orders");
   return { ok: true };
 }
 
@@ -196,7 +213,14 @@ export async function bulkImportOrderFactoryCategory(
   );
   if (insertError) return { ok: false, error: insertError.message };
 
+  // A importação pode ter criado lotes novos (In Negotiation) — refaz o rollup.
+  if (newBatchNumbers.length > 0) {
+    const statusError = await syncOrderStatus(admin, [orderId]);
+    if (statusError) return { ok: false, error: statusError };
+  }
+
   revalidatePath(path(orderId));
+  revalidatePath("/orders");
   return { ok: true };
 }
 

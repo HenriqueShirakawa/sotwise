@@ -14,6 +14,7 @@ export const STATUS_COLORS: Record<string, string> = {
   "Stand by": "#091747",
   "In Negotiation": "#9E450E",
   "In Production": "#9A1A1E",
+  "Partially Preloading": "#C026D3",
   "Pre-Loading": "#9500A8",
   "In Transit": "#9E450E",
   "Partially Shipped": "#0B5CAD",
@@ -34,6 +35,8 @@ export function statusChipStyle(hex: string): CSSProperties {
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   in_negotiation: "In Negotiation",
   in_production: "In Production",
+  partially_preloading: "Partially Preloading",
+  pre_loading: "Pre-Loading",
   partially_shipped: "Partially Shipped",
   shipped: "Shipped",
   partially_delivered: "Partially Delivered",
