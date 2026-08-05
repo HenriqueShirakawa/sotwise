@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 
 import { verifySession } from "@/lib/dal";
+import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
+import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   preLoadingSchema,
@@ -104,6 +106,14 @@ async function syncRelations(
     if (fwd.error) return fwd.error.message;
   }
 
+  // Entrar ou sair do PL muda a fase dos lotes: as Orders envolvidas passam a
+  // Pre-Loading / Partially Preloading (ou voltam) conforme o rollup (§3.7.1).
+  const touched = [...added, ...removed];
+  if (touched.length) {
+    const statusError = await syncOrderStatusForBatches(admin, touched);
+    if (statusError) return statusError;
+  }
+
   return null;
 }
 
@@ -143,12 +153,30 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
     created = data;
   }
   if (!created) return { ok: false, error: lastError || "Could not create pre-loading." };
+  const preLoadingId = created.id;
 
-  const relError = await syncRelations(admin, created.id, d.client_ids, d.batch_ids);
+  // As 14 etapas do checklist único (7 do Pre-loading + 7 do Shipment) nascem
+  // junto com o PL, como já acontece com as 10 etapas da Order em
+  // orders/actions.ts. Sem esse seed as linhas só existiriam a partir do
+  // primeiro save de cada etapa, e a To do list — que lê a tabela direto — não
+  // enxergaria as etapas nunca tocadas. Os PLs vindos do Bubble já trouxeram as
+  // linhas na migração.
+  const { error: stepsError } = await admin
+    .from("pre_loading_checklist_steps")
+    .insert(
+      [...PRELOADING_STEPS, ...SHIPMENT_STEPS].map((step) => ({
+        pre_loading_id: preLoadingId,
+        step,
+      }))
+    );
+  if (stepsError) return { ok: false, error: stepsError.message };
+
+  const relError = await syncRelations(admin, preLoadingId, d.client_ids, d.batch_ids);
   if (relError) return { ok: false, error: relError };
 
   revalidatePath(PATH);
-  return { ok: true, id: created.id };
+  revalidatePath("/orders"); // os lotes selecionados mudaram de fase
+  return { ok: true, id: preLoadingId };
 }
 
 export async function updatePreLoading(
@@ -180,6 +208,7 @@ export async function updatePreLoading(
   if (relError) return { ok: false, error: relError };
 
   revalidatePath(PATH);
+  revalidatePath("/orders"); // tirar lote do PL pode mexer no status da Order
   return { ok: true };
 }
 
@@ -203,8 +232,10 @@ export async function deletePreLoading(id: string): Promise<ActionResult> {
   const batchIds = (links ?? []).map((l) => l.batch_id);
   if (batchIds.length) {
     await admin.from("batches").update({ status: "in_production" }).in("id", batchIds);
+    await syncOrderStatusForBatches(admin, batchIds);
   }
 
   revalidatePath(PATH);
+  revalidatePath("/orders");
   return { ok: true };
 }

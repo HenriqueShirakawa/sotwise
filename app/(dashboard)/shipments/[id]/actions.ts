@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { verifySession } from "@/lib/dal";
+import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
@@ -76,6 +77,11 @@ async function applyDeliveredRule(
       .update({ status: delivered ? "delivered" : "in_transit" })
       .in("id", batchIds);
     if (error) return error.message;
+
+    // Entrega fecha (ou reabre) a esteira dos lotes: as Orders viram
+    // Delivered / Partially Delivered pelo rollup (§3.7.1).
+    const statusError = await syncOrderStatusForBatches(admin, batchIds);
+    if (statusError) return statusError;
   }
 
   const { error: shipmentError } = await admin

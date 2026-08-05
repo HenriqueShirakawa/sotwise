@@ -605,12 +605,16 @@ Pedido. PO gerado automaticamente e **não editável**. Exclusão: a doc atual d
 create type public.order_status as enum (
   'in_negotiation',        -- gatilho: criação da Order
   'in_production',         -- TODOS os lotes em produção (+ etapas Order/PO/PI/deposit payment completas)
-  'partially_shipped',     -- ao menos 1 lote em produção E ao menos 1 embarcado
+  'partially_preloading',  -- ao menos 1 lote em pré-carga, os outros ainda não
+  'pre_loading',           -- TODOS os lotes em pré-carga
+  'partially_shipped',     -- ao menos 1 lote embarcado, os outros ainda não
   'shipped',               -- TODOS os lotes em trânsito
-  'partially_delivered',   -- ao menos 1 lote em trânsito E ao menos 1 entregue
+  'partially_delivered',   -- ao menos 1 lote entregue, os outros ainda não
   'delivered',             -- TODOS os lotes entregues
   'canceled'               -- ver regra de cancelamento em batches
 );
+-- `partially_preloading` e `pre_loading` entraram depois do schema inicial:
+-- ver supabase/migrations/20260805120000_order_status_preloading.sql.
 
 create table public.orders (
   id                 uuid primary key default gen_random_uuid(),
@@ -639,13 +643,21 @@ create trigger trg_orders_updated_at before update on public.orders
 >
 > | Status da Order | Condição sobre os lotes |
 > |---|---|
-> | `in_negotiation` | Estado inicial, ao criar a Order |
+> | `in_negotiation` | Estado inicial, ao criar a Order — e enquanto os lotes não estiverem **todos** em produção |
 > | `in_production` | **Todos** os lotes em `in_production` (e etapas Order/PO/PI/deposit payment completas — deposit payment pode estar "NA" em casos específicos) |
-> | `partially_shipped` | Ao menos 1 lote em `in_production` **e** ao menos 1 lote já em `in_transit` (embarcado) |
+> | `partially_preloading` | Ao menos 1 lote em `preloading` e os demais fora dessa fase |
+> | `pre_loading` | **Todos** os lotes em `preloading` |
+> | `partially_shipped` | Ao menos 1 lote em `in_transit` e os demais ainda não |
 > | `shipped` | **Todos** os lotes em `in_transit` |
-> | `partially_delivered` | Ao menos 1 lote em `in_transit` **e** ao menos 1 lote em `delivered` |
+> | `partially_delivered` | Ao menos 1 lote em `delivered` e os demais ainda não |
 > | `delivered` | **Todos** os lotes em `delivered` |
 > | `canceled` | Ver regra de cancelamento em `batches` — usuário devolveu todos os lotes para `in_negotiation`/`in_production` e a Order é cancelada a partir daí |
+>
+> A avaliação é da fase **mais adiantada para a mais atrasada** (delivered →
+> in_transit → preloading → produção): um lote entregue decide o status antes de
+> um lote que ainda está em produção. Implementação: `rollupOrderStatus()` em
+> `lib/order-status.ts`, chamada por `syncOrderStatus()` em todo ponto que muda
+> o status ou o conjunto de lotes de uma Order.
 >
 > Implementação: coluna materializada em `orders.status`, recalculada por trigger sempre que um `batches.status` mudar (ou via função chamada no fim de cada transição de lote). `pre_loading` do batch **não aparece named diretamente** no status da Order — ele só conta como "ainda em produção" até virar `in_transit`.
 >
