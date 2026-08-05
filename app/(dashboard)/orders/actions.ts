@@ -57,6 +57,10 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
 
   const admin = createAdminClient();
   const fields = {
+    // Date PO = data em que o pedido foi aberto. Não vem do form (é derivada,
+    // como o po_number); sem isso a Order nasce sem "Order date" e a tela de
+    // ETD factories mostra "—" na coluna.
+    date_po: new Date().toISOString().slice(0, 10),
     order_type_id: d.order_type_id,
     schedule_requested: d.schedule_requested,
     client_id: d.client_id,
