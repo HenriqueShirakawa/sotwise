@@ -328,11 +328,14 @@ export function ShipmentDetailClient({
   profiles,
   factories,
   dates,
+  canDelete,
 }: {
   shipment: ShipmentDetail;
   batches: ShipmentBatchRow[];
   steps: ShipmentStepRow[];
   profiles: Ref[];
+  /** Só admin desfaz embarque (ver deleteShipment) — sem isso o botão só daria erro. */
+  canDelete: boolean;
   /** Repassado ao modal de ETD aberto pelo "View parts". */
   factories: Ref[];
   dates: {
@@ -395,14 +398,16 @@ export function ShipmentDetailClient({
             <ArrowLeft />
             Back
           </Button>
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl text-rose-600 hover:text-rose-700"
-            onClick={() => setConfirmDelete(true)}
-          >
-            <Trash2 />
-            Delete shipment
-          </Button>
+          {canDelete ? (
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl text-rose-600 hover:text-rose-700"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 />
+              Delete shipment
+            </Button>
+          ) : null}
         </div>
         <div className="flex items-center gap-3">
           <StatusPill label={shipment.status} />

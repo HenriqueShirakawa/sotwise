@@ -149,6 +149,41 @@ const DELETABLE_ORDER_STATUSES = new Set<OrderStatus>([
   "canceled",
 ]);
 
+/**
+ * Diz se algum lote da order já entrou num Pre-loading (e se aquele Pre-loading
+ * virou Shipment). Devolve o rótulo pronto para a mensagem de erro, ou null se
+ * a order estiver solta e puder ser apagada.
+ */
+async function findLinkedShipping(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string
+): Promise<{ kind: "pre-loading" | "shipment"; number: string } | null> {
+  const { data: batches } = await admin
+    .from("batches")
+    .select("id")
+    .eq("order_id", orderId);
+  const batchIds = (batches ?? []).map((b) => b.id);
+  if (!batchIds.length) return null;
+
+  const { data: links } = await admin
+    .from("pre_loading_batches")
+    .select("pre_loading_id")
+    .in("batch_id", batchIds)
+    .limit(1);
+  const preLoadingId = links?.[0]?.pre_loading_id;
+  if (!preLoadingId) return null;
+
+  const [{ data: preLoading }, { data: shipment }] = await Promise.all([
+    admin.from("pre_loadings").select("pl_number").eq("id", preLoadingId).maybeSingle(),
+    admin.from("shipments").select("id").eq("pre_loading_id", preLoadingId).maybeSingle(),
+  ]);
+
+  return {
+    kind: shipment ? "shipment" : "pre-loading",
+    number: preLoading?.pl_number ?? "—",
+  };
+}
+
 export async function deleteOrder(id: string): Promise<ActionResult> {
   await verifySession();
 
@@ -168,10 +203,23 @@ export async function deleteOrder(id: string): Promise<ActionResult> {
     };
   }
 
+  // Order com embarque não pode ser apagada. O delete abaixo é em cascata e
+  // solta o vínculo em pre_loading_batches, mas NÃO remove o Pre-loading nem o
+  // Shipment: eles sobravam sem pedido de origem, invisíveis nas listagens e
+  // sem botão para limpar — foi o que travou a numeração no QA de 05/08.
+  // Bloquear em vez de cascatear é a escolha reversível: o usuário desfaz o
+  // embarque e só então apaga o pedido; cascatear destruiria um embarque real
+  // num clique, sem lixeira para recuperar.
+  const linked = await findLinkedShipping(admin, id);
+  if (linked) {
+    return {
+      ok: false,
+      error: `This order is already in ${linked.kind} ${linked.number}. Remove it from there before deleting the order.`,
+    };
+  }
+
   // Hard delete: a order sai de vez e, em cascata, vão os lotes, OFC/ETD e o
-  // checklist (FKs order_id ON DELETE CASCADE). Se algum lote estiver dentro de um
-  // Pre-loading, o vínculo é solto pela migration 20260805130000
-  // (pre_loading_batches.batch_id ON DELETE CASCADE) — sem ela o delete trava em FK.
+  // checklist (FKs order_id ON DELETE CASCADE).
   const { error } = await admin.from("orders").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
