@@ -61,7 +61,7 @@ export default async function ShipmentDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await verifySession();
+  const { isAdmin } = await verifySession();
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -379,6 +379,7 @@ export default async function ShipmentDetailPage({
       profiles={profiles}
       factories={factories}
       dates={dates}
+      canDelete={isAdmin}
     />
   );
 }

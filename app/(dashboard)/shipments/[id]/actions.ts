@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireAdmin, verifySession } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -233,7 +233,9 @@ export async function deleteShipmentStepAttachment(
  * inconsistente caso falhe no meio.
  */
 export async function deleteShipment(shipmentId: string): Promise<ActionResult> {
-  await verifySession();
+  // Só admin: desfazer um embarque reverte split, status de lote e rollup de
+  // Order em cascata — é a ação mais destrutiva da tela e não tem lixeira.
+  await requireAdmin();
   const admin = createAdminClient();
 
   const { data: shipment, error: shipErr } = await admin
