@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
-  Download,
   Eye,
   Info,
   Paperclip,
@@ -1098,6 +1097,8 @@ export function OrderDetailClient({
 
   return (
     <div>
+      {/* Sem "Download CSV" aqui: o checklist do Order nunca previu exportação
+          (erro de design confirmado pelo cliente no QA de 05/08). */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="outline"
@@ -1106,13 +1107,6 @@ export function OrderDetailClient({
         >
           <ArrowLeft />
           Back
-        </Button>
-        <Button
-          className="h-11 rounded-xl px-5"
-          onClick={() => toast.info("Download CSV — coming soon.")}
-        >
-          <Download />
-          Download CSV
         </Button>
       </div>
 

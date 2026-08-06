@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SearchSelect } from "@/components/search-select";
 
 import { createOrder, updateOrder } from "./actions";
 import type { OrderRow, Ref } from "./orders-client";
@@ -163,6 +164,7 @@ export function OrderFormModal({
                 value={form.order_type_id}
                 onChange={(v) => set("order_type_id", v)}
                 options={orderTypes}
+                required
               />
             </div>
             <Field label="Schedule Requested">
@@ -182,6 +184,7 @@ export function OrderFormModal({
                 value={form.client_id}
                 onChange={(v) => set("client_id", v)}
                 options={clients}
+                required
               />
               <Field label="Client Reference">
                 <Input
@@ -197,6 +200,7 @@ export function OrderFormModal({
               value={form.business_unit_id}
               onChange={(v) => set("business_unit_id", v)}
               options={businessUnits}
+              required
             />
           </Section>
 
@@ -263,18 +267,34 @@ function Section({
 
 function Field({
   label,
+  required,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-foreground">{label}</Label>
+      <Label className="text-foreground">
+        {label}
+        {required ? (
+          <span className="text-destructive" aria-hidden>
+            *
+          </span>
+        ) : null}
+      </Label>
       {children}
     </div>
   );
 }
+
+/**
+ * Acima deste tamanho o Select vira SearchSelect (com busca por texto). Client
+ * tem ~114 registros e rolar a lista inteira à mão era inviável; listas curtas
+ * (Order Type, Business Unit) continuam no Select simples, que é mais leve.
+ */
+const SEARCHABLE_FROM = 10;
 
 function SelectField({
   label,
@@ -282,15 +302,30 @@ function SelectField({
   value,
   onChange,
   options,
+  required,
 }: {
   label: string;
   placeholder: string;
   value: string;
   onChange: (value: string) => void;
   options: Ref[];
+  required?: boolean;
 }) {
+  if (options.length > SEARCHABLE_FROM) {
+    return (
+      <Field label={label} required={required}>
+        <SearchSelect
+          value={value}
+          onChange={onChange}
+          options={options}
+          placeholder={placeholder}
+        />
+      </Field>
+    );
+  }
+
   return (
-    <Field label={label}>
+    <Field label={label} required={required}>
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder={placeholder} />
