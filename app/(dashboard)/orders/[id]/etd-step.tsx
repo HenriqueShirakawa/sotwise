@@ -61,6 +61,19 @@ const EDITABLE_FIELDS = [
 
 type FieldKey = (typeof EDITABLE_FIELDS)[number]["value"];
 
+/**
+ * Rótulos de todo campo que pode aparecer no histórico. Vai além de
+ * EDITABLE_FIELDS porque `initial_date` só é editável na linha, nunca no modal.
+ */
+const HISTORY_FIELD_LABELS: Record<string, string> = {
+  current_date: "Current Date",
+  ready: "Ready",
+  inspection: "Inspection",
+  initial_date: "Initial Date",
+  dispatch_location_id: "Dispatch Location",
+  dispatch_date: "Dispatch Date",
+};
+
 const HISTORY_PAGE_SIZE = 10;
 const ETD_PAGE_SIZE = 10;
 
@@ -118,6 +131,24 @@ function RemarksCell({ remarks }: { remarks: string | null }) {
           <p className="text-sm break-words text-slate-600">{remarks}</p>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+/**
+ * Campo alterado + por onde a alteração passou. A edição na linha não pede
+ * motivo, então a origem é o único contexto que o histórico guarda dela — sem
+ * isso as duas ficam indistinguíveis na auditoria.
+ */
+function ChangedCell({ field, source }: { field: string; source?: "modal" | "row" }) {
+  return (
+    <div className="min-w-0">
+      <span className="font-medium whitespace-nowrap text-slate-800">
+        {HISTORY_FIELD_LABELS[field] ?? field}
+      </span>
+      <span className="block text-[11px] whitespace-nowrap text-slate-400">
+        {source === "row" ? "in-row edit" : "ETD update"}
+      </span>
     </div>
   );
 }
@@ -335,6 +366,9 @@ function EtdUpdateModal({
                       </span>
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                      <HistoryField label="Changed">
+                        <ChangedCell field={h.field} source={h.source} />
+                      </HistoryField>
                       <HistoryField label="Insp.">
                         <Checkbox checked={h.inspection} disabled />
                       </HistoryField>
@@ -362,6 +396,7 @@ function EtdUpdateModal({
             <Table className="hidden sm:table">
               <TableHeader>
                 <TableRow>
+                  <TableHead>Changed</TableHead>
                   <TableHead>Insp.</TableHead>
                   <TableHead>Ready?</TableHead>
                   <TableHead>Remarks</TableHead>
@@ -376,19 +411,22 @@ function EtdUpdateModal({
               <TableBody>
                 {historyLoading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : pageRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
                       No changes logged yet.
                     </TableCell>
                   </TableRow>
                 ) : (
                   pageRows.map((h) => (
                     <TableRow key={h.id}>
+                      <TableCell>
+                        <ChangedCell field={h.field} source={h.source} />
+                      </TableCell>
                       <TableCell>
                         <Checkbox checked={h.inspection} disabled />
                       </TableCell>

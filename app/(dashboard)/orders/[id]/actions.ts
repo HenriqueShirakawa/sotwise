@@ -371,9 +371,23 @@ export async function deleteStepAttachment(
 }
 
 /**
+ * Campos da edição rápida que entram no histórico. `remarks` fica de fora: no
+ * modal ele é o motivo da mudança, não uma mudança em si.
+ */
+const ETD_AUDITED_PATCH_FIELDS = [
+  "inspection",
+  "ready",
+  "initial_date",
+  "dispatch_location_id",
+  "dispatch_date",
+] as const satisfies readonly EtdHistorySnapshot["field"][];
+
+/**
  * Upsert dos dados de ETD de UMA entrada Factory x Category (linha da etapa
  * ETD). `current_date`/`ready_date` são preenchidos automaticamente na
  * primeira vez que `initial_date`/`ready` são setados (ver docs/regras_de_negocio.md §3.7.4).
+ * Assim como o modal, grava histórico — aqui sem motivo declarado, marcado
+ * como `source: "row"`.
  */
 export async function upsertEtdInfo(
   orderId: string,
@@ -387,7 +401,7 @@ export async function upsertEtdInfo(
     remarks?: string | null;
   }
 ): Promise<ActionResult> {
-  await verifySession();
+  const session = await verifySession();
   const admin = createAdminClient();
 
   const { data: existing } = await admin
@@ -415,17 +429,35 @@ export async function upsertEtdInfo(
     update.ready_date = new Date().toISOString().slice(0, 10);
   }
 
-  const { error } = await admin
+  const { data: saved, error } = await admin
     .from("etd_info")
-    .upsert(update, { onConflict: "order_factory_category_id" });
-  if (error) return { ok: false, error: error.message };
+    .upsert(update, { onConflict: "order_factory_category_id" })
+    .select(ETD_SAVED_COLUMNS)
+    .single();
+  if (error || !saved) return { ok: false, error: error?.message ?? "Failed to save." };
+
+  const changed = ETD_AUDITED_PATCH_FIELDS.filter((f) => patch[f] !== undefined);
+  const historyError = await writeEtdHistory(admin, saved, changed, "row", session.userId);
+  if (historyError) return { ok: false, error: historyError };
 
   revalidatePath(path(orderId));
   return { ok: true };
 }
 
 export type EtdHistorySnapshot = {
-  field: "current_date" | "ready" | "inspection" | "dispatch_location_id" | "dispatch_date";
+  field:
+    | "current_date"
+    | "ready"
+    | "inspection"
+    | "initial_date"
+    | "dispatch_location_id"
+    | "dispatch_date";
+  /**
+   * Por onde a alteração passou. Ausente nas linhas gravadas antes de a edição
+   * na linha passar a ser auditada — nessa época só o modal escrevia histórico,
+   * então `undefined` se lê como "modal".
+   */
+  source?: "modal" | "row";
   inspection: boolean;
   ready: boolean;
   remarks: string | null;
@@ -438,6 +470,66 @@ export type EtdHistoryEntry = EtdHistorySnapshot & {
   id: string;
   changed_at: string;
 };
+
+/** Estado de `etd_info` recém-salvo, na forma que o snapshot precisa. */
+type EtdSavedState = {
+  id: string;
+  inspection: boolean;
+  ready: boolean;
+  remarks: string | null;
+  current_date: string | null;
+  dispatch_location_id: string | null;
+  dispatch_date: string | null;
+};
+
+const ETD_SAVED_COLUMNS =
+  "id, inspection, ready, remarks, current_date, dispatch_location_id, dispatch_date";
+
+/**
+ * Grava uma linha de `etd_history` por campo alterado, com o snapshot completo
+ * do estado já persistido em `etd_info`. Usado pelos DOIS caminhos de edição —
+ * o modal "ETD update" e a edição rápida na linha da tabela — porque Ready e
+ * Inspection são campos sensíveis: mudança sem rastro de quem/quando não é
+ * aceitável, mesmo quando feita sem motivo declarado.
+ * Retorna a mensagem de erro, ou null em caso de sucesso.
+ */
+async function writeEtdHistory(
+  admin: ReturnType<typeof createAdminClient>,
+  saved: EtdSavedState,
+  fields: EtdHistorySnapshot["field"][],
+  source: NonNullable<EtdHistorySnapshot["source"]>,
+  userId: string
+): Promise<string | null> {
+  if (fields.length === 0) return null;
+
+  let dispatchLocationName: string | null = null;
+  if (saved.dispatch_location_id) {
+    const { data: factory } = await admin
+      .from("factories")
+      .select("name")
+      .eq("id", saved.dispatch_location_id)
+      .maybeSingle();
+    dispatchLocationName = factory?.name ?? null;
+  }
+
+  const { error } = await admin.from("etd_history").insert(
+    fields.map((field) => ({
+      etd_info_id: saved.id,
+      changed_fields: {
+        field,
+        source,
+        inspection: saved.inspection,
+        ready: saved.ready,
+        remarks: saved.remarks,
+        current_date: saved.current_date,
+        dispatch_location_name: dispatchLocationName,
+        dispatch_date: saved.dispatch_date,
+      } satisfies EtdHistorySnapshot,
+      changed_by: userId,
+    }))
+  );
+  return error?.message ?? null;
+}
 
 /**
  * Edição "oficial" de UM campo do ETD, com motivo obrigatório — grava um
@@ -478,36 +570,12 @@ export async function updateEtdInfoWithReason(
   const { data: saved, error } = await admin
     .from("etd_info")
     .upsert(update, { onConflict: "order_factory_category_id" })
-    .select("id, inspection, ready, current_date, dispatch_location_id, dispatch_date")
+    .select(ETD_SAVED_COLUMNS)
     .single();
   if (error || !saved) return { ok: false, error: error?.message ?? "Failed to save." };
 
-  let dispatchLocationName: string | null = null;
-  if (saved.dispatch_location_id) {
-    const { data: factory } = await admin
-      .from("factories")
-      .select("name")
-      .eq("id", saved.dispatch_location_id)
-      .maybeSingle();
-    dispatchLocationName = factory?.name ?? null;
-  }
-
-  const snapshot: EtdHistorySnapshot = {
-    field,
-    inspection: saved.inspection,
-    ready: saved.ready,
-    remarks: remarks.trim(),
-    current_date: saved.current_date,
-    dispatch_location_name: dispatchLocationName,
-    dispatch_date: saved.dispatch_date,
-  };
-
-  const { error: historyError } = await admin.from("etd_history").insert({
-    etd_info_id: saved.id,
-    changed_fields: snapshot,
-    changed_by: session.userId,
-  });
-  if (historyError) return { ok: false, error: historyError.message };
+  const historyError = await writeEtdHistory(admin, saved, [field], "modal", session.userId);
+  if (historyError) return { ok: false, error: historyError };
 
   revalidatePath(path(orderId));
   return { ok: true };
