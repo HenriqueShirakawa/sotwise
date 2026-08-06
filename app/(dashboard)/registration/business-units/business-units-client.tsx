@@ -221,7 +221,9 @@ function BusinessUnitForm({
       <p className="border-b pb-2 text-sm text-muted-foreground">Main information</p>
 
       <div className="space-y-1.5">
-        <Label htmlFor="name">Business unit name</Label>
+        <Label htmlFor="name" required>
+          Business unit name
+        </Label>
         <Input
           id="name"
           value={name}
@@ -232,7 +234,10 @@ function BusinessUnitForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="icon">Image</Label>
+        {/* Na edição a imagem já existente satisfaz o obrigatório. */}
+        <Label htmlFor="icon" required={!editing?.icon_path}>
+          Image
+        </Label>
         <div className="flex items-center gap-3">
           <BusinessUnitIcon url={picked?.url ?? editing?.icon_url ?? null} className="size-14" />
           <div className="flex-1">

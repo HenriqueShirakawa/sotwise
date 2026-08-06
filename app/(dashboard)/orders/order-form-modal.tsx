@@ -276,13 +276,8 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-foreground">
+      <Label className="text-foreground" required={required}>
         {label}
-        {required ? (
-          <span className="text-destructive" aria-hidden>
-            *
-          </span>
-        ) : null}
       </Label>
       {children}
     </div>
