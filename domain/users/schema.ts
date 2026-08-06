@@ -39,4 +39,16 @@ export const userUpdateSchema = z.object({
 
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;
 
+/**
+ * "My profile" (§3.1): o próprio usuário edita só o que é dele. Role, company e
+ * e-mail ficam de fora de propósito — quem muda papel/empresa é o admin pela
+ * tela Users, senão qualquer um se promoveria a admin por aqui.
+ */
+export const profileSelfUpdateSchema = z.object({
+  full_name: fullNameSchema,
+  date_of_birth: dateOfBirthSchema,
+});
+
+export type ProfileSelfUpdateInput = z.infer<typeof profileSelfUpdateSchema>;
+
 export type ActionResult = { ok: true } | { ok: false; error: string };
