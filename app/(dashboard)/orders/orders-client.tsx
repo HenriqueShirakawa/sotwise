@@ -16,7 +16,6 @@ import {
 import {
   Filter,
   Plus,
-  Download,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -555,15 +554,10 @@ export function OrdersClient({
           </h1>
           <p className="text-sm text-muted-foreground">Orders management</p>
         </div>
+        {/* Sem "Download XLS" aqui: a exportação foi cortada de todo o sistema,
+            exceto ETD Factories, Pre-loading e Shipments (docs §11, decisão do
+            cliente). Orders não é uma das exceções. */}
         <div className="flex w-full items-center gap-3 sm:w-auto">
-          <Button
-            variant="outline"
-            className="h-11 flex-1 rounded-xl sm:flex-none"
-            onClick={() => toast.info("Download XLS — coming soon.")}
-          >
-            <Download />
-            Download XLS
-          </Button>
           <Button className="h-11 flex-1 rounded-xl px-5 sm:flex-none" onClick={openCreate}>
             <Plus />
             Create Order
