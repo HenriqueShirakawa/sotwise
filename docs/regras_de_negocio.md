@@ -1488,6 +1488,8 @@ To do list    = VIEW read-only sobre order_checklist_steps + pre_loading_checkli
 
 > As "abas Inbox/Pre-loading/Shipment" citadas em documentação antiga do MD **não existem** no design atual — a lista é única.
 
+> ✅ **Filtro de status terminal (implementação, 2026-08-06):** além de `completed_on IS NULL` + responsável, a lista **omite** etapas cujo registro já encerrou a esteira — Order `delivered`/`canceled` e Shipment `delivered`/`canceled`. Sem isso, ~982 etapas de pedidos/embarques já finalizados (buracos da migração Bubble→Supabase, sem `completed_on`) apareciam como tarefas falsas. Etapas de embarques ainda `in_transit` continuam listadas. É filtro de **exibição** — não altera dado. Ver `TERMINAL_STATUS` em `app/(dashboard)/todo/page.tsx`.
+
 ```sql
 -- To do list: VIEW read-only sobre as etapas de checklist pendentes do usuário.
 -- Combina as etapas de Orders e de Pre-loading/Shipment.
