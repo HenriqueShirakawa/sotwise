@@ -308,23 +308,13 @@ export function EtdFactoriesClient({
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            ETD Factories
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Estimated data from the factory for the production of the category.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          className="h-11 w-full rounded-xl sm:w-auto"
-          onClick={() => toast.info("Download XLS — coming soon.")}
-        >
-          <Download />
-          Download XLS
-        </Button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          ETD Factories
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Estimated data from the factory for the production of the category.
+        </p>
       </div>
 
       <ListToolbar
@@ -333,22 +323,35 @@ export function EtdFactoriesClient({
         placeholder="PO number"
         activeCount={filterCount}
         controls={(close) => (
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl bg-white"
-            onClick={() => {
-              close();
-              setFiltersOpen(true);
-            }}
-          >
-            <Filter />
-            Filters
-            {filterCount > 0 && (
-              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {filterCount}
-              </span>
-            )}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                toast.info("Download XLS — coming soon.");
+              }}
+            >
+              <Download />
+              Download XLS
+            </Button>
+          </>
         )}
         trailing={() => (
           <ColumnsMenu

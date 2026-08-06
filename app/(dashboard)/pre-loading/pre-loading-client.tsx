@@ -352,15 +352,7 @@ export function PreLoadingClient({
           </p>
         </div>
         <div className="flex w-full items-center gap-3 sm:w-auto">
-          <Button
-            variant="outline"
-            className="h-11 flex-1 rounded-xl sm:flex-none"
-            onClick={comingSoon}
-          >
-            <Download />
-            Download XLS
-          </Button>
-          <Button className="h-11 flex-1 rounded-xl px-5 sm:flex-none" onClick={openCreate}>
+          <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={openCreate}>
             <Plus />
             Create pre-loading
           </Button>
@@ -373,22 +365,35 @@ export function PreLoadingClient({
         placeholder="PL number"
         activeCount={filterCount}
         controls={(close) => (
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl bg-white"
-            onClick={() => {
-              close();
-              setFiltersOpen(true);
-            }}
-          >
-            <Filter />
-            Filters
-            {filterCount > 0 && (
-              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {filterCount}
-              </span>
-            )}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                comingSoon();
+              }}
+            >
+              <Download />
+              Download XLS
+            </Button>
+          </>
         )}
         trailing={() => (
           <ColumnsMenu
