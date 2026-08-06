@@ -9,7 +9,13 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        // Desabilitado sai da cor de marca em vez de só perder opacidade: o roxo
+        // a 50% ainda lê como botão ativo, e como vários formulários travam o
+        // submit por aqui (Order, Pre-loading, import CSV) o usuário clicava sem
+        // entender por que "não acontecia nada" — o QA reportou isso como falha
+        // silenciosa de validação.
+        default:
+          "bg-primary text-primary-foreground hover:bg-primary/80 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
