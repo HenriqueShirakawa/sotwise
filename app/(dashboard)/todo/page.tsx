@@ -11,11 +11,23 @@ import type { Ref } from "./filters-modal";
 const SHIPMENT_STEP_SET = new Set<ChecklistStep>(SHIPMENT_STEPS);
 
 /**
+ * Status terminais: o registro encerrou a esteira, não há mais trabalho a fazer.
+ * Etapa pendente (sem `completed_on`) num registro assim é buraco de migração — a
+ * data de conclusão não veio do Bubble —, não tarefa. Some da To do list.
+ */
+const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
+
+/**
  * To do list (docs §3.12.2). VIEW read-only sobre as etapas de checklist
  * pendentes (`completed_on IS NULL`) do usuário logado, unindo Orders e
  * Pre-loading/Shipment. Montada no server component (padrão do repo, sem VIEW
  * no banco). O conjunto é sempre pequeno — só as tarefas do próprio usuário —,
  * então resolvemos os relacionamentos por id, sem paginação em bloco.
+ *
+ * Filtro extra ao esqueleto da doc: etapa pendente de um registro em status
+ * terminal (Order/Shipment delivered ou canceled) NÃO é listada — a esteira
+ * encerrou, e a pendência é resíduo da migração, não trabalho. As etapas de
+ * embarques ainda em trânsito seguem aparecendo.
  */
 export default async function TodoPage() {
   const { userId, profile } = await verifySession();
@@ -72,10 +84,10 @@ export default async function TodoPage() {
     inIds<{ pre_loading_id: string; batch_id: string }>(plIds, (list) =>
       admin.from("pre_loading_batches").select("pre_loading_id, batch_id").in("pre_loading_id", list)
     ),
-    inIds<{ id: string; pre_loading_id: string }>(plIds, (list) =>
+    inIds<{ id: string; pre_loading_id: string; status: string }>(plIds, (list) =>
       admin
         .from("shipments")
-        .select("id, pre_loading_id")
+        .select("id, pre_loading_id, status")
         .is("deleted_at", null)
         .in("pre_loading_id", list)
     ),
@@ -112,6 +124,7 @@ export default async function TodoPage() {
 
   const plNumberById = new Map(preLoadings.map((p) => [p.id, p.pl_number]));
   const shipmentIdByPl = new Map(shipments.map((s) => [s.pre_loading_id, s.id]));
+  const shipmentStatusByPl = new Map(shipments.map((s) => [s.pre_loading_id, s.status]));
 
   // POs e clientes consolidados por PL.
   const posByPl = new Map<string, Set<string>>();
@@ -135,6 +148,8 @@ export default async function TodoPage() {
   const orderRows: TodoRow[] = orderSteps.flatMap((s) => {
     const order = orderById.get(s.order_id);
     if (!order) return [];
+    // Order que já encerrou a esteira não tem tarefa real pendente (ver TERMINAL_STATUS).
+    if (TERMINAL_STATUS.has(order.status)) return [];
     const clientName = order.client_id ? (clientNameById.get(order.client_id) ?? null) : null;
     return [
       {
@@ -153,23 +168,33 @@ export default async function TodoPage() {
     ];
   });
 
-  const plRows: TodoRow[] = plSteps.map((s) => {
+  const plRows: TodoRow[] = plSteps.flatMap((s) => {
+    const isShipment = SHIPMENT_STEP_SET.has(s.step);
+    // Etapa de Shipment cujo embarque já encerrou (delivered/canceled) é resíduo
+    // de migração, não tarefa — some. Pre-loading não tem status terminal próprio:
+    // quando o PL confirma o embarque, suas 7 etapas já estão concluídas.
+    if (isShipment) {
+      const st = shipmentStatusByPl.get(s.pre_loading_id);
+      if (st && TERMINAL_STATUS.has(st)) return [];
+    }
     const pos = posByPl.get(s.pre_loading_id);
     const cl = clientsByPl.get(s.pre_loading_id);
     const shipmentId = shipmentIdByPl.get(s.pre_loading_id);
-    return {
-      id: s.id,
-      phase: SHIPMENT_STEP_SET.has(s.step) ? ("shipment" as const) : ("preloading" as const),
-      po_number: pos ? [...pos].sort().join(", ") : null,
-      pl_number: plNumberById.get(s.pre_loading_id) ?? null,
-      step: s.step,
-      status: null,
-      responsible: profile.full_name,
-      date_preview: s.estimated_date,
-      client: cl ? [...cl.names].sort().join(", ") || null : null,
-      client_ids: cl ? [...cl.ids] : [],
-      href: shipmentId ? `/shipments/${shipmentId}` : `/pre-loading/${s.pre_loading_id}`,
-    };
+    return [
+      {
+        id: s.id,
+        phase: isShipment ? ("shipment" as const) : ("preloading" as const),
+        po_number: pos ? [...pos].sort().join(", ") : null,
+        pl_number: plNumberById.get(s.pre_loading_id) ?? null,
+        step: s.step,
+        status: null,
+        responsible: profile.full_name,
+        date_preview: s.estimated_date,
+        client: cl ? [...cl.names].sort().join(", ") || null : null,
+        client_ids: cl ? [...cl.ids] : [],
+        href: shipmentId ? `/shipments/${shipmentId}` : `/pre-loading/${s.pre_loading_id}`,
+      },
+    ];
   });
 
   const rows = [...orderRows, ...plRows];
