@@ -203,7 +203,9 @@ function ContactForm({
       <p className="border-b pb-2 text-sm text-muted-foreground">Main information</p>
 
       <div className="space-y-1.5">
-        <Label htmlFor="name">Contact name</Label>
+        <Label htmlFor="name" required>
+          Contact name
+        </Label>
         <Input
           id="name"
           value={name}
@@ -215,7 +217,10 @@ function ContactForm({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label htmlFor="email">E-mail</Label>
+          {/* Obrigatório só enquanto "No e-mail (N/A)" está desmarcado. */}
+          <Label htmlFor="email" required={!emailNa}>
+            E-mail
+          </Label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <Checkbox
               checked={emailNa}
@@ -235,7 +240,9 @@ function ContactForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="phone">Phone number</Label>
+        <Label htmlFor="phone" required>
+          Phone number
+        </Label>
         <Input
           id="phone"
           value={phone}

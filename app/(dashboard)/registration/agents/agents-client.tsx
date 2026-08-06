@@ -307,7 +307,9 @@ function AgentForm({
       <p className="border-b pb-2 text-sm text-muted-foreground">Main information</p>
 
       <div className="space-y-1.5">
-        <Label htmlFor="name">Agent name</Label>
+        <Label htmlFor="name" required>
+          Agent name
+        </Label>
         <Input
           id="name"
           value={name}
@@ -319,7 +321,7 @@ function AgentForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label>Country</Label>
+          <Label required>Country</Label>
           <SearchSelect
             value={countryId}
             onChange={setCountryId}
@@ -328,7 +330,7 @@ function AgentForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Location</Label>
+          <Label required>Location</Label>
           <Select value={location} onValueChange={(v) => setLocation(v as AgentLocation)}>
             {/* !h-10 para casar com o SearchSelect de Country, ao lado. */}
             <SelectTrigger className="!h-10 w-full">
@@ -347,7 +349,10 @@ function AgentForm({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label htmlFor="email">E-mail</Label>
+          {/* Obrigatório só enquanto "No e-mail (N/A)" está desmarcado. */}
+          <Label htmlFor="email" required={!emailNa}>
+            E-mail
+          </Label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <Checkbox checked={emailNa} onCheckedChange={(c) => setEmailNa(c === true)} />
             No e-mail (N/A)
@@ -364,7 +369,9 @@ function AgentForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="phone">Phone number</Label>
+        <Label htmlFor="phone" required>
+          Phone number
+        </Label>
         <Input
           id="phone"
           value={phone}
