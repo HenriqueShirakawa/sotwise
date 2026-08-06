@@ -13,7 +13,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowUpDown, Filter } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -34,19 +34,54 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import {
+  activeFilterCount,
+  EMPTY_FILTERS,
+  FiltersModal,
+  type Ref,
+  type ShipmentFilters,
+} from "./filters-modal";
+
 export type ShipmentRow = {
   id: string;
   pl_number: string;
   client: string | null;
+  client_ids: string[];
   order_type: string | null;
+  order_type_ids: string[];
+  order_ids: string[];
+  leader_id: string | null;
   pol: string | null;
+  pol_id: string | null;
+  pod_id: string | null;
+  consolidation_point_id: string | null;
+  agent_brazil_id: string | null;
+  agent_china_id: string | null;
+  carrier_id: string | null;
+  container_number: string | null;
   ship_model: string | null;
+  shipment_model_id: string | null;
   loading_date: string | null;
   ship_date: string | null;
   eta: string | null;
+  /** Sem coluna na lista — existem só pra alimentar os filtros (docs §3.10.2). */
+  bl_date: string | null;
+  ata_date: string | null;
+  delivered_date: string | null;
   sum_of_orders: number;
+  /** Label exibido; `status_value` é o valor cru, que o filtro compara. */
   status: string;
+  status_value: string;
 };
+
+function inDateRange(value: string | null, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  if (!value) return false;
+  const d = value.length >= 10 ? value.slice(0, 10) : value;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+}
 
 function SortableHeader({
   label,
@@ -94,20 +129,77 @@ const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 export function ShipmentsClient({
   rows,
   initialColumns,
+  clients,
+  profiles,
+  orders,
+  orderTypes,
+  agents,
+  carriers,
+  pols,
+  pods,
+  factories,
+  shipmentModels,
 }: {
   rows: ShipmentRow[];
   initialColumns: VisibilityState;
+  clients: Ref[];
+  profiles: Ref[];
+  orders: Ref[];
+  orderTypes: Ref[];
+  agents: Ref[];
+  carriers: Ref[];
+  pols: Ref[];
+  pods: Ref[];
+  factories: Ref[];
+  shipmentModels: Ref[];
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<ShipmentFilters>(EMPTY_FILTERS);
   const { visibility, save: saveVisibility } = useColumnVisibility("shipments", initialColumns);
+
+  const filterCount = activeFilterCount(filters);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => r.pl_number.toLowerCase().includes(q));
-  }, [rows, search]);
+    return rows.filter((r) => {
+      if (filters.client_id && !r.client_ids.includes(filters.client_id)) return false;
+      if (filters.status && r.status_value !== filters.status) return false;
+      if (filters.leader_id && r.leader_id !== filters.leader_id) return false;
+      if (filters.order_id && !r.order_ids.includes(filters.order_id)) return false;
+      if (filters.order_type_id && !r.order_type_ids.includes(filters.order_type_id)) return false;
+      if (filters.agent_brazil_id && r.agent_brazil_id !== filters.agent_brazil_id) return false;
+      if (filters.agent_china_id && r.agent_china_id !== filters.agent_china_id) return false;
+      if (filters.carrier_id && r.carrier_id !== filters.carrier_id) return false;
+      if (
+        filters.container_number &&
+        !(r.container_number ?? "")
+          .toLowerCase()
+          .includes(filters.container_number.trim().toLowerCase())
+      )
+        return false;
+      if (
+        filters.consolidation_point_id &&
+        r.consolidation_point_id !== filters.consolidation_point_id
+      )
+        return false;
+      if (filters.pol_id && r.pol_id !== filters.pol_id) return false;
+      if (filters.pod_id && r.pod_id !== filters.pod_id) return false;
+      if (filters.shipment_model_id && r.shipment_model_id !== filters.shipment_model_id)
+        return false;
+      if (!inDateRange(r.loading_date, filters.loading_from, filters.loading_to)) return false;
+      if (!inDateRange(r.ship_date, filters.ship_from, filters.ship_to)) return false;
+      if (!inDateRange(r.bl_date, filters.bl_from, filters.bl_to)) return false;
+      if (!inDateRange(r.eta, filters.eta_from, filters.eta_to)) return false;
+      if (!inDateRange(r.ata_date, filters.ata_from, filters.ata_to)) return false;
+      if (!inDateRange(r.delivered_date, filters.delivered_from, filters.delivered_to))
+        return false;
+      if (!q) return true;
+      return r.pl_number.toLowerCase().includes(q);
+    });
+  }, [rows, search, filters]);
 
   const columns = useMemo<ColumnDef<ShipmentRow>[]>(
     () => [
@@ -196,6 +288,25 @@ export function ShipmentsClient({
         search={search}
         onSearchChange={setSearch}
         placeholder="PL number"
+        activeCount={filterCount}
+        controls={(close) => (
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl bg-white"
+            onClick={() => {
+              close();
+              setFiltersOpen(true);
+            }}
+          >
+            <Filter />
+            Filters
+            {filterCount > 0 && (
+              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                {filterCount}
+              </span>
+            )}
+          </Button>
+        )}
         trailing={() => (
           <ColumnsMenu
             columns={COLUMN_OPTIONS}
@@ -203,6 +314,24 @@ export function ShipmentsClient({
             onSave={saveVisibility}
           />
         )}
+      />
+
+      <FiltersModal
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        filters={filters}
+        onApply={setFilters}
+        onClear={() => setFilters(EMPTY_FILTERS)}
+        clients={clients}
+        profiles={profiles}
+        orders={orders}
+        orderTypes={orderTypes}
+        agents={agents}
+        carriers={carriers}
+        pols={pols}
+        pods={pods}
+        factories={factories}
+        shipmentModels={shipmentModels}
       />
 
       <DataCards
