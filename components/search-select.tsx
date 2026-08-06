@@ -35,7 +35,7 @@ export function SearchSelect({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-10 w-full items-center gap-2 rounded-lg border border-input bg-white px-3 text-sm"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-white px-2.5 text-sm"
         >
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <span className={selected ? "text-slate-800" : "text-muted-foreground"}>
