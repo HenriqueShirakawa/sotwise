@@ -268,9 +268,9 @@ export function MessagesBox({
                           variant="outline"
                           size="sm"
                           disabled={pending}
-                          onClick={() => toggleRead(m.id, !m.read_by_me)}
+                          onClick={() => toggleRead(m.id, !m.read)}
                         >
-                          {m.read_by_me ? (
+                          {m.read ? (
                             <>
                               <BookOpen className="size-4" />
                               Mark as Unread

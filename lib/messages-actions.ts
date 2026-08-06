@@ -107,9 +107,27 @@ export type BoxMessage = ThreadMessage & {
   entity: { type: MessageEntity; id: string };
   number: string;
   client: string | null;
-  /** Só faz sentido no Inbox: se EU já li. */
-  read_by_me: boolean;
+  /**
+   * Estado de leitura sob a ótica da aba: no Inbox, se EU já li; em My messages,
+   * se TODOS os destinatários já leram. É o que o filtro Read/Unread usa.
+   */
+  read: boolean;
 };
+
+/**
+ * No Inbox a leitura é minha (vem de message_recipients). Em My messages eu sou
+ * o autor e não tenho linha lá, então a leitura é a dos destinatários: só conta
+ * como lida quando todos leram. Sem destinatário não há o que ler → lida.
+ */
+function isRead(
+  tab: BoxTab,
+  recipients: ThreadMessage["recipients"],
+  mine: boolean | undefined
+): boolean {
+  if (tab === "inbox") return mine ?? true;
+  if (recipients.length === 0) return true;
+  return recipients.every((r) => Boolean(r.read_at));
+}
 
 export type BoxPayload = {
   messages: BoxMessage[];
@@ -165,19 +183,25 @@ export async function loadMessagesBox(filters: BoxFilters): Promise<BoxPayload> 
   const all: BoxMessage[] = base.map((r) => {
     const ctx = contexts.get(`${r.entity_type}:${r.entity_id}`);
     const hydratedRow = byId.get(r.id);
+    const row = hydratedRow ?? {
+      id: r.id,
+      body: r.body,
+      created_at: r.created_at,
+      author_id: r.author_id,
+      author_name: "—",
+      recipients: [],
+    };
     return {
-      ...(hydratedRow ?? {
-        id: r.id,
-        body: r.body,
-        created_at: r.created_at,
-        author_id: r.author_id,
-        author_name: "—",
-        recipients: [],
-      }),
+      ...row,
       entity: { type: r.entity_type, id: r.entity_id },
       number: ctx?.number ?? "—",
       client: ctx?.client ?? null,
-      read_by_me: readByMe.get(r.id) ?? true,
+      // No Inbox "lida" = eu li. Em My messages eu sou o AUTOR e nunca tenho
+      // registro em message_recipients, então o mapa vem vazio — o `?? true`
+      // marcava TODA mensagem enviada como lida e invertia o filtro (Unread não
+      // trazia nada, Read trazia tudo). Aqui "lida" = todos os destinatários
+      // leram, que é o que o contador "Messages read 0/1" do card já mostra.
+      read: isRead(filters.tab, row.recipients, readByMe.get(r.id)),
     };
   });
 
@@ -194,8 +218,8 @@ export async function loadMessagesBox(filters: BoxFilters): Promise<BoxPayload> 
   }
 
   const messages = all.filter((m) => {
-    if (filters.status === "read" && !m.read_by_me) return false;
-    if (filters.status === "unread" && m.read_by_me) return false;
+    if (filters.status === "read" && !m.read) return false;
+    if (filters.status === "unread" && m.read) return false;
     if (filters.personId) {
       const match =
         filters.tab === "inbox"
