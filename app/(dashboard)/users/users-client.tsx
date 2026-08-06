@@ -48,6 +48,8 @@ export type UserRow = {
   role_name: string;
   company: CompanyType;
   status: UserStatus;
+  /** Ativo mas nunca entrou — o convite por e-mail ainda não foi ligado. */
+  pending_access: boolean;
   hidden: boolean;
 };
 
@@ -56,7 +58,21 @@ const STATUS_HEX: Record<UserStatus, string> = {
   blocked: "#B91C1C",
 };
 
-const statusLabel = (s: UserStatus) => (s === "active" ? "Active" : "Blocked");
+/** Âmbar: nem verde de "tudo certo", nem vermelho de bloqueio. */
+const PENDING_HEX = "#B45309";
+
+/**
+ * "Pending" não é um valor de `user_status` no banco — é o cruzamento de ativo +
+ * nunca logado. Um usuário criado hoje nasce sem senha e sem convite, então
+ * mostrá-lo como "Active" contradiz o próprio toast da criação.
+ */
+const statusLabel = (row: UserRow) => {
+  if (row.status === "blocked") return "Blocked";
+  return row.pending_access ? "Pending" : "Active";
+};
+
+const statusHex = (row: UserRow) =>
+  row.status === "active" && row.pending_access ? PENDING_HEX : STATUS_HEX[row.status];
 /** Papéis vêm da tabela `roles` em minúsculo (admin/user) — exibidos capitalizados. */
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -72,7 +88,9 @@ export function UsersClient({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<"all" | UserStatus>("all");
+  // "pending" não é status do banco (ver statusLabel) — entra aqui como filtro
+  // derivado para o admin conseguir isolar quem ainda não tem acesso de fato.
+  const [status, setStatus] = useState<"all" | UserStatus | "pending">("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [statusTarget, setStatusTarget] = useState<UserRow | null>(null);
@@ -80,7 +98,9 @@ export function UsersClient({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return data.filter((r) => {
-      if (status !== "all" && r.status !== status) return false;
+      if (status === "pending" && !r.pending_access) return false;
+      if (status === "active" && (r.status !== "active" || r.pending_access)) return false;
+      if (status === "blocked" && r.status !== "blocked") return false;
       if (!q) return true;
       return [r.full_name, r.email ?? "", r.role_name, r.company].some((v) =>
         v.toLowerCase().includes(q)
@@ -134,10 +154,15 @@ export function UsersClient({
         enableSorting: false,
         cell: ({ row }) => (
           <span
-            style={statusChipStyle(STATUS_HEX[row.original.status])}
+            style={statusChipStyle(statusHex(row.original))}
             className="inline-flex items-center rounded-[4px] border px-2 py-0.5 text-xs font-medium whitespace-nowrap"
+            title={
+              row.original.pending_access
+                ? "Access pending — the invite e-mail is not enabled yet, so this user cannot sign in."
+                : undefined
+            }
           >
-            {statusLabel(row.original.status)}
+            {statusLabel(row.original)}
           </span>
         ),
       },
@@ -241,13 +266,17 @@ export function UsersClient({
         cardHeaderColumnIds={["status", "actions"]}
         emptyMessage="No users found."
         filters={
-          <Select value={status} onValueChange={(v) => setStatus(v as "all" | UserStatus)}>
+          <Select
+            value={status}
+            onValueChange={(v) => setStatus(v as "all" | UserStatus | "pending")}
+          >
             <SelectTrigger className="!h-11 w-44 rounded-xl bg-white">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="blocked">Blocked</SelectItem>
             </SelectContent>
           </Select>
