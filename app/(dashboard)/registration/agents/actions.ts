@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   agentSchema,
@@ -44,7 +44,7 @@ async function syncContacts(
 }
 
 export async function createAgent(input: AgentInput): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("registration", "create");
 
   const parsed = agentSchema.safeParse(input);
   if (!parsed.success) {
@@ -67,7 +67,7 @@ export async function createAgent(input: AgentInput): Promise<ActionResult> {
 }
 
 export async function updateAgent(id: string, input: AgentInput): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "edit");
 
   const parsed = agentSchema.safeParse(input);
   if (!parsed.success) {
@@ -86,7 +86,7 @@ export async function updateAgent(id: string, input: AgentInput): Promise<Action
 }
 
 export async function deleteAgent(id: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "delete");
 
   const admin = createAdminClient();
   const { error } = await admin

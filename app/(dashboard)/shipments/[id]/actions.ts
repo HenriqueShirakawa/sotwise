@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAdmin, verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -103,7 +103,7 @@ export async function saveShipmentStep(
   step: ChecklistStep,
   patch: ShipmentStepPatch
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("shipments", "edit");
   const admin = createAdminClient();
 
   const { data: existing, error: readError } = await admin
@@ -151,7 +151,7 @@ export async function uploadShipmentStepAttachment(
   step: ChecklistStep,
   formData: FormData
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("shipments", "edit");
   const admin = createAdminClient();
 
   const file = formData.get("file");
@@ -191,7 +191,7 @@ export async function uploadShipmentStepAttachment(
 export async function getShipmentAttachmentUrl(
   filePath: string
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  await verifySession();
+  await requireFeature("shipments", "view");
   const admin = createAdminClient();
 
   const { data, error } = await admin.storage
@@ -207,7 +207,7 @@ export async function deleteShipmentStepAttachment(
   attachmentId: string,
   filePath: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("shipments", "edit");
   const admin = createAdminClient();
 
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
@@ -233,9 +233,10 @@ export async function deleteShipmentStepAttachment(
  * inconsistente caso falhe no meio.
  */
 export async function deleteShipment(shipmentId: string): Promise<ActionResult> {
-  // Só admin: desfazer um embarque reverte split, status de lote e rollup de
-  // Order em cascata — é a ação mais destrutiva da tela e não tem lixeira.
-  await requireAdmin();
+  // Exige o `delete` da feature: desfazer um embarque reverte split, status de
+  // lote e rollup de Order em cascata — é a ação mais destrutiva da tela e não
+  // tem lixeira. O seed da migration mantém isso só com admin, como era antes.
+  await requireFeature("shipments", "delete");
   const admin = createAdminClient();
 
   const { data: shipment, error: shipErr } = await admin

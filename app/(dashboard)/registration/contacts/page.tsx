@@ -1,10 +1,10 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { ContactsClient } from "./contacts-client";
 
 export default async function ContactsPage() {
-  await verifySession();
+  await requireFeature("registration");
 
   const admin = createAdminClient();
   const { data } = await admin

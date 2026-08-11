@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
+import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep, LoadingStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -1022,6 +1023,8 @@ export function OrderDetailClient({
   factoriesByCategory,
   profiles,
   steps,
+  viewPrefs,
+  currentUserId,
 }: {
   orderId: string;
   order: OrderDetail;
@@ -1033,6 +1036,9 @@ export function OrderDetailClient({
   factoriesByCategory: Record<string, string[]>;
   profiles: Ref[];
   steps: ChecklistStepRow[];
+  /** Preferências de visualização do usuário — não restringem nada. */
+  viewPrefs: ViewPrefs;
+  currentUserId: string;
 }) {
   const router = useRouter();
   const [infoOpen, setInfoOpen] = useState(true);
@@ -1063,6 +1069,14 @@ export function OrderDetailClient({
         return false;
     }
   }
+
+  // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para
+  // qualquer regra que dependa do checklist completo — esconder uma etapa é
+  // preferência de leitura, não pode mudar o comportamento da tela.
+  const visibleSteps = useMemo(
+    () => filterSteps(steps, viewPrefs, currentUserId),
+    [steps, viewPrefs, currentUserId]
+  );
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
@@ -1285,12 +1299,14 @@ export function OrderDetailClient({
           </button>
         </div>
         <div className="border-t">
-          {steps.length === 0 ? (
+          {visibleSteps.length === 0 ? (
             <p className="px-6 py-6 text-sm text-muted-foreground">
-              No checklist steps for this order.
+              {steps.length === 0
+                ? "No checklist steps for this order."
+                : "No steps match your checklist view preferences."}
             </p>
           ) : (
-            steps.map((s) => {
+            visibleSteps.map((s) => {
               const open = isStepOpen(s.step);
               return (
                 <div key={s.step} className="border-b last:border-b-0">

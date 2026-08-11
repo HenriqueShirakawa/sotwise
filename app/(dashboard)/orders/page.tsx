@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 
@@ -30,7 +30,7 @@ type EtdOrderRow = {
 };
 
 export default async function OrdersPage() {
-  const { profile } = await verifySession();
+  const { profile } = await requireFeature("orders");
   const admin = createAdminClient();
 
   const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =

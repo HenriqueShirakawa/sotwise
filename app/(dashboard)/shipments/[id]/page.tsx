@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
+import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep, LoadingStatus } from "@/types/database";
 
@@ -61,7 +62,7 @@ export default async function ShipmentDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { isAdmin } = await verifySession();
+  const { permissions, profile, userId } = await requireFeature("shipments");
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -379,7 +380,9 @@ export default async function ShipmentDetailPage({
       profiles={profiles}
       factories={factories}
       dates={dates}
-      canDelete={isAdmin}
+      canDelete={permissions.shipments.delete}
+      viewPrefs={readViewPrefs(profile.ui_preferences)}
+      currentUserId={userId}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
@@ -36,7 +36,7 @@ export async function updateBatchStatus(
   batchId: string,
   status: BatchStatus
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(batchId);
@@ -58,7 +58,7 @@ export async function updateBatchNumber(
   batchId: string,
   batch_number: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(batchId);
@@ -77,7 +77,7 @@ export async function createBatch(
     rows: { category_id: string; factory_id: string; ship_requirement: string }[];
   }
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   const { data: batch, error } = await admin
@@ -111,7 +111,7 @@ export async function createBatch(
 }
 
 export async function deleteBatch(orderId: string, batchId: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(batchId);
@@ -138,7 +138,7 @@ export async function updateOrderFactoryCategoryBatch(
   id: string,
   batchId: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(batchId);
@@ -168,7 +168,7 @@ export async function bulkImportOrderFactoryCategory(
     ship_requirement: string;
   }[]
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   if (rows.length === 0) return { ok: false, error: "Nothing to import." };
@@ -233,7 +233,7 @@ export async function createOrderFactoryCategory(
     ship_requirement: string;
   }
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(input.batch_id);
@@ -256,7 +256,7 @@ export async function deleteOrderFactoryCategory(
   batchId: string,
   id: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(batchId);
@@ -279,7 +279,7 @@ export async function updateChecklistStep(
     enabled?: boolean;
   }
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   const update: TablesUpdate<"order_checklist_steps"> = { ...patch };
@@ -304,7 +304,7 @@ export async function uploadStepAttachment(
   formData: FormData,
   factoryId?: string | null
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   const file = formData.get("file");
@@ -342,7 +342,7 @@ export async function uploadStepAttachment(
 export async function getAttachmentDownloadUrl(
   filePath: string
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  await verifySession();
+  await requireFeature("orders", "view");
   const admin = createAdminClient();
 
   const { data, error } = await admin.storage
@@ -358,7 +358,7 @@ export async function deleteStepAttachment(
   attachmentId: string,
   filePath: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
@@ -401,7 +401,10 @@ export async function upsertEtdInfo(
     remarks?: string | null;
   }
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireAnyFeature([
+    ["orders", "edit"],
+    ["etd_factories", "edit"],
+  ]);
   const admin = createAdminClient();
 
   const { data: existing } = await admin
@@ -545,7 +548,10 @@ export async function updateEtdInfoWithReason(
   value: string | boolean | null,
   remarks: string
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireAnyFeature([
+    ["orders", "edit"],
+    ["etd_factories", "edit"],
+  ]);
   const admin = createAdminClient();
 
   if (!remarks.trim()) return { ok: false, error: "Remarks is required." };
@@ -592,7 +598,10 @@ export async function getOrderEtdStepData(
   | { ok: true; ofc: OfcRow[]; batches: BatchRow[]; etdByOfc: Record<string, EtdInfoRow> }
   | { ok: false; error: string }
 > {
-  await verifySession();
+  await requireAnyFeature([
+    ["orders", "view"],
+    ["etd_factories", "view"],
+  ]);
   const admin = createAdminClient();
 
   const [batchesRes, ofcRes, categoriesRes, factoriesRes] = await Promise.all([
@@ -659,7 +668,10 @@ export async function getOrderEtdStepData(
 export async function getEtdHistory(
   ofcId: string
 ): Promise<{ ok: true; rows: EtdHistoryEntry[] } | { ok: false; error: string }> {
-  await verifySession();
+  await requireAnyFeature([
+    ["orders", "view"],
+    ["etd_factories", "view"],
+  ]);
   const admin = createAdminClient();
 
   const { data: info } = await admin

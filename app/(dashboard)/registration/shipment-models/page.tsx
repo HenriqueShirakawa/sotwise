@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
@@ -9,7 +9,7 @@ import {
 } from "./actions";
 
 export default async function ShipmentModelsPage() {
-  await verifySession();
+  await requireFeature("registration");
   const admin = createAdminClient();
   const { data } = await admin
     .from("shipment_models")

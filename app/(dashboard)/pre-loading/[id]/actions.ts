@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -43,7 +43,7 @@ export async function savePreLoadingStep(
   step: ChecklistStep,
   patch: StepPatch
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
 
   const { data: existing, error: readError } = await admin
@@ -107,7 +107,7 @@ export async function uploadPreLoadingStepAttachment(
   step: ChecklistStep,
   formData: FormData
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
 
   const file = formData.get("file");
@@ -147,7 +147,7 @@ export async function uploadPreLoadingStepAttachment(
 export async function getPreLoadingAttachmentUrl(
   filePath: string
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  await verifySession();
+  await requireFeature("pre_loading", "view");
   const admin = createAdminClient();
 
   const { data, error } = await admin.storage
@@ -163,7 +163,7 @@ export async function deletePreLoadingStepAttachment(
   attachmentId: string,
   filePath: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
 
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
@@ -215,7 +215,7 @@ export async function confirmShipping(
   preLoadingId: string,
   input: ConfirmShippingInput
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
 
   const required = [

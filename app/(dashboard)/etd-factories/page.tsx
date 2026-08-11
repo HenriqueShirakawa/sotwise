@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import type { BatchStatus } from "@/types/database";
@@ -104,7 +104,7 @@ function buildRows(
 }
 
 export default async function EtdFactoriesPage() {
-  const { profile } = await verifySession();
+  const { profile } = await requireFeature("etd_factories");
   const admin = createAdminClient();
 
   // Uma query com inner join nos lotes ativos + pedido não-deletado, embutindo

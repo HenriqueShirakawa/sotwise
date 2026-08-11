@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { SHIPMENT_STEPS } from "@/lib/checklist";
@@ -30,7 +30,7 @@ const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
  * embarques ainda em trânsito seguem aparecendo.
  */
 export default async function TodoPage() {
-  const { userId, profile } = await verifySession();
+  const { userId, profile } = await requireFeature("todo");
   const admin = createAdminClient();
 
   const inIds = async <T,>(

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { ORDER_STEPS } from "@/lib/checklist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/types/database";
@@ -41,7 +41,7 @@ async function maxPo(admin: AdminClient): Promise<number | null> {
 }
 
 export async function createOrder(input: OrderInput): Promise<CreateResult> {
-  const session = await verifySession();
+  const session = await requireFeature("orders", "create");
 
   const parsed = orderSchema.safeParse(input);
   if (!parsed.success) {
@@ -108,7 +108,7 @@ export async function updateOrder(
   id: string,
   input: OrderInput
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "edit");
 
   const parsed = orderSchema.safeParse(input);
   if (!parsed.success) {
@@ -185,7 +185,7 @@ async function findLinkedShipping(
 }
 
 export async function deleteOrder(id: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("orders", "delete");
 
   const admin = createAdminClient();
 

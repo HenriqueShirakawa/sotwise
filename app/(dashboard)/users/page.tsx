@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { UsersClient, type UserRow } from "./users-client";
@@ -37,7 +37,7 @@ async function loadAuthInfo(
 }
 
 export default async function UsersPage() {
-  const session = await requireAdmin(); // não-admin → volta para /orders
+  const session = await requireFeature("users"); // sem a feature → volta para a primeira tela visível
 
   const admin = createAdminClient();
   const [profilesRes, rolesRes, authInfo] = await Promise.all([

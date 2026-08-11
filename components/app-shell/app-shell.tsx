@@ -7,6 +7,7 @@ import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { MessageFab } from "@/components/messages/message-fab";
+import type { PermissionMap } from "@/domain/access/features";
 import { SidebarNav } from "./sidebar-nav";
 import { UserCard } from "./user-menu";
 
@@ -14,14 +15,14 @@ export function AppShell({
   fullName,
   email,
   role,
-  isAdmin,
+  permissions,
   unreadMessages,
   children,
 }: {
   fullName: string;
   email: string | null;
   role: string;
-  isAdmin: boolean;
+  permissions: PermissionMap;
   unreadMessages: number;
   children: React.ReactNode;
 }) {
@@ -33,7 +34,7 @@ export function AppShell({
         <SotwiseLogo className="h-16" />
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        <SidebarNav isAdmin={isAdmin} onNavigate={onNavigate} />
+        <SidebarNav permissions={permissions} onNavigate={onNavigate} />
       </div>
       <div className="border-t p-3">
         <UserCard fullName={fullName} email={email} role={role} />

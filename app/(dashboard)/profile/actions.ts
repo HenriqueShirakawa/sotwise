@@ -13,7 +13,7 @@ import {
 const PATH = "/profile";
 
 /**
- * Edita o próprio perfil (§3.1). `verifySession` em vez de `requireAdmin`: aqui
+ * Edita o próprio perfil (§3.1). `verifySession` em vez de `requireFeature`: aqui
  * qualquer usuário mexe no que é dele. O id vem SEMPRE da sessão, nunca do
  * cliente — senão daria para editar o perfil alheio mandando outro id.
  */

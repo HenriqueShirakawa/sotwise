@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
+import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -329,13 +330,19 @@ export function ShipmentDetailClient({
   factories,
   dates,
   canDelete,
+  viewPrefs,
+  currentUserId,
 }: {
   shipment: ShipmentDetail;
   batches: ShipmentBatchRow[];
   steps: ShipmentStepRow[];
   profiles: Ref[];
-  /** Só admin desfaz embarque (ver deleteShipment) — sem isso o botão só daria erro. */
+  /** Exige o `delete` da feature Shipments (ver deleteShipment) — sem isso o
+   * botão só daria erro. */
   canDelete: boolean;
+  /** Preferências de visualização do usuário — não restringem nada. */
+  viewPrefs: ViewPrefs;
+  currentUserId: string;
   /** Repassado ao modal de ETD aberto pelo "View parts". */
   factories: Ref[];
   dates: {
@@ -352,6 +359,13 @@ export function ShipmentDetailClient({
   const [partsOf, setPartsOf] = useState<ShipmentBatchRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para o
+  // contador de progresso — esconder etapa é preferência de leitura.
+  const visibleSteps = useMemo(
+    () => filterSteps(steps, viewPrefs, currentUserId),
+    [steps, viewPrefs, currentUserId]
+  );
 
   function handleDelete() {
     startTransition(async () => {
@@ -561,7 +575,12 @@ export function ShipmentDetailClient({
           </button>
         </div>
         <div className="border-t">
-          {steps.map((s) => {
+          {visibleSteps.length === 0 && steps.length > 0 ? (
+            <p className="px-6 py-6 text-sm text-muted-foreground">
+              No steps match your checklist view preferences.
+            </p>
+          ) : null}
+          {visibleSteps.map((s) => {
             const open = isStepOpen(s.step);
             // Etapas #11–17 são consulta: a edição delas acontecia enquanto o
             // PL ainda estava na tela de Pre-loading (docs §3.10.4).

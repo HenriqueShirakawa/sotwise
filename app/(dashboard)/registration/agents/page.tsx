@@ -1,10 +1,10 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { AgentsClient } from "./agents-client";
 
 export default async function AgentsPage() {
-  await verifySession();
+  await requireFeature("registration");
 
   const admin = createAdminClient();
   const [agentsRes, countriesRes, contactsRes, linksRes] = await Promise.all([

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { businessUnitSchema, type ActionResult } from "@/domain/registration/schema";
 import { isExternalIcon } from "@/domain/registration/business-unit-icon";
@@ -41,7 +41,7 @@ async function uploadIcon(
 }
 
 export async function createBusinessUnit(formData: FormData): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("registration", "create");
 
   const parsed = businessUnitSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
@@ -69,7 +69,7 @@ export async function updateBusinessUnit(
   id: string,
   formData: FormData
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "edit");
 
   const parsed = businessUnitSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
@@ -110,7 +110,7 @@ export async function updateBusinessUnit(
 
 /** Soft delete — o arquivo fica no bucket, junto com o registro escondido. */
 export async function deleteBusinessUnit(id: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "delete");
 
   const admin = createAdminClient();
   const { error } = await admin

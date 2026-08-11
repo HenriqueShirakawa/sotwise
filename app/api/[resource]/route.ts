@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import { requireApiSession } from "@/lib/api-auth";
+import { requireApiFeature, requireApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { RESOURCES } from "@/domain/api/registry";
 
@@ -36,6 +36,10 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ resourc
   const auth = await requireApiSession();
   if (!auth.ok) return auth.response;
 
+  // Todos os recursos da API são cadastros de Registration.
+  const denied = requireApiFeature(auth.session, "registration", "view");
+  if (denied) return denied;
+
   const params = request.nextUrl.searchParams;
   const q = params.get("q")?.trim();
   const limit = Math.min(Number(params.get("limit")) || MAX_LIMIT, MAX_LIMIT);
@@ -58,6 +62,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ resour
 
   const auth = await requireApiSession();
   if (!auth.ok) return auth.response;
+
+  const denied = requireApiFeature(auth.session, "registration", "create");
+  if (denied) return denied;
 
   const body = await request.json().catch(() => null);
   const parsed = cfg.schema.safeParse(body);

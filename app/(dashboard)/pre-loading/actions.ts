@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -118,7 +118,7 @@ async function syncRelations(
 }
 
 export async function createPreLoading(input: PreLoadingInput): Promise<CreateResult> {
-  const session = await verifySession();
+  const session = await requireFeature("pre_loading", "create");
 
   const parsed = preLoadingSchema.safeParse(input);
   if (!parsed.success) {
@@ -183,7 +183,7 @@ export async function updatePreLoading(
   id: string,
   input: PreLoadingInput
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("pre_loading", "edit");
 
   const parsed = preLoadingSchema.safeParse(input);
   if (!parsed.success) {
@@ -213,7 +213,7 @@ export async function updatePreLoading(
 }
 
 export async function deletePreLoading(id: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("pre_loading", "delete");
 
   const admin = createAdminClient();
 

@@ -9,7 +9,7 @@ export default async function DashboardLayout({
 }) {
   // Defesa em profundidade: além do proxy otimista, a DAL confirma sessão,
   // profile e status. Redireciona se ausente / blocked.
-  const { profile, email, role, isAdmin, userId } = await verifySession();
+  const { profile, email, role, permissions, userId } = await verifySession();
   const unreadMessages = await countUnreadMessages(userId);
 
   return (
@@ -17,7 +17,7 @@ export default async function DashboardLayout({
       fullName={profile.full_name}
       email={email}
       role={role}
-      isAdmin={isAdmin}
+      permissions={permissions}
       unreadMessages={unreadMessages}
     >
       {children}

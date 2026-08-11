@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import type { BatchStatus } from "@/types/database";
@@ -83,7 +83,7 @@ type StepRow = {
 };
 
 export default async function PreLoadingPage() {
-  const { profile } = await verifySession();
+  const { profile } = await requireFeature("pre_loading");
   const admin = createAdminClient();
 
   const [

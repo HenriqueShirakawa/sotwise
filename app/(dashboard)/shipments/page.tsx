@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { PageHeader } from "@/components/page-header";
@@ -59,7 +59,7 @@ type StepRow = {
 const stepDate = (s: StepRow | undefined) => s?.completed_on ?? s?.estimated_date ?? null;
 
 export default async function ShipmentsPage() {
-  const { profile } = await verifySession();
+  const { profile } = await requireFeature("shipments");
   const admin = createAdminClient();
 
   // Tabelas inteiras via fetchAll (há ~1.3k shipments) + os cadastros pequenos.
