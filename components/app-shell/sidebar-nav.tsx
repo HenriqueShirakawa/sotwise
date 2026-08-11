@@ -6,13 +6,14 @@ import { usePathname } from "next/navigation";
 import { ChevronDown, ExternalLink } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import type { PermissionMap } from "@/domain/access/features";
 import { NAV, type NavGroup } from "./nav";
 
 export function SidebarNav({
-  isAdmin,
+  permissions,
   onNavigate,
 }: {
-  isAdmin: boolean;
+  permissions: PermissionMap;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -20,7 +21,8 @@ export function SidebarNav({
   return (
     <nav className="grid gap-1">
       {NAV.map((item) => {
-        if (item.adminOnly && !isAdmin) return null;
+        // Mapa já resolvido no servidor (lib/dal.ts) — aqui é só exibição.
+        if (!permissions[item.feature].view) return null;
 
         if (item.type === "group") {
           return (

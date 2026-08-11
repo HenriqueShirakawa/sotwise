@@ -5,6 +5,15 @@ import { headers } from "next/headers";
 
 import { getUser } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  FEATURE_KEYS,
+  FULL_ACCESS,
+  resolvePermissions,
+  type FeatureAction,
+  type FeatureKey,
+  type GrantRow,
+  type PermissionMap,
+} from "@/domain/access/features";
 
 /**
  * Guarda de autenticação dos Route Handlers da API (app/api/**).
@@ -28,7 +37,18 @@ export type ApiSession = {
   isAdmin: boolean;
   /** true quando entrou pelo `Authorization: Bearer` (não por cookie). */
   viaToken: boolean;
+  /**
+   * Permissões por feature. Quem entra por TOKEN recebe acesso total: é a
+   * integração máquina-a-máquina (GSS), que não tem papel no RBAC e quebraria
+   * se dependesse de linha em `role_features`. Quem entra por COOKIE carrega as
+   * mesmas permissões que teria na UI.
+   */
+  permissions: PermissionMap;
 };
+
+const TOKEN_PERMISSIONS: PermissionMap = Object.fromEntries(
+  FEATURE_KEYS.map((key) => [key, { ...FULL_ACCESS }])
+) as PermissionMap;
 
 export type ApiAuthResult =
   | { ok: true; session: ApiSession }
@@ -56,7 +76,13 @@ export async function requireApiSession(): Promise<ApiAuthResult> {
       if (safeEqual(token, expected)) {
         return {
           ok: true,
-          session: { userId: null, email: null, isAdmin: true, viaToken: true },
+          session: {
+            userId: null,
+            email: null,
+            isAdmin: true,
+            viaToken: true,
+            permissions: TOKEN_PERMISSIONS,
+          },
         };
       }
       return { ok: false, response: json({ error: "Invalid token" }, 401) };
@@ -91,13 +117,46 @@ export async function requireApiSession(): Promise<ApiAuthResult> {
     .eq("id", profile.role_id)
     .single();
 
+  const roleName = role?.name ?? "user";
+  const isOwner = roleName === "owner";
+
+  const grantColumns = "feature_key, can_view, can_create, can_edit, can_delete";
+  const [roleGrants, userGrants] = isOwner
+    ? [[], []]
+    : await Promise.all([
+        admin
+          .from("role_features")
+          .select(grantColumns)
+          .eq("role_id", profile.role_id)
+          .then((r) => (r.data ?? []) as GrantRow[]),
+        admin
+          .from("user_features")
+          .select(grantColumns)
+          .eq("user_id", user.id)
+          .then((r) => (r.data ?? []) as GrantRow[]),
+      ]);
+
   return {
     ok: true,
     session: {
       userId: user.id,
       email: user.email ?? null,
-      isAdmin: (role?.name ?? "user") === "admin",
+      isAdmin: roleName === "admin",
       viaToken: false,
+      permissions: resolvePermissions({ isOwner, roleGrants, userGrants }),
     },
   };
+}
+
+/**
+ * Checagem de feature para Route Handler — devolve 403 JSON em vez de
+ * redirecionar (o equivalente de `requireFeature` para a API).
+ */
+export function requireApiFeature(
+  session: ApiSession,
+  feature: FeatureKey,
+  action: FeatureAction
+): Response | null {
+  if (session.permissions[feature][action]) return null;
+  return json({ error: "Forbidden" }, 403);
 }

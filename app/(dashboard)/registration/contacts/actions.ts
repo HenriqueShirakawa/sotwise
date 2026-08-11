@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   contactSchema,
@@ -23,7 +23,7 @@ function toRow(input: ContactInput) {
 }
 
 export async function createContact(input: ContactInput): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("registration", "create");
 
   const parsed = contactSchema.safeParse(input);
   if (!parsed.success) {
@@ -41,7 +41,7 @@ export async function createContact(input: ContactInput): Promise<ActionResult> 
 }
 
 export async function updateContact(id: string, input: ContactInput): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "edit");
 
   const parsed = contactSchema.safeParse(input);
   if (!parsed.success) {
@@ -57,7 +57,7 @@ export async function updateContact(id: string, input: ContactInput): Promise<Ac
 }
 
 export async function deleteContact(id: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "delete");
 
   const admin = createAdminClient();
   const { error } = await admin

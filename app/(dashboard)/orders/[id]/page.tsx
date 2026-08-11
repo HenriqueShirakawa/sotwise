@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
+import { readViewPrefs } from "@/lib/view-prefs";
 import { displayBu } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -32,7 +33,7 @@ export default async function OrderDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await verifySession();
+  const { profile, userId } = await requireFeature("orders");
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -231,6 +232,8 @@ export default async function OrderDetailPage({
       factoriesByCategory={factoriesByCategory}
       profiles={profiles}
       steps={steps}
+      viewPrefs={readViewPrefs(profile.ui_preferences)}
+      currentUserId={userId}
     />
   );
 }

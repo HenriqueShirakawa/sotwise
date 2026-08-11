@@ -1,11 +1,11 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
 import { createOrderTypes, updateOrderType, deleteOrderType } from "./actions";
 
 export default async function OrderTypesPage() {
-  await verifySession();
+  await requireFeature("registration");
   const admin = createAdminClient();
   const { data } = await admin
     .from("order_types")

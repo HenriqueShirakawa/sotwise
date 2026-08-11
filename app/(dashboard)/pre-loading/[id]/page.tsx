@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
+import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 
@@ -69,7 +70,7 @@ export default async function PreLoadingChecklistPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { userId } = await verifySession();
+  const { userId, profile } = await requireFeature("pre_loading");
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -285,6 +286,7 @@ export default async function PreLoadingChecklistPage({
       currentUserId={userId}
       preloadingLeaderId={pl.leader_id}
       alreadyShipped={pl.shipping_confirmed_at != null}
+      viewPrefs={readViewPrefs(profile.ui_preferences)}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   externalIconUrl,
@@ -10,7 +10,7 @@ import { BusinessUnitsClient } from "./business-units-client";
 const BUCKET = "business-units";
 
 export default async function BusinessUnitsPage() {
-  await verifySession();
+  await requireFeature("registration");
 
   const admin = createAdminClient();
   const { data } = await admin

@@ -2,7 +2,7 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { bulkNamesSchema, nameSchema, type ActionResult } from "./schema";
 
@@ -74,7 +74,7 @@ export async function createSimpleNames(
   path: string,
   names: string[]
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("registration", "create");
 
   const parsed = bulkNamesSchema.safeParse({ names });
   if (!parsed.success) {
@@ -115,7 +115,7 @@ export async function updateSimpleName(
   id: string,
   name: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "edit");
 
   const parsed = nameSchema.safeParse(name);
   if (!parsed.success) {
@@ -147,7 +147,7 @@ export async function deleteSimple(
   path: string,
   id: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "delete");
 
   const admin = createAdminClient();
   const { error } = await admin

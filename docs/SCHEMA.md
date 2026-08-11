@@ -9,7 +9,8 @@ com o banco externo (**GSS**) que passa a ser responsável pelas bibliotecas.
   divergem, o que está aqui é o que existe no banco (ver §7).
 - **Fonte de verdade das regras de negócio:** [`docs/regras_de_negocio.md`](regras_de_negocio.md).
 - **Contrato da API REST das bibliotecas:** [`docs/API.md`](API.md).
-- **35 tabelas**, 8 enums, schema `public`. RLS habilitado em modo *deny-all*:
+- **35 tabelas** (37 com a migration `20260811130000` de features, ainda não
+  aplicada — §7), 8 enums, schema `public`. RLS habilitado em modo *deny-all*:
   todo acesso é server-side com `service_role` atrás da DAL (`lib/dal.ts`).
 
 ---
@@ -173,7 +174,24 @@ faz `syncAgentContacts` na API.
 
 ### 5.1 Auth / RBAC
 
-**`roles`** (2 linhas: `admin`, `user`) — `id`, `name` NOT NULL unique, timestamps.
+**`roles`** (`admin`, `user` em prod; **`owner`** entra com a migration
+`20260811130000`, ainda não aplicada — §7) — `id`, `name` NOT NULL unique, timestamps.
+
+**`role_features`** / **`user_features`** — RBAC por *feature* (migration
+`20260811130000`, **ainda não aplicada em prod** — §7). O catálogo de features
+vive em código (`domain/access/features.ts`); estas tabelas guardam só a
+**concessão**. Ambas RLS deny-all.
+
+| Coluna | Tipo | Notas |
+|---|---|---|
+| `role_id` / `user_id` | uuid NOT NULL | → `roles` / `profiles`, `on delete cascade` |
+| `feature_key` | text NOT NULL | chave do catálogo; linha órfã (key removida) é ignorada na resolução |
+| `can_view` / `can_create` / `can_edit` / `can_delete` | boolean | `role_features`: NOT NULL default false. `user_features`: **nullable** (`null` = herda do papel; `true`/`false` sobrepõe nos dois sentidos) |
+| PK | — | `role_features` = (`role_id`, `feature_key`); `user_features` = (`user_id`, `feature_key`) |
+
+Resolução (`lib/dal.ts` + `resolvePermissions` em `domain/access/features.ts`):
+`owner` → tudo (bypass em **código**, nunca em dado) → `user_features` sobrepõe →
+`role_features` → `false` (fail closed).
 
 **`profiles`** (56) — espelho de `auth.users`:
 
@@ -187,7 +205,7 @@ faz `syncAgentContacts` na API.
 | `status` | `user_status` NOT NULL | `blocked` derruba a sessão a cada request (checado na DAL) |
 | `hidden` | boolean NOT NULL | oculta de listagens, não bloqueia login |
 | `slug` | text unique | |
-| `ui_preferences` | jsonb NOT NULL | visibilidade de colunas por lista (`orders`, `etd-factories`, `pre-loading`) |
+| `ui_preferences` | jsonb NOT NULL | namespace de colunas: visibilidade por lista (`orders`, `etd-factories`, `pre-loading`). Namespace `views`: preferências de visualização do checklist (only my steps / hide completed / hide disabled) — `lib/view-prefs.ts` |
 | `bubble_id` | text | |
 
 **`activity_logs`** — `user_id` → `profiles` NOT NULL, `action` NOT NULL,
@@ -353,7 +371,8 @@ lotes e 1.389 pre-loadings. Portanto:
 | Item | Estado |
 |---|---|
 | `gss_id` nas 14 bibliotecas | Migration `20260803120000` **não aplicada** em prod. |
-| `role_permissions`, `role_step_denies` | Modeladas no MD, **nunca criadas** (RBAC simplificado a `admin`/`user`). |
+| `role_features`, `user_features`, papel `owner` | Migration `20260811130000` (RBAC por feature) **escrita, não aplicada** em prod. As queries em `lib/dal.ts` já leem essas tabelas — **aplicar ANTES do deploy**, senão toda página protegida quebra. Depois, promover ao menos 1 usuário a `owner` (a tela `/access` é owner-only). |
+| `role_permissions`, `role_step_denies` | Modeladas no MD, **nunca criadas** — o RBAC por feature (acima) usa `role_features`/`user_features` no lugar. |
 | `etd_factories_view`, `todo_list_view` | Previstas no MD, **não existem** — as telas montam a consulta na aplicação. |
 | `checklist_phase` | Enum criado, nenhuma coluna usa. |
 | `orders.status` | Prod tem 9 valores (ganhou `partially_preloading` e `pre_loading` na migration `20260805120000`); o `init_schema` tem 7. |

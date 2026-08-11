@@ -87,6 +87,58 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["roles"]["Insert"]>;
         Relationships: [];
       };
+      /** Concessão por papel. `feature_key` é validada contra o catálogo em
+       * `domain/access/features.ts`, não por FK — o catálogo vive em código. */
+      role_features: {
+        Row: {
+          role_id: UUID;
+          feature_key: string;
+          can_view: boolean;
+          can_create: boolean;
+          can_edit: boolean;
+          can_delete: boolean;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          role_id: UUID;
+          feature_key: string;
+          can_view?: boolean;
+          can_create?: boolean;
+          can_edit?: boolean;
+          can_delete?: boolean;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["role_features"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Exceção por usuário. `null` em cada can_* = herda do papel; `false`
+       * explícito REVOGA o que o papel concede. */
+      user_features: {
+        Row: {
+          user_id: UUID;
+          feature_key: string;
+          can_view: boolean | null;
+          can_create: boolean | null;
+          can_edit: boolean | null;
+          can_delete: boolean | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          user_id: UUID;
+          feature_key: string;
+          can_view?: boolean | null;
+          can_create?: boolean | null;
+          can_edit?: boolean | null;
+          can_delete?: boolean | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["user_features"]["Insert"]>;
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: UUID;

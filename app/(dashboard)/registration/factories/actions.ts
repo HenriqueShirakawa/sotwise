@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   bulkNamesSchema,
@@ -14,7 +14,7 @@ const PATH = "/registration/factories";
 
 /** Cria uma ou várias factories (criação em lote). */
 export async function createFactories(names: string[]): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireFeature("registration", "create");
 
   const parsed = bulkNamesSchema.safeParse({ names });
   if (!parsed.success) {
@@ -37,7 +37,7 @@ export async function updateFactory(
   id: string,
   name: string
 ): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "edit");
 
   const parsed = nameSchema.safeParse(name);
   if (!parsed.success) {
@@ -57,7 +57,7 @@ export async function updateFactory(
 
 /** Soft delete: some das listagens, preserva histórico (§ convenções). */
 export async function deleteFactory(id: string): Promise<ActionResult> {
-  await verifySession();
+  await requireFeature("registration", "delete");
 
   const admin = createAdminClient();
   const { error } = await admin

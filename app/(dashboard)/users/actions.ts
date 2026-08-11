@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { requireAdmin } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   userCreateSchema,
@@ -22,7 +22,7 @@ const PATH = "/users";
  * de convite/reset for liberado. Não existe exclusão de usuário — só status.
  */
 export async function createUserRecord(input: UserCreateInput): Promise<ActionResult> {
-  await requireAdmin();
+  await requireFeature("users", "create");
 
   const parsed = userCreateSchema.safeParse(input);
   if (!parsed.success) {
@@ -62,7 +62,7 @@ export async function updateUserRecord(
   id: string,
   input: UserUpdateInput
 ): Promise<ActionResult> {
-  await requireAdmin();
+  await requireFeature("users", "edit");
 
   const parsed = userUpdateSchema.safeParse(input);
   if (!parsed.success) {
@@ -94,7 +94,7 @@ export async function setUserStatus(
   id: string,
   status: "active" | "blocked"
 ): Promise<ActionResult> {
-  const session = await requireAdmin();
+  const session = await requireFeature("users", "edit");
 
   if (id === session.userId && status === "blocked") {
     return { ok: false, error: "You cannot block your own account." };

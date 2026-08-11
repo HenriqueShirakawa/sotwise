@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/types/database";
 
@@ -62,7 +62,7 @@ async function loadOrderCounts(
 }
 
 export default async function ClientsPage() {
-  await verifySession();
+  await requireFeature("registration");
 
   const admin = createAdminClient();
   const [clientsRes, countriesRes, counts] = await Promise.all([
