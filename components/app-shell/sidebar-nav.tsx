@@ -39,27 +39,38 @@ export function SidebarNav({
           pathname === item.href || pathname.startsWith(item.href + "/");
         const Icon = item.icon;
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-              active
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-slate-600 hover:bg-slate-100"
-            )}
-          >
-            <Icon className="size-[18px] shrink-0" />
-            <span className="flex-1">{item.title}</span>
-            <ExternalLink
+          <div key={item.href} className="relative">
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "size-3.5 shrink-0",
-                active ? "text-white/70" : "text-slate-300"
+                "flex items-center gap-3 rounded-lg py-2.5 pl-3 pr-10 text-sm font-medium transition-colors",
+                active
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100"
               )}
-            />
-          </Link>
+            >
+              <Icon className="size-[18px] shrink-0" />
+              <span className="flex-1">{item.title}</span>
+            </Link>
+            {/* Abre a MESMA rota em nova aba. Âncora à parte: não se aninha <a> em <a>. */}
+            <a
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open ${item.title} in a new tab`}
+              title="Open in a new tab"
+              className={cn(
+                "absolute inset-y-0 right-0 flex items-center px-3 transition-colors",
+                active
+                  ? "text-white/70 hover:text-white"
+                  : "text-slate-300 hover:text-slate-500"
+              )}
+            >
+              <ExternalLink className="size-3.5 shrink-0" />
+            </a>
+          </div>
         );
       })}
     </nav>
