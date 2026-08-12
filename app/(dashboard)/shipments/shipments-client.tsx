@@ -340,10 +340,11 @@ export function ShipmentsClient({
         titleColumnId="pl_number"
         headerColumnIds={["status"]}
         emptyMessage="No shipments found."
+        breakpoint="720"
         onRowClick={(row) => router.push(`/shipments/${row.original.id}`)}
       />
 
-      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

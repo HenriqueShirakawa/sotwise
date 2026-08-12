@@ -264,6 +264,7 @@ export function UsersClient({
         data={filtered}
         defaultSorting={[{ id: "full_name", desc: false }]}
         cardHeaderColumnIds={["status", "actions"]}
+        cardBreakpoint="720"
         emptyMessage="No users found."
         filters={
           <Select

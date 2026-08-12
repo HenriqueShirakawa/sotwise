@@ -7,9 +7,24 @@ import { cn } from "@/lib/utils";
 export type ColumnLabels = Record<string, string>;
 
 /**
- * Versão em cards das listas — a tabela some abaixo de `lg` e cada linha vira um
- * card empilhado, com rolagem vertical em vez da horizontal. Reaproveita as
- * mesmas colunas do TanStack (inclusive `columnVisibility`), então o que o
+ * A partir de qual largura a tabela substitui os cards. A tela precisa casar
+ * este valor com o `hidden <bp>:block` da própria <Table>.
+ * - `lg` (default, 1024px): corte padrão — a sidebar come 256px na faixa tablet.
+ * - `720`: cards só no mobile real; de 720px pra cima já mostra a tabela.
+ */
+export type DataCardsBreakpoint = "lg" | "720";
+
+/** Classe que esconde os cards quando a tabela assume. Strings literais pra o
+ *  scanner do Tailwind gerar ambas as variantes. */
+const CARDS_HIDDEN_AT: Record<DataCardsBreakpoint, string> = {
+  lg: "lg:hidden",
+  "720": "min-[720px]:hidden",
+};
+
+/**
+ * Versão em cards das listas — a tabela some abaixo do breakpoint e cada linha
+ * vira um card empilhado, com rolagem vertical em vez da horizontal. Reaproveita
+ * as mesmas colunas do TanStack (inclusive `columnVisibility`), então o que o
  * usuário escolhe no menu "Columns" vale nos dois formatos.
  */
 export function DataCards<T>({
@@ -20,6 +35,7 @@ export function DataCards<T>({
   emptyMessage,
   onRowClick,
   className,
+  breakpoint = "lg",
 }: {
   rows: Row<T>[];
   /** Rótulos por coluna — necessário quando o header é componente (SortableHeader). */
@@ -31,12 +47,17 @@ export function DataCards<T>({
   emptyMessage: string;
   onRowClick?: (row: Row<T>) => void;
   className?: string;
+  /** Onde a tabela assume o lugar dos cards. Default `lg` — ver DataCardsBreakpoint. */
+  breakpoint?: DataCardsBreakpoint;
 }) {
+  const hiddenAt = CARDS_HIDDEN_AT[breakpoint];
+
   if (rows.length === 0) {
     return (
       <p
         className={cn(
-          "rounded-2xl border bg-white px-4 py-8 text-center text-sm text-muted-foreground lg:hidden",
+          "rounded-2xl border bg-white px-4 py-8 text-center text-sm text-muted-foreground",
+          hiddenAt,
           className
         )}
       >
@@ -46,7 +67,7 @@ export function DataCards<T>({
   }
 
   return (
-    <div className={cn("grid gap-3 lg:hidden", className)}>
+    <div className={cn("grid gap-3", hiddenAt, className)}>
       {rows.map((row) => {
         const cells = row.getVisibleCells();
         const title =

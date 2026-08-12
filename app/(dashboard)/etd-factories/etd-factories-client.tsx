@@ -388,10 +388,11 @@ export function EtdFactoriesClient({
         titleColumnId="po_batch"
         headerColumnIds={["batch_status"]}
         emptyMessage="No entries found."
+        breakpoint="720"
         onRowClick={(row) => openRow(row.original)}
       />
 
-      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

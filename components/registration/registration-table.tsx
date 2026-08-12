@@ -23,7 +23,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DataCards } from "@/components/data-cards";
+import { DataCards, type DataCardsBreakpoint } from "@/components/data-cards";
 import { cn } from "@/lib/utils";
 import {
   Table,
@@ -53,6 +53,7 @@ export function RegistrationTable<T>({
   filters,
   cardTitleColumnId,
   cardHeaderColumnIds,
+  cardBreakpoint = "lg",
   emptyMessage = "No records found.",
 }: {
   title: string;
@@ -71,6 +72,8 @@ export function RegistrationTable<T>({
   cardTitleColumnId?: string;
   /** Colunas fixadas no topo do card. Default: só "actions". */
   cardHeaderColumnIds?: string[];
+  /** Onde a tabela assume o lugar dos cards. Default `lg` — ver DataCards. */
+  cardBreakpoint?: DataCardsBreakpoint;
   emptyMessage?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>(defaultSorting);
@@ -118,10 +121,16 @@ export function RegistrationTable<T>({
         rows={table.getRowModel().rows}
         titleColumnId={cardTitleColumnId}
         headerColumnIds={cardHeaderColumnIds}
+        breakpoint={cardBreakpoint}
         emptyMessage={emptyMessage}
       />
 
-      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
+      <div
+        className={cn(
+          "hidden overflow-x-auto rounded-2xl border bg-white",
+          cardBreakpoint === "720" ? "min-[720px]:block" : "lg:block"
+        )}
+      >
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (

@@ -624,16 +624,20 @@ export function OrdersClient({
         profiles={profiles}
       />
 
+      {/* Cards só no mobile real (<720px); de 720 pra cima assume a tabela.
+          O breakpoint casa com o `min-[720px]:block` da <Table> abaixo e com o
+          corte da <ListToolbar>. Decisão do Henrique em 12/08/2026. */}
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
         titleColumnId="po_number"
         headerColumnIds={["status", "actions"]}
         emptyMessage="No orders found."
+        breakpoint="720"
         onRowClick={(row) => router.push(`/orders/${row.original.id}`)}
       />
 
-      <div className="hidden overflow-x-auto rounded-2xl border bg-white lg:block">
+      <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
           <TableHeader>
             {table.getHeaderGroups().map((hg) => (
