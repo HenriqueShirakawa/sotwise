@@ -32,11 +32,13 @@ import type { Ref } from "./pl-checklist-client";
 /** Uma entrada Factory×Category exibida na tabela do modal (uma linha por OFC). */
 export type ShipmentLine = {
   id: string; // order_factory_category.id
+  batch_id: string;
   factory: string;
   category: string;
   etd_initial: string | null;
   po_number: string;
   batch_number: string;
+  ship_requirement: string | null;
 };
 
 type LoadStatus = "none" | "partial" | "total";

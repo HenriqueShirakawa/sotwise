@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
+  Eye,
   Info,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -41,6 +42,7 @@ import {
   type StepPatch,
 } from "./actions";
 import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
+import { ViewBatchLinesModal } from "./view-batch-lines-modal";
 
 export type Ref = { id: string; name: string };
 
@@ -311,6 +313,7 @@ export function PlChecklistClient({
   const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
   const [shipOpen, setShipOpen] = useState(false);
+  const [viewBatch, setViewBatch] = useState<PlBatchRow | null>(null);
   const [pending, startTransition] = useTransition();
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para o
@@ -409,10 +412,11 @@ export function PlChecklistClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="hidden grid-cols-[1fr_1fr_1fr] gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
+        <div className="hidden grid-cols-[1fr_1fr_1fr_auto] gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
           <span>Client</span>
           <span>Order Number . Batches</span>
           <span>Status</span>
+          <span />
         </div>
         {batches.length === 0 ? (
           <p className="px-6 py-6 text-sm text-muted-foreground">
@@ -422,7 +426,7 @@ export function PlChecklistClient({
           batches.map((b) => (
             <div
               key={b.id}
-              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr] lg:items-center"
+              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center"
             >
               <RowField label="Client">
                 <span className="text-slate-700">{b.client ?? "—"}</span>
@@ -432,9 +436,19 @@ export function PlChecklistClient({
                   {b.po_number} {b.batch_number}
                 </span>
               </RowField>
-              <RowField label="Status" className="max-lg:col-span-2">
+              <RowField label="Status">
                 <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
               </RowField>
+              {/* Olho: abre o popup com as linhas (Factory × Category) do lote. */}
+              <button
+                type="button"
+                aria-label="View batch lines"
+                title="View batch lines"
+                onClick={() => setViewBatch(b)}
+                className="self-center justify-self-end text-slate-400 transition-colors hover:text-primary"
+              >
+                <Eye className="size-4" />
+              </button>
             </div>
           ))
         )}
@@ -690,6 +704,13 @@ export function PlChecklistClient({
           lines={shipmentLines}
         />
       )}
+
+      <ViewBatchLinesModal
+        open={!!viewBatch}
+        onOpenChange={(o) => !o && setViewBatch(null)}
+        batch={viewBatch}
+        lines={viewBatch ? shipmentLines.filter((l) => l.batch_id === viewBatch.id) : []}
+      />
     </div>
   );
 }
