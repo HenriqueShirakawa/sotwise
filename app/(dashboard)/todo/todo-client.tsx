@@ -145,6 +145,25 @@ export function TodoClient({
 
   const filterCount = activeFilterCount(filters);
 
+  // A aba manda na dupla PO/PL: em Order some o PL e fica o PO; em Preloading/
+  // Shipment é o inverso (as etapas de PL não têm PO próprio). Em "All" vale a
+  // preferência do usuário. Force por cima da visibilidade salva, sem gravar —
+  // trocar de aba não pode reescrever o que a pessoa escolheu.
+  const effectiveVisibility = useMemo<VisibilityState>(() => {
+    if (tab === "order") return { ...visibility, po_number: true, pl_number: false };
+    if (tab === "preloading" || tab === "shipment")
+      return { ...visibility, po_number: false, pl_number: true };
+    return visibility;
+  }, [visibility, tab]);
+
+  // O menu de colunas não oferece a coluna que a aba força a esconder.
+  const columnMenuOptions = useMemo<ColumnOption[]>(() => {
+    if (tab === "order") return COLUMN_OPTIONS.filter((o) => o.id !== "pl_number");
+    if (tab === "preloading" || tab === "shipment")
+      return COLUMN_OPTIONS.filter((o) => o.id !== "po_number");
+    return COLUMN_OPTIONS;
+  }, [tab]);
+
   const countByPhase = useMemo(() => {
     const m = { all: rows.length, order: 0, preloading: 0, shipment: 0 };
     for (const r of rows) m[r.phase] += 1;
@@ -265,7 +284,7 @@ export function TodoClient({
     onSortingChange: setSorting,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: visibility },
+    state: { sorting, columnVisibility: effectiveVisibility },
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -334,7 +353,7 @@ export function TodoClient({
           </Button>
         )}
         trailing={() => (
-          <ColumnsMenu columns={COLUMN_OPTIONS} visibility={visibility} onSave={saveVisibility} />
+          <ColumnsMenu columns={columnMenuOptions} visibility={visibility} onSave={saveVisibility} />
         )}
       />
 

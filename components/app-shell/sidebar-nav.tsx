@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, ExternalLink } from "lucide-react";
@@ -12,24 +12,59 @@ import { NAV, type NavGroup } from "./nav";
 export function SidebarNav({
   permissions,
   onNavigate,
+  collapsed = false,
 }: {
   permissions: PermissionMap;
   onNavigate?: () => void;
+  /** Trilho estreito (<1100px, sem hover): só o ícone num quadrado arredondado. */
+  collapsed?: boolean;
 }) {
   const pathname = usePathname();
 
   return (
-    <nav className="grid gap-1">
+    <nav className={cn("grid gap-1", collapsed && "justify-items-center")}>
       {NAV.map((item) => {
         // Mapa já resolvido no servidor (lib/dal.ts) — aqui é só exibição.
         if (!permissions[item.feature].view) return null;
 
+        // Grupo no trilho vira só o ícone (leva ao primeiro filho); a árvore
+        // completa aparece quando o trilho expande no hover.
         if (item.type === "group") {
+          if (collapsed) {
+            const childActive = item.children.some(
+              (c) => pathname === c.href || pathname.startsWith(c.href + "/")
+            );
+            return (
+              <RailIcon
+                key={item.title}
+                href={item.children[0]?.href ?? "#"}
+                icon={item.icon}
+                title={item.title}
+                active={childActive}
+                onNavigate={onNavigate}
+              />
+            );
+          }
           return (
             <GroupItem
               key={item.title}
               group={item}
               pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          );
+        }
+
+        if (collapsed) {
+          const active =
+            pathname === item.href || pathname.startsWith(item.href + "/");
+          return (
+            <RailIcon
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              title={item.title}
+              active={active}
               onNavigate={onNavigate}
             />
           );
@@ -74,6 +109,39 @@ export function SidebarNav({
         );
       })}
     </nav>
+  );
+}
+
+/** Item do trilho colapsado: só o ícone, num quadrado arredondado. */
+function RailIcon({
+  href,
+  icon: Icon,
+  title,
+  active,
+  onNavigate,
+}: {
+  href: string;
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-label={title}
+      title={title}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex size-10 items-center justify-center rounded-xl transition-colors",
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "text-slate-600 hover:bg-slate-100"
+      )}
+    >
+      <Icon className="size-[18px] shrink-0" />
+    </Link>
   );
 }
 

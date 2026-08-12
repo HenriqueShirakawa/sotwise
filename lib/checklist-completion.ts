@@ -28,6 +28,10 @@ export type ChecklistFacts = {
   // ── fase Order ────────────────────────────────────────────────────────────
   /** PO: entradas Factory × Category cadastradas no pedido. */
   factoryCategoryCount?: number;
+  /** Place the Order: fábricas distintas do pedido (agrupamento da etapa). */
+  placeOrderFactoriesTotal?: number;
+  /** Place the Order: quantas dessas fábricas já têm ao menos um documento. */
+  placeOrderFactoriesWithDoc?: number;
   /** ETD: "Initial date" preenchido em TODAS as entradas Factory × Category. */
   etdInitialFilled?: boolean;
   /** PI: só pedido do tipo Sales exige o documento (ver `piDocumentRequired`). */
@@ -67,9 +71,16 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
     case "pi":
       if (f.piDocumentRequired && noDocs) missing.push("a document");
       break;
-    case "place_the_order":
-      if (noDocs) missing.push("a document");
+    case "place_the_order": {
+      // Não basta UM documento na etapa: CADA fábrica do agrupamento precisa do
+      // seu. A etapa só fecha quando todas têm ao menos um doc anexado.
+      const total = f.placeOrderFactoriesTotal ?? 0;
+      const withDoc = f.placeOrderFactoriesWithDoc ?? 0;
+      if (total === 0) missing.push("a document for every factory");
+      else if (withDoc < total)
+        missing.push(`a document for every factory (${withDoc}/${total})`);
       break;
+    }
     case "etd":
       // Requisito herdado da tela de Orders: sem entrada não há o que preencher,
       // então `etdInitialFilled` já vem false nesse caso.

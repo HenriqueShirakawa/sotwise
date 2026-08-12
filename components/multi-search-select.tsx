@@ -5,6 +5,7 @@ import { Check, Search, X } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useWheelScroll } from "@/lib/use-wheel-scroll";
 
 /**
  * Seleção MÚLTIPLA com busca — versão multi do `SearchSelect`. Os escolhidos
@@ -24,6 +25,7 @@ export function MultiSearchSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const wheelRef = useWheelScroll<HTMLDivElement>();
 
   const nameById = new Map(options.map((o) => [o.id, o.name]));
   // Sem teto de resultados — mesma razão do `SearchSelect`: cadastro grande
@@ -82,7 +84,7 @@ export function MultiSearchSelect({
             className="h-9"
           />
         </div>
-        <div className="max-h-60 overflow-y-auto p-1">
+        <div ref={wheelRef} className="max-h-60 overflow-y-auto p-1">
           {filtered.length === 0 ? (
             <p className="px-2 py-1.5 text-sm text-muted-foreground">No results.</p>
           ) : (

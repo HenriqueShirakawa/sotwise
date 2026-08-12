@@ -11,7 +11,6 @@ import {
   ChevronsUpDown,
   Eye,
   Info,
-  Paperclip,
   Pencil,
   Plus,
   Trash2,
@@ -36,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { SearchSelect } from "@/components/search-select";
+import { AttachedDocuments } from "@/components/attached-documents";
 import { DatePicker } from "@/components/date-picker";
 import {
   Select,
@@ -248,17 +248,19 @@ function StepIcon({
   gated: boolean;
   title?: string;
 }) {
-  const icon = checked ? (
+  // Etapa desligada não se aplica a este pedido: fica sempre a bolinha cinza,
+  // nunca verde/laranja — não reflete conclusão nem cobrança em lugar nenhum.
+  const icon = !enabled ? (
+    <span className="inline-flex size-5 items-center justify-center rounded-full bg-slate-100">
+      <span className="size-2 rounded-full bg-slate-400" />
+    </span>
+  ) : checked ? (
     <CheckCircle2 className="size-5 fill-emerald-600 text-white" />
-  ) : enabled && gated ? (
+  ) : gated ? (
     <Info className="size-5 fill-amber-500 text-white" />
   ) : (
-    <span
-      className={`inline-flex size-5 items-center justify-center rounded-full ${
-        enabled ? "bg-blue-100" : "bg-slate-100"
-      }`}
-    >
-      <span className={`size-2 rounded-full ${enabled ? "bg-blue-600" : "bg-slate-400"}`} />
+    <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
+      <span className="size-2 rounded-full bg-blue-600" />
     </span>
   );
   return (
@@ -385,7 +387,7 @@ function ViewBatchModal({
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
             <div className="overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-4 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-4 gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -581,9 +583,9 @@ function EditBatchModal({
                 <DatePicker
                   value={shipRequirement}
                   onChange={(v) => setShipRequirement(v ?? "")}
-                  // h-10 casa com o trigger do SearchSelect ao lado (o campo
-                  // padrão do design system é h-8 e ficava mais baixo).
-                  className="mt-1.5 h-10"
+                  // Mesma altura padrão (h-8) do SearchSelect ao lado — os três
+                  // campos da linha ficam do mesmo tamanho.
+                  className="mt-1.5"
                 />
               </div>
             </div>
@@ -600,7 +602,7 @@ function EditBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -818,9 +820,9 @@ function CreateBatchModal({
                 <DatePicker
                   value={shipRequirement}
                   onChange={(v) => setShipRequirement(v ?? "")}
-                  // h-10 casa com o trigger do SearchSelect ao lado (o campo
-                  // padrão do design system é h-8 e ficava mais baixo).
-                  className="mt-1.5 h-10"
+                  // Mesma altura padrão (h-8) do SearchSelect ao lado — os três
+                  // campos da linha ficam do mesmo tamanho.
+                  className="mt-1.5"
                 />
               </div>
             </div>
@@ -835,7 +837,7 @@ function CreateBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
@@ -943,67 +945,18 @@ function AttachmentsSection({
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <Paperclip className="size-4 text-slate-400" />
-        <button
-          type="button"
-          className="text-xs text-muted-foreground enabled:hover:text-slate-700"
-          disabled={step.attachments.length === 0}
-          onClick={() => setOpen((v) => !v)}
-        >
-          Attached documents
-        </button>
-        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
-          {step.attachments.length} docs
-        </span>
-        {step.attachments.length > 0 && (
-          <ChevronDown
-            className={`size-3.5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        )}
-        <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto"
-          disabled={pending}
-          onClick={() => inputRef.current?.click()}
-        >
-          <Plus className="size-3.5" />
-          Attach
-        </Button>
-      </div>
-      {open && step.attachments.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {step.attachments.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-sm"
-            >
-              <button
-                type="button"
-                className="truncate text-primary hover:underline"
-                disabled={pending}
-                onClick={() => download(a)}
-              >
-                {a.file_name ?? "File"}
-              </button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-rose-500 hover:text-rose-600"
-                aria-label="Delete attachment"
-                disabled={pending}
-                onClick={() => removeAttachment(a)}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <>
+      <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
+      <AttachedDocuments
+        attachments={step.attachments}
+        pending={pending}
+        open={open}
+        onOpenChange={setOpen}
+        onDownload={download}
+        onAttach={() => inputRef.current?.click()}
+        onRemove={removeAttachment}
+      />
+    </>
   );
 }
 
@@ -1055,6 +1008,9 @@ export function OrderDetailClient({
   // anexos, entradas Factory×Category e ETD. Derivado aqui, uma vez.
   const checkedSteps = useMemo(() => {
     const piDocs = piDocumentRequired(order.type);
+    // Place the Order agrupa por fábrica e exige um doc em CADA uma — quantas
+    // fábricas o pedido tem e, por etapa, quantas já têm anexo.
+    const placeOrderFactoryIds = new Set(ofc.map((o) => o.factory_id));
     return steps.map((s) => {
       const facts: ChecklistFacts = {
         completedOn: s.completed_on,
@@ -1063,9 +1019,17 @@ export function OrderDetailClient({
         etdInitialFilled,
         piDocumentRequired: piDocs,
       };
+      if (s.step === "place_the_order") {
+        facts.placeOrderFactoriesTotal = placeOrderFactoryIds.size;
+        facts.placeOrderFactoriesWithDoc = new Set(
+          s.attachments
+            .map((a) => a.factory_id)
+            .filter((id): id is string => !!id && placeOrderFactoryIds.has(id))
+        ).size;
+      }
       return { ...s, facts, done: isStepChecked(s.step, facts) };
     });
-  }, [steps, ofc.length, etdInitialFilled, order.type]);
+  }, [steps, ofc, etdInitialFilled, order.type]);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para
   // qualquer regra que dependa do checklist completo — esconder uma etapa é
@@ -1304,7 +1268,9 @@ export function OrderDetailClient({
             </p>
           ) : (
             visibleSteps.map((s) => {
-              const open = isStepOpen(s.step);
+              // Etapa desligada nunca aparece expandida: some se estava aberta e
+              // trava — só volta a abrir se religarem pelo toggle.
+              const open = s.enabled && isStepOpen(s.step);
               const facts = s.facts;
               return (
                 <div key={s.step} className="border-b last:border-b-0">
@@ -1319,7 +1285,8 @@ export function OrderDetailClient({
                     />
                     <button
                       type="button"
-                      className={`flex-1 text-left text-sm font-medium ${
+                      disabled={!s.enabled}
+                      className={`flex-1 text-left text-sm font-medium disabled:cursor-default ${
                         s.enabled ? "text-slate-800" : "text-slate-400"
                       }`}
                       onClick={() => toggleStep(s.step)}
@@ -1338,6 +1305,8 @@ export function OrderDetailClient({
                     <button
                       type="button"
                       aria-label={open ? "Collapse" : "Expand"}
+                      disabled={!s.enabled}
+                      className="disabled:cursor-default disabled:opacity-40"
                       onClick={() => toggleStep(s.step)}
                     >
                       <ChevronDown
