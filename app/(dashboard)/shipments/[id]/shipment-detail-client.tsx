@@ -27,6 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/date-picker";
 import { StatusPill } from "@/components/status-pill";
 import { AttachedDocuments } from "@/components/attached-documents";
+import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 import { RowField } from "@/components/data-cards";
 import {
   Select,
@@ -300,6 +301,7 @@ export function ShipmentDetailClient({
   factories,
   dates,
   canDelete,
+  canEditInherited,
   viewPrefs,
   currentUserId,
 }: {
@@ -307,9 +309,11 @@ export function ShipmentDetailClient({
   batches: ShipmentBatchRow[];
   steps: ShipmentStepRow[];
   profiles: Ref[];
-  /** Exige o `delete` da feature Shipments (ver deleteShipment) — sem isso o
-   * botão só daria erro. */
+  /** Exige o `delete` da feature Shipments E embarque não entregue (ver
+   * deleteShipment) — sem isso o botão só daria erro. */
   canDelete: boolean;
+  /** Admin/owner: libera as etapas herdadas do Pre-loading para edição. */
+  canEditInherited: boolean;
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
   currentUserId: string;
@@ -553,8 +557,10 @@ export function ShipmentDetailClient({
           {visibleSteps.map((s) => {
             const open = isStepOpen(s.step);
             // Etapas #11–17 são consulta: a edição delas acontecia enquanto o
-            // PL ainda estava na tela de Pre-loading (docs §3.10.4).
-            const readOnly = PRE_LOADING_STEPS.includes(s.step);
+            // PL ainda estava na tela de Pre-loading (docs §3.10.4). Admin (e
+            // owner) pode corrigir mesmo depois do embarque — o servidor aplica
+            // a mesma trava, então o cadeado aqui não é a única defesa.
+            const readOnly = PRE_LOADING_STEPS.includes(s.step) && !canEditInherited;
             return (
               <div key={s.step} className="border-b last:border-b-0">
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
@@ -620,21 +626,33 @@ export function ShipmentDetailClient({
                           </div>
                           <div>
                             <Label className="text-xs text-muted-foreground">Responsible</Label>
-                            <Select
-                              value={s.responsible_id ?? ""}
-                              onValueChange={(v) => save(s.step, { responsible_id: v || null })}
-                            >
-                              <SelectTrigger className="mt-1 w-full bg-white">
-                                <SelectValue placeholder="Select" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {profiles.map((p) => (
-                                  <SelectItem key={p.id} value={p.id}>
-                                    {p.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            {/* Lista longa vira campo com busca — o Select do
+                                Radix só faz typeahead da primeira letra. */}
+                            {profiles.length > SEARCHABLE_FROM ? (
+                              <SearchSelect
+                                value={s.responsible_id ?? ""}
+                                onChange={(v) => save(s.step, { responsible_id: v || null })}
+                                options={profiles}
+                                placeholder="Select"
+                                className="mt-1"
+                              />
+                            ) : (
+                              <Select
+                                value={s.responsible_id ?? ""}
+                                onValueChange={(v) => save(s.step, { responsible_id: v || null })}
+                              >
+                                <SelectTrigger className="mt-1 w-full bg-white">
+                                  <SelectValue placeholder="Select" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {profiles.map((p) => (
+                                    <SelectItem key={p.id} value={p.id}>
+                                      {p.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
                           </div>
                           <div>
                             <Label className="text-xs text-muted-foreground">Completed on</Label>
@@ -682,6 +700,12 @@ export function ShipmentDetailClient({
                               className="mt-1 bg-white"
                             />
                           </div>
+                        )}
+                        {/* Etapa herdada aberta para o admin: os campos próprios
+                            dela (agentes, porto, booking…) seguem só de leitura
+                            — quem os edita é a tela de Pre-loading. */}
+                        {s.detail && (
+                          <InfoField label={STEP_LABELS[s.step] ?? ""} value={s.detail} />
                         )}
                       </>
                     )}

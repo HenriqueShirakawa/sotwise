@@ -6,17 +6,28 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useWheelScroll } from "@/lib/use-wheel-scroll";
+import { cn } from "@/lib/utils";
+
+/**
+ * Acima deste tamanho um Select vira SearchSelect (com busca por texto). Listas
+ * curtas (Order Type, Business Unit) seguem no Select simples, que é mais leve.
+ */
+export const SEARCHABLE_FROM = 10;
 
 export function SearchSelect({
   value,
   onChange,
   options,
   placeholder,
+  disabled = false,
+  className,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: { id: string; name: string }[];
   placeholder: string;
+  disabled?: boolean;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -33,6 +44,7 @@ export function SearchSelect({
     <Popover
       open={open}
       onOpenChange={(o) => {
+        if (disabled) return;
         setOpen(o);
         if (!o) setQuery("");
       }}
@@ -40,10 +52,19 @@ export function SearchSelect({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-white px-2.5 text-sm"
+          disabled={disabled}
+          className={cn(
+            "flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-white px-2.5 text-sm disabled:cursor-not-allowed disabled:bg-muted",
+            className
+          )}
         >
           <Search className="size-4 shrink-0 text-muted-foreground" />
-          <span className={selected ? "text-slate-800" : "text-muted-foreground"}>
+          <span
+            className={cn(
+              "truncate",
+              selected ? "text-slate-800" : "text-muted-foreground"
+            )}
+          >
             {selected?.name ?? placeholder}
           </span>
         </button>

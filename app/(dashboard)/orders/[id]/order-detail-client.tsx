@@ -34,7 +34,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
-import { SearchSelect } from "@/components/search-select";
+import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 import { AttachedDocuments } from "@/components/attached-documents";
 import { DatePicker } from "@/components/date-picker";
 import {
@@ -553,9 +553,11 @@ function EditBatchModal({
 
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            {/* Três colunas irmãs de mesma largura — antes Factory e Ship
-                requirement dividiam metade da linha e saíam menores que Category. */}
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* MESMA grade da tabela logo abaixo — colunas, gap e o px-3 da
+                borda —, então cada campo cai exatamente sobre a coluna que vai
+                preencher. Com três colunas iguais em cima e quatro embaixo,
+                nenhum campo batia com a sua coluna. */}
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-x-3 sm:px-3">
               <div>
                 <Label className="text-foreground">Category</Label>
                 <div className="mt-1.5">
@@ -588,6 +590,10 @@ function EditBatchModal({
                   className="mt-1.5"
                 />
               </div>
+              {/* "Batch No." e lixeira não têm campo aqui: só reservam a coluna
+                  (a lixeira é um botão size-7). */}
+              <div className="hidden sm:block" />
+              <div className="hidden sm:block sm:w-7" />
             </div>
             {/* Roxo (variant default) assim que Category+Factory+Ship req.
                 estão preenchidos; antes disso fica outline e desabilitado. */}
@@ -607,7 +613,9 @@ function EditBatchModal({
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span />
+                {/* Reserva a largura da lixeira das linhas (size-7), senão o
+                    cabeçalho distribui as colunas numa medida e as linhas noutra. */}
+                <span className="w-7" />
               </div>
               {pageRows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
@@ -790,9 +798,11 @@ function CreateBatchModal({
 
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            {/* Três colunas irmãs de mesma largura — antes Factory e Ship
-                requirement dividiam metade da linha e saíam menores que Category. */}
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* MESMA grade da tabela logo abaixo — colunas, gap e o px-3 da
+                borda —, então cada campo cai exatamente sobre a coluna que vai
+                preencher. Com três colunas iguais em cima e quatro embaixo,
+                nenhum campo batia com a sua coluna. */}
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-x-3 sm:px-3">
               <div>
                 <Label className="text-foreground">Category</Label>
                 <div className="mt-1.5">
@@ -825,6 +835,10 @@ function CreateBatchModal({
                   className="mt-1.5"
                 />
               </div>
+              {/* "Batch No." e lixeira não têm campo aqui: só reservam a coluna
+                  (a lixeira é um botão size-7). */}
+              <div className="hidden sm:block" />
+              <div className="hidden sm:block sm:w-7" />
             </div>
             <Button
               variant={canAdd ? "default" : "outline"}
@@ -842,7 +856,9 @@ function CreateBatchModal({
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span />
+                {/* Reserva a largura da lixeira das linhas (size-7), senão o
+                    cabeçalho distribui as colunas numa medida e as linhas noutra. */}
+                <span className="w-7" />
               </div>
               {rows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
@@ -1337,23 +1353,35 @@ export function OrderDetailClient({
                           <Label className="text-xs text-muted-foreground">
                             Responsible
                           </Label>
-                          <Select
-                            value={s.responsible_id ?? ""}
-                            onValueChange={(v) =>
-                              saveStepField(s, { responsible_id: v || null })
-                            }
-                          >
-                            <SelectTrigger className="mt-1 w-full bg-white">
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {profiles.map((p) => (
-                                <SelectItem key={p.id} value={p.id}>
-                                  {p.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          {/* Lista longa vira campo com busca — o Select do
+                              Radix só faz typeahead da primeira letra. */}
+                          {profiles.length > SEARCHABLE_FROM ? (
+                            <SearchSelect
+                              value={s.responsible_id ?? ""}
+                              onChange={(v) => saveStepField(s, { responsible_id: v || null })}
+                              options={profiles}
+                              placeholder="Select"
+                              className="mt-1"
+                            />
+                          ) : (
+                            <Select
+                              value={s.responsible_id ?? ""}
+                              onValueChange={(v) =>
+                                saveStepField(s, { responsible_id: v || null })
+                              }
+                            >
+                              <SelectTrigger className="mt-1 w-full bg-white">
+                                <SelectValue placeholder="Select" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {profiles.map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>
+                                    {p.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </div>
                         <div>
                           <Label className="text-xs text-muted-foreground">

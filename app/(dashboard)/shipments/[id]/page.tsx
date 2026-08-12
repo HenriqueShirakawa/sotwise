@@ -69,7 +69,7 @@ export default async function ShipmentDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { permissions, profile, userId } = await requireFeature("shipments");
+  const { permissions, profile, userId, isAdmin, isOwner } = await requireFeature("shipments");
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -105,6 +105,7 @@ export default async function ShipmentDetailPage({
     polRes,
     agentRes,
     contactRes,
+    agentContactRes,
     clientRes,
   ] = await Promise.all([
     admin
@@ -153,6 +154,11 @@ export default async function ShipmentDetailPage({
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("contacts").select("id, name").range(from, to)
     ),
+    // Contatos por agente: a etapa Agents só exige contato quando o agente
+    // escolhido tem algum cadastrado (ver lib/checklist-completion).
+    fetchAll<{ agent_id: string }>((from, to) =>
+      admin.from("agent_contacts").select("agent_id").range(from, to)
+    ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("clients").select("id, name").range(from, to)
     ),
@@ -165,6 +171,10 @@ export default async function ShipmentDetailPage({
   const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
   const agentNameById = new Map(agentRes.map((a) => [a.id, a.name]));
   const contactNameById = new Map(contactRes.map((c) => [c.id, c.name]));
+  const contactCountByAgent: Record<string, number> = {};
+  for (const ac of agentContactRes) {
+    contactCountByAgent[ac.agent_id] = (contactCountByAgent[ac.agent_id] ?? 0) + 1;
+  }
 
   const clients = (plClientsRes.data ?? [])
     .map((c) => clientNameById.get(c.client_id))
@@ -320,6 +330,8 @@ export default async function ShipmentDetailPage({
           s.contact_brazil_id && `(${contactNameById.get(s.contact_brazil_id) ?? "—"})`,
           s.agent_china_id && `China: ${agentNameById.get(s.agent_china_id) ?? "—"}`,
           s.contact_china_id && `(${contactNameById.get(s.contact_china_id) ?? "—"})`,
+          // "Additional infos" da etapa (coluna `notes` do checklist do PL).
+          s.notes?.trim() && s.notes.trim(),
         ].filter(Boolean);
         return parts.length ? parts.join(" · ") : null;
       }
@@ -351,7 +363,7 @@ export default async function ShipmentDetailPage({
     const attachments = attachmentsByStepId.get(s.id) ?? [];
     // Mesma regra das outras duas telas (ver lib/checklist-completion). Resolvida
     // aqui porque a tela só recebe os valores da etapa já virados em texto.
-    const facts = plStepFacts(s, attachments.length);
+    const facts = plStepFacts(s, attachments.length, contactCountByAgent);
     return {
       step,
       done: isStepChecked(step, facts),
@@ -417,7 +429,9 @@ export default async function ShipmentDetailPage({
       profiles={profiles}
       factories={factories}
       dates={dates}
-      canDelete={permissions.shipments.delete}
+      // Entregue não se desfaz (a action recusa igual): o botão some.
+      canDelete={permissions.shipments.delete && shipment.status !== "delivered"}
+      canEditInherited={isAdmin || isOwner}
       viewPrefs={readViewPrefs(profile.ui_preferences)}
       currentUserId={userId}
     />

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
@@ -29,6 +30,21 @@ type Admin = ReturnType<typeof createAdminClient>;
 function paths(shipmentId: string) {
   return [`/shipments/${shipmentId}`, "/shipments"];
 }
+
+/**
+ * As etapas #11–17 são preenchidas na tela de Pre-loading e chegam aqui só para
+ * leitura — o embarque já foi confirmado em cima delas. Admin (e owner) pode
+ * corrigir mesmo assim; para os demais a tela mostra cadeado e o servidor
+ * recusa, senão bastaria chamar a action direto.
+ */
+function canEditInheritedStep(
+  step: ChecklistStep,
+  session: { isAdmin: boolean; isOwner: boolean }
+): boolean {
+  return !PRELOADING_STEPS.includes(step) || session.isAdmin || session.isOwner;
+}
+
+const INHERITED_DENIED = "Only an admin can edit a step inherited from the Pre-loading.";
 
 /** Id da etapa, criando a linha se ainda não existir. */
 async function ensureStepId(
@@ -105,6 +121,7 @@ export async function saveShipmentStep(
   patch: ShipmentStepPatch
 ): Promise<ActionResult> {
   const session = await requireFeature("shipments", "edit");
+  if (!canEditInheritedStep(step, session)) return { ok: false, error: INHERITED_DENIED };
   const admin = createAdminClient();
 
   const { data: existing, error: readError } = await admin
@@ -160,6 +177,7 @@ export async function uploadShipmentStepAttachment(
   formData: FormData
 ): Promise<ActionResult> {
   const session = await requireFeature("shipments", "edit");
+  if (!canEditInheritedStep(step, session)) return { ok: false, error: INHERITED_DENIED };
   const admin = createAdminClient();
 
   const file = formData.get("file");
@@ -215,8 +233,21 @@ export async function deleteShipmentStepAttachment(
   attachmentId: string,
   filePath: string
 ): Promise<ActionResult> {
-  await requireFeature("shipments", "edit");
+  const session = await requireFeature("shipments", "edit");
   const admin = createAdminClient();
+
+  // A etapa não vem por parâmetro: resolve pelo anexo para aplicar a mesma
+  // trava das etapas herdadas do Pre-loading.
+  const { data: att, error: attErr } = await admin
+    .from("step_attachments")
+    .select("pre_loading_checklist_steps(step)")
+    .eq("id", attachmentId)
+    .maybeSingle<{ pre_loading_checklist_steps: { step: ChecklistStep } | null }>();
+  if (attErr) return { ok: false, error: attErr.message };
+  const attStep = att?.pre_loading_checklist_steps?.step;
+  if (attStep && !canEditInheritedStep(attStep, session)) {
+    return { ok: false, error: INHERITED_DENIED };
+  }
 
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
   if (error) return { ok: false, error: error.message };
@@ -249,11 +280,16 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
 
   const { data: shipment, error: shipErr } = await admin
     .from("shipments")
-    .select("id, pre_loading_id")
+    .select("id, pre_loading_id, status, created_at")
     .eq("id", shipmentId)
     .maybeSingle();
   if (shipErr) return { ok: false, error: shipErr.message };
   if (!shipment) return { ok: false, error: "Shipment not found." };
+  // Embarque entregue não se desfaz: a carga chegou, e reverter mexeria no
+  // status de lotes e Orders já encerrados.
+  if (shipment.status === "delivered") {
+    return { ok: false, error: "A delivered shipment can't be deleted." };
+  }
 
   // Lotes embarcados = os lotes do PL.
   const { data: links, error: linkErr } = await admin
@@ -264,20 +300,37 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   const origIds = (links ?? []).map((l) => l.batch_id);
   if (origIds.length === 0) return { ok: false, error: "Shipment has no batches." };
 
-  // Lotes que o split criou (a parte que NÃO embarcou).
+  // Lotes que receberam a parte que NÃO embarcou. Dois casos, separados pela
+  // data de criação: os que NASCERAM neste split (depois do embarque) e os que
+  // já existiam e só receberam as linhas (regra do "próximo lote aberto" em
+  // confirmShipping). Apagar um lote que já existia levaria junto a produção
+  // que era dele — por isso a distinção.
   const { data: children, error: childErr } = await admin
     .from("batches")
-    .select("id, status, split_from_batch_id")
+    .select("id, status, split_from_batch_id, created_at")
     .in("split_from_batch_id", origIds);
   if (childErr) return { ok: false, error: childErr.message };
   const childIds = (children ?? []).map((c) => c.id);
+  // O shipment é gravado ANTES do split (ver confirmShipping), então o lote que
+  // nasceu ali é sempre mais novo que ele.
+  const shipmentAt = Date.parse(shipment.created_at);
+  const bornHere = (children ?? []).filter((c) => Date.parse(c.created_at) >= shipmentAt);
+  const merged = (children ?? []).filter((c) => Date.parse(c.created_at) < shipmentAt);
 
   // Guard: só reverte se cada lote do split continua intacto.
   if (childIds.length) {
-    if ((children ?? []).some((c) => c.status !== "in_production")) {
+    if (bornHere.some((c) => c.status !== "in_production")) {
       return {
         ok: false,
         error: "Can't undo this shipment: a batch created by the split already moved forward.",
+      };
+    }
+    // O lote que já existia pode estar em negociação ou produção; qualquer
+    // coisa além disso quer dizer que a produção dele já seguiu.
+    if (merged.some((c) => c.status !== "in_production" && c.status !== "in_negotiation")) {
+      return {
+        ok: false,
+        error: "Can't undo this shipment: the batch that received the split already moved forward.",
       };
     }
     const { data: childInPl, error: e1 } = await admin
@@ -305,17 +358,40 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   }
 
   // Desfaz o split: cada linha Factory×Category volta ao lote de origem...
-  for (const child of children ?? []) {
+  for (const child of bornHere) {
     const { error } = await admin
       .from("order_factory_category")
       .update({ batch_id: child.split_from_batch_id })
       .eq("batch_id", child.id);
     if (error) return { ok: false, error: error.message };
   }
-  // ...e os lotes do split somem.
-  if (childIds.length) {
-    const { error } = await admin.from("batches").delete().in("id", childIds);
+  // ...e os lotes que nasceram no split somem.
+  if (bornHere.length) {
+    const { error } = await admin
+      .from("batches")
+      .delete()
+      .in("id", bornHere.map((c) => c.id));
     if (error) return { ok: false, error: error.message };
+  }
+
+  // No lote que já existia, voltam só as linhas que ESTE embarque empurrou pra
+  // lá — reconhecíveis pelo loading_status gravado no Confirm Shipping. O que
+  // era dele fica onde está, e o lote não é apagado.
+  for (const child of merged) {
+    const { error } = await admin
+      .from("order_factory_category")
+      .update({ batch_id: child.split_from_batch_id })
+      .eq("batch_id", child.id)
+      .in("loading_status", ["none", "partial"]);
+    if (error) return { ok: false, error: error.message };
+
+    // A linhagem foi anotada por este embarque; sem ele, o lote volta a não ter
+    // origem registrada.
+    const { error: lnErr } = await admin
+      .from("batches")
+      .update({ split_from_batch_id: null })
+      .eq("id", child.id);
+    if (lnErr) return { ok: false, error: lnErr.message };
   }
 
   // O loading_status era do embarque desfeito.
