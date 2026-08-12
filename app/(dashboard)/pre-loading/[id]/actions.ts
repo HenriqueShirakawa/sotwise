@@ -7,7 +7,7 @@ import { isStepChecked, plStepFacts, validateStepDates } from "@/lib/checklist-c
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChecklistStep } from "@/types/database";
+import type { BatchStatus, ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -199,6 +199,26 @@ const PL_STEPS: ChecklistStep[] = [
   "loading_date",
 ];
 
+/** Lote do pedido, no mínimo que o split consulta. */
+type OrderBatchRow = {
+  id: string;
+  batch_number: string;
+  status: BatchStatus;
+  split_from_batch_id: string | null;
+};
+
+/** ".03" → 3. Sufixo não numérico conta como 0 (dado migrado do Bubble). */
+function batchNum(batchNumber: string): number {
+  const n = Number(String(batchNumber).replace(/^\./, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Status de lote que ainda aceita receber a produção que não carregou. Lote
+ * embarcado/entregue não entra: a produção dele já foi.
+ */
+const MERGEABLE_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
+
 export type ConfirmShippingInput = {
   container_number: string;
   seal_number: string;
@@ -217,7 +237,9 @@ export type ConfirmShippingInput = {
  * 3.9.6 + split 3.7.2). Cria o shipment 1:1, grava o loading_status de cada
  * entrada Factory×Category, e roda o split por lote:
  *   - entradas Total ficam no lote, que vai para `in_transit`;
- *   - entradas Partial migram para um lote novo (nasce `in_production`).
+ *   - entradas None/Partial migram para o próximo lote do pedido que já esteja
+ *     aberto (in negotiation / in production) ou, se não houver, para um lote
+ *     novo (nasce `in_production`).
  * Por fim marca o PL como confirmado (sai da lista de Pre-loading).
  *
  * ⚠️ Sem transação (PostgREST não expõe uma pelo client): a criação do shipment
@@ -285,10 +307,28 @@ export async function confirmShipping(
   }
 
   const byStep = new Map((steps ?? []).map((s) => [s.step, s]));
+
+  // Contatos dos agentes escolhidos: sem nenhum cadastrado, Contact Brazil /
+  // Contact China deixam de ser exigência da etapa Agents (mesma regra da tela).
+  const agentsStep = byStep.get("agents");
+  const agentIds = [agentsStep?.agent_brazil_id, agentsStep?.agent_china_id].filter(
+    (id): id is string => !!id
+  );
+  const { data: agentContacts } = agentIds.length
+    ? await admin.from("agent_contacts").select("agent_id").in("agent_id", agentIds)
+    : { data: [] };
+  const contactCountByAgent: Record<string, number> = {};
+  for (const ac of agentContacts ?? []) {
+    contactCountByAgent[ac.agent_id] = (contactCountByAgent[ac.agent_id] ?? 0) + 1;
+  }
+
   const pending = PL_STEPS.filter((step) => {
     const s = byStep.get(step);
     if (!s) return true;
-    return !isStepChecked(step, plStepFacts(s, attachmentCount.get(s.id) ?? 0));
+    return !isStepChecked(
+      step,
+      plStepFacts(s, attachmentCount.get(s.id) ?? 0, contactCountByAgent)
+    );
   });
   if (pending.length > 0) {
     return {
@@ -356,36 +396,83 @@ export async function confirmShipping(
     nonTotalByBatch.set(o.batch_id, arr);
   }
 
-  // Próximo ".NN" por pedido (maior sufixo entre os lotes existentes + 1, por split).
+  // Lotes existentes de cada pedido: servem para numerar o lote novo e para
+  // achar um lote seguinte que já esteja aberto.
+  const batchesByOrder = new Map<string, OrderBatchRow[]>();
   const nextNumByOrder = new Map<string, number>();
   for (const orderId of new Set((batches ?? []).map((b) => b.order_id))) {
-    const { data: all } = await admin.from("batches").select("batch_number").eq("order_id", orderId);
-    const max = (all ?? []).reduce((m, b) => {
-      const n = Number(String(b.batch_number).replace(/^\./, ""));
-      return Number.isFinite(n) && n > m ? n : m;
-    }, 0);
-    nextNumByOrder.set(orderId, max);
+    const { data: all } = await admin
+      .from("batches")
+      .select("id, batch_number, status, split_from_batch_id")
+      .eq("order_id", orderId)
+      .returns<OrderBatchRow[]>();
+    batchesByOrder.set(orderId, all ?? []);
+    nextNumByOrder.set(
+      orderId,
+      (all ?? []).reduce((m, b) => (batchNum(b.batch_number) > m ? batchNum(b.batch_number) : m), 0)
+    );
   }
+
+  const plBatchIdSet = new Set(batchIds);
 
   for (const batch of batches ?? []) {
     const toMove = nonTotalByBatch.get(batch.id) ?? [];
     if (toMove.length) {
-      const next = (nextNumByOrder.get(batch.order_id) ?? 0) + 1;
-      nextNumByOrder.set(batch.order_id, next);
-      const { data: newBatch, error: nbErr } = await admin
-        .from("batches")
-        .insert({
-          order_id: batch.order_id,
+      // Destino das linhas que não carregaram: o PRÓXIMO lote do pedido que já
+      // exista e ainda esteja aberto (in negotiation / in production). Só quando
+      // não há nenhum é que nasce um lote novo — antes criava sempre, e um
+      // pedido com o lote seguinte já planejado terminava com dois lotes
+      // concorrentes para a mesma produção.
+      const target = (batchesByOrder.get(batch.order_id) ?? [])
+        .filter(
+          (b) =>
+            !plBatchIdSet.has(b.id) &&
+            MERGEABLE_STATUSES.includes(b.status) &&
+            batchNum(b.batch_number) > batchNum(batch.batch_number)
+        )
+        .sort((a, b) => batchNum(a.batch_number) - batchNum(b.batch_number))[0];
+
+      let targetId: string;
+      if (target) {
+        targetId = target.id;
+        // Sem isso o "View parts" do embarque perde as linhas que saíram: ele
+        // acha o destino subindo por `split_from_batch_id`. Só preenche quando
+        // está vazio — a origem já registrada de um lote não se sobrescreve.
+        if (!target.split_from_batch_id) {
+          const { error: lnErr } = await admin
+            .from("batches")
+            .update({ split_from_batch_id: batch.id })
+            .eq("id", target.id);
+          if (lnErr) return { ok: false, error: lnErr.message };
+          target.split_from_batch_id = batch.id;
+        }
+      } else {
+        const next = (nextNumByOrder.get(batch.order_id) ?? 0) + 1;
+        nextNumByOrder.set(batch.order_id, next);
+        const { data: newBatch, error: nbErr } = await admin
+          .from("batches")
+          .insert({
+            order_id: batch.order_id,
+            batch_number: "." + String(next).padStart(2, "0"),
+            status: "in_production",
+            split_from_batch_id: batch.id,
+          })
+          .select("id")
+          .single();
+        if (nbErr || !newBatch)
+          return { ok: false, error: nbErr?.message ?? "Failed to split batch." };
+        targetId = newBatch.id;
+        batchesByOrder.get(batch.order_id)?.push({
+          id: newBatch.id,
           batch_number: "." + String(next).padStart(2, "0"),
           status: "in_production",
           split_from_batch_id: batch.id,
-        })
-        .select("id")
-        .single();
-      if (nbErr || !newBatch) return { ok: false, error: nbErr?.message ?? "Failed to split batch." };
+        });
+      }
+
       const { error: mvErr } = await admin
         .from("order_factory_category")
-        .update({ batch_id: newBatch.id })
+        .update({ batch_id: targetId })
         .in("id", toMove);
       if (mvErr) return { ok: false, error: mvErr.message };
     }

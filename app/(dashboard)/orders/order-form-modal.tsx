@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SearchSelect } from "@/components/search-select";
+import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 
 import { createOrder, updateOrder } from "./actions";
 import type { OrderRow, Ref } from "./orders-client";
@@ -283,13 +283,6 @@ function Field({
     </div>
   );
 }
-
-/**
- * Acima deste tamanho o Select vira SearchSelect (com busca por texto). Client
- * tem ~114 registros e rolar a lista inteira à mão era inviável; listas curtas
- * (Order Type, Business Unit) continuam no Select simples, que é mais leve.
- */
-const SEARCHABLE_FROM = 10;
 
 function SelectField({
   label,

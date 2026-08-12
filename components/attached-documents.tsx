@@ -48,21 +48,34 @@ export function AttachedDocuments({
   return (
     <div>
       <div className="flex items-center gap-2">
+        {/* Com documento anexado o bloco inteiro fica verde e sem preenchimento
+            — mesmo sinal de "cumprido" do check verde da etapa. Sem nenhum, ele
+            segue apagado (cinza), sem chamar atenção. */}
         <button
           type="button"
-          className="flex items-center gap-2 rounded-md text-xs text-muted-foreground enabled:hover:text-slate-700 disabled:cursor-default"
+          className={`flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+            hasDocs
+              ? "border-emerald-600 bg-transparent text-emerald-700 hover:bg-emerald-50"
+              : "border-transparent text-muted-foreground disabled:cursor-default"
+          }`}
           disabled={!hasDocs}
           aria-expanded={hasDocs ? open : undefined}
           onClick={() => setOpen(!open)}
         >
-          <Paperclip className="size-4 text-slate-400" />
+          <Paperclip className={`size-4 ${hasDocs ? "text-emerald-600" : "text-slate-400"}`} />
           Attached documents
-          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${
+              hasDocs
+                ? "border border-emerald-600 text-emerald-700"
+                : "bg-slate-200 text-slate-600"
+            }`}
+          >
             {attachments.length} docs
           </span>
           {hasDocs && (
             <ChevronDown
-              className={`size-3.5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+              className={`size-3.5 text-emerald-600 transition-transform ${open ? "rotate-180" : ""}`}
             />
           )}
         </button>

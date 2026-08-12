@@ -46,6 +46,13 @@ export type ChecklistFacts = {
   agentChinaId?: string | null;
   contactBrazilId?: string | null;
   contactChinaId?: string | null;
+  /**
+   * Quantos contatos o agente Brasil/China escolhido tem cadastrados. Agente sem
+   * nenhum contato não pode travar a etapa — não há o que escolher —, então o
+   * contato só é exigido quando existe pelo menos um. Ausente conta como zero.
+   */
+  contactBrazilOptions?: number;
+  contactChinaOptions?: number;
   bookingNumber?: string | null;
 };
 
@@ -107,8 +114,12 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if (!f.carrierAgentId) missing.push("a carrier agent");
       if (!f.agentBrazilId) missing.push("an agent Brazil");
       if (!f.agentChinaId) missing.push("an agent China");
-      if (!f.contactBrazilId) missing.push("a contact Brazil");
-      if (!f.contactChinaId) missing.push("a contact China");
+      // Contato só é exigência quando o agente escolhido TEM contato cadastrado:
+      // parte dos agentes não tem nenhum, e a etapa ficava impossível de fechar.
+      if (!f.contactBrazilId && (f.contactBrazilOptions ?? 0) > 0)
+        missing.push("a contact Brazil");
+      if (!f.contactChinaId && (f.contactChinaOptions ?? 0) > 0)
+        missing.push("a contact China");
       break;
     case "booking":
       if (!f.bookingNumber?.trim()) missing.push("the booking number");
@@ -200,10 +211,20 @@ export type PlStepFields = {
 
 /**
  * Adapta uma linha do checklist do PL (etapas #11–24) para os fatos da regra.
- * As três leituras dessas etapas — tela de Pre-loading, tela de Shipment e a
- * trava do Confirm Shipping — passam por aqui.
+ * As leituras dessas etapas — tela de Pre-loading, lista de Pre-loading, tela de
+ * Shipment e a trava do Confirm Shipping — passam por aqui.
+ *
+ * `contactCountByAgent` (agente → nº de contatos cadastrados) decide se a etapa
+ * Agents exige os contatos; quem não passar o mapa não exige nenhum, então uma
+ * tela que não carregou contatos nunca deixa a etapa laranja por engano.
  */
-export function plStepFacts(s: PlStepFields, attachments: number): ChecklistFacts {
+export function plStepFacts(
+  s: PlStepFields,
+  attachments: number,
+  contactCountByAgent?: Record<string, number>
+): ChecklistFacts {
+  const contacts = (agentId: string | null | undefined) =>
+    agentId ? (contactCountByAgent?.[agentId] ?? 0) : 0;
   return {
     completedOn: s.completed_on,
     attachments,
@@ -215,6 +236,8 @@ export function plStepFacts(s: PlStepFields, attachments: number): ChecklistFact
     agentChinaId: s.agent_china_id,
     contactBrazilId: s.contact_brazil_id,
     contactChinaId: s.contact_china_id,
+    contactBrazilOptions: contacts(s.agent_brazil_id),
+    contactChinaOptions: contacts(s.agent_china_id),
     bookingNumber: s.booking_number,
   };
 }

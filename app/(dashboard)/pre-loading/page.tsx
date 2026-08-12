@@ -66,6 +66,7 @@ export default async function PreLoadingPage() {
 
   const [
     preLoadings,
+    shipmentRows,
     stepRows,
     plClients,
     plBatches,
@@ -91,8 +92,12 @@ export default async function PreLoadingPage() {
           "id, pl_number, created_date, client_reference, pod_id, leader_id, responsible_signer_id"
         )
         .is("deleted_at", null)
-        .is("shipping_confirmed_at", null) // PL confirmado vira Shipment e sai da lista
         .range(from, to)
+    ),
+    // Quem já virou embarque: junto com a Loading Date concluída, é o que tira
+    // o PL desta lista (o filtro em si está no laço lá embaixo).
+    fetchAll<{ pre_loading_id: string }>((from, to) =>
+      admin.from("shipments").select("pre_loading_id").is("deleted_at", null).range(from, to)
     ),
     fetchAll<StepRow>((from, to) =>
       admin
@@ -219,13 +224,17 @@ export default async function PreLoadingPage() {
     orderIdsByPreLoading.set(pb.pre_loading_id, set);
   }
 
+  const shippedPlIds = new Set(shipmentRows.map((s) => s.pre_loading_id));
+
   const rows: PreLoadingRow[] = [];
   for (const pl of preLoadings) {
     const steps = stepsByPreLoading.get(pl.id) ?? {};
     const loadingDateStep = steps.loading_date;
-    // Regra da lista: só mostra Pre-loadings cuja etapa "Loading Date" ainda
-    // não foi concluída (completed_on vazio) — ver docs/regras_de_negocio.md §3.9.1/3.9.5.
-    if (loadingDateStep?.completed_on) continue;
+    // Regra da lista: o PL só sai daqui quando as DUAS coisas acontecem — a
+    // etapa "Loading Date" concluída E um embarque criado (Confirm Shipping,
+    // com o status de cada linha Factory × Category). Só a data preenchida
+    // sumia com o PL antes de ele virar Shipment, e o trabalho ficava sem tela.
+    if (loadingDateStep?.completed_on && shippedPlIds.has(pl.id)) continue;
 
     const consPointId = steps.consolidation_point?.consolidation_point_id ?? null;
     const polId = steps.port_of_loading?.pol_id ?? null;
@@ -252,11 +261,11 @@ export default async function PreLoadingPage() {
       pol_id: polId,
       pod: pl.pod_id ? (podNameById.get(pl.pod_id) ?? null) : null,
       pod_id: pl.pod_id,
-      // Coluna "Loading Date" na lista mostra a data ESTIMADA da etapa — a
-      // "completed" fica sempre vazia aqui porque o filtro acima já exclui
-      // quem já a preencheu.
-      loading_date: loadingDateStep?.estimated_date ?? null,
-      completed: false,
+      // Data da etapa "Loading Date": a de conclusão quando existe (o PL segue
+      // na lista até virar embarque), senão a estimada. "Preloading completed?"
+      // é essa mesma conclusão.
+      loading_date: loadingDateStep?.completed_on ?? loadingDateStep?.estimated_date ?? null,
+      completed: !!loadingDateStep?.completed_on,
       // "Booking Status" = etapa "Booking" do checklist concluída — que exige
       // o booking number além da data (ver lib/checklist-completion).
       booking_confirmed: steps.booking

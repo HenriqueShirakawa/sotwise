@@ -34,6 +34,7 @@ type StepRow = {
   responsible_id: string | null;
   completed_on: string | null;
   signed_by_id: string | null;
+  notes: string | null;
   consolidation_point_id: string | null;
   city_id: string | null;
   pol_id: string | null;
@@ -55,6 +56,7 @@ function emptyStep(step: ChecklistStep): PlStepRow {
     responsible_id: null,
     completed_on: null,
     signed_by_id: null,
+    notes: null,
     consolidation_point_id: null,
     city_id: null,
     pol_id: null,
@@ -117,7 +119,7 @@ export default async function PreLoadingChecklistPage({
     admin
       .from("pre_loading_checklist_steps")
       .select(
-        "id, step, done, estimated_date, responsible_id, completed_on, signed_by_id, " +
+        "id, step, done, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_agent_id, agent_brazil_id, " +
           "agent_china_id, contact_brazil_id, contact_china_id, booking_number"
       )
@@ -208,6 +210,13 @@ export default async function PreLoadingChecklistPage({
     attachmentsByStepId.set(a.pre_loading_step_id, arr);
   }
 
+  // Quantos contatos cada agente tem: a etapa Agents só exige Contact Brazil /
+  // Contact China quando o agente escolhido tem algum cadastrado.
+  const contactCountByAgent: Record<string, number> = {};
+  for (const ac of agentContactRes) {
+    contactCountByAgent[ac.agent_id] = (contactCountByAgent[ac.agent_id] ?? 0) + 1;
+  }
+
   const byStep = new Map(stepRows.map((s) => [s.step, s]));
   const steps: PlStepRow[] = STEP_ORDER.map((step) => {
     const s = byStep.get(step);
@@ -218,7 +227,7 @@ export default async function PreLoadingChecklistPage({
       ...s,
       // Cada etapa tem sua condição de conclusão (ver lib/checklist-completion):
       // data + cadastro escolhido / documento / número de booking.
-      done: isStepChecked(step, plStepFacts(s, attachments.length)),
+      done: isStepChecked(step, plStepFacts(s, attachments.length, contactCountByAgent)),
       attachments,
     };
   });

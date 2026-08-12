@@ -21,8 +21,10 @@ import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/date-picker";
+import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 import { StatusPill } from "@/components/status-pill";
 import { AttachedDocuments } from "@/components/attached-documents";
 import { RowField } from "@/components/data-cards";
@@ -77,6 +79,8 @@ export type PlStepRow = {
   responsible_id: string | null;
   completed_on: string | null;
   signed_by_id: string | null;
+  /** Etapa Agents: "Additional infos" (coluna `notes`, livre nesta tabela). */
+  notes: string | null;
   consolidation_point_id: string | null;
   city_id: string | null;
   pol_id: string | null;
@@ -252,18 +256,32 @@ function SelectField({
   return (
     <div>
       <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value ?? ""} onValueChange={(v) => onChange(v || null)} disabled={disabled}>
-        <SelectTrigger className="mt-1 w-full bg-white">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.id} value={o.id}>
-              {o.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* Lista longa vira campo com busca: o Select do Radix só faz typeahead
+          da primeira letra, e achar um nome entre dezenas de perfis/agentes
+          exigia rolar. Mesmo corte usado no form de Order. */}
+      {options.length > SEARCHABLE_FROM ? (
+        <SearchSelect
+          value={value ?? ""}
+          onChange={(v) => onChange(v || null)}
+          options={options}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="mt-1"
+        />
+      ) : (
+        <Select value={value ?? ""} onValueChange={(v) => onChange(v || null)} disabled={disabled}>
+          <SelectTrigger className="mt-1 w-full bg-white">
+            <SelectValue placeholder={placeholder} />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.id} value={o.id}>
+                {o.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }
@@ -323,6 +341,14 @@ export function PlChecklistClient({
     () => filterSteps(steps, viewPrefs, currentUserId),
     [steps, viewPrefs, currentUserId]
   );
+
+  // Agente sem contato cadastrado não exige contato na etapa Agents — mesma
+  // conta que o servidor faz para o ícone/`done` (ver lib/checklist-completion).
+  const contactCountByAgent = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const [agentId, list] of Object.entries(contactsByAgent)) counts[agentId] = list.length;
+    return counts;
+  }, [contactsByAgent]);
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
@@ -481,7 +507,7 @@ export function PlChecklistClient({
           ) : null}
           {visibleSteps.map((s) => {
             const open = isStepOpen(s.step);
-            const facts = plStepFacts(s, s.attachments.length);
+            const facts = plStepFacts(s, s.attachments.length, contactCountByAgent);
             return (
               <div key={s.step} className="border-b last:border-b-0">
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
@@ -637,6 +663,23 @@ export function PlChecklistClient({
                           }
                           onChange={(v) => save(s.step, { contact_china_id: v })}
                         />
+                        {/* Texto livre da etapa — grava em `notes`, coluna que
+                            existe na tabela do PL e não tinha uso. */}
+                        <div className="sm:col-span-3">
+                          <Label className="text-xs text-muted-foreground">
+                            Additional infos
+                          </Label>
+                          <Textarea
+                            defaultValue={s.notes ?? ""}
+                            disabled={pending}
+                            placeholder="Type here..."
+                            onBlur={(e) => {
+                              const v = e.target.value.trim() || null;
+                              if (v !== (s.notes ?? null)) save(s.step, { notes: v });
+                            }}
+                            className="mt-1 bg-white"
+                          />
+                        </div>
                       </div>
                     )}
                     {s.step === "booking" && (
