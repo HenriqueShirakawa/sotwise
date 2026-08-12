@@ -10,9 +10,6 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Info,
-  Paperclip,
-  Plus,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/date-picker";
 import { StatusPill } from "@/components/status-pill";
+import { AttachedDocuments } from "@/components/attached-documents";
 import { RowField } from "@/components/data-cards";
 import {
   Select,
@@ -219,67 +217,18 @@ function AttachmentsSection({
   }
 
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <Paperclip className="size-4 text-slate-400" />
-        <button
-          type="button"
-          className="text-xs text-muted-foreground enabled:hover:text-slate-700"
-          disabled={attachments.length === 0}
-          onClick={() => setOpen((v) => !v)}
-        >
-          Attached documents
-        </button>
-        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
-          {attachments.length} docs
-        </span>
-        {attachments.length > 0 && (
-          <ChevronDown
-            className={`size-3.5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        )}
-        <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto"
-          disabled={pending}
-          onClick={() => inputRef.current?.click()}
-        >
-          <Plus className="size-3.5" />
-          Attach
-        </Button>
-      </div>
-      {open && attachments.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {attachments.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-sm"
-            >
-              <button
-                type="button"
-                className="truncate text-primary hover:underline"
-                disabled={pending}
-                onClick={() => download(a)}
-              >
-                {a.file_name ?? "File"}
-              </button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-rose-500 hover:text-rose-600"
-                aria-label="Delete attachment"
-                disabled={pending}
-                onClick={() => remove(a)}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <>
+      <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
+      <AttachedDocuments
+        attachments={attachments}
+        pending={pending}
+        open={open}
+        onOpenChange={setOpen}
+        onDownload={download}
+        onAttach={() => inputRef.current?.click()}
+        onRemove={remove}
+      />
+    </>
   );
 }
 

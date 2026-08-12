@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useWheelScroll } from "@/lib/use-wheel-scroll";
 
 export function SearchSelect({
   value,
@@ -19,6 +20,7 @@ export function SearchSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const wheelRef = useWheelScroll<HTMLDivElement>();
   const selected = options.find((o) => o.id === value);
   // Sem teto de resultados: cadastros grandes (fábricas passam de 700) ficavam
   // cortados e a opção simplesmente não existia pra quem rolasse a lista. Quem
@@ -56,7 +58,7 @@ export function SearchSelect({
             className="h-9"
           />
         </div>
-        <div className="max-h-60 overflow-y-auto p-1">
+        <div ref={wheelRef} className="max-h-60 overflow-y-auto p-1">
           {filtered.length === 0 ? (
             <p className="px-2 py-1.5 text-sm text-muted-foreground">No results.</p>
           ) : (

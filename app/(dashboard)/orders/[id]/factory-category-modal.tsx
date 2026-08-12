@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useWheelScroll } from "@/lib/use-wheel-scroll";
 import { factoriesForCategory } from "@/lib/factory-category";
 import {
   Dialog,
@@ -70,6 +71,7 @@ function BatchPickerPopover({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const wheelRef = useWheelScroll<HTMLDivElement>();
   const selected = batches.find((b) => b.id === value);
   const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
   // Uma vez em Pre-Loading pra frente o lote não aceita mais entradas novas —
@@ -104,7 +106,7 @@ function BatchPickerPopover({
         <button
           type="button"
           disabled={disabled}
-          className="flex h-10 w-full items-center gap-2 rounded-lg border border-input bg-white px-3 text-sm disabled:opacity-50"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-white px-2.5 text-sm disabled:opacity-50"
         >
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <span className={selected ? "text-slate-800" : "text-muted-foreground"}>
@@ -113,7 +115,7 @@ function BatchPickerPopover({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
-        <div className="max-h-60 overflow-y-auto p-1">
+        <div ref={wheelRef} className="max-h-60 overflow-y-auto p-1">
           {batches.length === 0 ? (
             <p className="px-2 py-2 text-sm text-muted-foreground">No batches yet.</p>
           ) : selectableBatches.length === 0 ? (
@@ -192,6 +194,7 @@ function CategoryFactorySelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const wheelRef = useWheelScroll<HTMLDivElement>();
   const selected = options.find((o) => o.id === value);
   // Sem teto de resultados — mesma razão do `SearchSelect`.
   const filtered = options.filter((o) =>
@@ -209,7 +212,7 @@ function CategoryFactorySelect({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-10 w-full items-center gap-2 rounded-lg border border-input bg-white px-3 text-sm"
+          className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-white px-2.5 text-sm"
         >
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <span className={selected ? "text-slate-800" : "text-muted-foreground"}>
@@ -224,10 +227,10 @@ function CategoryFactorySelect({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search..."
-            className="h-9"
+            className="h-8"
           />
         </div>
-        <div className="max-h-60 overflow-y-auto p-1">
+        <div ref={wheelRef} className="max-h-60 overflow-y-auto p-1">
           {filtered.length === 0 ? (
             <p className="px-2 py-1.5 text-sm text-muted-foreground">No results.</p>
           ) : (
@@ -482,7 +485,7 @@ function BulkImportPanel({
 
       {parsedRows.length > 0 && (
         <div className="overflow-hidden rounded-lg border">
-          <div className="grid grid-cols-[1fr_1fr_140px_1fr_auto] bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+          <div className="grid grid-cols-[1fr_1fr_140px_1fr_auto] gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
             <span>Category</span>
             <span>Factory</span>
             <span>Batch No.</span>
@@ -745,9 +748,9 @@ export function FactoryCategoryModal({
                 <DatePicker
                   value={shipRequirement}
                   onChange={(v) => setShipRequirement(v ?? "")}
-                  // h-10 casa com o BatchPickerPopover ao lado (o campo padrão
-                  // do design system é h-8 e ficava mais baixo).
-                  className="mt-1.5 h-10"
+                  // Altura padrão do design system (h-8), igual ao Batch No. e
+                  // aos selects ao lado — tudo alinhado na mesma linha.
+                  className="mt-1.5"
                 />
               </div>
             </div>
@@ -763,7 +766,7 @@ export function FactoryCategoryModal({
             </Button>
 
             <div className="overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_100px_40px] items-center bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_100px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>

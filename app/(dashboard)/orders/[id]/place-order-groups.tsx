@@ -186,7 +186,20 @@ export function PlaceOrderFactoryGroups({
           return (
             <div key={g.factory_id} className="border-t">
               <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_160px_128px_40px]">
-                <span className="truncate font-medium text-slate-800">{g.factory_name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  {/* Verde = fábrica já tem documento; âmbar = ainda falta. A
+                      etapa só conclui quando todas estão verdes. */}
+                  <span
+                    aria-hidden
+                    title={
+                      groupAttachments.length > 0 ? "Document attached" : "Needs a document"
+                    }
+                    className={`size-2 shrink-0 rounded-full ${
+                      groupAttachments.length > 0 ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  <span className="truncate font-medium text-slate-800">{g.factory_name}</span>
+                </span>
                 <span className="text-slate-700 max-sm:col-start-1 max-sm:text-xs max-sm:text-slate-500">
                   {g.entries.length}
                   <span className="sm:hidden"> categories</span>

@@ -652,9 +652,13 @@ export function EtdStepTable({
             return (
               <TableRow key={r.id}>
                 <TableCell>
+                  {/* Trava depois de marcado (não se "desinspeciona"), mas sem
+                      apagar a cor: `disabled` some com a opacidade padrão e o
+                      roxo ficava lavado. Aqui volta a ter a cor cheia. */}
                   <Checkbox
                     checked={etd.inspection}
                     disabled={etd.inspection}
+                    className="disabled:opacity-100"
                     onCheckedChange={(checked) => save(r.id, { inspection: !!checked })}
                   />
                 </TableCell>
@@ -662,6 +666,7 @@ export function EtdStepTable({
                   <Checkbox
                     checked={etd.ready}
                     disabled={etd.ready}
+                    className="disabled:opacity-100"
                     onCheckedChange={(checked) => save(r.id, { ready: !!checked })}
                   />
                 </TableCell>
