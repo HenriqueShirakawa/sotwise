@@ -1,4 +1,7 @@
 import { requireFeature } from "@/lib/dal";
+import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
+import { fetchAll } from "@/lib/fetch-all";
+import { todayIso } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import type { BatchStatus } from "@/types/database";
@@ -6,22 +9,6 @@ import type { BatchStatus } from "@/types/database";
 import { PreLoadingClient, type PreLoadingRow } from "./pre-loading-client";
 import type { BatchOption } from "./pre-loading-form-modal";
 import type { Ref } from "./filters-modal";
-
-const PAGE = 1000; // limite de linhas por request do PostgREST
-
-/** Busca TODAS as linhas de uma query paginando em blocos de 1000. */
-async function fetchAll<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
-): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data } = await build(from, from + PAGE - 1);
-    const chunk = data ?? [];
-    all.push(...chunk);
-    if (chunk.length < PAGE) break;
-  }
-  return all;
-}
 
 const LIST_STEPS = [
   "consolidation_point",
@@ -60,16 +47,6 @@ type OfcBatchRow = {
   category_id: string;
 };
 
-/** Data de hoje como "YYYY-MM-DD" no fuso da operação (São Paulo). */
-function todayInSaoPaulo(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
 type StepRow = {
   pre_loading_id: string;
   step: (typeof LIST_STEPS)[number];
@@ -80,6 +57,7 @@ type StepRow = {
   agent_brazil_id: string | null;
   agent_china_id: string | null;
   carrier_agent_id: string | null;
+  booking_number: string | null;
 };
 
 export default async function PreLoadingPage() {
@@ -120,7 +98,7 @@ export default async function PreLoadingPage() {
       admin
         .from("pre_loading_checklist_steps")
         .select(
-          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_agent_id"
+          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_agent_id, booking_number"
         )
         .in("step", LIST_STEPS)
         .range(from, to)
@@ -141,13 +119,29 @@ export default async function PreLoadingPage() {
     fetchAll<{ carrier_id: string; agent_id: string }>((from, to) =>
       admin.from("carrier_agents").select("carrier_id, agent_id").range(from, to)
     ),
-    admin.from("pods").select("id, name").is("deleted_at", null),
-    admin.from("factories").select("id, name").is("deleted_at", null),
-    admin.from("pols").select("id, name").is("deleted_at", null),
-    admin.from("clients").select("id, name").is("deleted_at", null),
-    admin.from("profiles").select("id, full_name"),
-    admin.from("agents").select("id, name").is("deleted_at", null),
-    admin.from("carriers").select("id, name").is("deleted_at", null),
+    // Cadastros dos seletores e dos filtros: paginados para nenhum ficar cortado
+    // no teto de 1000 do PostgREST (ver lib/fetch-all).
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("pods").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; full_name: string | null }>((from, to) =>
+      admin.from("profiles").select("id, full_name").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("agents").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("carriers").select("id, name").is("deleted_at", null).range(from, to)
+    ),
     // Inclui os soft-deleted: `pl_number` é unique, número não se reaproveita.
     fetchAll<{ pl_number: string }>((from, to) =>
       admin.from("pre_loadings").select("pl_number").range(from, to)
@@ -169,14 +163,16 @@ export default async function PreLoadingPage() {
         .range(from, to)
         .returns<OfcBatchRow[]>()
     ),
-    admin.from("categories").select("id, name").is("deleted_at", null),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
   ]);
 
-  const podNameById = new Map((podRes.data ?? []).map((p) => [p.id, p.name]));
-  const factoryNameById = new Map((factoryRes.data ?? []).map((f) => [f.id, f.name]));
-  const polNameById = new Map((polRes.data ?? []).map((p) => [p.id, p.name]));
-  const clientNameById = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
-  const profileNameById = new Map((profileRes.data ?? []).map((p) => [p.id, p.full_name]));
+  const podNameById = new Map(podRes.map((p) => [p.id, p.name]));
+  const factoryNameById = new Map(factoryRes.map((f) => [f.id, f.name]));
+  const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
+  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
+  const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
   const orderIdByBatchId = new Map(batchRes.map((b) => [b.id, b.order_id]));
 
   // agente -> carriers que o carregam (M-N via carrier_agents) — usado pra
@@ -261,9 +257,11 @@ export default async function PreLoadingPage() {
       // quem já a preencheu.
       loading_date: loadingDateStep?.estimated_date ?? null,
       completed: false,
-      // "Booking Status" = etapa "Booking" do checklist concluída (mesma
-      // regra de "done" das outras etapas: completed_on preenchido).
-      booking_confirmed: !!steps.booking?.completed_on,
+      // "Booking Status" = etapa "Booking" do checklist concluída — que exige
+      // o booking number além da data (ver lib/checklist-completion).
+      booking_confirmed: steps.booking
+        ? isStepChecked("booking", plStepFacts(steps.booking, 0))
+        : false,
       total_pos: orderIdsByPreLoading.get(pl.id)?.size ?? 0,
       order_ids: plOrderIds,
       batch_ids: batchIdsByPreLoading.get(pl.id) ?? [],
@@ -277,22 +275,22 @@ export default async function PreLoadingPage() {
   rows.sort((a, b) => (Number(b.pl_number) || 0) - (Number(a.pl_number) || 0));
 
   const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
-  const clients: Ref[] = (clientRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName);
-  const profiles: Ref[] = (profileRes.data ?? [])
+  const clients: Ref[] = clientRes.map((c) => ({ id: c.id, name: c.name })).sort(byName);
+  const profiles: Ref[] = profileRes
     .filter((p) => p.full_name)
     .map((p) => ({ id: p.id, name: p.full_name as string }))
     .sort(byName);
-  const agents: Ref[] = (agentRes.data ?? []).map((a) => ({ id: a.id, name: a.name })).sort(byName);
-  const carriers: Ref[] = (carrierRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName);
-  const pols: Ref[] = (polRes.data ?? []).map((p) => ({ id: p.id, name: p.name })).sort(byName);
-  const pods: Ref[] = (podRes.data ?? []).map((p) => ({ id: p.id, name: p.name })).sort(byName);
-  const factories: Ref[] = (factoryRes.data ?? []).map((f) => ({ id: f.id, name: f.name })).sort(byName);
+  const agents: Ref[] = agentRes.map((a) => ({ id: a.id, name: a.name })).sort(byName);
+  const carriers: Ref[] = carrierRes.map((c) => ({ id: c.id, name: c.name })).sort(byName);
+  const pols: Ref[] = polRes.map((p) => ({ id: p.id, name: p.name })).sort(byName);
+  const pods: Ref[] = podRes.map((p) => ({ id: p.id, name: p.name })).sort(byName);
+  const factories: Ref[] = factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName);
   const orders: Ref[] = orderRes
     .map((o) => ({ id: o.id, name: o.po_number }))
     .sort((a, b) => (Number(b.name) || 0) - (Number(a.name) || 0));
 
   // Entradas Factory×Category por lote — coluna "Factories Number" da seleção.
-  const categoryNameById = new Map((categoryRes.data ?? []).map((c) => [c.id, c.name]));
+  const categoryNameById = new Map(categoryRes.map((c) => [c.id, c.name]));
   const entriesByBatchId = new Map<string, { factory: string; category: string }[]>();
   for (const ofc of ofcByBatch) {
     if (!ofc.batch_id) continue;
@@ -334,7 +332,7 @@ export default async function PreLoadingPage() {
       orders={orders}
       batchOptions={batchOptions}
       nextPlNumber={String(maxPl + 1)}
-      today={todayInSaoPaulo()}
+      today={todayIso()}
       initialColumns={readColumnVisibility(profile.ui_preferences, "pre-loading")}
     />
   );

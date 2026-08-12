@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -192,9 +193,10 @@ function CategoryFactorySelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((o) => o.id === value);
-  const filtered = options
-    .filter((o) => o.name.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 50);
+  // Sem teto de resultados — mesma razão do `SearchSelect`.
+  const filtered = options.filter((o) =>
+    o.name.toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
     <Popover
@@ -740,11 +742,10 @@ export function FactoryCategoryModal({
               </div>
               <div>
                 <Label className="text-foreground">Ship requirement</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={shipRequirement}
-                  onChange={(e) => setShipRequirement(e.target.value)}
-                  // h-10 casa com o BatchPickerPopover ao lado (o Input padrão
+                  onChange={(v) => setShipRequirement(v ?? "")}
+                  // h-10 casa com o BatchPickerPopover ao lado (o campo padrão
                   // do design system é h-8 e ficava mais baixo).
                   className="mt-1.5 h-10"
                 />

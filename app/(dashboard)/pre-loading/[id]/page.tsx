@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { requireFeature } from "@/lib/dal";
+import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
+import { fetchAll } from "@/lib/fetch-all";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
@@ -104,7 +106,9 @@ export default async function PreLoadingChecklistPage({
     pl.pod_id
       ? admin.from("pods").select("name").eq("id", pl.pod_id).single()
       : Promise.resolve({ data: null }),
-    admin.from("profiles").select("id, full_name"),
+    fetchAll<{ id: string; full_name: string | null }>((from, to) =>
+      admin.from("profiles").select("id, full_name").range(from, to)
+    ),
     admin.from("pre_loading_clients").select("client_id, clients(name)").eq("pre_loading_id", id),
     admin
       .from("pre_loading_batches")
@@ -119,18 +123,38 @@ export default async function PreLoadingChecklistPage({
       )
       .eq("pre_loading_id", id)
       .returns<StepRow[]>(),
-    admin.from("factories").select("id, name").is("deleted_at", null),
-    admin.from("cities").select("id, name").is("deleted_at", null),
-    admin.from("pols").select("id, name").is("deleted_at", null),
-    admin.from("agents").select("id, name, location").is("deleted_at", null),
-    admin.from("contacts").select("id, name").is("deleted_at", null),
-    admin.from("agent_contacts").select("agent_id, contact_id"),
-    admin.from("clients").select("id, name").is("deleted_at", null),
-    admin.from("shipment_models").select("id, name").is("deleted_at", null),
-    admin.from("carriers").select("id, name").is("deleted_at", null),
+    // Cadastros e vínculos dos seletores desta tela: paginados para nenhum ficar
+    // cortado no teto de 1000 do PostgREST (ver lib/fetch-all).
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("cities").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string; location: string | null }>((from, to) =>
+      admin.from("agents").select("id, name, location").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("contacts").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ agent_id: string; contact_id: string }>((from, to) =>
+      admin.from("agent_contacts").select("agent_id, contact_id").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("shipment_models").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("carriers").select("id, name").is("deleted_at", null).range(from, to)
+    ),
   ]);
 
-  const profileNameById = new Map((profileRes.data ?? []).map((p) => [p.id, p.full_name]));
+  const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
 
   type ClientEmbed = { client_id: string; clients: { name: string } | null };
   const clients = ((plClientsRes.data ?? []) as unknown as ClientEmbed[])
@@ -146,7 +170,7 @@ export default async function PreLoadingChecklistPage({
       orders: { po_number: string; client_id: string | null } | null;
     } | null;
   };
-  const clientNameById = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
+  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
 
   const batches: PlBatchRow[] = ((plBatchesRes.data ?? []) as unknown as BatchEmbed[])
     .map((row) => row.batches)
@@ -188,21 +212,24 @@ export default async function PreLoadingChecklistPage({
   const steps: PlStepRow[] = STEP_ORDER.map((step) => {
     const s = byStep.get(step);
     if (!s) return emptyStep(step);
+    const attachments = attachmentsByStepId.get(s.id) ?? [];
     return {
       ...emptyStep(step),
       ...s,
-      done: s.completed_on != null,
-      attachments: attachmentsByStepId.get(s.id) ?? [],
+      // Cada etapa tem sua condição de conclusão (ver lib/checklist-completion):
+      // data + cadastro escolhido / documento / número de booking.
+      done: isStepChecked(step, plStepFacts(s, attachments.length)),
+      attachments,
     };
   });
 
   const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
-  const allAgents = agentRes.data ?? [];
-  const contactNameById = new Map((contactRes.data ?? []).map((c) => [c.id, c.name]));
+  const allAgents = agentRes;
+  const contactNameById = new Map(contactRes.map((c) => [c.id, c.name]));
 
   // Contatos por agente (via agent_contacts) — alimenta Contact Brazil/China.
   const contactsByAgent: Record<string, Ref[]> = {};
-  for (const ac of agentContactRes.data ?? []) {
+  for (const ac of agentContactRes) {
     const name = contactNameById.get(ac.contact_id);
     if (!name) continue;
     (contactsByAgent[ac.agent_id] ??= []).push({ id: ac.contact_id, name });
@@ -261,13 +288,13 @@ export default async function PreLoadingChecklistPage({
       }}
       batches={batches}
       steps={steps}
-      profiles={(profileRes.data ?? [])
+      profiles={profileRes
         .filter((p) => p.full_name)
         .map((p) => ({ id: p.id, name: p.full_name as string }))
         .sort(byName)}
-      factories={(factoryRes.data ?? []).map((f) => ({ id: f.id, name: f.name })).sort(byName)}
-      cities={(cityRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName)}
-      pols={(polRes.data ?? []).map((p) => ({ id: p.id, name: p.name })).sort(byName)}
+      factories={factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName)}
+      cities={cityRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
+      pols={polRes.map((p) => ({ id: p.id, name: p.name })).sort(byName)}
       agentsBrazil={allAgents
         .filter((a) => a.location === "brazil")
         .map((a) => ({ id: a.id, name: a.name }))
@@ -278,8 +305,8 @@ export default async function PreLoadingChecklistPage({
         .sort(byName)}
       agents={allAgents.map((a) => ({ id: a.id, name: a.name })).sort(byName)}
       contactsByAgent={contactsByAgent}
-      carriers={(carrierRes.data ?? []).map((c) => ({ id: c.id, name: c.name })).sort(byName)}
-      shipmentModels={(shipmentModelRes.data ?? [])
+      carriers={carrierRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
+      shipmentModels={shipmentModelRes
         .map((m) => ({ id: m.id, name: m.name }))
         .sort(byName)}
       shipmentLines={shipmentLines}

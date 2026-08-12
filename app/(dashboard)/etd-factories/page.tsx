@@ -1,25 +1,10 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { fetchAll } from "@/lib/fetch-all";
 import type { BatchStatus } from "@/types/database";
 
 import { EtdFactoriesClient, type EtdFactoryRow } from "./etd-factories-client";
-
-const PAGE = 1000; // limite de linhas por request do PostgREST
-
-/** Busca TODAS as linhas de uma query paginando em blocos de 1000. */
-async function fetchAll<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
-): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data } = await build(from, from + PAGE - 1);
-    const chunk = data ?? [];
-    all.push(...chunk);
-    if (chunk.length < PAGE) break;
-  }
-  return all;
-}
 
 // Filtro padrão da tela ETD Factories: só lotes em produção ou pre-loading
 // (ver docs/regras_de_negocio.md §3.7.4, mesmo com o enum tendo 6 valores).
@@ -125,14 +110,22 @@ export default async function EtdFactoriesPage() {
         .range(from, to)
         .returns<OfcActiveRow[]>()
     ),
-    admin.from("factories").select("id, name").is("deleted_at", null),
-    admin.from("categories").select("id, name").is("deleted_at", null),
-    admin.from("clients").select("id, name").is("deleted_at", null),
+    // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de
+    // 1000 do PostgREST (ver lib/fetch-all).
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
+    ),
   ]);
 
-  const factoryNameById = new Map((factoryRes.data ?? []).map((f) => [f.id, f.name]));
-  const categoryNameById = new Map((categoryRes.data ?? []).map((c) => [c.id, c.name]));
-  const clientNameById = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
+  const factoryNameById = new Map(factoryRes.map((f) => [f.id, f.name]));
+  const categoryNameById = new Map(categoryRes.map((c) => [c.id, c.name]));
+  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
 
   const rows = buildRows(ofcRows, factoryNameById, categoryNameById, clientNameById);
 
@@ -145,13 +138,13 @@ export default async function EtdFactoriesPage() {
   );
 
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
-  const clients = (clientRes.data ?? [])
+  const clients = clientRes
     .map((c) => ({ id: c.id, name: c.name }))
     .sort(byName);
-  const factories = (factoryRes.data ?? [])
+  const factories = factoryRes
     .map((f) => ({ id: f.id, name: f.name }))
     .sort(byName);
-  const categories = (categoryRes.data ?? [])
+  const categories = categoryRes
     .map((c) => ({ id: c.id, name: c.name }))
     .sort(byName);
 

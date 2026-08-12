@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
+  Info,
   Paperclip,
   Plus,
   Trash2,
@@ -16,12 +17,14 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
+import { hasExtraRequirements, missingLabel, plStepFacts } from "@/lib/checklist-completion";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/date-picker";
 import { StatusPill } from "@/components/status-pill";
 import { RowField } from "@/components/data-cards";
 import {
@@ -138,16 +141,31 @@ function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
 }
 
 /**
- * Mesmos estados do checklist de Orders: verde ✓ = concluída (aqui, derivada
- * de `completed_on` preenchido) · azul = em andamento.
+ * Mesma bolinha do checklist de Orders (halo claro + miolo menor) e mesmos
+ * estados: verde ✓ = concluída · "i" laranja = falta a exigência própria da
+ * etapa (documento, cadastro, booking number) · azul = em andamento.
  */
-/** Mesma bolinha do checklist de Orders: halo claro + miolo menor. */
-function StepIcon({ done }: { done: boolean }) {
-  return done ? (
-    <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />
+function StepIcon({
+  done,
+  gated,
+  title,
+}: {
+  done: boolean;
+  gated: boolean;
+  title?: string;
+}) {
+  const icon = done ? (
+    <CheckCircle2 className="size-5 fill-emerald-600 text-white" />
+  ) : gated ? (
+    <Info className="size-5 fill-amber-500 text-white" />
   ) : (
-    <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-blue-100">
+    <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-100">
       <span className="size-2 rounded-full bg-blue-600" />
+    </span>
+  );
+  return (
+    <span className="flex shrink-0" title={title} aria-label={title}>
+      {icon}
     </span>
   );
 }
@@ -500,10 +518,15 @@ export function PlChecklistClient({
           ) : null}
           {visibleSteps.map((s) => {
             const open = isStepOpen(s.step);
+            const facts = plStepFacts(s, s.attachments.length);
             return (
               <div key={s.step} className="border-b last:border-b-0">
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
-                  <StepIcon done={s.done} />
+                  <StepIcon
+                    done={s.done}
+                    gated={hasExtraRequirements(s.step, facts)}
+                    title={missingLabel(s.step, facts)}
+                  />
                   <button
                     type="button"
                     className="flex-1 text-left text-sm font-medium text-slate-800"
@@ -528,12 +551,10 @@ export function PlChecklistClient({
                     <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                       <div>
                         <Label className="text-xs text-muted-foreground">Estimated date</Label>
-                        <Input
-                          type="date"
-                          defaultValue={s.estimated_date ?? ""}
+                        <DatePicker
+                          value={s.estimated_date}
                           disabled={pending}
-                          onBlur={(e) => {
-                            const v = e.target.value || null;
+                          onChange={(v) => {
                             if (v !== (s.estimated_date ?? null))
                               save(s.step, { estimated_date: v });
                           }}
@@ -548,12 +569,16 @@ export function PlChecklistClient({
                       />
                       <div>
                         <Label className="text-xs text-muted-foreground">Completed on</Label>
-                        <Input
-                          type="date"
-                          defaultValue={s.completed_on ?? ""}
-                          disabled={pending}
-                          onBlur={(e) => {
-                            const v = e.target.value || null;
+                        {/* Sem "Estimated date" não há o que concluir. Etapa
+                            antiga que já tem a conclusão segue editável, pra
+                            não ficar presa com o campo travado. */}
+                        <DatePicker
+                          value={s.completed_on}
+                          disabled={pending || (!s.estimated_date && !s.completed_on)}
+                          placeholder={
+                            s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
+                          }
+                          onChange={(v) => {
                             if (v !== (s.completed_on ?? null))
                               save(s.step, { completed_on: v });
                           }}

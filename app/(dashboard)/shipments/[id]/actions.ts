@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -108,11 +109,18 @@ export async function saveShipmentStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, completed_on")
+    .select("id, estimated_date, completed_on")
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
+
+  // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
+  const dateError = validateStepDates(
+    existing ?? { estimated_date: null, completed_on: null },
+    patch
+  );
+  if (dateError) return { ok: false, error: dateError };
 
   const completedOn =
     "completed_on" in patch ? (patch.completed_on ?? null) : (existing?.completed_on ?? null);

@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { STEP_LABELS } from "@/lib/checklist";
+import { isStepChecked, plStepFacts, validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -35,8 +37,11 @@ export type StepPatch = Partial<{
  * `pre_loading_checklist_steps` nascem sob demanda — um PL recém-criado não
  * tem nenhuma —, por isso é upsert pela chave lógica (pre_loading_id, step).
  *
- * `done` é DERIVADO de `completed_on`: não há toggle manual nesta tela
- * (docs/regras_de_negocio.md §3.9.5).
+ * A coluna `done` é só o espelho de `completed_on` — não há toggle manual nesta
+ * tela (docs/regras_de_negocio.md §3.9.5). Quem decide se a etapa aparece como
+ * concluída é `lib/checklist-completion`, aplicada na LEITURA: a condição da
+ * etapa envolve anexos e outros campos que mudam fora deste save, então gravar
+ * o resultado aqui só criaria valor velho.
  */
 export async function savePreLoadingStep(
   preLoadingId: string,
@@ -48,11 +53,19 @@ export async function savePreLoadingStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, completed_on")
+    .select("id, estimated_date, completed_on")
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
+
+  // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
+  // Etapa que ainda não existe no banco entra como as duas datas vazias.
+  const dateError = validateStepDates(
+    existing ?? { estimated_date: null, completed_on: null },
+    patch
+  );
+  if (dateError) return { ok: false, error: dateError };
 
   // "completed_on" no patch redefine o `done`; fora isso mantém o que já valia.
   const completedOn =
@@ -246,14 +259,44 @@ export async function confirmShipping(
   if (!pl) return { ok: false, error: "Pre-loading not found." };
   if (pl.shipping_confirmed_at) return { ok: false, error: "This Pre-loading was already shipped." };
 
-  // Reforça no servidor a trava do botão: as 7 etapas concluídas.
+  // Reforça no servidor a trava do botão: as 7 etapas concluídas — pela regra
+  // completa (data + documento/cadastro/booking), não só pelo "Completed on".
   const { data: steps } = await admin
     .from("pre_loading_checklist_steps")
-    .select("step, completed_on")
+    .select(
+      "id, step, completed_on, consolidation_point_id, city_id, pol_id, carrier_agent_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+    )
     .eq("pre_loading_id", preLoadingId);
-  const done = new Set((steps ?? []).filter((s) => s.completed_on).map((s) => s.step));
-  if (PL_STEPS.some((s) => !done.has(s))) {
-    return { ok: false, error: "Complete all checklist steps before shipping." };
+
+  const stepIds = (steps ?? []).map((s) => s.id);
+  const { data: attachments } = stepIds.length
+    ? await admin
+        .from("step_attachments")
+        .select("pre_loading_step_id")
+        .in("pre_loading_step_id", stepIds)
+    : { data: [] };
+  const attachmentCount = new Map<string, number>();
+  for (const a of attachments ?? []) {
+    if (!a.pre_loading_step_id) continue;
+    attachmentCount.set(
+      a.pre_loading_step_id,
+      (attachmentCount.get(a.pre_loading_step_id) ?? 0) + 1
+    );
+  }
+
+  const byStep = new Map((steps ?? []).map((s) => [s.step, s]));
+  const pending = PL_STEPS.filter((step) => {
+    const s = byStep.get(step);
+    if (!s) return true;
+    return !isStepChecked(step, plStepFacts(s, attachmentCount.get(s.id) ?? 0));
+  });
+  if (pending.length > 0) {
+    return {
+      ok: false,
+      error: `Complete all checklist steps before shipping — still open: ${pending
+        .map((s) => STEP_LABELS[s])
+        .join(", ")}.`,
+    };
   }
 
   const { data: plBatches } = await admin

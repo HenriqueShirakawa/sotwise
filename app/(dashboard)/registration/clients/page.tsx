@@ -1,5 +1,6 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchAll } from "@/lib/fetch-all";
 import type { OrderStatus } from "@/types/database";
 
 import { ClientsClient, type ClientRow } from "./clients-client";
@@ -65,20 +66,31 @@ export default async function ClientsPage() {
   await requireFeature("registration");
 
   const admin = createAdminClient();
+  // Paginados: a lista inteira vai pro cliente, que pagina (ver lib/fetch-all).
   const [clientsRes, countriesRes, counts] = await Promise.all([
-    admin
-      .from("clients")
-      .select("id, name, country_id")
-      .is("deleted_at", null)
-      .order("name"),
-    admin.from("countries").select("id, name").is("deleted_at", null).order("name"),
+    fetchAll<{ id: string; name: string; country_id: string | null }>((from, to) =>
+      admin
+        .from("clients")
+        .select("id, name, country_id")
+        .is("deleted_at", null)
+        .order("name")
+        .range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin
+        .from("countries")
+        .select("id, name")
+        .is("deleted_at", null)
+        .order("name")
+        .range(from, to)
+    ),
     loadOrderCounts(admin),
   ]);
 
-  const countries = countriesRes.data ?? [];
+  const countries = countriesRes;
   const countryName = new Map(countries.map((c) => [c.id, c.name]));
 
-  const rows: ClientRow[] = (clientsRes.data ?? []).map((c) => ({
+  const rows: ClientRow[] = clientsRes.map((c) => ({
     id: c.id,
     name: c.name,
     country_id: c.country_id,

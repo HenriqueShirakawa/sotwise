@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import type { OrderInput } from "@/domain/orders/schema";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -168,10 +169,9 @@ export function OrderFormModal({
               />
             </div>
             <Field label="Schedule Requested">
-              <Input
-                type="date"
+              <DatePicker
                 value={form.schedule_requested}
-                onChange={(e) => set("schedule_requested", e.target.value)}
+                onChange={(v) => set("schedule_requested", v ?? "")}
               />
             </Field>
           </Section>

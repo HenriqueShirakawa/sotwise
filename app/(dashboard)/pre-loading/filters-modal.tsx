@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchSelect } from "@/components/search-select";
@@ -223,15 +224,15 @@ export function FiltersModal({
           <Section title="Dates">
             <Field label="Loading Date">
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  type="date"
+                <DatePicker
                   value={draft.loading_from}
-                  onChange={(e) => set("loading_from", e.target.value)}
+                  onChange={(v) => set("loading_from", v ?? "")}
+                  ariaLabel="From"
                 />
-                <Input
-                  type="date"
+                <DatePicker
                   value={draft.loading_to}
-                  onChange={(e) => set("loading_to", e.target.value)}
+                  onChange={(v) => set("loading_to", v ?? "")}
+                  ariaLabel="To"
                 />
               </div>
             </Field>

@@ -18,6 +18,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -393,11 +394,10 @@ function UserForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="dob">Date of birth</Label>
-          <Input
+          <DatePicker
             id="dob"
-            type="date"
             value={dateOfBirth}
-            onChange={(e) => setDateOfBirth(e.target.value)}
+            onChange={(v) => setDateOfBirth(v ?? "")}
           />
         </div>
         <div className="space-y-1.5">

@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import { verifySession } from "@/lib/dal";
+import { fetchAll } from "@/lib/fetch-all";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   countUnreadMessages,
@@ -39,14 +40,17 @@ export type ThreadPayload = {
 /** Usuários selecionáveis no "Forward to" — ativos, não ocultos, menos eu. */
 async function loadPeople(currentUserId: string): Promise<Option[]> {
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("profiles")
-    .select("id, full_name")
-    .eq("status", "active")
-    .eq("hidden", false)
-    .order("full_name");
+  const data = await fetchAll<{ id: string; full_name: string }>((from, to) =>
+    admin
+      .from("profiles")
+      .select("id, full_name")
+      .eq("status", "active")
+      .eq("hidden", false)
+      .order("full_name")
+      .range(from, to)
+  );
 
-  return (data ?? [])
+  return data
     .filter((p) => p.id !== currentUserId && p.full_name.trim())
     .map((p) => ({ id: p.id, name: p.full_name }));
 }
@@ -267,19 +271,14 @@ export async function loadOrderOptions(): Promise<Option[]> {
   await verifySession();
   const admin = createAdminClient();
 
-  const PAGE = 1000;
-  const rows: { id: string; po_number: string }[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data } = await admin
+  const rows = await fetchAll<{ id: string; po_number: string }>((from, to) =>
+    admin
       .from("orders")
       .select("id, po_number")
       .is("deleted_at", null)
       .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (!data?.length) break;
-    rows.push(...data);
-    if (data.length < PAGE) break;
-  }
+      .range(from, to)
+  );
 
   return rows.map((o) => ({ id: o.id, name: o.po_number })).sort(byOrderNumberDesc);
 }

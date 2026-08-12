@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { requireFeature } from "@/lib/dal";
+import { fetchAll } from "@/lib/fetch-all";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { displayBu } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -73,7 +74,11 @@ export default async function OrderDetailPage({
     order.exporter_id
       ? admin.from("exporters").select("name, acronym").eq("id", order.exporter_id).single()
       : Promise.resolve({ data: null }),
-    admin.from("profiles").select("id, full_name"),
+    // Cadastros e vínculos que alimentam os seletores: paginados para nenhum
+    // ficar cortado no teto de 1000 do PostgREST (ver lib/fetch-all).
+    fetchAll<{ id: string; full_name: string | null }>((from, to) =>
+      admin.from("profiles").select("id, full_name").range(from, to)
+    ),
     admin
       .from("batches")
       .select("id, batch_number, status")
@@ -89,29 +94,39 @@ export default async function OrderDetailPage({
       .from("order_factory_category")
       .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
       .eq("order_id", order.id),
-    admin
-      .from("categories")
-      .select("id, name")
-      .is("deleted_at", null)
-      .neq("name", "")
-      .order("name"),
-    admin
-      .from("factories")
-      .select("id, name")
-      .is("deleted_at", null)
-      .neq("name", "")
-      .order("name"),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin
+        .from("categories")
+        .select("id, name")
+        .is("deleted_at", null)
+        .neq("name", "")
+        .order("name")
+        .range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin
+        .from("factories")
+        .select("id, name")
+        .is("deleted_at", null)
+        .neq("name", "")
+        .order("name")
+        .range(from, to)
+    ),
     // Vínculo Factory × Category (docs §3.5.2) — o seletor de Factory dos
-    // modais de lote só oferece as fábricas da categoria escolhida.
-    admin.from("category_factories").select("category_id, factory_id"),
+    // modais de lote só oferece as fábricas da categoria escolhida. Passa de 800
+    // linhas, então a paginação aqui não é teórica: cortado no 1000, categoria
+    // ficaria sem fábrica nenhuma pra oferecer.
+    fetchAll<{ category_id: string; factory_id: string }>((from, to) =>
+      admin.from("category_factories").select("category_id, factory_id").range(from, to)
+    ),
   ]);
 
-  const profiles = (profileRes.data ?? [])
+  const profiles = profileRes
     .filter((p) => p.full_name)
     .map((p) => ({ id: p.id, name: p.full_name as string }));
   const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
-  const categoryMap = new Map((categoriesRes.data ?? []).map((c) => [c.id, c.name]));
-  const factoryMap = new Map((factoriesRes.data ?? []).map((f) => [f.id, f.name]));
+  const categoryMap = new Map(categoriesRes.map((c) => [c.id, c.name]));
+  const factoryMap = new Map(factoriesRes.map((f) => [f.id, f.name]));
 
   const stepRows = stepsRes.data ?? [];
   const stepIds = stepRows.map((s) => s.id);
@@ -200,7 +215,7 @@ export default async function OrderDetailPage({
   // category_id → fábricas vinculadas. Categoria sem vínculo não entra no mapa;
   // o client trata a ausência como "sem restrição" (ver order-detail-client).
   const factoriesByCategory: Record<string, string[]> = {};
-  for (const link of categoryFactoriesRes.data ?? []) {
+  for (const link of categoryFactoriesRes) {
     (factoriesByCategory[link.category_id] ??= []).push(link.factory_id);
   }
 
@@ -227,8 +242,8 @@ export default async function OrderDetailPage({
       }))}
       ofc={ofc}
       etdByOfc={etdByOfc}
-      categories={(categoriesRes.data ?? []).map((c) => ({ id: c.id, name: c.name }))}
-      factories={(factoriesRes.data ?? []).map((f) => ({ id: f.id, name: f.name }))}
+      categories={categoriesRes.map((c) => ({ id: c.id, name: c.name }))}
+      factories={factoriesRes.map((f) => ({ id: f.id, name: f.name }))}
       factoriesByCategory={factoriesByCategory}
       profiles={profiles}
       steps={steps}

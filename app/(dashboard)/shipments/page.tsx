@@ -1,26 +1,11 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { fetchAll } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/page-header";
 
 import { ShipmentsClient, type ShipmentRow } from "./shipments-client";
 import type { Ref } from "./filters-modal";
-
-const PAGE = 1000; // limite de linhas por request do PostgREST
-
-/** Busca TODAS as linhas de uma query paginando em blocos de 1000. */
-async function fetchAll<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
-): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data } = await build(from, from + PAGE - 1);
-    const chunk = data ?? [];
-    all.push(...chunk);
-    if (chunk.length < PAGE) break;
-  }
-  return all;
-}
 
 /** shipments.status ('in_transit'|'delivered'|'canceled') → label exibido. */
 const STATUS_LABELS: Record<string, string> = {
@@ -123,16 +108,36 @@ export default async function ShipmentsPage() {
         .range(from, to)
         .returns<StepRow[]>()
     ),
-    admin.from("pols").select("id, name").is("deleted_at", null),
-    admin.from("shipment_models").select("id, name").is("deleted_at", null),
-    admin.from("clients").select("id, name").is("deleted_at", null),
-    admin.from("order_types").select("id, name").is("deleted_at", null),
-    admin.from("pods").select("id, name").is("deleted_at", null),
-    admin.from("agents").select("id, name").is("deleted_at", null),
-    admin.from("carriers").select("id, name").is("deleted_at", null),
-    admin.from("factories").select("id, name").is("deleted_at", null),
+    // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de
+    // 1000 do PostgREST (ver lib/fetch-all).
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("shipment_models").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("order_types").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("pods").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("agents").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("carriers").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
     // profiles não tem deleted_at — mesma query das outras telas.
-    admin.from("profiles").select("id, full_name"),
+    fetchAll<{ id: string; full_name: string | null }>((from, to) =>
+      admin.from("profiles").select("id, full_name").range(from, to)
+    ),
     fetchAll<{ id: string; po_number: string }>((from, to) =>
       admin.from("orders").select("id, po_number").is("deleted_at", null).range(from, to)
     ),
@@ -140,10 +145,10 @@ export default async function ShipmentsPage() {
 
   const plById = new Map(preLoadings.map((p) => [p.id, p]));
   const plNumberById = new Map(preLoadings.map((p) => [p.id, p.pl_number]));
-  const clientNameById = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
-  const polNameById = new Map((polRes.data ?? []).map((p) => [p.id, p.name]));
-  const modelNameById = new Map((modelRes.data ?? []).map((m) => [m.id, m.name]));
-  const typeNameById = new Map((typeRes.data ?? []).map((t) => [t.id, t.name]));
+  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
+  const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
+  const modelNameById = new Map(modelRes.map((m) => [m.id, m.name]));
+  const typeNameById = new Map(typeRes.map((t) => [t.id, t.name]));
   const orderTypeIdByOrder = new Map(orders.map((o) => [o.id, o.order_type_id]));
   const orderIdByBatch = new Map(batches.map((b) => [b.id, b.order_id]));
 
@@ -235,8 +240,8 @@ export default async function ShipmentsPage() {
   rows.sort((a, b) => (Number(b.pl_number) || 0) - (Number(a.pl_number) || 0));
 
   const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
-  const toRefs = (list: { id: string; name: string }[] | null) =>
-    (list ?? []).map((r) => ({ id: r.id, name: r.name })).sort(byName);
+  const toRefs = (list: { id: string; name: string }[]) =>
+    list.map((r) => ({ id: r.id, name: r.name })).sort(byName);
 
   return (
     <div>
@@ -244,21 +249,21 @@ export default async function ShipmentsPage() {
       <ShipmentsClient
         rows={rows}
         initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
-        clients={toRefs(clientRes.data)}
-        profiles={(profileRes.data ?? [])
+        clients={toRefs(clientRes)}
+        profiles={profileRes
           .filter((p) => p.full_name)
           .map((p) => ({ id: p.id, name: p.full_name as string }))
           .sort(byName)}
         orders={orderNumbers
           .map((o) => ({ id: o.id, name: o.po_number }))
           .sort((a, b) => (Number(b.name) || 0) - (Number(a.name) || 0))}
-        orderTypes={toRefs(typeRes.data)}
-        agents={toRefs(agentRes.data)}
-        carriers={toRefs(carrierRes.data)}
-        pols={toRefs(polRes.data)}
-        pods={toRefs(podRes.data)}
-        factories={toRefs(factoryRes.data)}
-        shipmentModels={toRefs(modelRes.data)}
+        orderTypes={toRefs(typeRes)}
+        agents={toRefs(agentRes)}
+        carriers={toRefs(carrierRes)}
+        pols={toRefs(polRes)}
+        pods={toRefs(podRes)}
+        factories={toRefs(factoryRes)}
+        shipmentModels={toRefs(modelRes)}
       />
     </div>
   );

@@ -45,6 +45,20 @@ export function formatDateTime(value: string | null | undefined): string {
   return `${datePart} ${timePart}`;
 }
 
+/**
+ * Hoje como "YYYY-MM-DD" no fuso da operação (São Paulo) — a mesma forma dos
+ * campos `date` do Postgres. Vale no servidor e no cliente: o fuso é fixo, então
+ * quem abre a tela de outro fuso continua vendo o "hoje" da operação.
+ */
+export function todayIso(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 /** BU vem do banco como "Moto Parts", "Auto Parts"… a UI mostra só "Moto", "Auto". */
 export function displayBu(name: string): string {
   return name.replace(/\s*parts$/i, "");

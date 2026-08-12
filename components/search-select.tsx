@@ -20,9 +20,12 @@ export function SearchSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = options.find((o) => o.id === value);
-  const filtered = options
-    .filter((o) => o.name.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 50);
+  // Sem teto de resultados: cadastros grandes (fábricas passam de 700) ficavam
+  // cortados e a opção simplesmente não existia pra quem rolasse a lista. Quem
+  // limita é a rolagem do container, não o filtro.
+  const filtered = options.filter((o) =>
+    o.name.toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
     <Popover
