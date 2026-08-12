@@ -121,9 +121,12 @@ export default async function OrderDetailPage({
     ),
   ]);
 
+  // Ordenado por nome como nas demais telas — a tabela devolve na ordem de
+  // inserção, e o seletor de Responsible saía embaralhado.
   const profiles = profileRes
     .filter((p) => p.full_name)
-    .map((p) => ({ id: p.id, name: p.full_name as string }));
+    .map((p) => ({ id: p.id, name: p.full_name as string }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const profileMap = new Map(profiles.map((p) => [p.id, p.name]));
   const categoryMap = new Map(categoriesRes.map((c) => [c.id, c.name]));
   const factoryMap = new Map(factoriesRes.map((f) => [f.id, f.name]));
