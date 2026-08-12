@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import type { VisibilityState } from "@tanstack/react-table";
-import { Columns3 } from "lucide-react";
+import { Check, Columns3 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { saveColumnVisibility } from "@/lib/column-prefs-actions";
 
@@ -77,17 +76,30 @@ export function ColumnsMenu({
           Select the columns you want to display in the table.
         </p>
         <div className="max-h-80 space-y-1 overflow-y-auto p-2">
-          {columns.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-slate-100"
-              onClick={() => toggle(c.id)}
-            >
-              <Checkbox checked={isVisible(c.id)} className="pointer-events-none" />
-              {c.label}
-            </button>
-          ))}
+          {columns.map((c) => {
+            const visible = isVisible(c.id);
+            return (
+              <button
+                key={c.id}
+                type="button"
+                role="checkbox"
+                aria-checked={visible}
+                className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-slate-100"
+                onClick={() => toggle(c.id)}
+              >
+                {/* Caixinha decorativa: o próprio botão da linha é o checkbox.
+                    Usar o <Checkbox> aqui aninharia <button> dentro de <button>. */}
+                <span
+                  aria-hidden
+                  data-checked={visible || undefined}
+                  className="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-input data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground"
+                >
+                  {visible ? <Check className="size-3.5" /> : null}
+                </span>
+                {c.label}
+              </button>
+            );
+          })}
         </div>
         <div className="space-y-1 border-t p-3">
           <Button
