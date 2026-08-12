@@ -18,7 +18,7 @@ import type { MessageEntity } from "@/types/database";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import { SearchSelect } from "@/components/search-select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -226,19 +226,17 @@ export function MessagesBox({
             </div>
 
             <div className="grid grid-cols-2 items-center gap-2">
-              <Input
-                type="date"
-                value={filters.from ?? ""}
-                onChange={(e) => patch({ from: e.target.value || null })}
+              <DatePicker
+                value={filters.from}
+                onChange={(v) => patch({ from: v })}
                 className="h-10 bg-white"
-                aria-label="From"
+                ariaLabel="From"
               />
-              <Input
-                type="date"
-                value={filters.to ?? ""}
-                onChange={(e) => patch({ to: e.target.value || null })}
+              <DatePicker
+                value={filters.to}
+                onChange={(v) => patch({ to: v })}
                 className="h-10 bg-white"
-                aria-label="To"
+                ariaLabel="To"
               />
             </div>
 

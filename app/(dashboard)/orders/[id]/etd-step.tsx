@@ -7,8 +7,8 @@ import { toast } from "sonner";
 
 import { formatDateNumeric, formatDateTime } from "@/lib/format";
 import { SearchSelect } from "@/components/search-select";
+import { DatePicker } from "@/components/date-picker";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -296,10 +296,9 @@ function EtdUpdateModal({
                 <Label className="text-foreground">
                   {field === "current_date" ? "Current date" : "Dispatch date"}
                 </Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={dateValue}
-                  onChange={(e) => setDateValue(e.target.value)}
+                  onChange={(v) => setDateValue(v ?? "")}
                   className="mt-1.5 bg-white"
                 />
               </div>
@@ -670,12 +669,10 @@ export function EtdStepTable({
                 <TableCell>{r.category_name}</TableCell>
                 <TableCell>{r.batch_id ? (batchNumberById.get(r.batch_id) ?? "—") : "—"}</TableCell>
                 <TableCell>
-                  <Input
-                    type="date"
-                    defaultValue={etd.initial_date ?? ""}
-                    className="h-8 w-36"
-                    onBlur={(e) => {
-                      const v = e.target.value || null;
+                  <DatePicker
+                    value={etd.initial_date}
+                    className="w-36"
+                    onChange={(v) => {
                       if (v !== (etd.initial_date ?? null)) save(r.id, { initial_date: v });
                     }}
                   />
@@ -692,12 +689,10 @@ export function EtdStepTable({
                   />
                 </TableCell>
                 <TableCell>
-                  <Input
-                    type="date"
-                    defaultValue={etd.dispatch_date ?? ""}
-                    className="h-8 w-36"
-                    onBlur={(e) => {
-                      const v = e.target.value || null;
+                  <DatePicker
+                    value={etd.dispatch_date}
+                    className="w-36"
+                    onChange={(v) => {
                       if (v !== (etd.dispatch_date ?? null)) save(r.id, { dispatch_date: v });
                     }}
                   />

@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -76,11 +77,10 @@ export function ProfileForm({
         </div>
         <div className="grid gap-2">
           <Label htmlFor="date_of_birth">Date of birth</Label>
-          <Input
+          <DatePicker
             id="date_of_birth"
-            type="date"
             value={dob}
-            onChange={(e) => setDob(e.target.value)}
+            onChange={(v) => setDob(v ?? "")}
             disabled={pending}
           />
         </div>

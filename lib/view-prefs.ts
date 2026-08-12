@@ -16,7 +16,7 @@ export const VIEW_PREFS_KEY = "views";
 export type ViewPrefs = {
   /** Mostra só as etapas em que o usuário é o responsável. */
   onlyMySteps: boolean;
-  /** Esconde etapas já concluídas (com `completed_on`). */
+  /** Esconde etapas já concluídas (ver `lib/checklist-completion`). */
   hideCompletedSteps: boolean;
   /** Esconde as etapas desabilitadas do checklist. */
   hideDisabledSteps: boolean;
@@ -70,6 +70,12 @@ type FilterableStep = {
   enabled?: boolean;
   completed_on: string | null;
   responsible_id: string | null;
+  /**
+   * Etapa concluída pela regra de `lib/checklist-completion` — as três telas já
+   * derivam esse campo antes de filtrar. Ausente, "concluída" cai em ter
+   * `completed_on`, que é a condição comum às 24 etapas.
+   */
+  done?: boolean;
 };
 
 /**
@@ -88,7 +94,7 @@ export function filterSteps<T extends FilterableStep>(
     if (prefs.onlyMySteps && step.responsible_id && step.responsible_id !== currentUserId) {
       return false;
     }
-    if (prefs.hideCompletedSteps && step.completed_on) return false;
+    if (prefs.hideCompletedSteps && (step.done ?? !!step.completed_on)) return false;
     if (prefs.hideDisabledSteps && step.enabled === false) return false;
     return true;
   });

@@ -21,6 +21,13 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
+import {
+  hasExtraRequirements,
+  isStepChecked,
+  missingLabel,
+  piDocumentRequired,
+  type ChecklistFacts,
+} from "@/lib/checklist-completion";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep, LoadingStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -29,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusPill } from "@/components/status-pill";
 import { SearchSelect } from "@/components/search-select";
+import { DatePicker } from "@/components/date-picker";
 import {
   Select,
   SelectContent,
@@ -96,22 +104,6 @@ const TOGGLEABLE_STEPS = new Set<ChecklistStep>([
   "balance_payment",
 ]);
 
-/**
- * Etapas com requisito próprio: enquanto ele não é cumprido aparece o "i"
- * laranja; cumprido, a etapa fica verde sem depender de "Completed on".
- *
- *   po           → o pedido tem pelo menos um lote
- *   pi           → documento anexado
- *   etd          → todas as entradas Factory×Category com "Initial date"
- *   pre_loading  → documento anexado
- */
-const STEPS_WITH_REQUIREMENT = new Set<ChecklistStep>([
-  "po",
-  "pi",
-  "etd",
-  "pre_loading",
-]);
-
 // Só lotes em In Negotiation/In Production aceitam novas entradas Factory x
 // Category (ou troca de lote de uma entrada existente) — uma vez em
 // Pre-Loading pra frente, o lote "fecha" pra esse cadastro (regra do Bubble).
@@ -121,6 +113,7 @@ export type ChecklistStepRow = {
   id: string;
   step: ChecklistStep;
   enabled: boolean;
+  /** Espelho de `completed_on` no banco — a tela recalcula pela regra real. */
   done: boolean;
   estimated_date: string | null;
   completed_on: string | null;
@@ -239,34 +232,38 @@ function ResponsibleRow({ name, role }: { name: string | null; role: string }) {
 
 /**
  * Bolinha da etapa: halo claro por fora + miolo menor no centro. Verde quando
- * concluída ou quando o requisito da etapa foi cumprido; "i" laranja enquanto
- * o requisito está pendente (ver STEPS_WITH_REQUIREMENT).
+ * a etapa está concluída pela regra de `lib/checklist-completion` (data +
+ * eventuais exigências extras); "i" laranja quando a etapa exige mais que a
+ * data e ainda não fechou — o tooltip diz o que falta.
  */
 function StepIcon({
-  step,
   enabled,
-  done,
-  requirementMet,
+  checked,
+  gated,
+  title,
 }: {
-  step: ChecklistStep;
   enabled: boolean;
-  done: boolean;
-  requirementMet: boolean;
+  checked: boolean;
+  /** A etapa tem exigência além do "Completed on". */
+  gated: boolean;
+  title?: string;
 }) {
-  const gated = enabled && STEPS_WITH_REQUIREMENT.has(step);
-  if (done || (gated && requirementMet)) {
-    return <CheckCircle2 className="size-5 shrink-0 fill-emerald-600 text-white" />;
-  }
-  if (gated) {
-    return <Info className="size-5 shrink-0 fill-amber-500 text-white" />;
-  }
-  return (
+  const icon = checked ? (
+    <CheckCircle2 className="size-5 fill-emerald-600 text-white" />
+  ) : enabled && gated ? (
+    <Info className="size-5 fill-amber-500 text-white" />
+  ) : (
     <span
-      className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${
+      className={`inline-flex size-5 items-center justify-center rounded-full ${
         enabled ? "bg-blue-100" : "bg-slate-100"
       }`}
     >
       <span className={`size-2 rounded-full ${enabled ? "bg-blue-600" : "bg-slate-400"}`} />
+    </span>
+  );
+  return (
+    <span className="flex shrink-0" title={title} aria-label={title}>
+      {icon}
     </span>
   );
 }
@@ -581,11 +578,10 @@ function EditBatchModal({
               </div>
               <div>
                 <Label className="text-foreground">Ship requirement</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={shipRequirement}
-                  onChange={(e) => setShipRequirement(e.target.value)}
-                  // h-10 casa com o trigger do SearchSelect ao lado (o Input
+                  onChange={(v) => setShipRequirement(v ?? "")}
+                  // h-10 casa com o trigger do SearchSelect ao lado (o campo
                   // padrão do design system é h-8 e ficava mais baixo).
                   className="mt-1.5 h-10"
                 />
@@ -819,11 +815,10 @@ function CreateBatchModal({
               </div>
               <div>
                 <Label className="text-foreground">Ship requirement</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={shipRequirement}
-                  onChange={(e) => setShipRequirement(e.target.value)}
-                  // h-10 casa com o trigger do SearchSelect ao lado (o Input
+                  onChange={(v) => setShipRequirement(v ?? "")}
+                  // h-10 casa com o trigger do SearchSelect ao lado (o campo
                   // padrão do design system é h-8 e ficava mais baixo).
                   className="mt-1.5 h-10"
                 />
@@ -1055,27 +1050,29 @@ export function OrderDetailClient({
   const etdInitialFilled =
     ofc.length > 0 && ofc.every((o) => !!etdByOfc[o.id]?.initial_date);
 
-  /** Requisito da etapa cumprido? Só vale para STEPS_WITH_REQUIREMENT. */
-  function requirementMet(step: ChecklistStepRow): boolean {
-    switch (step.step) {
-      case "po":
-        return batches.length > 0;
-      case "etd":
-        return etdInitialFilled;
-      case "pi":
-      case "pre_loading":
-        return step.attachments.length > 0;
-      default:
-        return false;
-    }
-  }
+  // `done` do banco é só o espelho de `completed_on`; quem decide se a etapa
+  // está concluída é a regra de lib/checklist-completion, que também consulta
+  // anexos, entradas Factory×Category e ETD. Derivado aqui, uma vez.
+  const checkedSteps = useMemo(() => {
+    const piDocs = piDocumentRequired(order.type);
+    return steps.map((s) => {
+      const facts: ChecklistFacts = {
+        completedOn: s.completed_on,
+        attachments: s.attachments.length,
+        factoryCategoryCount: ofc.length,
+        etdInitialFilled,
+        piDocumentRequired: piDocs,
+      };
+      return { ...s, facts, done: isStepChecked(s.step, facts) };
+    });
+  }, [steps, ofc.length, etdInitialFilled, order.type]);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para
   // qualquer regra que dependa do checklist completo — esconder uma etapa é
   // preferência de leitura, não pode mudar o comportamento da tela.
   const visibleSteps = useMemo(
-    () => filterSteps(steps, viewPrefs, currentUserId),
-    [steps, viewPrefs, currentUserId]
+    () => filterSteps(checkedSteps, viewPrefs, currentUserId),
+    [checkedSteps, viewPrefs, currentUserId]
   );
 
   const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
@@ -1308,14 +1305,17 @@ export function OrderDetailClient({
           ) : (
             visibleSteps.map((s) => {
               const open = isStepOpen(s.step);
+              const facts = s.facts;
               return (
                 <div key={s.step} className="border-b last:border-b-0">
                   <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                     <StepIcon
-                      step={s.step}
                       enabled={s.enabled}
-                      done={s.done}
-                      requirementMet={requirementMet(s)}
+                      checked={s.done}
+                      gated={hasExtraRequirements(s.step, facts)}
+                      // Etapa desligada não se aplica a este pedido: não há o
+                      // que cobrar dela.
+                      title={s.enabled ? missingLabel(s.step, facts) : undefined}
                     />
                     <button
                       type="button"
@@ -1354,11 +1354,10 @@ export function OrderDetailClient({
                           <Label className="text-xs text-muted-foreground">
                             Estimated date
                           </Label>
-                          <Input
-                            type="date"
-                            defaultValue={s.estimated_date ?? ""}
-                            onBlur={(e) => {
-                              const v = e.target.value || null;
+                          <DatePicker
+                            value={s.estimated_date}
+                            disabled={stepPending}
+                            onChange={(v) => {
                               if (v !== (s.estimated_date ?? null))
                                 saveStepField(s, { estimated_date: v });
                             }}
@@ -1391,11 +1390,18 @@ export function OrderDetailClient({
                           <Label className="text-xs text-muted-foreground">
                             Completed on
                           </Label>
-                          <Input
-                            type="date"
-                            defaultValue={s.completed_on ?? ""}
-                            onBlur={(e) => {
-                              const v = e.target.value || null;
+                          {/* Sem "Estimated date" não há o que concluir. Etapa
+                              antiga que já tem a conclusão segue editável, pra
+                              não ficar presa com o campo travado. */}
+                          <DatePicker
+                            value={s.completed_on}
+                            disabled={
+                              stepPending || (!s.estimated_date && !s.completed_on)
+                            }
+                            placeholder={
+                              s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
+                            }
+                            onChange={(v) => {
                               if (v !== (s.completed_on ?? null))
                                 saveStepField(s, { completed_on: v });
                             }}

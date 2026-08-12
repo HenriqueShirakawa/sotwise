@@ -1,4 +1,5 @@
 import { requireFeature } from "@/lib/dal";
+import { fetchAll } from "@/lib/fetch-all";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { UsersClient, type UserRow } from "./users-client";
@@ -40,11 +41,23 @@ export default async function UsersPage() {
   const session = await requireFeature("users"); // sem a feature → volta para a primeira tela visível
 
   const admin = createAdminClient();
+  // Paginado: a lista inteira vai pro cliente, que pagina (ver lib/fetch-all).
   const [profilesRes, rolesRes, authInfo] = await Promise.all([
-    admin
-      .from("profiles")
-      .select("id, full_name, date_of_birth, role_id, company, status, hidden")
-      .order("full_name"),
+    fetchAll<{
+      id: string;
+      full_name: string;
+      date_of_birth: string | null;
+      role_id: string;
+      company: UserRow["company"];
+      status: UserRow["status"];
+      hidden: boolean;
+    }>((from, to) =>
+      admin
+        .from("profiles")
+        .select("id, full_name, date_of_birth, role_id, company, status, hidden")
+        .order("full_name")
+        .range(from, to)
+    ),
     admin.from("roles").select("id, name").order("name"),
     loadAuthInfo(admin),
   ]);
@@ -52,7 +65,7 @@ export default async function UsersPage() {
   const roles = rolesRes.data ?? [];
   const roleName = new Map(roles.map((r) => [r.id, r.name]));
 
-  const rows: UserRow[] = (profilesRes.data ?? []).map((p) => {
+  const rows: UserRow[] = profilesRes.map((p) => {
     const auth = authInfo.get(p.id);
     return {
       id: p.id,

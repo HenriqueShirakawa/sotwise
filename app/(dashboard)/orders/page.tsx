@@ -1,24 +1,9 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { fetchAll } from "@/lib/fetch-all";
 
 import { OrdersClient, type OrderRow } from "./orders-client";
-
-const PAGE = 1000; // limite de linhas por request do PostgREST
-
-/** Busca TODAS as linhas de uma query paginando em blocos de 1000. */
-async function fetchAll<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null }>
-): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data } = await build(from, from + PAGE - 1);
-    const chunk = data ?? [];
-    all.push(...chunk);
-    if (chunk.length < PAGE) break;
-  }
-  return all;
-}
 
 // ETD do pedido = menor "Initial date" entre suas entradas Factory×Category.
 // Em vez de baixar order_factory_category inteiro (9.485 linhas) só pra mapear
@@ -73,24 +58,30 @@ export default async function OrdersPage() {
           .range(from, to)
           .returns<EtdOrderRow[]>()
       ),
-      admin.from("business_units").select("id, name").is("deleted_at", null),
-      admin.from("order_types").select("id, name, color").is("deleted_at", null),
-      admin.from("clients").select("id, name").is("deleted_at", null),
-      admin.from("exporters").select("id, name, acronym").is("deleted_at", null),
-      admin.from("profiles").select("id, full_name"),
+      // Cadastros que alimentam os seletores: via fetchAll para nenhum ficar
+      // cortado no teto de 1000 do PostgREST (ver lib/fetch-all).
+      fetchAll<{ id: string; name: string }>((from, to) =>
+        admin.from("business_units").select("id, name").is("deleted_at", null).range(from, to)
+      ),
+      fetchAll<{ id: string; name: string; color: string | null }>((from, to) =>
+        admin.from("order_types").select("id, name, color").is("deleted_at", null).range(from, to)
+      ),
+      fetchAll<{ id: string; name: string }>((from, to) =>
+        admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
+      ),
+      fetchAll<{ id: string; name: string; acronym: string | null }>((from, to) =>
+        admin.from("exporters").select("id, name, acronym").is("deleted_at", null).range(from, to)
+      ),
+      fetchAll<{ id: string; full_name: string | null }>((from, to) =>
+        admin.from("profiles").select("id, full_name").range(from, to)
+      ),
     ]);
 
-  const buMap = new Map((buRes.data ?? []).map((b) => [b.id, b.name]));
-  const typeMap = new Map(
-    (typeRes.data ?? []).map((t) => [t.id, { name: t.name, color: t.color }])
-  );
-  const clientMap = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
-  const exporterMap = new Map(
-    (exporterRes.data ?? []).map((e) => [e.id, e.acronym || e.name])
-  );
-  const profileMap = new Map(
-    (profileRes.data ?? []).map((p) => [p.id, p.full_name])
-  );
+  const buMap = new Map(buRes.map((b) => [b.id, b.name]));
+  const typeMap = new Map(typeRes.map((t) => [t.id, { name: t.name, color: t.color }]));
+  const clientMap = new Map(clientRes.map((c) => [c.id, c.name]));
+  const exporterMap = new Map(exporterRes.map((e) => [e.id, e.acronym || e.name]));
+  const profileMap = new Map(profileRes.map((p) => [p.id, p.full_name]));
 
   const batchesByOrder = new Map<string, OrderRow["batches"]>();
   for (const b of batches) {
@@ -148,19 +139,13 @@ export default async function OrdersPage() {
   const byName = (a: { name: string }, b: { name: string }) =>
     a.name.localeCompare(b.name);
 
-  const clients = (clientRes.data ?? [])
-    .map((c) => ({ id: c.id, name: c.name }))
-    .sort(byName);
-  const orderTypes = (typeRes.data ?? [])
-    .map((t) => ({ id: t.id, name: t.name }))
-    .sort(byName);
-  const businessUnits = (buRes.data ?? [])
-    .map((b) => ({ id: b.id, name: b.name }))
-    .sort(byName);
-  const exporters = (exporterRes.data ?? [])
+  const clients = clientRes.map((c) => ({ id: c.id, name: c.name })).sort(byName);
+  const orderTypes = typeRes.map((t) => ({ id: t.id, name: t.name })).sort(byName);
+  const businessUnits = buRes.map((b) => ({ id: b.id, name: b.name })).sort(byName);
+  const exporters = exporterRes
     .map((e) => ({ id: e.id, name: e.acronym || e.name }))
     .sort(byName);
-  const profiles = (profileRes.data ?? [])
+  const profiles = profileRes
     .filter((p) => p.full_name)
     .map((p) => ({ id: p.id, name: p.full_name as string }))
     .sort(byName);

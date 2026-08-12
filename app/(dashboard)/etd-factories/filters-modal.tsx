@@ -5,7 +5,7 @@ import { useState } from "react";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/date-picker";
 import { Label } from "@/components/ui/label";
 import { SearchSelect } from "@/components/search-select";
 import {
@@ -101,8 +101,8 @@ function DateRangeField({
   return (
     <Field label={label}>
       <div className="grid grid-cols-2 gap-3">
-        <Input type="date" value={from} onChange={(e) => onFromChange(e.target.value)} />
-        <Input type="date" value={to} onChange={(e) => onToChange(e.target.value)} />
+        <DatePicker value={from} onChange={(v) => onFromChange(v ?? "")} ariaLabel="From" />
+        <DatePicker value={to} onChange={(v) => onToChange(v ?? "")} ariaLabel="To" />
       </div>
     </Field>
   );

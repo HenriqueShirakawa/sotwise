@@ -1,6 +1,13 @@
 import { notFound } from "next/navigation";
 
 import { requireFeature } from "@/lib/dal";
+import {
+  hasExtraRequirements,
+  isStepChecked,
+  missingLabel,
+  plStepFacts,
+} from "@/lib/checklist-completion";
+import { fetchAll } from "@/lib/fetch-all";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep, LoadingStatus } from "@/types/database";
@@ -116,7 +123,9 @@ export default async function ShipmentDetailPage({
         "batch_id, batches(id, batch_number, status, orders(po_number, client_id, date_po))"
       )
       .eq("pre_loading_id", pl.id),
-    admin.from("profiles").select("id, full_name"),
+    fetchAll<{ id: string; full_name: string | null }>((from, to) =>
+      admin.from("profiles").select("id, full_name").range(from, to)
+    ),
     pl.pod_id
       ? admin.from("pods").select("name").eq("id", pl.pod_id).single()
       : Promise.resolve({ data: null }),
@@ -126,21 +135,36 @@ export default async function ShipmentDetailPage({
     shipment.carrier_id
       ? admin.from("carriers").select("name").eq("id", shipment.carrier_id).single()
       : Promise.resolve({ data: null }),
-    admin.from("factories").select("id, name"),
-    admin.from("cities").select("id, name"),
-    admin.from("pols").select("id, name"),
-    admin.from("agents").select("id, name"),
-    admin.from("contacts").select("id, name"),
-    admin.from("clients").select("id, name"),
+    // Cadastros usados pra resolver os valores das etapas herdadas do PL:
+    // paginados para nenhum ficar cortado no teto de 1000 do PostgREST — nome
+    // que não vem do mapa apareceria como "—" na tela (ver lib/fetch-all).
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("factories").select("id, name").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("cities").select("id, name").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("pols").select("id, name").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("agents").select("id, name").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("contacts").select("id, name").range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("clients").select("id, name").range(from, to)
+    ),
   ]);
 
-  const profileNameById = new Map((profileRes.data ?? []).map((p) => [p.id, p.full_name]));
-  const clientNameById = new Map((clientRes.data ?? []).map((c) => [c.id, c.name]));
-  const factoryNameById = new Map((factoryRes.data ?? []).map((f) => [f.id, f.name]));
-  const cityNameById = new Map((cityRes.data ?? []).map((c) => [c.id, c.name]));
-  const polNameById = new Map((polRes.data ?? []).map((p) => [p.id, p.name]));
-  const agentNameById = new Map((agentRes.data ?? []).map((a) => [a.id, a.name]));
-  const contactNameById = new Map((contactRes.data ?? []).map((c) => [c.id, c.name]));
+  const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
+  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
+  const factoryNameById = new Map(factoryRes.map((f) => [f.id, f.name]));
+  const cityNameById = new Map(cityRes.map((c) => [c.id, c.name]));
+  const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
+  const agentNameById = new Map(agentRes.map((a) => [a.id, a.name]));
+  const contactNameById = new Map(contactRes.map((c) => [c.id, c.name]));
 
   const clients = (plClientsRes.data ?? [])
     .map((c) => clientNameById.get(c.client_id))
@@ -211,7 +235,11 @@ export default async function ShipmentDetailPage({
     : { data: [] as OfcEmbed[] };
 
   const categoryNameById = new Map(
-    ((await admin.from("categories").select("id, name")).data ?? []).map((c) => [c.id, c.name])
+    (
+      await fetchAll<{ id: string; name: string }>((from, to) =>
+        admin.from("categories").select("id, name").range(from, to)
+      )
+    ).map((c) => [c.id, c.name])
   );
 
   const partsByBatch = new Map<string, PartRow[]>();
@@ -304,9 +332,12 @@ export default async function ShipmentDetailPage({
   const steps: ShipmentStepRow[] = STEP_ORDER.map((step) => {
     const s = byStep.get(step);
     if (!s) {
+      const empty = plStepFacts({ completed_on: null }, 0);
       return {
         step,
         done: false,
+        gated: hasExtraRequirements(step, empty),
+        missing: missingLabel(step, empty) ?? null,
         attachments: [],
         estimated_date: null,
         responsible: null,
@@ -317,10 +348,16 @@ export default async function ShipmentDetailPage({
         detail: null,
       };
     }
+    const attachments = attachmentsByStepId.get(s.id) ?? [];
+    // Mesma regra das outras duas telas (ver lib/checklist-completion). Resolvida
+    // aqui porque a tela só recebe os valores da etapa já virados em texto.
+    const facts = plStepFacts(s, attachments.length);
     return {
       step,
-      done: s.completed_on != null,
-      attachments: attachmentsByStepId.get(s.id) ?? [],
+      done: isStepChecked(step, facts),
+      gated: hasExtraRequirements(step, facts),
+      missing: missingLabel(step, facts) ?? null,
+      attachments,
       estimated_date: s.estimated_date,
       responsible: s.responsible_id ? (profileNameById.get(s.responsible_id) ?? null) : null,
       responsible_id: s.responsible_id,
@@ -348,13 +385,13 @@ export default async function ShipmentDetailPage({
     delivery: stepByKey.get("delivered")?.completed_on ?? null,
   };
 
-  const profiles: Ref[] = (profileRes.data ?? [])
+  const profiles: Ref[] = profileRes
     .filter((p) => p.full_name)
     .map((p) => ({ id: p.id, name: p.full_name as string }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   // Cadastro de fábricas — o modal de ETD usa no campo "Dispatch location".
-  const factories: Ref[] = (factoryRes.data ?? [])
+  const factories: Ref[] = factoryRes
     .map((f) => ({ id: f.id, name: f.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

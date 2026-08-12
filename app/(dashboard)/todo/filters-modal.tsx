@@ -12,7 +12,7 @@ import {
 } from "@/lib/checklist";
 import type { ChecklistStep, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/date-picker";
 import { Label } from "@/components/ui/label";
 import { SearchSelect } from "@/components/search-select";
 import {
@@ -162,17 +162,17 @@ export function FiltersModal({
             </Field>
             <Field label="Date Estimated">
               <div className="grid grid-cols-2 gap-3">
-                <Input
-                  type="date"
+                <DatePicker
                   value={draft.date_from}
-                  onChange={(e) => set("date_from", e.target.value)}
+                  onChange={(v) => set("date_from", v ?? "")}
                   placeholder="From"
+                  ariaLabel="From"
                 />
-                <Input
-                  type="date"
+                <DatePicker
                   value={draft.date_to}
-                  onChange={(e) => set("date_to", e.target.value)}
+                  onChange={(v) => set("date_to", v ?? "")}
                   placeholder="To"
+                  ariaLabel="To"
                 />
               </div>
             </Field>

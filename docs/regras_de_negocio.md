@@ -912,8 +912,54 @@ O **Order Progress**: as etapas obrigatórias. **As etapas são FIXAS (definidas
 
 > ⚠️ **Ordem sequencial dentro da fase — regra vs. realidade:** o esperado é que as etapas dentro de uma mesma fase sejam completadas em ordem (ex.: dentro de "Order", PO antes de PI antes de Deposit Payment...). Confirmado com o cliente que **isso não é garantido hoje no Bubble** — é um gap conhecido, não uma regra de negócio a replicar. Na versão nova, avaliar se vale a pena **impor** a ordem sequencial (bloquear conclusão de uma etapa se a anterior da mesma fase não estiver concluída) já que parece ser o comportamento pretendido, mesmo que não implementado hoje. Confirmar com o cliente se essa é uma melhoria desejada ou se a flexibilidade atual (completar fora de ordem) deve ser preservada.
 
-- Ícones: laranja = exige documento; azul = não exige; verde = concluída.
-- **Conclusão da etapa:** pelo preenchimento de `completed_on` (ver 3.9.5 — mesma regra do checklist de Pre-loading/Shipment). Os demais campos (Estimated date, Responsible, Signed by, anexos) são opcionais.
+- Ícones: laranja = a etapa exige algo além da data e ainda não cumpriu; azul = só a data pendente; verde = concluída.
+- **Conclusão da etapa:** `completed_on` é a condição comum às 24, mas **não é a única** — 13 etapas exigem também um documento, um cadastro escolhido ou um número digitado. Tabela abaixo. Os demais campos (Estimated date, Responsible, Signed by) continuam opcionais.
+
+##### Condição de conclusão por etapa (✅ confirmado com o cliente)
+
+Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a isso:
+
+| # | Etapa | + além da data |
+|---|---|---|
+| 1 | Order | — |
+| 2 | PO | documento **e** entradas Factory × Category |
+| 3 | PI | documento — **só quando o Order Type é Sales**; Samples, Gift e Replacement fecham só com a data |
+| 4 | Deposit Payment | — |
+| 5 | Packing Confirm. | — |
+| 6 | Condition Confirm. | — |
+| 7 | Place the Order | documento |
+| 8 | ETD | "Initial date" preenchido em TODAS as entradas Factory × Category |
+| 9 | Balance Payment | — |
+| 10 | Pre-Loading | documento |
+| 11 | Consolidation Point | consolidation point escolhido (cadastro de **fábricas**) |
+| 12 | City | city escolhida |
+| 13 | Port of Loading | port of loading escolhido — cadastro de **portos** (`pols`), **não** de fábricas |
+| 14 | Shipping Docs | documento |
+| 15 | Agents | os 5: carrier agent, agent Brazil, agent China, contact Brazil, contact China |
+| 16 | Booking | booking number |
+| 17 | Loading Date | — |
+| 18 | Shipping Date | — |
+| 19 | BL | documento |
+| 20 | Original Docs | documento |
+| 21 | Inspection Report | — (aceita documento, mas **hoje é opcional**; pode virar obrigatório) |
+| 22 | ETA Brazil | — |
+| 23 | ATA Brazil | — |
+| 24 | Delivered | — |
+
+##### Ordem de preenchimento: Estimated date antes de Completed on (✅ confirmado 12/08/2026)
+
+**`Completed on` só pode ser preenchido se o `Estimated date` estiver preenchido** — não se conclui uma etapa que nunca foi prevista. Vale nas 24 etapas, nas três telas.
+
+- Na UI o campo "Completed on" fica **desabilitado** enquanto não há estimativa, com o texto "Set the estimated date" no lugar do `dd/mm/yyyy`.
+- No servidor a regra é reforçada em `validateStepDates` (`lib/checklist-completion.ts`), chamada pelas três actions de gravação — a trava não é só visual.
+- **Limpar o `Estimated date` de uma etapa já concluída é bloqueado**, senão o par ficaria inválido. Primeiro limpa a conclusão, depois a estimativa.
+- ⚠️ **Não é retroativo.** Boa parte do acervo migrado do Bubble tem `completed_on` sem `estimated_date` (a estimativa não veio na migração). Essas etapas continuam válidas e concluídas; o campo segue editável nelas, para não ficarem presas. A validação só julga quando a gravação mexe numa das duas datas — editar Responsible numa etapa dessas não é barrado.
+
+> Implementado em `lib/checklist-completion.ts`, aplicado **na leitura** pelas três telas (Order, Pre-loading, Shipment). A mesma regra vale para o contador "X of Y steps completed", para o filtro "Hide completed steps" e para a trava do **Confirm Shipping** — verde significa a mesma coisa em todo lugar.
+>
+> ⚠️ As colunas `done` de `order_checklist_steps` e `pre_loading_checklist_steps` continuam sendo só o **espelho de `completed_on`** (é o que os writers gravam). Não são a fonte da verdade da conclusão: parte das condições (anexos, entradas Factory × Category, ETD) muda fora do save da etapa, e um valor gravado envelheceria. Quem pergunta "está concluída?" chama `isStepChecked`.
+>
+> ⚠️ **A To do list continua listando por `completed_on IS NULL`**, não pela regra completa — de propósito. Etapa migrada do Bubble sem documento reapareceria como tarefa em massa (o mesmo ruído de migração que o filtro de status terminal já trata). Revisar quando o acervo migrado estiver completo.
 - **Etapas opcionais (toggle):** as 4 etapas marcadas acima podem ser desativadas; desativadas somem do checklist e não precisam ser cumpridas.
 - Enquanto etapas **ativas e obrigatórias** não concluídas, o pedido **não avança**.
 - A **Camada 2 do RBAC** (Profile Filters for Steps) — deny por etapa/perfil, escopo indefinido (ver 3.7.5 e seção 8).
@@ -959,7 +1005,7 @@ create table public.order_checklist_steps (
   order_id      uuid not null references public.orders(id) on delete cascade,
   step          public.checklist_step not null,
   enabled       boolean not null default true,   -- TOGGLE: só as etapas opcionais podem ir a false; false = etapa não faz parte deste pedido
-  done          boolean not null default false,  -- derivado de completed_on (ver 3.9.5)
+  done          boolean not null default false,  -- espelho de completed_on; a conclusão real é isStepChecked (ver 3.7.5)
   estimated_date date,
   responsible_id uuid references public.profiles(id),
   completed_on  date,                            -- preenchido = etapa concluída
@@ -1146,11 +1192,12 @@ Mesmas etapas 11–17 já mapeadas no enum `checklist_step` (fase `preloading`),
 | Booking | idem | `booking_number` (text) |
 | Loading Date | idem | — (a data vem de "Completed on"/"Estimated date") |
 
-**Ícones de estado das etapas** (iguais aos de Orders): laranja = pendente/exige documento · verde ✓ = concluída · azul = em andamento.
+**Ícones de estado das etapas** (iguais aos de Orders): laranja = a etapa exige algo além da data e ainda não cumpriu (o tooltip diz o quê) · verde ✓ = concluída · azul = só a data pendente.
 
 ##### Regras de comportamento — diferenças em relação ao checklist de Orders
 
-- ✅ **Sem toggle de conclusão — gatilho confirmado.** Diferente da Rua Orders - Checklist (que tem switch por etapa), aqui **não existe toggle manual**. A conclusão da etapa (`done` / ✓ verde) é **derivada do preenchimento do campo `completed_on` (Completed date)**. Confirmado com o cliente: **é o único campo obrigatório para concluir uma etapa** — Estimated date, Responsible, Signed by e anexos são opcionais e não travam a conclusão. Vale para todas as etapas do checklist de Pre-loading e de Shipment. _(A evidência anterior de etapa "Port of Loading" concluída com campo vazio era um bug do Bubble — no sistema novo, impor: `completed_on IS NOT NULL` ⇒ concluída.)_
+- ✅ **Sem toggle de conclusão — gatilho confirmado.** Diferente da Rua Orders - Checklist (que tem switch por etapa), aqui **não existe toggle manual**. A conclusão da etapa (✓ verde) é **derivada dos campos preenchidos**, com `completed_on` (Completed date) sempre obrigatório. Estimated date, Responsible e Signed by nunca travam a conclusão.
+  - ⚠️ **Revisado (12/08/2026):** a versão anterior desta regra dizia que `completed_on` era o **único** campo obrigatório. Não é: o cliente detalhou etapa a etapa e 13 das 24 exigem também documento, cadastro escolhido ou número digitado — ver a tabela em **3.7.5**. Aqui isso alcança Consolidation Point, City, Port of Loading, Shipping Docs, Agents e Booking. _(A evidência antiga de "Port of Loading" concluída com o campo vazio era bug do Bubble; agora o campo é exigido de verdade.)_
 - ✅ **Shipping Docs não tem campo específico.** O campo "Consolidation Point" que aparece nessa etapa no Figma é **erro de reuso do protótipo** — no Bubble a etapa tem apenas os campos padrão (Estimated date, Responsible, Completed on, Signed by, Attached documents).
 - ✅ **Table information (cabeçalho do PL) é apenas visual/read-only** dentro do checklist. Toda a edição dos dados do PL (PL number, POD, Leader, Client(s) Reference, etc.) é feita **fora**, na lista de Pre-loading, pelo ícone de lápis — que reabre **o mesmo popup usado na criação**.
 
@@ -1166,7 +1213,7 @@ create table public.pre_loading_checklist_steps (
   id                     uuid primary key default gen_random_uuid(),
   pre_loading_id         uuid not null references public.pre_loadings(id) on delete cascade,
   step                   public.checklist_step not null,   -- consolidation_point .. delivered (#11–24)
-  done                   boolean not null default false,  -- DERIVADO: = (completed_on IS NOT NULL). Sem toggle manual nesta tela
+  done                   boolean not null default false,  -- espelho de (completed_on IS NOT NULL); conclusão real = isStepChecked (3.7.5). Sem toggle manual nesta tela
   estimated_date         date,
   responsible_id         uuid references public.profiles(id),
   completed_on           date,

@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
+import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
+import { fetchAll } from "@/lib/fetch-all";
 import { syncOrderStatus } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
@@ -281,6 +283,18 @@ export async function updateChecklistStep(
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
   const admin = createAdminClient();
+
+  // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
+  const { data: current, error: readError } = await admin
+    .from("order_checklist_steps")
+    .select("estimated_date, completed_on")
+    .eq("id", stepId)
+    .maybeSingle();
+  if (readError) return { ok: false, error: readError.message };
+  if (!current) return { ok: false, error: "Checklist step not found." };
+
+  const dateError = validateStepDates(current, patch);
+  if (dateError) return { ok: false, error: dateError };
 
   const update: TablesUpdate<"order_checklist_steps"> = { ...patch };
   if ("completed_on" in patch) update.done = !!patch.completed_on;
@@ -614,12 +628,18 @@ export async function getOrderEtdStepData(
       .from("order_factory_category")
       .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
       .eq("order_id", orderId),
-    admin.from("categories").select("id, name").is("deleted_at", null),
-    admin.from("factories").select("id, name").is("deleted_at", null),
+    // Paginados: cortados no teto de 1000 do PostgREST, a entrada apareceria
+    // com fábrica/categoria "—" na tela (ver lib/fetch-all).
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
   ]);
 
-  const categoryMap = new Map((categoriesRes.data ?? []).map((c) => [c.id, c.name]));
-  const factoryMap = new Map((factoriesRes.data ?? []).map((f) => [f.id, f.name]));
+  const categoryMap = new Map(categoriesRes.map((c) => [c.id, c.name]));
+  const factoryMap = new Map(factoriesRes.map((f) => [f.id, f.name]));
 
   const ofc: OfcRow[] = (ofcRes.data ?? []).map((o) => ({
     id: o.id,

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchSelect } from "@/components/search-select";
@@ -192,10 +193,9 @@ export function ConfirmShippingModal({
             <Label className="text-xs text-muted-foreground">
               Estimated <span className="text-rose-500">*</span>
             </Label>
-            <Input
-              type="date"
+            <DatePicker
               value={estimated}
-              onChange={(e) => setEstimated(e.target.value)}
+              onChange={(v) => setEstimated(v ?? "")}
               className="mt-1 bg-white"
             />
           </div>

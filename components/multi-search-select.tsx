@@ -26,9 +26,11 @@ export function MultiSearchSelect({
   const [query, setQuery] = useState("");
 
   const nameById = new Map(options.map((o) => [o.id, o.name]));
-  const filtered = options
-    .filter((o) => o.name.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 50);
+  // Sem teto de resultados — mesma razão do `SearchSelect`: cadastro grande
+  // ficava cortado e a opção sumia da lista.
+  const filtered = options.filter((o) =>
+    o.name.toLowerCase().includes(query.toLowerCase())
+  );
 
   const toggle = (id: string) =>
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
