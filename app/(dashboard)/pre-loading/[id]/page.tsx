@@ -243,6 +243,8 @@ export default async function PreLoadingChecklistPage({
   );
   type OfcLineEmbed = {
     id: string;
+    batch_id: string;
+    ship_requirement: string | null;
     factories: { name: string } | null;
     categories: { name: string } | null;
     orders: { po_number: string } | null;
@@ -253,7 +255,7 @@ export default async function PreLoadingChecklistPage({
     ? await admin
         .from("order_factory_category")
         .select(
-          "id, factories(name), categories(name), orders(po_number), batches(batch_number), etd_info(initial_date)"
+          "id, batch_id, ship_requirement, factories(name), categories(name), orders(po_number), batches(batch_number), etd_info(initial_date)"
         )
         .in("batch_id", plBatchIds)
         .returns<OfcLineEmbed[]>()
@@ -262,6 +264,8 @@ export default async function PreLoadingChecklistPage({
     const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
     return {
       id: o.id,
+      batch_id: o.batch_id,
+      ship_requirement: o.ship_requirement,
       factory: o.factories?.name ?? "—",
       category: o.categories?.name ?? "—",
       etd_initial: etd?.initial_date ?? null,

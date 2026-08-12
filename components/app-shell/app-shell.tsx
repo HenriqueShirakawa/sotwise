@@ -12,7 +12,7 @@ import type { PermissionMap } from "@/domain/access/features";
 import { SidebarNav } from "./sidebar-nav";
 import { UserCard } from "./user-menu";
 
-/** Iniciais (até 2) pro avatar do trilho colapsado. */
+/** Iniciais (até 2) para o avatar do trilho colapsado. */
 function initials(name: string) {
   return (
     name
