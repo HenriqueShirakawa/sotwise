@@ -1,7 +1,45 @@
 import "server-only";
 
+import { serverEnv } from "@/lib/env";
+import { MESSAGES_EVENT, MESSAGES_TOPIC, type MessagePing } from "@/lib/messages-channel";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { MessageEntity } from "@/types/database";
+
+/**
+ * Avisa os clientes conectados que existe mensagem nova. Vai pela API REST do
+ * Realtime (não pelo WebSocket do supabase-js): numa função serverless não há
+ * conexão para manter viva, e um POST resolve.
+ *
+ * Falha aqui NUNCA derruba o envio — a mensagem já está gravada, e o polling
+ * pega o atraso. Por isso o erro é registrado e engolido.
+ */
+export async function broadcastMessagePing(ping: MessagePing): Promise<void> {
+  try {
+    const res = await fetch(`${serverEnv.supabaseUrl}/realtime/v1/api/broadcast`, {
+      method: "POST",
+      headers: {
+        apikey: serverEnv.supabaseServiceRoleKey,
+        Authorization: `Bearer ${serverEnv.supabaseServiceRoleKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            topic: MESSAGES_TOPIC,
+            event: MESSAGES_EVENT,
+            payload: ping,
+            private: true,
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      console.error("[messages] broadcast falhou:", res.status, await res.text());
+    }
+  } catch (error) {
+    console.error("[messages] broadcast falhou:", error);
+  }
+}
 
 /** Uma mensagem já resolvida para exibição (autor e destinatários com nome). */
 export type ThreadMessage = {

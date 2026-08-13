@@ -15,6 +15,8 @@ import {
   type BoxPayload,
   type BoxTab,
 } from "@/lib/messages-actions";
+import { MESSAGES_POLL_LIVE_MS, MESSAGES_POLL_MS } from "@/lib/messages-channel";
+import { useMessagesRealtime } from "@/lib/use-messages-realtime";
 import { usePoll } from "@/lib/use-poll";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import { SearchSelect } from "@/components/search-select";
@@ -49,13 +51,6 @@ const EMPTY_FILTERS: BoxFilters = {
 };
 
 const ANY = "__any__";
-
-/**
- * Intervalo do polling das mensagens. Mensagem nova de outra pessoa não pode
- * depender de recarregar a página — sem realtime no banco, é este ciclo (mais o
- * disparo ao voltar o foco da aba) que mantém caixa e contador em dia.
- */
-export const MESSAGES_POLL_MS = 15_000;
 
 /**
  * Caixa geral de mensagens — o que o balão abre FORA de um registro. Espelha a
@@ -96,16 +91,25 @@ export function MessagesBox({
     refresh(filters);
   }, [open, filters, refresh]);
 
-  // Recarga silenciosa: fora da transição de loading, a lista não pisca a cada
-  // ciclo. `filters` é lido do render atual, então o polling respeita o filtro.
-  usePoll(
-    async () => {
-      const data = await loadMessagesBox(filters);
-      setPayload(data);
-      onUnreadChange(data.unread);
-    },
-    { enabled: open && !composing, intervalMs: MESSAGES_POLL_MS }
-  );
+  /** Recarga silenciosa: fora da transição de loading, a lista não pisca. */
+  const reload = useCallback(async () => {
+    const data = await loadMessagesBox(filters);
+    setPayload(data);
+    onUnreadChange(data.unread);
+  }, [filters, onUnreadChange]);
+
+  // Mensagem nova entra na caixa aberta no instante do envio. Qualquer registro
+  // serve: a caixa mistura pedidos, e o filtro é aplicado na recarga.
+  const live = useMessagesRealtime(() => {
+    if (!open || composing) return;
+    void reload();
+  });
+
+  // `filters` é lido do render atual, então o polling respeita o filtro.
+  usePoll(reload, {
+    enabled: open && !composing,
+    intervalMs: live ? MESSAGES_POLL_LIVE_MS : MESSAGES_POLL_MS,
+  });
 
   const patch = (partial: Partial<BoxFilters>) =>
     setFilters((f) => ({ ...f, ...partial }));

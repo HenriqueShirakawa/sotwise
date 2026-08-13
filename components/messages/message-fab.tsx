@@ -13,6 +13,8 @@ import {
   type ThreadPayload,
 } from "@/lib/messages-actions";
 import type { MessageEntity } from "@/types/database";
+import { MESSAGES_POLL_LIVE_MS, MESSAGES_POLL_MS } from "@/lib/messages-channel";
+import { useMessagesRealtime } from "@/lib/use-messages-realtime";
 import { usePoll } from "@/lib/use-poll";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import { Button } from "@/components/ui/button";
@@ -26,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { MessageCard, MAX_BODY } from "./message-card";
-import { MessagesBox, MESSAGES_POLL_MS } from "./messages-box";
+import { MessagesBox } from "./messages-box";
 
 /** Rota de detalhe (o checklist) → registro que ancora a thread. */
 const ROUTE_ENTITY: { prefix: string; entity: MessageEntity }[] = [
@@ -57,13 +59,18 @@ export function MessageFab({ initialUnread }: { initialUnread: number }) {
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(initialUnread);
 
-  // Com o balão fechado, o contador é a única pista de mensagem nova — ele se
-  // atualiza sozinho. Aberto, quem sincroniza é o diálogo, que já devolve o
-  // número junto com a lista.
-  usePoll(
-    async () => setUnread(await loadUnreadCount()),
-    { enabled: !open, intervalMs: MESSAGES_POLL_MS }
-  );
+  // O contador é a pista de mensagem nova com o balão fechado — e ela chega no
+  // instante do envio: o canal avisa, o contador é relido na hora.
+  const live = useMessagesRealtime(() => {
+    void loadUnreadCount().then(setUnread);
+  });
+
+  // Aberto, quem sincroniza é o diálogo, que já devolve o número junto com a
+  // lista. O polling aqui é a rede de segurança do canal (ver messages-channel).
+  usePoll(async () => setUnread(await loadUnreadCount()), {
+    enabled: !open,
+    intervalMs: live ? MESSAGES_POLL_LIVE_MS : MESSAGES_POLL_MS,
+  });
 
   return (
     <>
@@ -132,8 +139,18 @@ function ThreadDialog({
     });
   }, [open, sync]);
 
-  // Mensagem de outra pessoa entra na thread aberta sem recarregar a página.
-  usePoll(sync, { enabled: open, intervalMs: MESSAGES_POLL_MS });
+  // Mensagem de outra pessoa entra na thread aberta no instante do envio —
+  // desde que seja deste registro; ping de outro pedido não interessa aqui.
+  const live = useMessagesRealtime((ping) => {
+    if (!open) return;
+    if (ping.entity_type !== entity.type || ping.entity_id !== entity.id) return;
+    void sync();
+  });
+
+  usePoll(sync, {
+    enabled: open,
+    intervalMs: live ? MESSAGES_POLL_LIVE_MS : MESSAGES_POLL_MS,
+  });
 
   function handleSend() {
     const text = body.trim();

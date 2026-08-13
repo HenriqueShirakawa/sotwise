@@ -6,6 +6,7 @@ import { verifySession } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  broadcastMessagePing,
   countUnreadMessages,
   hydrateMessages,
   loadEntityContext,
@@ -327,6 +328,16 @@ export async function sendMessage(
       .insert(recipients.map((user_id) => ({ message_id: data.id, user_id })));
     if (linkError) return { ok: false, error: linkError.message };
   }
+
+  // Só depois dos destinatários gravados: quem receber o aviso vai recarregar
+  // na hora, e precisa achar o contador de não lidas já correto.
+  await broadcastMessagePing({
+    message_id: data.id,
+    entity_type: parsed.data.entity_type,
+    entity_id: parsed.data.entity_id,
+    author_id: session.userId,
+    recipient_ids: recipients,
+  });
 
   return { ok: true };
 }
