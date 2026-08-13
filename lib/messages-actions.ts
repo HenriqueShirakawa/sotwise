@@ -331,6 +331,12 @@ export async function sendMessage(
   return { ok: true };
 }
 
+/** Só o contador do balão — é o que o polling do FAB pede de tempos em tempos. */
+export async function loadUnreadCount(): Promise<number> {
+  const session = await verifySession();
+  return countUnreadMessages(session.userId);
+}
+
 /** "Mark as Read" / "Mark as Unread" de UMA mensagem da minha caixa. */
 export async function setMessageRead(
   messageId: string,

@@ -7,11 +7,13 @@ import { toast } from "sonner";
 
 import {
   loadThread,
+  loadUnreadCount,
   markThreadRead,
   sendMessage,
   type ThreadPayload,
 } from "@/lib/messages-actions";
 import type { MessageEntity } from "@/types/database";
+import { usePoll } from "@/lib/use-poll";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { MessageCard, MAX_BODY } from "./message-card";
-import { MessagesBox } from "./messages-box";
+import { MessagesBox, MESSAGES_POLL_MS } from "./messages-box";
 
 /** Rota de detalhe (o checklist) → registro que ancora a thread. */
 const ROUTE_ENTITY: { prefix: string; entity: MessageEntity }[] = [
@@ -54,6 +56,14 @@ export function MessageFab({ initialUnread }: { initialUnread: number }) {
 
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(initialUnread);
+
+  // Com o balão fechado, o contador é a única pista de mensagem nova — ele se
+  // atualiza sozinho. Aberto, quem sincroniza é o diálogo, que já devolve o
+  // número junto com a lista.
+  usePoll(
+    async () => setUnread(await loadUnreadCount()),
+    { enabled: !open, intervalMs: MESSAGES_POLL_MS }
+  );
 
   return (
     <>
@@ -98,33 +108,32 @@ function ThreadDialog({
   onUnreadChange: (unread: number) => void;
 }) {
   const [payload, setPayload] = useState<ThreadPayload | null>(null);
-  const [loading, setLoading] = useState(false);
+  /** Igual à caixa geral: a carga roda como transição e o `isPending` é o loading. */
+  const [loading, startLoading] = useTransition();
   const [body, setBody] = useState("");
   const [recipients, setRecipients] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  /**
+   * Carga silenciosa da thread. A leitura vai junto: estar com a thread aberta
+   * conta como ler o que chega nela, então o contador não sobe pelas costas.
+   */
+  const sync = useCallback(async () => {
     const data = await loadThread(entity.type, entity.id);
     setPayload(data);
-    onUnreadChange(data.unread);
-    setLoading(false);
+    const res = await markThreadRead(entity.type, entity.id);
+    onUnreadChange(res.ok ? res.unread : data.unread);
   }, [entity, onUnreadChange]);
 
   useEffect(() => {
     if (!open) return;
-    let active = true;
-    void (async () => {
-      await refresh();
-      if (!active) return;
-      // Abrir a thread conta como leitura das minhas pendentes daquele registro.
-      const res = await markThreadRead(entity.type, entity.id);
-      if (active && res.ok) onUnreadChange(res.unread);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [open, refresh, entity, onUnreadChange]);
+    startLoading(async () => {
+      await sync();
+    });
+  }, [open, sync]);
+
+  // Mensagem de outra pessoa entra na thread aberta sem recarregar a página.
+  usePoll(sync, { enabled: open, intervalMs: MESSAGES_POLL_MS });
 
   function handleSend() {
     const text = body.trim();
@@ -142,7 +151,7 @@ function ThreadDialog({
       }
       setBody("");
       setRecipients([]);
-      await refresh();
+      await sync();
     });
   }
 

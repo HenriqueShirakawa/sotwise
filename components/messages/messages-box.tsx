@@ -11,10 +11,11 @@ import {
   sendMessage,
   setMessageRead,
   type BoxFilters,
+  type BoxMessage,
   type BoxPayload,
   type BoxTab,
 } from "@/lib/messages-actions";
-import type { MessageEntity } from "@/types/database";
+import { usePoll } from "@/lib/use-poll";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import { SearchSelect } from "@/components/search-select";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,13 @@ const EMPTY_FILTERS: BoxFilters = {
 };
 
 const ANY = "__any__";
+
+/**
+ * Intervalo do polling das mensagens. Mensagem nova de outra pessoa não pode
+ * depender de recarregar a página — sem realtime no banco, é este ciclo (mais o
+ * disparo ao voltar o foco da aba) que mantém caixa e contador em dia.
+ */
+export const MESSAGES_POLL_MS = 15_000;
 
 /**
  * Caixa geral de mensagens — o que o balão abre FORA de um registro. Espelha a
@@ -88,6 +96,17 @@ export function MessagesBox({
     refresh(filters);
   }, [open, filters, refresh]);
 
+  // Recarga silenciosa: fora da transição de loading, a lista não pisca a cada
+  // ciclo. `filters` é lido do render atual, então o polling respeita o filtro.
+  usePoll(
+    async () => {
+      const data = await loadMessagesBox(filters);
+      setPayload(data);
+      onUnreadChange(data.unread);
+    },
+    { enabled: open && !composing, intervalMs: MESSAGES_POLL_MS }
+  );
+
   const patch = (partial: Partial<BoxFilters>) =>
     setFilters((f) => ({ ...f, ...partial }));
 
@@ -103,15 +122,24 @@ export function MessagesBox({
     });
   }
 
-  function openRecord(entity: { type: MessageEntity; id: string }) {
+  /**
+   * "Click here to see" leva ao registro E dá a mensagem por lida — abrir o
+   * assunto é a leitura. Só vale no Inbox: em My messages eu sou o autor e a
+   * leitura mostrada é a dos destinatários, que não é minha para marcar.
+   */
+  function openRecord(message: BoxMessage) {
+    const { type, id } = message.entity;
     const base =
-      entity.type === "order"
-        ? "/orders"
-        : entity.type === "pre_loading"
-          ? "/pre-loading"
-          : "/shipments";
+      type === "order" ? "/orders" : type === "pre_loading" ? "/pre-loading" : "/shipments";
+
+    if (filters.tab === "inbox" && !message.read) {
+      void setMessageRead(message.id, true).then((res) => {
+        if (res.ok) onUnreadChange(res.unread);
+      });
+    }
+
     onOpenChange(false);
-    router.push(`${base}/${entity.id}`);
+    router.push(`${base}/${id}`);
   }
 
   const messages = payload?.messages ?? [];
@@ -285,7 +313,7 @@ export function MessagesBox({
                     footer={
                       <button
                         type="button"
-                        onClick={() => openRecord(m.entity)}
+                        onClick={() => openRecord(m)}
                         className="w-full rounded-lg bg-slate-100 py-2 text-sm text-slate-700 transition hover:bg-slate-200"
                       >
                         Click here to see
