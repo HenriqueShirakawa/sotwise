@@ -2,6 +2,7 @@ import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { fetchAll } from "@/lib/fetch-all";
+import { daysDelay, gapOfReady } from "@/lib/etd";
 import type { BatchStatus } from "@/types/database";
 
 import { EtdFactoriesClient, type EtdFactoryRow } from "./etd-factories-client";
@@ -9,14 +10,6 @@ import { EtdFactoriesClient, type EtdFactoryRow } from "./etd-factories-client";
 // Filtro padrão da tela ETD Factories: só lotes em produção ou pre-loading
 // (ver docs/regras_de_negocio.md §3.7.4, mesmo com o enum tendo 6 valores).
 const ACTIVE_BATCH_STATUSES: BatchStatus[] = ["in_production", "preloading"];
-
-function daysBetween(from: string | null, to: string | null): number | null {
-  if (!from || !to) return null;
-  const a = Date.parse(from);
-  const b = Date.parse(to);
-  if (Number.isNaN(a) || Number.isNaN(b)) return null;
-  return Math.round((b - a) / 86_400_000);
-}
 
 type EtdEmbed = {
   initial_date: string | null;
@@ -75,14 +68,11 @@ function buildRows(
       shipment_req: ofc.ship_requirement,
       initial_date: etd?.initial_date ?? null,
       current_date: etd?.current_date ?? null,
-      days_delay: daysBetween(etd?.initial_date ?? null, etd?.current_date ?? null),
+      days_delay: daysDelay(etd?.initial_date ?? null, etd?.current_date ?? null),
       last_updated: etd?.updated_at ?? null,
       batch_status: batch.status,
       ready_parts: etd?.ready ?? false,
-      gap_of_ready:
-        etd?.ready && etd.ready_date
-          ? Math.round((todayMs - Date.parse(etd.ready_date)) / 86_400_000)
-          : null,
+      gap_of_ready: gapOfReady(etd?.ready, etd?.ready_date, todayMs),
     });
   }
   return rows;

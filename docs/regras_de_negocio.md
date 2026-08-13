@@ -859,7 +859,10 @@ create table public.etd_history (
 
 **Campos calculados (não persistidos — computados em tempo de leitura):**
 
-- **Days Delay** = `current_date` − `initial_date`. É a medida de atraso da entrada. Exibe `-` quando não há dados suficientes para o cálculo. Pode ter valor fracionário (ex.: `8.5`).
+- **Days Delay** = **|`current_date` − `initial_date`|** (valor absoluto). É a medida de atraso da entrada. Exibe `-` quando não há dados suficientes para o cálculo. Pode ter valor fracionário (ex.: `8.5`).
+  > ✅ **Nunca negativo — confirmado com o cliente (13/08/2026).** Quando a ETD é *antecipada*, `current_date` fica antes de `initial_date` e a subtração crua dá negativo (26 entradas em produção, de −1 a −109 dias). A regra é contar o desvio **pelos dois lados**: o negativo vira positivo. Implementado em `daysDelay()` (`app/(dashboard)/etd-factories/page.tsx`) — o copilot usa a mesma função, para a resposta bater com a tela.
+  >
+  > ⚠️ **Dado sujo conhecido:** 1 entrada com `initial_date = 0020-08-20` (provável erro de digitação de `2020-08-20`) produz Days Delay de 732.654 dias. O módulo não resolve isso — precisa correção no dado (`etd_info` id `e13775d2-ab4d-4420-9423-8990a4fe8c70`).
 - **Gap of Ready** = **data de hoje** − `ready_date`. Só tem valor nas linhas em que `ready` está marcado (senão exibe `-`).
 - ⚠️ **Ambos usam a data de HOJE / são recalculados a cada abertura da tela** — não são congelados no banco. Implicação: são colunas derivadas na VIEW (ou computadas no frontend), nunca colunas materializadas.
 
@@ -1605,6 +1608,37 @@ Limitações do Bubble que **deixam de existir** em Postgres/Supabase e podem se
 ## 6. Integrações externas
 
 _Pendente. Já observado: envio de e-mail (convite de novo usuário, reset de senha) e exportação XLS (Shipments). Detalhar no bloco correspondente._
+
+### 6.1 Copilot (API da Anthropic) — escopo confirmado 13/08/2026
+
+Assistente dentro do SOT que responde perguntas sobre os dados do sistema.
+
+**Decisões do cliente:**
+
+- ✅ **Somente leitura.** Não grava nada: consulta, resume, cruza e aponta pendências. Qualquer ação de escrita fica para uma fase futura, se houver.
+- ✅ **Fonte única: o banco**, através de ferramentas tipadas por família de pergunta (Orders, ETD, Pre-loading, Shipments, pendências, agregados). O modelo **não** escreve SQL — escolhe ferramenta e parâmetros.
+- ❌ **Leitura de anexos fora do escopo.** Descartada depois de dimensionado o custo (extração/OCR + `pgvector`, que não está instalado). `step_attachments` guarda só `file_path`/`file_name`.
+- ✅ **Superfície:** painel lateral global, com o contexto da tela em que o usuário está. **Implementação (13/08/2026):** o acesso é um item **"Copilot" na sidebar esquerda** (mesmo visual dos itens Orders/Pre-loading); ao clicar, abre um **painel flutuante pela direita** (overlay, não empurra o conteúdo), que fecha no X ou clicando o item de novo. O copilot **espelha as telas** — ex.: "PLs abertos" usa a mesma regra da tela Pre-loading (o PL só sai quando a etapa Loading Date está concluída **e** já há embarque). _(Contexto da página atual: ainda pendente — a rota hoje só recebe as mensagens.)_
+- ✅ **Resposta em streaming**, escrita ao vivo, e resultados renderizados como **linhas do próprio SOT** (clicáveis, navegando para a Order/lote/PL) — pouco texto corrido, muito dado. Não é uma janela de chat genérica. **Implementação (13/08/2026):** a rota emite o resultado estruturado de cada ferramenta como evento SSE (`type: "result"`) e o cliente o renderiza como tabela de linhas clicáveis (colunas = o que a ferramenta já curou; a linha navega para `/orders/[id]`, `/pre-loading/[id]` ou `/shipments/[id]`). O modelo escreve **só prosa curta** — não digita tabela markdown nem imprime ids (por isso não há dependência de markdown no projeto). _Renderização rica de `get_order_detail` (retrato de 1 PO) ainda é prosa; vira linhas depois._
+- ✅ **Autorizado** o tráfego de dados do SOT para a API da Anthropic (conta AGK).
+
+**Invariante de segurança (não negociável):** toda leitura do copilot passa por `verifySession()` / `requireFeature()` do `lib/dal.ts`. O copilot enxerga **exatamente** o que o usuário logado enxergaria nas telas — nem uma linha a mais. As tabelas seguem em RLS deny-all e todo acesso sai pelo `createAdminClient()`, então não existe segunda linha de defesa no banco: a checagem na camada de aplicação é a única (ver §4 e §11/A01).
+
+**Definição de "atrasado" (13/08/2026):**
+
+- ✅ **ETD — confirmado:** a entrada está atrasada quando **`Days Delay > 0`**, com `Days Delay` já em valor absoluto (§3.7.4). Ou seja: qualquer desvio entre `initial_date` e `current_date`, nos dois sentidos, conta como atraso; desvio zero e entrada sem uma das datas não contam.
+- ⚠️ **Etapa de checklist — assumido, a confirmar:** `estimated_date` anterior à data de hoje e `completed_on` nulo. Mesmo critério que a To do list já usa para listar pendências (§3.12.2), somado ao vencimento da data prevista.
+
+**O copilot não tem lista fechada de perguntas.** As ferramentas são parametrizadas (cliente, fábrica, categoria, status, responsável, período, faixa de atraso) e o modelo as combina livremente, então o espaço de perguntas é combinatório. O limite real é a **superfície de dados exposta**: uma pergunta sobre dado que nenhuma ferramenta alcança recebe "não tenho acesso a isso", nunca uma resposta inventada. A lista de perguntas levantada com o cliente serve para **calibrar** quais filtros cada ferramenta precisa ter e como teste de aceitação — não como allowlist.
+
+#### Estado da implementação (13/08/2026)
+
+Em produção a partir deste deploy. Peças: `app/api/copilot/route.ts` (rota SSE), `lib/copilot/client.ts` (modelo, system prompt, execução de ferramenta), `domain/copilot/tools.ts` (as 7 ferramentas), `components/copilot/` (painel e renderização das linhas).
+
+- **Modelo:** `claude-opus-5`, com `output_config.effort: "medium"` e teto de 16k tokens por resposta (o teto cobre thinking + texto — no Opus 5 o thinking é adaptativo e vem ligado por padrão). Máximo de 8 rodadas de ferramenta por pergunta.
+- **Ferramentas (7):** `resolve_entities`, `search_orders`, `get_order_detail`, `list_etd_entries`, `list_pre_loadings`, `search_shipments`, `list_pending_steps`. Cada uma declara a `feature` exigida; a rota só oferece ao modelo as que o usuário pode ver **e** revalida antes de executar.
+- 🔑 **`ANTHROPIC_API_KEY` é obrigatória no ambiente** (server-side, nunca com prefixo `NEXT_PUBLIC_`). Fica **fora** do `lib/env.ts` de propósito: aquele módulo valida no import e é carregado por todo acesso a dados, então chave ausente derrubaria o app inteiro em vez de só o copilot. Sem a chave, a rota responde **503** e o resto do sistema segue normal. **Precisa estar cadastrada nas variáveis de ambiente da Vercel** — não basta o `.env.local`.
+- ⚠️ **Pegadinha de dev (13/08/2026):** um `next dev` já rodando pode ficar com o manifesto de rotas velho e devolver **404 (página HTML de not-found) para todo `/api/*`** — inclusive rotas antigas como `/api/[resource]`. No copilot isso aparece como "Failed to reach the copilot", porque o cliente tenta ler JSON de uma página HTML. Não é bug de código: `rm -rf .next` e subir o dev de novo. Antes de investigar o copilot, confirmar com `curl -X POST /api/copilot` — a rota sã responde `401 {"error":"Not authenticated."}` sem cookie de sessão.
 
 ---
 

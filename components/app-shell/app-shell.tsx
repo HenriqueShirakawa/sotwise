@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu, Sparkles } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { MessageFab } from "@/components/messages/message-fab";
+import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import type { PermissionMap } from "@/domain/access/features";
 import { SidebarNav } from "./sidebar-nav";
 import { UserCard } from "./user-menu";
@@ -45,6 +46,7 @@ export function AppShell({
   // por ordem), então a expansão não acontecia. Alternando a classe na mão só
   // uma largura existe por vez — sem conflito.
   const [railHover, setRailHover] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const sidebarInner = (onNavigate?: () => void) => (
     <div className="flex h-full flex-col bg-white">
@@ -53,6 +55,24 @@ export function AppShell({
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2">
         <SidebarNav permissions={permissions} onNavigate={onNavigate} />
+        {/* Acesso do copilot — por último na lista, mesmo visual dos itens de
+            navegação; abre o painel flutuante em vez de navegar. */}
+        <button
+          type="button"
+          onClick={() => {
+            setCopilotOpen((v) => !v);
+            onNavigate?.();
+          }}
+          className={cn(
+            "mt-1 flex w-full items-center gap-3 rounded-lg py-2.5 pl-3 pr-3 text-sm font-medium transition-colors",
+            copilotOpen
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-slate-600 hover:bg-slate-100"
+          )}
+        >
+          <Sparkles className="size-[18px] shrink-0" />
+          <span className="flex-1 text-left">Copilot</span>
+        </button>
       </div>
       <div className="border-t p-3">
         <UserCard fullName={fullName} email={email} role={role} />
@@ -73,6 +93,22 @@ export function AppShell({
       </div>
       <div className="w-full flex-1 overflow-y-auto px-2 py-2">
         <SidebarNav permissions={permissions} collapsed />
+        <div className="mt-1 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setCopilotOpen((v) => !v)}
+            aria-label="Copilot"
+            title="Copilot"
+            className={cn(
+              "flex size-10 items-center justify-center rounded-xl transition-colors",
+              copilotOpen
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-slate-600 hover:bg-slate-100"
+            )}
+          >
+            <Sparkles className="size-[18px] shrink-0" />
+          </button>
+        </div>
       </div>
       <div className="flex w-full justify-center border-t p-2">
         <span className="flex size-9 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700">
@@ -128,8 +164,18 @@ export function AppShell({
         <main className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 md:pb-28">{children}</main>
       </div>
 
-      {/* Balão de mensagens — em todas as telas do sistema. */}
-      <MessageFab initialUnread={unreadMessages} />
+      {/* Copilot — aberto pelo item "Copilot" da sidebar esquerda. Painel
+          flutuante pela direita (não empurra o conteúdo); fecha no X ou clicando
+          o item de novo. */}
+      {copilotOpen ? (
+        <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-[420px] flex-col border-l bg-white shadow-2xl">
+          <CopilotPanel onClose={() => setCopilotOpen(false)} />
+        </aside>
+      ) : null}
+
+      {/* Balão de mensagens — escondido enquanto o painel do copilot está aberto,
+          para não cobrir o campo de pergunta no canto inferior direito. */}
+      {copilotOpen ? null : <MessageFab initialUnread={unreadMessages} />}
     </div>
   );
 }

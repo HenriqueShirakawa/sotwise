@@ -11,6 +11,7 @@
     "migrate:check": "tsx scripts/migrate/check.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
     "@hookform/resolvers": "^5.5.7",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",

@@ -50,14 +50,21 @@ export const getUser = cache(async (): Promise<User | null> => {
 });
 
 /**
- * Exige sessão válida + profile ativo. Redireciona para /login quando ausente,
- * e para /auth/signout quando o usuário está `blocked` (efeito imediato: a
- * sessão é encerrada de fato — §3.1). Deduplicado por request via React cache,
- * então as duas queries de permissão custam uma vez por request, não por page.
+ * Resultado bruto da resolução de sessão. Deduplicado por request via React
+ * cache, então as duas queries de permissão custam uma vez por request, não uma
+ * por page. Existe porque os Route Handlers não
+ * podem redirecionar: um `redirect()` no meio de uma resposta de streaming vira
+ * um 307 que o `fetch` do cliente não sabe interpretar — ali a resposta certa é
+ * 401. As páginas continuam com `verifySession()`, que traduz isto em redirect.
  */
-export const verifySession = cache(async (): Promise<SessionProfile> => {
+export type SessionResult =
+  | { kind: "ok"; session: SessionProfile }
+  | { kind: "anonymous" }
+  | { kind: "revoked"; reason: "no_profile" | "blocked" };
+
+export const resolveSession = cache(async (): Promise<SessionResult> => {
   const user = await getUser();
-  if (!user) redirect("/login");
+  if (!user) return { kind: "anonymous" };
 
   const admin = createAdminClient();
 
@@ -67,8 +74,8 @@ export const verifySession = cache(async (): Promise<SessionProfile> => {
     .eq("id", user.id)
     .single();
 
-  if (!profile) redirect("/auth/signout");
-  if (profile.status === "blocked") redirect("/auth/signout?reason=blocked");
+  if (!profile) return { kind: "revoked", reason: "no_profile" };
+  if (profile.status === "blocked") return { kind: "revoked", reason: "blocked" };
 
   const { data: role } = await admin
     .from("roles")
@@ -98,14 +105,31 @@ export const verifySession = cache(async (): Promise<SessionProfile> => {
       ]);
 
   return {
-    userId: user.id,
-    email: user.email ?? null,
-    profile,
-    role: roleName,
-    isAdmin: roleName === "admin",
-    isOwner,
-    permissions: resolvePermissions({ isOwner, roleGrants, userGrants }),
+    kind: "ok",
+    session: {
+      userId: user.id,
+      email: user.email ?? null,
+      profile,
+      role: roleName,
+      isAdmin: roleName === "admin",
+      isOwner,
+      permissions: resolvePermissions({ isOwner, roleGrants, userGrants }),
+    },
   };
+});
+
+/**
+ * Exige sessão válida + profile ativo, redirecionando quando não há (é o que
+ * toda page protegida chama). `blocked` cai em /auth/signout para que a sessão
+ * seja encerrada de fato — efeito imediato do bloqueio (§3.1).
+ */
+export const verifySession = cache(async (): Promise<SessionProfile> => {
+  const result = await resolveSession();
+  if (result.kind === "anonymous") redirect("/login");
+  if (result.kind === "revoked") {
+    redirect(result.reason === "blocked" ? "/auth/signout?reason=blocked" : "/auth/signout");
+  }
+  return result.session;
 });
 
 /** Checagem sem redirect — para esconder botão, coluna ou item de menu. */
