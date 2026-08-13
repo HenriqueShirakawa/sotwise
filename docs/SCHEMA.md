@@ -297,6 +297,16 @@ sem constraint**: aponta para `orders`, `pre_loadings` ou `shipments`),
 parcial de não-lidas. Regra: dentro da tela do registro todos veem a thread
 inteira; fora dela, só quem foi marcado no “Forward to”.
 
+**Entrega instantânea (Realtime).** Depois de gravar a mensagem *e* os
+destinatários, o servidor publica um aviso no tópico de broadcast
+`sotwise:messages` (POST em `/realtime/v1/api/broadcast` com a `service_role`).
+O aviso leva só ids — nunca o corpo da mensagem — e quem está com o balão ou a
+caixa aberta recarrega na hora. O canal é **privado**: quem autoriza a entrada é
+a policy de `select` em `realtime.messages` criada pela migration
+`20260813130000_messages_realtime.sql`, **que precisa ser aplicada no banco** —
+sem ela ninguém entra no canal e o app cai no polling. Publicar é exclusividade
+do servidor (nenhuma policy de `insert` foi concedida a `authenticated`).
+
 ---
 
 ## 6. Camada de interligação com o banco externo (GSS)
