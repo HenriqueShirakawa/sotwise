@@ -1609,9 +1609,9 @@ Limitações do Bubble que **deixam de existir** em Postgres/Supabase e podem se
 
 _Pendente. Já observado: envio de e-mail (convite de novo usuário, reset de senha) e exportação XLS (Shipments). Detalhar no bloco correspondente._
 
-### 6.1 Copilot (API da Anthropic) — escopo confirmado 13/08/2026
+### 6.1 Copilot "Lapha" (API da Anthropic) — escopo confirmado 13/08/2026
 
-Assistente dentro do SOT que responde perguntas sobre os dados do sistema.
+Assistente dentro do SOT que responde perguntas sobre os dados do sistema. **Nome na interface: "Lapha"** (decidido em 13/08/2026), com ícone de robô na sidebar e no cabeçalho do painel. No código a coisa continua se chamando copilot — rota `/api/copilot`, `lib/copilot/`, `domain/copilot/` — porque renomear caminho não muda comportamento e quebraria links.
 
 **Decisões do cliente:**
 
@@ -1636,7 +1636,18 @@ Assistente dentro do SOT que responde perguntas sobre os dados do sistema.
 Em produção a partir deste deploy. Peças: `app/api/copilot/route.ts` (rota SSE), `lib/copilot/client.ts` (modelo, system prompt, execução de ferramenta), `domain/copilot/tools.ts` (as 7 ferramentas), `components/copilot/` (painel e renderização das linhas).
 
 - **Modelo:** `claude-opus-5`, com `output_config.effort: "medium"` e teto de 16k tokens por resposta (o teto cobre thinking + texto — no Opus 5 o thinking é adaptativo e vem ligado por padrão). Máximo de 8 rodadas de ferramenta por pergunta.
-- **Ferramentas (7):** `resolve_entities`, `search_orders`, `get_order_detail`, `list_etd_entries`, `list_pre_loadings`, `search_shipments`, `list_pending_steps`. Cada uma declara a `feature` exigida; a rota só oferece ao modelo as que o usuário pode ver **e** revalida antes de executar.
+- **Ferramentas (8):** `resolve_entities`, `search_orders`, `get_order_detail`, `list_etd_entries`, `list_pre_loadings`, `search_shipments`, `trace_chain`, `list_pending_steps`. Cada uma declara a `feature` exigida; a rota só oferece ao modelo as que o usuário pode ver **e** revalida antes de executar.
+
+##### Travessia da cadeia (13/08/2026)
+
+As ferramentas nasceram espelhando **uma tela cada**, e por isso o copilot enxergava cada nível isolado: sabia os lotes de uma order, mas não em qual PL o lote entrou. Perguntas que atravessam níveis — _"o PO 1437 está em quais PLs?"_, _"os lotes desse cara estão onde?"_, _"o que tem nesse container?"_ — não tinham resposta, embora o dado exista: a junção **`pre_loading_batches`** (2.814 linhas) liga lote↔PL, e o embarque pendura no PL.
+
+- **`trace_chain`** percorre `Shipment ↔ PL ↔ Lote ↔ Order ↔ Factory×Category` a partir de **qualquer ponto** (número da order, lote, PL ou container) e devolve uma linha por lote com o PL, o embarque e as entradas Factory×Category daquele lote.
+- **`get_order_detail`** passa a dizer, em cada lote, os PLs em que ele está e o embarque correspondente.
+- **`list_pre_loadings`** e **`search_shipments`** ganham o filtro `po_number` e a coluna com as orders que cada PL/embarque carrega.
+- **Busca por número prefere o exato**: "PO 1437" é a order 1437, não as que contêm "1437"; só cai no parcial quando o exato não existe.
+- **Split:** a linha que migrou para um lote-filho conta para o lote de ORIGEM (o que embarcou), subindo a linhagem por `split_from_batch_id` — mesma conta da tela do embarque, senão um lote embarcado apareceria sem nenhuma fábrica.
+- ⚠️ **A permissão continua valendo por nível:** PL e embarque só aparecem para quem tem as features `pre_loading`/`shipments`, e o conteúdo (as orders dentro do PL) só para quem tem `orders`. A travessia não pode virar a porta dos fundos para dado que a tela negaria. Por isso `hasFeature()` foi extraído para `domain/access/features.ts` — o `can()` do DAL delega para lá, e a camada de domínio checa permissão sem arrastar o `next/headers`.
 - 🔑 **`ANTHROPIC_API_KEY` é obrigatória no ambiente** (server-side, nunca com prefixo `NEXT_PUBLIC_`). Fica **fora** do `lib/env.ts` de propósito: aquele módulo valida no import e é carregado por todo acesso a dados, então chave ausente derrubaria o app inteiro em vez de só o copilot. Sem a chave, a rota responde **503** e o resto do sistema segue normal. **Precisa estar cadastrada nas variáveis de ambiente da Vercel** — não basta o `.env.local`.
 - ⚠️ **Pegadinha de dev (13/08/2026):** um `next dev` já rodando pode ficar com o manifesto de rotas velho e devolver **404 (página HTML de not-found) para todo `/api/*`** — inclusive rotas antigas como `/api/[resource]`. No copilot isso aparece como "Failed to reach the copilot", porque o cliente tenta ler JSON de uma página HTML. Não é bug de código: `rm -rf .next` e subir o dev de novo. Antes de investigar o copilot, confirmar com `curl -X POST /api/copilot` — a rota sã responde `401 {"error":"Not authenticated."}` sem cookie de sessão.
 

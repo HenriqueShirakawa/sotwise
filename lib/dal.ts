@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FEATURES,
   FEATURE_KEYS,
+  hasFeature,
   resolvePermissions,
   type FeatureAction,
   type FeatureKey,
@@ -138,7 +139,7 @@ export function can(
   feature: FeatureKey,
   action: FeatureAction = "view"
 ): boolean {
-  return session.permissions[feature][action];
+  return hasFeature(session.permissions, feature, action);
 }
 
 /**

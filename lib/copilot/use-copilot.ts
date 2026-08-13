@@ -106,8 +106,14 @@ export function useCopilot() {
         });
 
         if (!res.ok || !res.body) {
+          // Sem corpo JSON o status é a única pista que sobra — e já custou uma
+          // investigação: um dev server com manifesto velho devolvia 404 HTML
+          // para /api/*, e a mensagem genérica escondia isso.
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          applyEvent({ type: "error", message: body?.error ?? "Failed to reach the copilot." });
+          applyEvent({
+            type: "error",
+            message: body?.error ?? `Failed to reach Lapha (HTTP ${res.status}).`,
+          });
           return;
         }
 

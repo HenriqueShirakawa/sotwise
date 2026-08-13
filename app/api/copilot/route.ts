@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   } catch {
     // Chave ausente é erro de configuração do ambiente, não do usuário.
     return Response.json(
-      { error: "The copilot is not configured in this environment (ANTHROPIC_API_KEY is missing)." },
+      { error: "Lapha is not configured in this environment (ANTHROPIC_API_KEY is missing)." },
       { status: 503 }
     );
   }
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
       } catch (error) {
         send({
           type: "error",
-          message: error instanceof Error ? error.message : "Failed to reach the copilot.",
+          message: error instanceof Error ? error.message : "Failed to reach Lapha.",
         });
       } finally {
         controller.close();
