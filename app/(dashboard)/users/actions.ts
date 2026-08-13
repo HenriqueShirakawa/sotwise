@@ -1,8 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 
 import { requireFeature } from "@/lib/dal";
+import { inviteEmailHtml } from "@/lib/email/invite";
+import { sendEmail } from "@/lib/email/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   userCreateSchema,
@@ -15,11 +18,18 @@ import {
 const PATH = "/users";
 
 /**
- * Cria o usuário no Auth e o profile 1:1 (§3.1). **Sem senha e sem e-mail**:
- * o convite depende do Site URL do Supabase, que ainda aponta para localhost
- * (pendência do owner do projeto). `email_confirm: true` evita disparar o
- * e-mail de confirmação quebrado; o usuário só consegue entrar quando o fluxo
- * de convite/reset for liberado. Não existe exclusão de usuário — só status.
+ * Cria o usuário no Auth e o profile 1:1 (§3.1). O usuário nasce sem senha e a
+ * define por um link de convite, que cai em /auth/callback → /update-password.
+ * Não existe exclusão — só status.
+ *
+ * O e-mail NÃO passa pelo SMTP do Supabase (o "Custom SMTP" do painel é restrito
+ * a Owner/Admin da org). Em vez disso: `generateLink` emite o link sem enviar
+ * nada, e o app despacha o e-mail pela API do Resend (lib/email). O link aponta
+ * para {origin}/auth/callback?token_hash=...&type=invite — token_hash chega ao
+ * servidor (o fragmento `#access_token` do fluxo padrão nunca chegaria).
+ *
+ * Ainda depende de config no painel do Supabase (Auth → URL Configuration): o
+ * domínio de produção precisa estar em Site URL / Redirect URLs. Ver §3.1.
  */
 export async function createUserRecord(input: UserCreateInput): Promise<ActionResult> {
   await requireFeature("users", "create");
@@ -29,13 +39,14 @@ export async function createUserRecord(input: UserCreateInput): Promise<ActionRe
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
+  const origin = (await headers()).get("origin") ?? "";
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.createUser({
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "invite",
     email: parsed.data.email,
-    email_confirm: true,
-    user_metadata: { full_name: parsed.data.full_name },
+    options: { data: { full_name: parsed.data.full_name } },
   });
-  if (error || !data.user) {
+  if (error || !data.user || !data.properties) {
     return { ok: false, error: error?.message ?? "Could not create the user." };
   }
 
@@ -51,6 +62,23 @@ export async function createUserRecord(input: UserCreateInput): Promise<ActionRe
     // Sem profile o usuário do Auth fica órfão (a DAL o expulsaria) — desfaz.
     await admin.auth.admin.deleteUser(data.user.id);
     return { ok: false, error: profileError.message };
+  }
+
+  // Monta o link para o nosso callback (verifyOtp por token_hash) e envia o
+  // convite pelo Resend. Se o envio falhar, o usuário não consegue definir a
+  // senha — desfaz tudo para o admin poder reenviar sem sujeira.
+  const link =
+    `${origin}/auth/callback` +
+    `?token_hash=${encodeURIComponent(data.properties.hashed_token)}` +
+    `&type=invite&next=/update-password`;
+  const sent = await sendEmail({
+    to: parsed.data.email,
+    subject: "Seu convite para o SOTWISE",
+    html: inviteEmailHtml(link, parsed.data.full_name),
+  });
+  if (!sent.ok) {
+    await admin.auth.admin.deleteUser(data.user.id);
+    return { ok: false, error: `Não foi possível enviar o convite: ${sent.error}` };
   }
 
   revalidatePath(PATH);

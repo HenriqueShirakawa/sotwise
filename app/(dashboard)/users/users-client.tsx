@@ -64,8 +64,8 @@ const PENDING_HEX = "#B45309";
 
 /**
  * "Pending" não é um valor de `user_status` no banco — é o cruzamento de ativo +
- * nunca logado. Um usuário criado hoje nasce sem senha e sem convite, então
- * mostrá-lo como "Active" contradiz o próprio toast da criação.
+ * nunca logado: o convite foi enviado, mas a senha ainda não foi definida.
+ * Mostrá-lo como "Active" daria a entender que a conta já está em uso.
  */
 const statusLabel = (row: UserRow) => {
   if (row.status === "blocked") return "Blocked";
@@ -221,7 +221,7 @@ export function UsersClient({
         toast.success(
           editing
             ? "User updated."
-            : "User created. Access stays pending until the invite e-mail is enabled."
+            : "User created. An invite e-mail was sent so they can set a password."
         );
         setFormOpen(false);
         router.refresh();
