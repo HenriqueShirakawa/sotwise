@@ -74,6 +74,21 @@ export type FeatureGrant = Record<FeatureAction, boolean>;
 /** Mapa completo da sessão — é isto que atravessa para o cliente. */
 export type PermissionMap = Record<FeatureKey, FeatureGrant>;
 
+/**
+ * A leitura do mapa, sem depender da sessão. Mora aqui, e não só no
+ * `can()` do `lib/dal.ts`, porque a camada de domínio (as ferramentas do
+ * copilot) precisa da mesma resposta sem arrastar o DAL — que importa
+ * `next/headers` e só roda dentro de um request do Next. `can()` delega para
+ * cá, então continua existindo uma implementação só.
+ */
+export function hasFeature(
+  permissions: PermissionMap,
+  feature: FeatureKey,
+  action: FeatureAction = "view"
+): boolean {
+  return permissions[feature][action];
+}
+
 export const NO_ACCESS: FeatureGrant = {
   view: false,
   create: false,

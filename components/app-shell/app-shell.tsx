@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, Sparkles } from "lucide-react";
+import { Bot, Menu } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { SotwiseLogo } from "@/components/brand/sotwise-logo";
@@ -70,8 +70,8 @@ export function AppShell({
               : "text-slate-600 hover:bg-slate-100"
           )}
         >
-          <Sparkles className="size-[18px] shrink-0" />
-          <span className="flex-1 text-left">Copilot</span>
+          <Bot className="size-[18px] shrink-0" />
+          <span className="flex-1 text-left">Lapha</span>
         </button>
       </div>
       <div className="border-t p-3">
@@ -97,8 +97,8 @@ export function AppShell({
           <button
             type="button"
             onClick={() => setCopilotOpen((v) => !v)}
-            aria-label="Copilot"
-            title="Copilot"
+            aria-label="Lapha"
+            title="Lapha"
             className={cn(
               "flex size-10 items-center justify-center rounded-xl transition-colors",
               copilotOpen
@@ -106,7 +106,7 @@ export function AppShell({
                 : "text-slate-600 hover:bg-slate-100"
             )}
           >
-            <Sparkles className="size-[18px] shrink-0" />
+            <Bot className="size-[18px] shrink-0" />
           </button>
         </div>
       </div>
@@ -164,7 +164,7 @@ export function AppShell({
         <main className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 md:pb-28">{children}</main>
       </div>
 
-      {/* Copilot — aberto pelo item "Copilot" da sidebar esquerda. Painel
+      {/* Copilot ("Lapha" na UI) — aberto pelo item da sidebar esquerda. Painel
           flutuante pela direita (não empurra o conteúdo); fecha no X ou clicando
           o item de novo. */}
       {copilotOpen ? (

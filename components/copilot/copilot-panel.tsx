@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Send, Sparkles, X } from "lucide-react";
+import { Bot, Loader2, Send, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,12 +22,13 @@ const TOOL_LABEL: Record<string, string> = {
   list_etd_entries: "checking ETD",
   list_pre_loadings: "searching pre-loadings",
   search_shipments: "searching shipments",
+  trace_chain: "following the chain",
   list_pending_steps: "checking pending steps",
 };
 
 const EXAMPLES = [
   "Which batches are more than 10 days late?",
-  "Orders in production",
+  "Which PLs is PO 1437 in?",
   "What's pending for me?",
   "Open pre-loadings",
 ];
@@ -52,8 +53,8 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex h-full flex-col bg-white">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-        <Sparkles className="size-5 text-primary" />
-        <span className="font-semibold text-primary">Copilot</span>
+        <Bot className="size-5 text-primary" />
+        <span className="font-semibold text-primary">Lapha</span>
         <div className="ml-auto flex items-center gap-1">
           {turns.length > 0 ? (
             <Button
@@ -65,7 +66,7 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
               Clear
             </Button>
           ) : null}
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close copilot">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close Lapha">
             <X className="size-4" />
           </Button>
         </div>
@@ -75,8 +76,9 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
         {turns.length === 0 ? (
           <div className="space-y-4 pt-4">
             <p className="text-sm text-muted-foreground">
-              Ask about orders, ETD, pre-loadings, shipments and pending steps. I query the SOT
-              and show the rows — click one to open it.
+              Ask about orders, ETD, pre-loadings, shipments and pending steps — or follow the
+              chain: which PLs an order is in, where a batch ended up, what travels in a
+              container. I query the SOT and show the rows — click one to open it.
             </p>
             <div className="flex flex-col gap-2">
               {EXAMPLES.map((ex) => (
@@ -107,7 +109,7 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
                 submit();
               }
             }}
-            placeholder="Ask the copilot…"
+            placeholder="Ask Lapha…"
             rows={2}
             className="resize-none border-0 p-0 shadow-none focus-visible:ring-0"
           />

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { SessionProfile } from "@/lib/dal";
-import type { FeatureKey } from "@/domain/access/features";
+import { hasFeature, type FeatureKey } from "@/domain/access/features";
 import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 import { SHIPMENT_STEPS } from "@/lib/checklist";
 import { daysDelay, gapOfReady } from "@/lib/etd";
@@ -130,6 +130,170 @@ async function peopleMap(
 /** Data de hoje em ISO (YYYY-MM-DD) para comparar com colunas `date`. */
 function todayIso(todayMs: number): string {
   return new Date(todayMs).toISOString().slice(0, 10);
+}
+
+/** Embed de relação 1:1 do PostgREST — o tipo gerado às vezes diz array. */
+function one<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Travessia Order → Lote → PL → Embarque
+//
+// A junção `pre_loading_batches` é o elo entre as duas metades do sistema. Sem
+// percorrer isso cada ferramenta enxerga só o nível da sua tela, e perguntas
+// que atravessam ("o PO 1437 está em quais PLs?") ficam sem resposta.
+// ---------------------------------------------------------------------------
+
+type PlRef = { id: string; pl_number: string };
+
+type ShipmentRef = {
+  id: string;
+  container_number: string | null;
+  status: string | null;
+  estimated_date: string | null;
+};
+
+/** Onde cada lote está: os PLs que o contêm e o embarque de cada PL. */
+async function locateBatches(
+  admin: AdminClient,
+  batchIds: string[]
+): Promise<{ plsByBatch: Map<string, PlRef[]>; shipmentByPl: Map<string, ShipmentRef> }> {
+  const plsByBatch = new Map<string, PlRef[]>();
+  const shipmentByPl = new Map<string, ShipmentRef>();
+  if (batchIds.length === 0) return { plsByBatch, shipmentByPl };
+
+  const { data: links } = await admin
+    .from("pre_loading_batches")
+    .select("pre_loading_id, batch_id")
+    .in("batch_id", batchIds);
+  const rows = links ?? [];
+  if (rows.length === 0) return { plsByBatch, shipmentByPl };
+
+  const plIds = [...new Set(rows.map((r) => r.pre_loading_id))];
+  const [plRes, shipRes] = await Promise.all([
+    admin.from("pre_loadings").select("id, pl_number").in("id", plIds).is("deleted_at", null),
+    admin
+      .from("shipments")
+      .select("id, pre_loading_id, container_number, status, estimated_date")
+      .in("pre_loading_id", plIds)
+      .is("deleted_at", null),
+  ]);
+
+  const plNumberById = new Map((plRes.data ?? []).map((p) => [p.id, p.pl_number]));
+  for (const s of shipRes.data ?? []) {
+    shipmentByPl.set(s.pre_loading_id, {
+      id: s.id,
+      container_number: s.container_number,
+      status: s.status,
+      estimated_date: s.estimated_date,
+    });
+  }
+  for (const r of rows) {
+    // PL apagado (soft delete) não entra: a tela também não o mostraria.
+    const pl_number = plNumberById.get(r.pre_loading_id);
+    if (!pl_number) continue;
+    const arr = plsByBatch.get(r.batch_id) ?? [];
+    arr.push({ id: r.pre_loading_id, pl_number });
+    plsByBatch.set(r.batch_id, arr);
+  }
+
+  return { plsByBatch, shipmentByPl };
+}
+
+/**
+ * Lotes-filhos gerados por split, mapeados para o lote de origem.
+ *
+ * No Confirm Shipping a entrada marcada Partial/None sai do lote que embarcou e
+ * vai para um lote novo (docs §3.7.2) — o lote embarcado pode acabar sem
+ * nenhuma linha própria. A tela do embarque resolve subindo a linhagem
+ * (`app/(dashboard)/shipments/[id]/page.tsx`); aqui é a mesma conta, para o
+ * copilot não responder "esse lote não tem fábrica" onde a tela mostra as
+ * linhas. Profundidade limitada por segurança, caso algum dado forme ciclo.
+ */
+async function lineageOf(admin: AdminClient, batchIds: string[]): Promise<Map<string, string>> {
+  const ancestorOf = new Map<string, string>();
+  let frontier = batchIds;
+  for (let depth = 0; depth < 10 && frontier.length > 0; depth++) {
+    const { data } = await admin
+      .from("batches")
+      .select("id, split_from_batch_id")
+      .in("split_from_batch_id", frontier);
+    const generation = (data ?? []).filter((b) => !ancestorOf.has(b.id));
+    if (generation.length === 0) break;
+    for (const b of generation) {
+      const parent = b.split_from_batch_id as string;
+      ancestorOf.set(b.id, ancestorOf.get(parent) ?? parent);
+    }
+    frontier = generation.map((b) => b.id);
+  }
+  return ancestorOf;
+}
+
+/** PLs que contêm algum lote das orders cujo número casa com o texto. */
+async function plIdsForPoNumber(admin: AdminClient, poNumber: string): Promise<string[]> {
+  const { data: orders } = await admin
+    .from("orders")
+    .select("id")
+    .ilike("po_number", `%${poNumber}%`)
+    .is("deleted_at", null)
+    .limit(200);
+  const orderIds = (orders ?? []).map((o) => o.id);
+  if (orderIds.length === 0) return [];
+
+  const { data: batches } = await admin.from("batches").select("id").in("order_id", orderIds);
+  const batchIds = (batches ?? []).map((b) => b.id);
+  if (batchIds.length === 0) return [];
+
+  const { data: links } = await admin
+    .from("pre_loading_batches")
+    .select("pre_loading_id")
+    .in("batch_id", batchIds);
+  return [...new Set((links ?? []).map((l) => l.pre_loading_id))];
+}
+
+/** Rótulo de lote como as telas mostram: número da order + sufixo (1437.02). */
+function batchLabel(poNumber: string | null | undefined, batchNumber: string): string {
+  return `${poNumber ?? ""}${batchNumber}`;
+}
+
+/** "1437, 1502" — as orders de cada PL, para a coluna de conteúdo. */
+async function ordersByPreLoading(
+  admin: AdminClient,
+  plIds: string[]
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (plIds.length === 0) return out;
+
+  const { data: links } = await admin
+    .from("pre_loading_batches")
+    .select("pre_loading_id, batch_id")
+    .in("pre_loading_id", plIds);
+  const rows = links ?? [];
+  if (rows.length === 0) return out;
+
+  const { data: batches } = await admin
+    .from("batches")
+    .select("id, order_id")
+    .in("id", [...new Set(rows.map((r) => r.batch_id))]);
+  const orderIdByBatch = new Map((batches ?? []).map((b) => [b.id, b.order_id]));
+
+  const { data: orders } = await admin
+    .from("orders")
+    .select("id, po_number")
+    .in("id", [...new Set((batches ?? []).map((b) => b.order_id))]);
+  const poById = new Map((orders ?? []).map((o) => [o.id, o.po_number]));
+
+  for (const r of rows) {
+    const po = poById.get(orderIdByBatch.get(r.batch_id) ?? "");
+    if (!po) continue;
+    const arr = out.get(r.pre_loading_id) ?? [];
+    if (!arr.includes(po)) arr.push(po);
+    out.set(r.pre_loading_id, arr);
+  }
+  for (const [id, list] of out) out.set(id, list.sort());
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,14 +459,15 @@ const searchOrders = defineTool({
 const getOrderDetail = defineTool({
   feature: "orders",
   description:
-    "Full portrait of ONE order: header data, batches with status, " +
-    "Factory×Category entries with ETD and the checklist (what's missing and " +
-    "what's already done). Call this for 'summarize PO 4312' or 'what's left for " +
-    "PO X to move forward'. Accepts the order number as the user typed it.",
+    "Full portrait of ONE order: header data, batches with status and where each " +
+    "one is (PL and shipment), Factory×Category entries with ETD and the checklist " +
+    "(what's missing and what's already done). Call this for 'summarize PO 4312', " +
+    "'what's left for PO X to move forward' or 'which PLs is PO X in'. Accepts the " +
+    "order number as the user typed it.",
   schema: z.object({
     po_number: z.string().min(1).describe("Order number, e.g. '4312' or 'PO - 4312'."),
   }),
-  run: async (input, { admin, todayMs }) => {
+  run: async (input, { admin, session, todayMs }) => {
     const { data: orders } = await admin
       .from("orders")
       .select(
@@ -366,6 +531,15 @@ const getOrderDetail = defineTool({
 
     const today = todayIso(todayMs);
 
+    // Onde cada lote foi parar. Só para quem enxerga essas telas: o copilot não
+    // pode virar a porta dos fundos para PL/embarque de quem não tem a feature.
+    const seesPl = hasFeature(session.permissions, "pre_loading");
+    const seesShipment = hasFeature(session.permissions, "shipments");
+    const located =
+      seesPl || seesShipment
+        ? await locateBatches(admin, batches.map((b) => b.id))
+        : { plsByBatch: new Map<string, PlRef[]>(), shipmentByPl: new Map<string, ShipmentRef>() };
+
     return {
       found: true,
       order: {
@@ -381,7 +555,28 @@ const getOrderDetail = defineTool({
         schedule_requested: order.schedule_requested,
         asap: order.asap,
       },
-      batches: batches.map((b) => ({ batch_number: b.batch_number, status: b.status })),
+      batches: batches.map((b) => {
+        const pls = located.plsByBatch.get(b.id) ?? [];
+        const shipment = pls.map((p) => located.shipmentByPl.get(p.id)).find(Boolean) ?? null;
+        return {
+          batch_number: b.batch_number,
+          status: b.status,
+          ...(seesPl || seesShipment
+            ? { pre_loadings: pls.map((p) => p.pl_number) }
+            : {}),
+          ...(seesShipment
+            ? {
+                shipment: shipment
+                  ? {
+                      container_number: shipment.container_number,
+                      status: shipment.status,
+                      estimated_date: shipment.estimated_date,
+                    }
+                  : null,
+              }
+            : {}),
+        };
+      }),
       entries: ofc.map((row) => {
         const etd = Array.isArray(row.etd_info) ? row.etd_info[0] : row.etd_info;
         return {
@@ -544,12 +739,17 @@ const listEtdEntries = defineTool({
 const listPreLoadings = defineTool({
   feature: "pre_loading",
   description:
-    "Lists pre-load plans (PLs), exactly like the Pre-loading screen. Call this " +
-    "for 'which PLs are open', 'who's the leader of PL - 0231'. By default it " +
-    "shows the ones still on that screen — a PL only drops off once its Loading " +
-    "Date step is completed AND a shipment has been created for it.",
+    "Lists pre-load plans (PLs), exactly like the Pre-loading screen, and says " +
+    "which orders each one carries. Call this for 'which PLs are open', 'who's the " +
+    "leader of PL - 0231', 'which PLs carry PO 1437'. By default it shows the ones " +
+    "still on that screen — a PL only drops off once its Loading Date step is " +
+    "completed AND a shipment has been created for it.",
   schema: z.object({
     pl_number: z.string().optional().describe("Part of the PL number."),
+    po_number: z
+      .string()
+      .optional()
+      .describe("Only PLs that carry a batch of this order number."),
     leader_id: z.string().uuid().optional(),
     pod_id: z.string().uuid().optional(),
     include_confirmed: z
@@ -558,8 +758,17 @@ const listPreLoadings = defineTool({
       .describe("true = also include PLs that already left the screen (loading date completed + shipment created)."),
     limit: limitSchema,
   }),
-  run: async (input, { admin }) => {
+  run: async (input, { admin, session }) => {
     const limit = input.limit ?? DEFAULT_LIMIT;
+
+    // Filtro por order: a ligação lote↔PL mora em `pre_loading_batches`.
+    let plIdsFromPo: string[] | null = null;
+    if (input.po_number) {
+      plIdsFromPo = await plIdsForPoNumber(admin, input.po_number);
+      if (plIdsFromPo.length === 0) {
+        return { total_matched: 0, returned: 0, pre_loadings: [] };
+      }
+    }
 
     // Mesma regra da tela Pre-loading (app/(dashboard)/pre-loading/page.tsx): o PL
     // só sai da lista quando a etapa Loading Date está concluída E já existe um
@@ -573,6 +782,7 @@ const listPreLoadings = defineTool({
       .is("deleted_at", null);
 
     if (input.pl_number) query = query.ilike("pl_number", `%${input.pl_number}%`);
+    if (plIdsFromPo) query = query.in("id", plIdsFromPo);
     if (input.leader_id) query = query.eq("leader_id", input.leader_id);
     if (input.pod_id) query = query.eq("pod_id", input.pod_id);
 
@@ -615,9 +825,14 @@ const listPreLoadings = defineTool({
     );
     const pageRows = filtered.slice(0, limit);
 
-    const [pods, people] = await Promise.all([
+    // O conteúdo do PL só vai para quem enxerga Orders.
+    const seesOrders = hasFeature(session.permissions, "orders");
+    const [pods, people, ordersByPl] = await Promise.all([
       nameMap(admin, "pods", pageRows.map((e) => e.r.pod_id)),
       peopleMap(admin, pageRows.flatMap((e) => [e.r.leader_id, e.r.responsible_signer_id])),
+      seesOrders
+        ? ordersByPreLoading(admin, pageRows.map((e) => e.r.id))
+        : Promise.resolve(new Map<string, string[]>()),
     ]);
 
     return {
@@ -634,6 +849,7 @@ const listPreLoadings = defineTool({
         seal_number: r.seal_number,
         loading_completed,
         shipped,
+        ...(seesOrders ? { orders: (ordersByPl.get(r.id) ?? []).join(", ") || null } : {}),
       })),
     };
   },
@@ -645,6 +861,7 @@ const listPreLoadings = defineTool({
 
 type ShipmentRow = {
   id: string;
+  pre_loading_id: string;
   container_number: string | null;
   status: string | null;
   estimated_date: string | null;
@@ -657,12 +874,16 @@ type ShipmentRow = {
 const searchShipments = defineTool({
   feature: "shipments",
   description:
-    "Lists shipments. Call this for 'where is container ABCD1234567', " +
-    "'shipments in transit', 'what arrives by such date'. The container number " +
-    "accepts a partial match.",
+    "Lists shipments and which orders travel in each one. Call this for 'where is " +
+    "container ABCD1234567', 'shipments in transit', 'what arrives by such date', " +
+    "'which shipment carries PO 1437'. The container number accepts a partial match.",
   schema: z.object({
     container_number: z.string().optional().describe("Part of the container number."),
     pl_number: z.string().optional().describe("Part of the origin PL number."),
+    po_number: z
+      .string()
+      .optional()
+      .describe("Only shipments carrying a batch of this order number."),
     status: z
       .array(z.enum(["in_transit", "delivered", "canceled"]))
       .optional()
@@ -673,13 +894,23 @@ const searchShipments = defineTool({
     estimated_to: z.string().optional().describe("Estimated date to (YYYY-MM-DD)."),
     limit: limitSchema,
   }),
-  run: async (input, { admin }) => {
+  run: async (input, { admin, session }) => {
     const limit = input.limit ?? DEFAULT_LIMIT;
+
+    // Filtro por order: chega-se ao embarque pelo PL que carrega o lote.
+    let plIdsFromPo: string[] | null = null;
+    if (input.po_number) {
+      plIdsFromPo = await plIdsForPoNumber(admin, input.po_number);
+      if (plIdsFromPo.length === 0) {
+        return { total_matched: 0, returned: 0, shipments: [] };
+      }
+    }
+
     const joinType = input.pl_number ? "pre_loadings!inner" : "pre_loadings";
     let query = admin
       .from("shipments")
       .select(
-        `id, container_number, status, estimated_date, carrier_id, shipment_model_id, leader_id, ${joinType}(pl_number)`,
+        `id, pre_loading_id, container_number, status, estimated_date, carrier_id, shipment_model_id, leader_id, ${joinType}(pl_number)`,
         { count: "exact" }
       )
       .is("deleted_at", null);
@@ -688,6 +919,7 @@ const searchShipments = defineTool({
       query = query.ilike("container_number", `%${input.container_number}%`);
     }
     if (input.pl_number) query = query.ilike("pre_loadings.pl_number", `%${input.pl_number}%`);
+    if (plIdsFromPo) query = query.in("pre_loading_id", plIdsFromPo);
     if (input.status?.length) query = query.in("status", input.status);
     if (input.carrier_id) query = query.eq("carrier_id", input.carrier_id);
     if (input.leader_id) query = query.eq("leader_id", input.leader_id);
@@ -701,10 +933,15 @@ const searchShipments = defineTool({
     if (error) throw new Error(error.message);
 
     const rows = data ?? [];
-    const [carriers, models, people] = await Promise.all([
+    // O conteúdo do embarque só vai para quem enxerga Orders.
+    const seesOrders = hasFeature(session.permissions, "orders");
+    const [carriers, models, people, ordersByPl] = await Promise.all([
       nameMap(admin, "carriers", rows.map((r) => r.carrier_id)),
       nameMap(admin, "shipment_models", rows.map((r) => r.shipment_model_id)),
       peopleMap(admin, rows.map((r) => r.leader_id)),
+      seesOrders
+        ? ordersByPreLoading(admin, rows.map((r) => r.pre_loading_id))
+        : Promise.resolve(new Map<string, string[]>()),
     ]);
 
     return {
@@ -715,6 +952,9 @@ const searchShipments = defineTool({
         return {
           id: r.id,
           pl_number: pl?.pl_number ?? null,
+          ...(seesOrders
+            ? { orders: (ordersByPl.get(r.pre_loading_id) ?? []).join(", ") || null }
+            : {}),
           container_number: r.container_number,
           status: r.status,
           estimated_date: r.estimated_date,
@@ -724,6 +964,248 @@ const searchShipments = defineTool({
         };
       }),
     };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// trace_chain
+// ---------------------------------------------------------------------------
+
+type ChainBatchRow = {
+  id: string;
+  batch_number: string;
+  status: BatchStatus;
+  orders:
+    | { id: string; po_number: string; status: OrderStatus; client_id: string | null }
+    | { id: string; po_number: string; status: OrderStatus; client_id: string | null }[]
+    | null;
+};
+
+type ChainOfcRow = {
+  batch_id: string | null;
+  factory_id: string;
+  category_id: string;
+  ship_requirement: string | null;
+  loading_status: string | null;
+  etd_info:
+    | { initial_date: string | null; current_date: string | null; ready: boolean; ready_date: string | null }
+    | { initial_date: string | null; current_date: string | null; ready: boolean; ready_date: string | null }[]
+    | null;
+};
+
+const traceChain = defineTool({
+  feature: "orders",
+  description:
+    "Follows the chain Shipment ↔ PL ↔ batch ↔ Order ↔ Factory×Category starting " +
+    "from ANY point of it. Call this whenever the question crosses levels: 'which " +
+    "PLs is PO 1437 in', 'where are the batches of this order', 'what's inside PL " +
+    "1394', 'which orders are in container ABCD1234567', 'factory status of batch " +
+    "1437.02'. Give the point you know — order number, batch, PL number or " +
+    "container — and it returns one row per batch with its PL, its shipment and " +
+    "its Factory×Category entries.",
+  schema: z
+    .object({
+      po_number: z.string().optional().describe("Order number, e.g. '1437'."),
+      batch_number: z
+        .string()
+        .optional()
+        .describe("Batch suffix inside the order, e.g. '.02'. Combine with po_number."),
+      pl_number: z.string().optional().describe("PL number, e.g. '1394'."),
+      container_number: z.string().optional().describe("Part of the container number."),
+      limit: limitSchema,
+    })
+    .refine((v) => Boolean(v.po_number || v.pl_number || v.container_number), {
+      message: "Give at least one of po_number, pl_number or container_number.",
+    }),
+  run: async (input, { admin, session, todayMs }) => {
+    const limit = input.limit ?? DEFAULT_LIMIT;
+    const seesPl = hasFeature(session.permissions, "pre_loading");
+    const seesShipment = hasFeature(session.permissions, "shipments");
+
+    // 1. Entrando pelo lado do embarque/PL: chega-se aos lotes pela junção.
+    let batchIdFilter: string[] | null = null;
+    if (input.pl_number || input.container_number) {
+      if (!seesPl && !seesShipment) {
+        return { found: false, reason: "You don't have access to pre-loadings or shipments." };
+      }
+
+      let fromShipments: string[] | null = null;
+      if (input.container_number) {
+        const { data: ships } = await admin
+          .from("shipments")
+          .select("pre_loading_id, container_number")
+          .ilike("container_number", `%${input.container_number}%`)
+          .is("deleted_at", null)
+          .limit(200);
+        const hits = ships ?? [];
+        // Número cheio digitado casa com ele mesmo, não com quem o contém.
+        const exact = hits.filter((s) => s.container_number === input.container_number);
+        const chosen = exact.length > 0 ? exact : hits;
+        fromShipments = [...new Set(chosen.map((s) => s.pre_loading_id))];
+        if (fromShipments.length === 0) {
+          return { found: false, reason: `No shipment matches container "${input.container_number}".` };
+        }
+      }
+
+      const findPls = async (exact: boolean) => {
+        let q = admin.from("pre_loadings").select("id").is("deleted_at", null);
+        if (input.pl_number) {
+          q = exact
+            ? q.eq("pl_number", input.pl_number)
+            : q.ilike("pl_number", `%${input.pl_number}%`);
+        }
+        if (fromShipments) q = q.in("id", fromShipments);
+        const { data } = await q.limit(200);
+        return (data ?? []).map((p) => p.id);
+      };
+
+      // "PL 149" é o PL 149, não os 11 que têm "149" no meio. Só cai no
+      // parcial quando o exato não existe — aí o usuário digitou um pedaço.
+      let plIds = input.pl_number ? await findPls(true) : [];
+      if (plIds.length === 0) plIds = await findPls(false);
+      if (plIds.length === 0) return { found: false, reason: "No PL matches that." };
+
+      const { data: links } = await admin
+        .from("pre_loading_batches")
+        .select("batch_id")
+        .in("pre_loading_id", plIds);
+      batchIdFilter = [...new Set((links ?? []).map((l) => l.batch_id))];
+      if (batchIdFilter.length === 0) {
+        return { found: false, reason: "This PL has no batches attached to it." };
+      }
+    }
+
+    // 2. Os lotes, com a order de cada um. Mesma regra do PL: "PO 1437" é a
+    //    order 1437, e não as centenas que contêm "1437" como pedaço.
+    const findBatches = async (exact: boolean) => {
+      let q = admin
+        .from("batches")
+        .select("id, batch_number, status, orders!inner(id, po_number, status, client_id)")
+        .is("orders.deleted_at", null);
+      if (batchIdFilter) q = q.in("id", batchIdFilter);
+      if (input.po_number) {
+        q = exact
+          ? q.eq("orders.po_number", input.po_number)
+          : q.ilike("orders.po_number", `%${input.po_number}%`);
+      }
+      if (input.batch_number) q = q.ilike("batch_number", `%${input.batch_number}%`);
+      const { data, error } = await q.limit(500).returns<ChainBatchRow[]>();
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    };
+
+    let all = input.po_number ? await findBatches(true) : [];
+    if (all.length === 0) all = await findBatches(false);
+    if (all.length === 0) return { found: false, reason: "Nothing matches that." };
+
+    const sorted = all.sort((a, b) => {
+      const pa = one(a.orders)?.po_number ?? "";
+      const pb = one(b.orders)?.po_number ?? "";
+      return pa === pb ? a.batch_number.localeCompare(b.batch_number) : pb.localeCompare(pa);
+    });
+    const page = sorted.slice(0, limit);
+    const pageIds = page.map((b) => b.id);
+
+    // 3. Onde cada lote está + as linhas Factory×Category (seguindo a linhagem
+    //    do split, senão um lote embarcado aparece sem nenhuma fábrica).
+    const ancestorOf = await lineageOf(admin, pageIds);
+    const [located, ofcRes] = await Promise.all([
+      seesPl || seesShipment
+        ? locateBatches(admin, pageIds)
+        : Promise.resolve({
+            plsByBatch: new Map<string, PlRef[]>(),
+            shipmentByPl: new Map<string, ShipmentRef>(),
+          }),
+      admin
+        .from("order_factory_category")
+        .select(
+          "batch_id, factory_id, category_id, ship_requirement, loading_status, etd_info(initial_date, current_date, ready, ready_date)"
+        )
+        .in("batch_id", [...pageIds, ...ancestorOf.keys()])
+        .returns<ChainOfcRow[]>(),
+    ]);
+
+    const ofcRows = ofcRes.data ?? [];
+    const [factories, categories, clients, batchNumbers] = await Promise.all([
+      nameMap(admin, "factories", ofcRows.map((r) => r.factory_id)),
+      nameMap(admin, "categories", ofcRows.map((r) => r.category_id)),
+      nameMap(admin, "clients", page.map((b) => one(b.orders)?.client_id ?? null)),
+      (async () => {
+        const ids = [...ancestorOf.keys()];
+        if (ids.length === 0) return new Map<string, string>();
+        const { data: rows } = await admin.from("batches").select("id, batch_number").in("id", ids);
+        return new Map((rows ?? []).map((r) => [r.id, r.batch_number]));
+      })(),
+    ]);
+
+    const byBatch = new Map<string, ChainOfcRow[]>();
+    for (const row of ofcRows) {
+      if (!row.batch_id) continue;
+      // Linha migrada no split conta para o lote de ORIGEM (o que embarcou).
+      const target = ancestorOf.get(row.batch_id) ?? row.batch_id;
+      const arr = byBatch.get(target) ?? [];
+      arr.push(row);
+      byBatch.set(target, arr);
+    }
+
+    const chain: Record<string, unknown>[] = [];
+    const entries: Record<string, unknown>[] = [];
+
+    for (const b of page) {
+      const order = one(b.orders);
+      const label = batchLabel(order?.po_number, b.batch_number);
+      const pls = located.plsByBatch.get(b.id) ?? [];
+      const shipment = pls.map((p) => located.shipmentByPl.get(p.id)).find(Boolean) ?? null;
+      const rows = byBatch.get(b.id) ?? [];
+
+      chain.push({
+        order_id: order?.id ?? null,
+        po_number: order?.po_number ?? null,
+        batch: label,
+        batch_status: b.status,
+        client: order?.client_id ? (clients.get(order.client_id) ?? null) : null,
+        ...(seesPl || seesShipment
+          ? {
+              pre_loading_id: pls[0]?.id ?? null,
+              pl_number: pls.map((p) => p.pl_number).join(", ") || null,
+            }
+          : {}),
+        ...(seesShipment
+          ? {
+              container_number: shipment?.container_number ?? null,
+              shipment_status: shipment?.status ?? null,
+              eta: shipment?.estimated_date ?? null,
+            }
+          : {}),
+        factory_lines: rows.length,
+      });
+
+      for (const row of rows) {
+        const etd = one(row.etd_info);
+        const movedTo = row.batch_id && ancestorOf.has(row.batch_id) ? row.batch_id : null;
+        entries.push({
+          order_id: order?.id ?? null,
+          po_number: order?.po_number ?? null,
+          batch: label,
+          factory: factories.get(row.factory_id) ?? null,
+          category: categories.get(row.category_id) ?? null,
+          ship_requirement: row.ship_requirement,
+          loading_status: row.loading_status,
+          initial_date: etd?.initial_date ?? null,
+          current_date: etd?.current_date ?? null,
+          days_delay: daysDelay(etd?.initial_date ?? null, etd?.current_date ?? null),
+          ready: etd?.ready ?? false,
+          gap_of_ready: gapOfReady(etd?.ready, etd?.ready_date, todayMs),
+          // Preenchido só quando a linha saiu deste lote num split e hoje vive
+          // em outro — o embarque continua sendo deste, a linha está lá.
+          now_in_batch: movedTo
+            ? batchLabel(order?.po_number, batchNumbers.get(movedTo) ?? "")
+            : null,
+        });
+      }
+    }
+
+    return { found: true, total_matched: all.length, returned: page.length, chain, entries };
   },
 });
 
@@ -873,6 +1355,7 @@ export const COPILOT_TOOLS: Record<string, CopilotTool> = {
   list_etd_entries: listEtdEntries,
   list_pre_loadings: listPreLoadings,
   search_shipments: searchShipments,
+  trace_chain: traceChain,
   list_pending_steps: listPendingSteps,
 };
 
