@@ -490,7 +490,9 @@ function BulkImportPanel({
             <span>Factory</span>
             <span>Batch No.</span>
             <span>Ship req.</span>
-            <span />
+            {/* Reserva a bolinha de status das linhas (size-5); vazio, a coluna
+                `auto` mediria zero e as colunas do cabeçalho sairiam do lugar. */}
+            <span className="size-5" />
           </div>
           <div className="max-h-64 overflow-y-auto">
             {parsedRows.map((r) => {

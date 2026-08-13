@@ -442,7 +442,8 @@ export function PlChecklistClient({
           <span>Client</span>
           <span>Order Number . Batches</span>
           <span>Status</span>
-          <span />
+          {/* Reserva o botão do olho das linhas (size-4). */}
+          <span className="size-4" />
         </div>
         {batches.length === 0 ? (
           <p className="px-6 py-6 text-sm text-muted-foreground">
