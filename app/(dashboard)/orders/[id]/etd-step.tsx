@@ -369,10 +369,10 @@ function EtdUpdateModal({
                         <ChangedCell field={h.field} source={h.source} />
                       </HistoryField>
                       <HistoryField label="Insp.">
-                        <Checkbox checked={h.inspection} disabled />
+                        <Checkbox checked={h.inspection} disabled className="disabled:opacity-100" />
                       </HistoryField>
                       <HistoryField label="Ready?">
-                        <Checkbox checked={h.ready} disabled />
+                        <Checkbox checked={h.ready} disabled className="disabled:opacity-100" />
                       </HistoryField>
                       <HistoryField label="Current date">
                         {formatDateNumeric(h.current_date)}
@@ -427,10 +427,10 @@ function EtdUpdateModal({
                         <ChangedCell field={h.field} source={h.source} />
                       </TableCell>
                       <TableCell>
-                        <Checkbox checked={h.inspection} disabled />
+                        <Checkbox checked={h.inspection} disabled className="disabled:opacity-100" />
                       </TableCell>
                       <TableCell>
-                        <Checkbox checked={h.ready} disabled />
+                        <Checkbox checked={h.ready} disabled className="disabled:opacity-100" />
                       </TableCell>
                       <TableCell>
                         <RemarksCell remarks={h.remarks} />
