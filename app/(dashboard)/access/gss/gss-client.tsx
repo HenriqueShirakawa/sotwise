@@ -76,7 +76,9 @@ export function GssClient({
 
   const gssIds = useMemo(() => new Set(rows.map((r) => r.gssId)), [rows]);
   const pareadosGss = rows.filter((r) => r.pareadoCom).length;
-  const semParLocal = localRows.filter((l) => !l.gssId || !gssIds.has(l.gssId)).length;
+  // Conta quem nunca foi pareado (sem gss_id) — estável mesmo com o GSS fora do
+  // ar. Linha com gss_id não entra aqui: está pareada, confirmada ou não.
+  const semGssIdLocal = localRows.filter((l) => !l.gssId).length;
 
   const q = norm(busca.trim());
   const gssFiltradas = useMemo(
@@ -185,9 +187,9 @@ export function GssClient({
           tom={rows.length - pareadosGss > 0 ? "alerta" : "neutro"}
         />
         <Contador
-          valor={semParLocal}
-          rotulo={`nossos sem par (de ${localRows.length})`}
-          tom={semParLocal > 0 ? "alerta" : "neutro"}
+          valor={semGssIdLocal}
+          rotulo={`nossos sem gss_id (de ${localRows.length})`}
+          tom={semGssIdLocal > 0 ? "alerta" : "neutro"}
         />
       </div>
 
@@ -247,7 +249,15 @@ export function GssClient({
           quantidade={localFiltradas.length}
         >
           {localFiltradas.map((l) => {
-            const pareado = !!l.gssId && gssIds.has(l.gssId);
+            // Quatro estados honestos. O ponto-chave: linha COM gss_id nunca é
+            // "sem par" — ela está pareada; a dúvida é só se a origem confirma.
+            const estado: "confirmado" | "pareado" | "foraPull" | "semId" = !l.gssId
+              ? "semId"
+              : gssIds.has(l.gssId)
+                ? "confirmado"
+                : erro
+                  ? "pareado" // tem gss_id, mas o GSS não carregou pra confirmar
+                  : "foraPull"; // o GSS respondeu e não devolveu este id
             return (
               <li key={l.id} className="flex items-start gap-3 px-4 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -260,22 +270,34 @@ export function GssClient({
                     )}
                   </div>
                 </div>
-                {pareado ? (
+                {estado === "confirmado" ? (
                   <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-emerald-600">
                     <Check className="size-3.5" />
                     par
                   </span>
-                ) : (
+                ) : estado === "pareado" ? (
                   <span
-                    title={
-                      l.gssId
-                        ? "Tem gss_id, mas esse id não veio no pull atual"
-                        : "Nunca pareado com o GSS"
-                    }
+                    title="Tem gss_id; o GSS não carregou agora para confirmar"
+                    className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                  >
+                    <Check className="size-3.5" />
+                    pareado
+                  </span>
+                ) : estado === "foraPull" ? (
+                  <span
+                    title="Tem gss_id, mas o GSS não devolveu este id no pull atual"
                     className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-amber-600"
                   >
+                    <TriangleAlert className="size-3.5" />
+                    fora do pull
+                  </span>
+                ) : (
+                  <span
+                    title="Nunca pareado com o GSS"
+                    className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                  >
                     <Minus className="size-3.5" />
-                    sem par
+                    sem gss_id
                   </span>
                 )}
               </li>
