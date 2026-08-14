@@ -334,7 +334,7 @@ Mínimo para o sync ser confiável:
 | **2** | Pareamento inicial: export para semear o GSS (caminho A) **ou** rotina de match por nome + fila de resolução (caminho B) | ✅ 841 pareamentos + 618 inserts de geografia gravados; fila de merge (§9.5) e 121 inserts retidos (§9.7) |
 | **3** | Puller com `--dry-run`, ordem do §4.3, upsert por `gss_id`, tradução de FK, junções como conjunto | ✅ motor em `lib/gss/sync.ts` (§9.7): vínculo, campos, insert, revive e detecção de sumiço. Faltam as **junções** e `contacts` |
 | **4** | Cron + logs + os 3 relatórios do §6.5 | ✅ `app/api/cron/sync-gss`, diário às 9h UTC; `gss_sync_state` gravado por recurso. Falta alerta de 2 falhas seguidas |
-| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⏸️ **adiada por decisão** (14/08/2026) — ver §9.9 |
+| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⏸️ **adiada por decisão** (14/08/2026) — ver §9.10 |
 
 ---
 
@@ -610,7 +610,34 @@ estão em `NOME_LOCAL_VENCE`, porque aqui o nome carrega mais informação:
 | `Samples` | `Sample` | rótulo em 77 orders |
 | `Marquinhos` | `Marquinho` | grafia correta do cliente |
 
-### 9.9 Fase 5 adiada: o Registration segue editável (decisão de 14/08/2026)
+### 9.9 Painel de leitura do GSS, dentro do app
+
+[`/access/gss`](../app/(dashboard)/access/gss/page.tsx) — **owner-only**, pela
+mesma porta do `/access` (`requireOwner`, não `requireFeature`: é diagnóstico da
+integração, não função de operação).
+
+Existe porque conferir a origem exigia Postman — e o **Postman Web não serve**
+aqui: o Cloudflare desafia o IP do Cloud Agent e a resposta volta como página de
+challenge em vez de JSON, mesmo com o service token correto. Da nossa máquina os
+mesmos headers passam; do datacenter da Postman, não. (Contorno, se alguém
+insistir no Postman: trocar Cloud Agent por Desktop Agent, que sai da máquina
+local.)
+
+Por recurso, a tela mostra a lista do GSS com o par de cada linha e quatro
+contadores — quantos vieram, quantos casaram, quantos do GSS estão sem par e
+**quantos nossos estão sem par**. É o último que explica o caso `agents` sem
+precisar de investigação: 1 no GSS, 1 pareado, 142 nossos sem par. A coluna
+`gss_id` está vazia porque a origem tem um agente cadastrado, não porque o sync
+falhou.
+
+Busca só o recurso selecionado — ler os 14 de uma vez leva ~4s, e a tela não
+precisa disso.
+
+> A base do GSS cresce durante o dia: no intervalo de algumas horas em
+> 14/08/2026, `city` foi de 646 → 694 e `supplier` de 698 → 706. Contagem em
+> documento envelhece; o painel é a fonte viva.
+
+### 9.10 Fase 5 adiada: o Registration segue editável (decisão de 14/08/2026)
 
 O desenho pede que as telas de Registration virem read-only e que o
 `POST /api/{recurso}` saia (§7) — criar biblioteca aqui produz registro **sem
