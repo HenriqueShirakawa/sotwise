@@ -201,6 +201,7 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -209,6 +210,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["countries"]["Insert"]>;
         Relationships: [];
@@ -221,6 +223,7 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -229,6 +232,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["pols"]["Insert"]>;
         Relationships: [];
@@ -241,6 +245,7 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -249,6 +254,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["pods"]["Insert"]>;
         Relationships: [];
@@ -261,6 +267,7 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -269,6 +276,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["cities"]["Insert"]>;
         Relationships: [];
@@ -288,6 +296,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -297,6 +306,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["factories"]["Insert"]>;
         Relationships: [];
@@ -310,6 +320,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -319,6 +330,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["categories"]["Insert"]>;
         Relationships: [];
@@ -341,6 +353,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -353,6 +366,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["contacts"]["Insert"]>;
         Relationships: [];
@@ -371,6 +385,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -385,6 +400,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["agents"]["Insert"]>;
         Relationships: [];
@@ -404,6 +420,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -413,6 +430,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["carriers"]["Insert"]>;
         Relationships: [];
@@ -433,6 +451,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -443,6 +462,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["clients"]["Insert"]>;
         Relationships: [];
@@ -457,6 +477,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -467,6 +488,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["exporters"]["Insert"]>;
         Relationships: [];
@@ -481,6 +503,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -491,6 +514,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["business_units"]["Insert"]>;
         Relationships: [];
@@ -506,6 +530,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -517,6 +542,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["order_types"]["Insert"]>;
         Relationships: [];
@@ -530,6 +556,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -539,6 +566,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["shipment_models"]["Insert"]>;
         Relationships: [];
@@ -912,6 +940,33 @@ export type Database = {
         Row: { message_id: UUID; user_id: UUID; read_at: Timestamp | null };
         Insert: { message_id: UUID; user_id: UUID; read_at?: Timestamp | null };
         Update: Partial<Database["public"]["Tables"]["message_recipients"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Cursor + resultado do pull das bibliotecas a partir do GSS (uma linha
+       * por recurso). Ver supabase/migrations/20260811120000_gss_sync_state.sql
+       * e docs/INTEGRACAO_GSS.md. */
+      gss_sync_state: {
+        Row: {
+          resource: string;
+          watermark: Timestamp | null;
+          last_run_at: Timestamp | null;
+          last_status: "ok" | "error" | null;
+          last_error: string | null;
+          rows_upserted: number;
+          rows_deleted: number;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          resource: string;
+          watermark?: Timestamp | null;
+          last_run_at?: Timestamp | null;
+          last_status?: "ok" | "error" | null;
+          last_error?: string | null;
+          rows_upserted?: number;
+          rows_deleted?: number;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_sync_state"]["Insert"]>;
         Relationships: [];
       };
     };
