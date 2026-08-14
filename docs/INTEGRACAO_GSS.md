@@ -13,6 +13,13 @@ Complementa [`docs/SCHEMA.md`](SCHEMA.md) (schema do nosso lado) e
 > estava escrito), e **`Supplier` — fonte das nossas `factories` — não tem
 > `updated_at`** (§4.4). O mapeamento traz os substitutos. A arquitetura (pull,
 > GSS como dono, `gss_id` como pareamento) segue válida.
+>
+> ⚠️ **Revisado de novo pelo acesso real** (2026-08-14 — ver §9). O acesso **não
+> é ao Postgres**: é uma **API REST Django** (`api.gssdatahub.com/v1`) atrás de
+> Cloudflare Access + JWT. Isso derruba o §3 inteiro como *plano* — não há schema
+> `sotwise_sync`, nem view, nem role read-only, nem `updated_at` filtrável, nem
+> paginação. O §3 fica como o **contrato ideal a negociar**; o §9 descreve o que
+> existe e o que já foi executado em cima disso.
 
 ---
 
@@ -170,12 +177,11 @@ o `updated_at` do pai.
 
 ## 4. Do nosso lado
 
-### 4.1 `gss_id` (migration já escrita, **não aplicada**)
+### 4.1 `gss_id` — ✅ **aplicado em produção (2026-08-14)**
 
 `supabase/migrations/20260803120000_add_gss_id_to_libraries.sql` adiciona
-`gss_id text unique` nas 14 bibliotecas. Verificado em 2026-08-11: **não está em
-produção** (`column countries.gss_id does not exist`). É o primeiro passo
-executável.
+`gss_id text unique` nas 14 bibliotecas. Aplicado junto com `gss_sync_state`
+(§4.2). Conferido: 14 colunas `gss_id` presentes.
 
 `unique` simples (não parcial) permite vários `null` — registros ainda não
 pareados — e habilita `on conflict (gss_id)`.
@@ -321,15 +327,223 @@ Mínimo para o sync ser confiável:
 
 ## 8. Plano de execução
 
-| Fase | Entrega | Depende de |
+| Fase | Entrega | Status |
 |---|---|---|
-| **0** | Contrato do §3 aceito pelo dono do GSS; caminho de pareamento (§5) escolhido; e as **16 fricções** de [MAPEAMENTO_GSS §6](MAPEAMENTO_GSS.md#6-fricções-por-ordem-de-gravidade) resolvidas — as 4 primeiras (sem `Contact`, sem `ShipmentModel`, `Agent` sem país/location, sem `carrier_agents`) bloqueiam features que já estão em produção | cliente / GSS |
-| **1** | `gss_id` aplicado em produção (migration já escrita) + `gss_sync_state` criada | nós |
-| **2** | Pareamento inicial: export para semear o GSS (caminho A) **ou** rotina de match por nome + fila de resolução (caminho B) | fase 0 |
-| **3** | Puller com `--dry-run`, ordem do §4.3, upsert por `gss_id`, tradução de FK, junções como conjunto | credenciais de leitura do GSS |
-| **4** | Cron + logs + os 3 relatórios do §6.5 | fase 3 |
-| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | fase 4 estável |
+| **0** | Contrato do §3 aceito pelo dono do GSS; caminho de pareamento (§5) escolhido; e as **16 fricções** de [MAPEAMENTO_GSS §6](MAPEAMENTO_GSS.md#6-fricções-por-ordem-de-gravidade) resolvidas — as 4 primeiras (sem `Contact`, sem `ShipmentModel`, `Agent` sem país/location, sem `carrier_agents`) bloqueiam features que já estão em produção | ⚠️ parcial — acesso liberado (API, não Postgres); caminho **B** escolhido; fricções em aberto |
+| **1** | `gss_id` aplicado em produção (migration já escrita) + `gss_sync_state` criada | ✅ 2026-08-14 |
+| **2** | Pareamento inicial: export para semear o GSS (caminho A) **ou** rotina de match por nome + fila de resolução (caminho B) | ✅ 841 pareamentos + 618 inserts de geografia gravados; fila de merge (§9.5) e 121 inserts retidos (§9.7) |
+| **3** | Puller com `--dry-run`, ordem do §4.3, upsert por `gss_id`, tradução de FK, junções como conjunto | ✅ motor em `lib/gss/sync.ts` (§9.7): vínculo, campos, insert, revive e detecção de sumiço. Faltam as **junções** e `contacts` |
+| **4** | Cron + logs + os 3 relatórios do §6.5 | ✅ `app/api/cron/sync-gss`, diário às 9h UTC; `gss_sync_state` gravado por recurso. Falta alerta de 2 falhas seguidas |
+| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⬜ |
 
-**Bloqueio atual:** as fases 2–5 não começam sem (a) as credenciais de leitura do
-GSS e (b) a decisão do §5. A fase 1 pode ir agora — é uma migration `alter table
-… add column`, aditiva e sem impacto em nada que já roda.
+---
+
+## 9. Estado da execução (2026-08-14)
+
+### 9.1 O acesso que existe de verdade
+
+API REST Django em `https://api.gssdatahub.com/v1`, com **duas** camadas de auth:
+service token do **Cloudflare Access** (headers em toda requisição) + **JWT** do
+AGK-Core obtido por login. Cliente em [`lib/gss/client.ts`](../lib/gss/client.ts).
+
+O que a API **não** tem, e o efeito em cada premissa do §3/§4:
+
+| Premissa | Realidade | Efeito |
+|---|---|---|
+| `updated_at` filtrável (§3.2) | não existe filtro server-side | **sem sync incremental**: todo pull lê a lista inteira. O watermark do §4.2 fica sem uso por ora |
+| `deleted_at` (§3.2) | não existe | sumiço só é detectável por diferença de conjunto (§9.6) |
+| paginação | não há — a lista inteira volta num array | aceitável na escala atual (maior recurso: 698 suppliers) |
+| id estável | ✅ inteiro | gravamos como texto em `gss_id` |
+| FK | `<campo>` (id) + `<campo>_name` de conveniência | tradução para uuid local é nossa (§4.4 passo 2) |
+
+### 9.2 Caminho B executado — pareamento por nome
+
+`scripts/sync-gss/sync.ts`, `--dry-run` por padrão. Retrato do **primeiro**
+pareamento, antes de qualquer insert (gravado com `--commit --pair-only`:
+**841 `gss_id`**). `countries` e `cities` já não estão mais assim — receberam os
+inserts de geografia depois (§9.7): hoje são 19 e 652 linhas, quase todas pareadas.
+
+| Recurso | local | GSS | casam | só GSS | só local | dupes locais |
+|---|---:|---:|---:|---:|---:|---:|
+| countries | 2 | 24 | 2 | 22 | 0 | 0 |
+| cities | 51 | 646 | 45 | 601 | 6 | 0 |
+| pols | 72 | 1 | 0 | 1 | 22 | 0 |
+| pods | 25 | 12 | 11 | 0 | 14 | 0 |
+| clients ← `customer` | 114 | 92 | 89 | 3 | 25 | 0 |
+| exporters | 4 | 4 | 4 | 0 | 0 | 0 |
+| order_types | 4 | 4 | 3 | 1 | 1 | 0 |
+| business_units | 6 | 6 | 6 | 0 | 0 | 0 |
+| factories ← `supplier` | 751 | 698 | 589 | 109 | 110 | 39 |
+| categories ← `supplier-category` | 115 | 99 | 92 | 7 | 8 | 3 |
+
+> Unidades: `local` e `GSS` contam **linhas**; `casam`, `só GSS` e `só local`
+> contam **nomes normalizados distintos**. A diferença expõe duplicata local por
+> nome: `pols` 72 linhas / 22 nomes, `factories` 751 / 699, `categories` 115 /
+> 100 — as outras sete bibliotecas estão limpas. As duas naturezas dessa
+> diferença (estrutura em `pols`, sujeira em `factories`) estão em §9.3 e §9.5.
+> `port` do GSS já entra aqui roteado por país (§9.3).
+
+### 9.3 `port` é roteado por país — POL = China, POD = BR
+
+A tabela `port` do GSS **não** é a união dos nossos `pols` + `pods`: ela contém
+os portos de **destino** (Itajaí, Paranaguá…) mais o placeholder *"Any port in
+China"*. Os nossos 72 `pols` são portos chineses de embarque (Tianjin, Shenzhen,
+Ningbo…) que **não existem** na lista deles — daí o pareamento 0/72.
+
+Regra implementada: `port` do GSS é distribuído por `country_name` — **China →
+`pols`**, **resto → `pods`**. Na prática o lado China tem hoje uma linha só.
+
+> ⛔ **Mas `pols` não é sincronizável por nome — é um problema de granularidade,
+> não de dados faltando.** As 72 linhas cobrem 22 portos, e a conferência linha a
+> linha (2026-08-14) mostra que **cada linha repetida aponta para uma cidade
+> distinta** via `city_pols` (Ningbo aparece 12×: Taizhou, Jiading, Hangzhou,
+> Ningbo, Wuxi, Changzhou, Yuhuan, Wenzhou, Yiwu, Dongguan, Yangzhou, Lishui).
+> Ou seja: um `port` do GSS é **um porto**; um `pol` nosso é **(cidade, porto)** —
+> a junção `city_pols` desnormalizada, exatamente o que o §3.4 já suspeitava.
+>
+> Consequência: não existe pareamento 1:1. Se o GSS cadastrar "Ningbo", ele
+> corresponde às **12** linhas ao mesmo tempo, e `gss_id` é `unique` — só uma
+> poderia recebê-lo. Inserir o "Any port in China" do GSS em `pols` também é
+> indesejado: nasceria um `pol` sem cidade, o mesmo padrão órfão de uma das 4
+> linhas de Chongqing.
+>
+> **`pols` fica fora do sync até haver decisão de modelagem** — as candidatas são
+> (a) `pols` vira biblioteca de portos de verdade + `city_pols` volta a ser M-N
+> real, com o vínculo cidade→porto preservado na migração, ou (b) `pols` é
+> declarado SOTWISE-owned e nunca sincroniza. A regra POL=China/POD=BR segue
+> válida para o **roteamento**; o que não se sustenta é o **pareamento**.
+
+### 9.4 Pareamento é *sticky* (e por que isso importa)
+
+O match é por nome normalizado (`NFD` sem acento, minúsculo, espaço colapsado) —
+exato, sem fuzzy. Duas fontes de ambiguidade, e a regra de cada uma:
+
+- **Duplicata local** (2 locais → 1 GSS): só a 1ª linha recebe `gss_id` (a
+  constraint é `unique`); as demais entram na fila de merge do §6.3. Hoje: 39 em
+  `factories`, 3 em `categories`. A escolha da "1ª" é estável porque `loadLocal`
+  ordena por `id`.
+- **Duplicata no GSS** (mesmo `company_name`, ids e `company` diferentes — ex.
+  *Xintianben*: supplier 122 → company 700, supplier 596 → company 812; idem
+  *Haorui* 371→211 e 590→809): escolher entre eles pelo nome é chute. Regra:
+  desempate por **menor id**, mas o vínculo é **sticky** — se a linha local já
+  aponta para *qualquer* id válido daquele nome, ele **não é repontado**.
+  Trocar um chute por outro em dado já gravado não é ganho.
+
+Sem essas duas regras o script tinha *churn*: a API devolve o array em ordem
+variável, então o "primeiro" mudava a cada execução. Com elas, duas execuções
+seguidas dão `+gss_id 0` — idempotente.
+
+### 9.5 A fila de merge de `factories` é menor do que parece
+
+`scripts/sync-gss/sync.ts --dupes` imprime a fila completa. Em `factories` são 38
+grupos por nome exato (40 normalizando caixa e espaço). Cruzando cada grupo com o
+uso real em `order_factory_category` (2026-08-14):
+
+| Situação | Grupos | Tratamento |
+|---|---:|---|
+| nenhuma linha em uso | 19 | soft-delete direto, só unindo as categorias |
+| exatamente 1 em uso | 18 | merge trivial — a linha em uso é a sobrevivente |
+| 2+ em uso | **1** (`MSH`, 2 de 5) | único caso que exige repontar FK de verdade |
+
+A causa é visível nos dados: a duplicata nasceu de **cadastrar a fábrica de novo
+para pendurar outra categoria**, em vez de adicionar a categoria à existente —
+`Heima` tem 4 linhas (Engine parts+Small parts / Metal Parts / Stand / Pedal), e
+só a primeira tem pedidos. Como `category_factories` é M-N de verdade, o merge é
+a união das categorias no sobrevivente. Diferente de `pols` (§9.3), aqui a
+duplicata é **sujeira**, e fundir é o certo.
+
+Fora da fila, e sem par no GSS: `asd` (2×), `123`, `Test` — lixo de teste, todos
+com `ofc=0`. Limpeza, não merge.
+
+### 9.6 O sync aplicando mudanças (o que faltava para "editou lá, mudou aqui")
+
+Até 2026-08-14 o motor só **ligava** (`gss_id`) e **criava**. Edição no GSS não
+chegava aqui — e havia um defeito pior: como o par era procurado **por nome**,
+um rename na origem virava INSERT, que batia na unique de `gss_id` e derrubava a
+execução. Agora o par é procurado **primeiro por `gss_id`**, e só depois por nome.
+
+Motor em [`lib/gss/sync.ts`](../lib/gss/sync.ts), com dois pontos de entrada — o
+CLI (`scripts/sync-gss/sync.ts`) e a rota do cron. Recebe o client do Supabase
+por parâmetro porque `lib/supabase/admin.ts` tem `import "server-only"`, que
+lança em script tsx. Cinco operações por recurso:
+
+| Operação | O que é |
+|---|---|
+| **LINK** | linha sem `gss_id` que casa por nome ganha o vínculo |
+| **FIELDS** | linha já pareada tem os campos atualizados a partir do GSS — é o que faz o rename chegar |
+| **INSERT** | o que só existe no GSS, sujeito à política do §9.7 |
+| **REVIVE** | pareada e soft-deletada aqui, ainda viva no GSS → `deleted_at` volta a nulo |
+| **MISSING** | pareada aqui e ausente no GSS. **Só relata** — o soft-delete exige `--soft-delete` |
+
+#### A grafia local ganha do GSS
+
+Ao ligar o FIELDS, a comparação revelou 22 divergências que **não** deviam ser
+aplicadas: o GSS grava os portos brasileiros sem acento (`Itapoá`→`Itapoa`,
+`Paranaguá`→`Paranagua`, `Pecém`→`Pecem`) e alterna a caixa das fábricas
+(`Aimesk`/`AIMESK`, `botong`/`Botong`). Aplicar degradaria nomes que aqui estão
+certos. Regra adotada: **`name` só é reescrito quando o nome normalizado muda** —
+ou seja, rename de verdade passa, variação de grafia não. `--force-casing`
+desliga a proteção. As outras colunas não têm essa ressalva.
+
+Ainda no FIELDS: valor `null` vindo do GSS **nunca** sobrescreve — ausência na
+origem quase sempre é FK que não traduziu, não limpeza deliberada.
+
+#### Aplicado em produção (2026-08-14)
+
+- **89 `clients` ganharam país.** Os 114 estavam todos com `country_id` nulo;
+  o GSS preencheu os que tinham par. Ganho puro, sem sobrescrever nada.
+- **`exporters.Zenchum.acronym` ZC → ZM**, por decisão de manter o GSS como dono
+  (os outros seguem outro padrão: ZAT=ZT, Zenya=ZY — vale conferir com a AGK).
+
+Teste do rename, ponta a ponta: uma `factory` sem uso foi renomeada localmente
+para `Deyu RENOMEADO`; o dry-run seguinte a classificou como FIELDS
+(`{"name":"Deyu"}`) e manteve `insert` em 109 — nada de linha nova nem de
+violação de unique, que era o comportamento antigo. Depois, restaurada.
+
+#### O agendado
+
+[`app/api/cron/sync-gss`](../app/api/cron/sync-gss/route.ts), GET protegido por
+`CRON_SECRET` (`Authorization: Bearer`, comparado em tempo constante), agendado
+em `vercel.json` para **9h UTC / 6h de Brasília, diário** — cabe no plano
+gratuito da Vercel, que só permite cron diário. `?dry=1` roda o plano completo
+sem gravar. Execução medida: **~4s**.
+
+A política do agendado é conservadora de propósito: campos e vínculos sempre,
+INSERT só de `countries`/`cities`, e **`softDelete` desligado** — sem
+`deleted_at` na origem o sumiço é inferido por diferença de conjunto, e uma
+falha parcial da API viraria exclusão em massa. Cada recurso grava
+`gss_sync_state` (status, linhas, erro), inclusive quando falha.
+
+> ⚠️ **`CRON_SECRET` precisa ser configurada na Vercel** — sem ela a rota
+> responde 503 e o cron nunca roda. Mesma pendência de ambiente do Copilot e do
+> Resend.
+
+### 9.7 Em aberto
+
+1. **Inserts: geografia liberada, o resto retido.** Gravados em 2026-08-14
+   (`--commit --insert=countries,cities`): **601 cidades + 17 países = 618**.
+   Amostragem prévia das cidades não achou nome curto, numérico, de teste nem com
+   espaço nas bordas. Os **17** países são os 22 do GSS menos `Generic`,
+   `Legacy Import`, `To be defined`, `Unknown` — placeholders internos deles, não
+   países — e menos a grafia `Singapura` (fica `Singapore`): com `gss_id` único,
+   uma linha nossa não carrega os dois ids das duas grafias. A lista está em
+   `COUNTRY_SKIP` no script. Consequência aceita: `customer` do GSS apontando
+   para qualquer um dos 5 chega com `country_id` nulo, e a Singapura duplicada é
+   para o dono do GSS corrigir na origem.
+   **Retidos: 121** — 109 factories, 7 categories, 3 clients, 1 order_type e
+   1 pol. As factories e categories esperam a fila de merge (§9.5): antes dela,
+   inserir uma "fábrica nova" do GSS pode estar criando a terceira cópia de algo
+   que já existe duplicado aqui. O `order_type` *"Sample"* do GSS entraria ao
+   lado do nosso *"Samples"* — quase-duplicata por grafia, decisão de nome. O
+   `pol` é barrado pelo §9.3.
+2. **Fila de merge de `factories`** (§9.5) — 37 dos 38 grupos são mecânicos;
+   `MSH` é o único que exige decisão humana. Ferramenta de merge ainda não escrita.
+3. **`pols`** — decisão de modelagem pendente (§9.3). É o item que trava o
+   recurso inteiro, não um ajuste de dado.
+4. **Lixo local sem par** — `asd`, `123`, `Test`: candidatos a limpeza, não a merge.
+5. **Recursos fora do sync até agora**: `contacts` (← `company`, passo dedicado),
+   as **4 junções** do §3.4, e `agents`/`carriers`/`shipment_models`, que
+   **não têm origem no GSS** (fricções 1–4 do MAPEAMENTO §6) e seguem
+   SOTWISE-owned.
+6. **Soft-delete e detecção de sumiço** — sem `deleted_at` na origem, exige
+   diferença de conjunto sobre o pull completo. Não implementado.
