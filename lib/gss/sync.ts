@@ -35,11 +35,14 @@ import {
   type GssPort,
   type GssSupplier,
   type GssSupplierCategory,
+  type GssAgent,
+  type GssCarrier,
 } from "./client";
 
 export type LibTable =
   | "countries" | "cities" | "pols" | "pods" | "clients" | "exporters"
-  | "order_types" | "business_units" | "factories" | "categories";
+  | "order_types" | "business_units" | "factories" | "categories"
+  | "agents" | "carriers";
 
 export type SyncOptions = {
   /** false = dry-run: monta o plano inteiro e não escreve nada. */
@@ -82,8 +85,70 @@ export const DEFAULT_OPTIONS: SyncOptions = {
  */
 export const COUNTRY_SKIP = new Set(["generic", "legacy import", "to be defined", "unknown", "singapura"]);
 
+/**
+ * Linhas pareadas em que a NOSSA grafia fica, mesmo com o GSS sendo dono.
+ * Revisadas uma a uma em 14/08/2026: nos quatro casos o nome local carrega mais
+ * informação (província, razão social) ou é o rótulo já consolidado nas telas.
+ * Diferente de `forceCasing`, que trata variação de acento/caixa em massa, aqui
+ * a diferença é real — e ainda assim a nossa versão é a melhor.
+ * Chave: `<tabela>:<gss_id>`.
+ */
+export const NOME_LOCAL_VENCE = new Set([
+  "factories:199", // "Zhejiang Kreation" > "Kreation" — a província distingue a planta
+  "carriers:1", // "MSC - Mediterranean Shg Co" > "MSC"
+  "order_types:4", // "Samples" > "Sample" — rótulo em 77 orders
+  "clients:38", // "Marquinhos" > "Marquinho"
+]);
+
 export function norm(s: string | null | undefined): string {
   return (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Forma reduzida para comparar nomes de empresa: sem pontuação e sem os sufixos
+ * jurídicos, que são ruído — "Amass Freight Intl (ShenZhen) Co., Ltd" e "Amass
+ * Freight Intl Shenzhen" são a mesma empresa escrita por duas pessoas.
+ */
+const SUFIXOS = /\b(ltda?|ltd|co|inc|s\.?a|sa|cia|company|limited|corp|group|do brasil|brasil|brazil|china)\b/g;
+function nomeBase(s: string): string {
+  return norm(s).replace(/[.,\-–—/()'"&]/g, " ").replace(SUFIXOS, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Distância de edição (Levenshtein), com duas linhas em vez da matriz inteira. */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  let cur = new Array<number>(b.length + 1);
+  for (let i = 1; i <= a.length; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + custo);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return prev[b.length];
+}
+
+/** 0..1. Combina edição com contenção — "Amass" dentro de "Amass Freight" conta. */
+export function semelhanca(a: string, b: string): number {
+  const x = nomeBase(a);
+  const y = nomeBase(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  const porEdicao = 1 - levenshtein(x, y) / Math.max(x.length, y.length);
+  // Contenção por PALAVRA, não por substring: "MSC" é palavra inteira dentro de
+  // "MSC Mediterranean Shg", e "Kreation" dentro de "Zhejiang Kreation" — os
+  // dois são a mesma empresa. Já "YI" não é palavra de "Yican", só um pedaço
+  // dela, e era isso que fazia um nome de duas letras casar com meia base.
+  const tx = x.split(" ").filter((t) => t.length >= 3);
+  const ty = y.split(" ").filter((t) => t.length >= 3);
+  const curto = tx.length <= ty.length ? tx : ty;
+  const longo = new Set(tx.length <= ty.length ? ty : tx);
+  const contido = curto.length > 0 && curto.every((t) => longo.has(t)) ? 0.9 : 0;
+  return Math.max(porEdicao, contido);
 }
 
 type LocalRow = { id: string; name: string; gss_id: string | null; deleted_at: string | null } & Record<string, unknown>;
@@ -101,6 +166,12 @@ export type ResourcePlan = {
   missing: { id: string; name: string; gss_id: string }[];
   /** Grupos locais de nome repetido (fila de merge, §9.5). */
   dupesAll: { name: string; ids: string[] }[];
+  /**
+   * Pares que NÃO casaram exato mas são parecidos o bastante para serem a mesma
+   * coisa digitada de dois jeitos. Nunca gravados — só relatados para revisão
+   * humana, porque o custo de um falso positivo é um vínculo errado.
+   */
+  quaseCasam: { gssId: string; gssName: string; localId: string; localName: string; score: number; emailBate: boolean | null }[];
   matched: number;
   localRows: number;
   localNames: number;
@@ -169,7 +240,21 @@ function planResource<G>(
   getName: (g: G) => string | null,
   getId: (g: G) => number,
   buildPayload: (g: G) => Record<string, unknown>,
-  opts: SyncOptions
+  opts: SyncOptions,
+  /**
+   * Chave alternativa de pareamento (hoje: e-mail). Onde os dois lados guardam
+   * e-mail, ele confirma o par que o nome sugere e ainda pega o caso de nome
+   * escrito diferente. Só vale como CRITÉRIO — o valor do GSS nunca sobrescreve
+   * o nosso (o cadastro deles traz genéricos como `msc@msc.com`).
+   */
+  altKey?: { gss: (g: G) => string | null; local: string },
+  /**
+   * Campos que o GSS só PREENCHE (quando vazio aqui) e nunca sobrescreve. Para
+   * `agents`/`carriers` o cadastro deles ainda é semente — `asiashipping@as.com`
+   * contra o nosso `sales15.tsn@cn-asgroup.com` — e trocar um e-mail operacional
+   * por um genérico é perda, não sincronização.
+   */
+  fillOnly?: Set<string>
 ): ResourcePlan {
   const alive = local.filter((r) => r.deleted_at === null);
 
@@ -181,6 +266,16 @@ function planResource<G>(
     const k = norm(r.name);
     if (!k) continue;
     (byNorm.get(k) ?? byNorm.set(k, []).get(k)!).push(r);
+  }
+
+  // índice pela chave alternativa (e-mail), quando o recurso tem uma
+  const byAlt = new Map<string, LocalRow>();
+  if (altKey) {
+    for (const r of alive) {
+      const v = norm(String(r[altKey.local] ?? ""));
+      if (!v || v === "n/a" || v === "na") continue; // placeholders do cadastro
+      if (!byAlt.has(v)) byAlt.set(v, r);
+    }
   }
 
   // Deduplica o GSS por nome: menor id vence (a API devolve o array sem ordem
@@ -219,6 +314,13 @@ function planResource<G>(
     }
     // 3) por nome, só em linha ainda SEM vínculo — nunca roubar de outro id.
     if (!row) row = (byNorm.get(k) ?? []).find((r) => !r.gss_id);
+    // 4) pela chave alternativa (e-mail): pega o par cujo nome está escrito
+    //    diferente dos dois lados.
+    if (!row && altKey) {
+      const v = norm(altKey.gss(g));
+      const cand = v && v !== "n/a" && v !== "na" ? byAlt.get(v) : undefined;
+      if (cand && !cand.gss_id) row = cand;
+    }
 
     if (!row) {
       inserts.push({ ...payload, gss_id: gssId });
@@ -235,8 +337,12 @@ function planResource<G>(
       // de FK que não resolveu, não uma limpeza deliberada do dado.
       if (value === null || value === undefined) continue;
       if (row[field] === value) continue;
+      // preenche só o que está vazio aqui
+      if (fillOnly?.has(field) && row[field] !== null && row[field] !== undefined && row[field] !== "") continue;
       // Nome que só difere em acento/caixa: a nossa grafia fica (ver forceCasing).
       if (field === "name" && !opts.forceCasing && norm(row.name) === norm(String(value))) continue;
+      // Nome que a revisão humana decidiu preservar.
+      if (field === "name" && NOME_LOCAL_VENCE.has(`${table}:${gssId}`)) continue;
       changes[field] = value;
     }
     if (Object.keys(changes).length) fields.push({ id: row.id, name: row.name, changes });
@@ -255,10 +361,37 @@ function planResource<G>(
     if (rows.length > 1) dupesAll.push({ name: rows[0].name, ids: rows.map((r) => r.id) });
   }
 
+  // Candidatos por semelhança: cada item do GSS que virou INSERT contra as
+  // linhas locais que sobraram sem vínculo. Cadastro manual erra grafia, e um
+  // INSERT aqui pode ser, na verdade, a mesma entidade já existente.
+  const quaseCasam: ResourcePlan["quaseCasam"] = [];
+  const sobraram = alive.filter((r) => !r.gss_id && !seenLocal.has(r.id));
+  for (const [k, g] of gssByNorm) {
+    if (byNorm.has(k)) continue; // casou exato, não é candidato
+    const nomeGss = getName(g) ?? "";
+    let melhor: { row: LocalRow; score: number } | null = null;
+    for (const r of sobraram) {
+      const score = semelhanca(nomeGss, r.name);
+      if (score >= 0.82 && (!melhor || score > melhor.score)) melhor = { row: r, score };
+    }
+    if (!melhor) continue;
+    const eGss = altKey ? norm(altKey.gss(g)) : "";
+    const eLocal = altKey ? norm(String(melhor.row[altKey.local] ?? "")) : "";
+    quaseCasam.push({
+      gssId: String(getId(g)),
+      gssName: nomeGss,
+      localId: melhor.row.id,
+      localName: melhor.row.name,
+      score: Math.round(melhor.score * 100) / 100,
+      emailBate: altKey && eGss && eLocal ? eGss === eLocal : null,
+    });
+  }
+  quaseCasam.sort((a, b) => b.score - a.score);
+
   const localOnly = [...byNorm.values()].filter((rows) => !rows.some((r) => seenLocal.has(r.id))).length;
 
   return {
-    table, links, fields, inserts, revives, missing, dupesAll, matched,
+    table, links, fields, inserts, revives, missing, dupesAll, quaseCasam, matched,
     localRows: alive.length,
     localNames: byNorm.size,
     localOnly,
@@ -400,7 +533,25 @@ export async function runSync(sb: DB, options: Partial<SyncOptions> = {}): Promi
   await run(planResource("factories", await loadLocal(sb, "factories"), await fetchGss<GssSupplier>(GSS_ENDPOINTS.supplier),
     (s) => s.company_name, (s) => s.id, (s) => ({ name: s.company_name }), opts));
 
-  // 5) categories ← supplier-category (a category distinta, não a junção)
+  // 5) agents e carriers — pareiam por nome, com o e-mail como confirmação.
+  // O cadastro deles é semente (1 registro cada), então os campos só preenchem
+  // o que está vazio aqui: `fillOnly`.
+  await run(planResource("agents", await loadLocal(sb, "agents"), await fetchGss<GssAgent>(GSS_ENDPOINTS.agent),
+    (a) => a.name, (a) => a.id,
+    (a) => ({
+      name: a.name,
+      email: a.email,
+      country_id: a.country != null ? countryMap.get(String(a.country)) ?? null : null,
+      location: norm(a.country_name) === "china" ? "china" : norm(a.country_name) === "brazil" ? "brazil" : null,
+    }),
+    opts,
+    { gss: (a) => a.email, local: "email" },
+    new Set(["email", "country_id", "location"])));
+
+  await run(planResource("carriers", await loadLocal(sb, "carriers"), await fetchGss<GssCarrier>(GSS_ENDPOINTS.carrier),
+    (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
+
+  // 6) categories ← supplier-category (a category distinta, não a junção)
   const sc = await fetchGss<GssSupplierCategory>(GSS_ENDPOINTS.supplierCategory);
   const catById = new Map<number, string>();
   for (const row of sc) if (!catById.has(row.category)) catById.set(row.category, row.category_name);

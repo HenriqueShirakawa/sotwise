@@ -250,6 +250,14 @@ export type GssSupplierCategory = {
   updated_at: IsoDate;
 };
 export type GssExporter = { id: number; name: string; code: string; country: number | null; country_name: string | null; company: number | null; company_name: string | null; created_at: IsoDate; updated_at: IsoDate };
+/**
+ * `agent` e `carrier` EXISTEM na API (confirmado em 2026-08-14), ao contrário do
+ * que o ERD de MAPEAMENTO_GSS indicava. Em compensação estão praticamente
+ * vazios: 1 registro cada, de aparência semente (`asiashipping@as.com`,
+ * `msc@msc.com`, ambos criados em 12/11/2025). `carrier` não tem país.
+ */
+export type GssAgent = { id: number; name: string; email: string | null; address: string | null; country: number | null; country_name: string | null; created_at: IsoDate; updated_at: IsoDate };
+export type GssCarrier = { id: number; name: string; email: string | null; address: string | null; created_at: IsoDate; updated_at: IsoDate };
 export type GssOrderType = { id: number; name: string; description: string | null; created_at: IsoDate; updated_at: IsoDate };
 export type GssBusinessUnit = { id: number; name: string; description: string | null; icon: string | null; created_at: IsoDate; updated_at: IsoDate };
 
@@ -266,4 +274,6 @@ export const GSS_ENDPOINTS = {
   exporter: "/core/exporter/",
   orderType: "/core/order-type/",
   businessUnit: "/core/business-unit/",
+  agent: "/core/agent/",
+  carrier: "/core/carrier/",
 } as const;

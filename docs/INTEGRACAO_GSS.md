@@ -334,7 +334,7 @@ Mínimo para o sync ser confiável:
 | **2** | Pareamento inicial: export para semear o GSS (caminho A) **ou** rotina de match por nome + fila de resolução (caminho B) | ✅ 841 pareamentos + 618 inserts de geografia gravados; fila de merge (§9.5) e 121 inserts retidos (§9.7) |
 | **3** | Puller com `--dry-run`, ordem do §4.3, upsert por `gss_id`, tradução de FK, junções como conjunto | ✅ motor em `lib/gss/sync.ts` (§9.7): vínculo, campos, insert, revive e detecção de sumiço. Faltam as **junções** e `contacts` |
 | **4** | Cron + logs + os 3 relatórios do §6.5 | ✅ `app/api/cron/sync-gss`, diário às 9h UTC; `gss_sync_state` gravado por recurso. Falta alerta de 2 falhas seguidas |
-| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⏸️ **adiada por decisão** (14/08/2026) — ver §9.8 |
+| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⏸️ **adiada por decisão** (14/08/2026) — ver §9.9 |
 
 ---
 
@@ -530,25 +530,87 @@ falha parcial da API viraria exclusão em massa. Cada recurso grava
    `COUNTRY_SKIP` no script. Consequência aceita: `customer` do GSS apontando
    para qualquer um dos 5 chega com `country_id` nulo, e a Singapura duplicada é
    para o dono do GSS corrigir na origem.
-   **Retidos: 121** — 109 factories, 7 categories, 3 clients, 1 order_type e
-   1 pol. As factories e categories esperam a fila de merge (§9.5): antes dela,
-   inserir uma "fábrica nova" do GSS pode estar criando a terceira cópia de algo
-   que já existe duplicado aqui. O `order_type` *"Sample"* do GSS entraria ao
-   lado do nosso *"Samples"* — quase-duplicata por grafia, decisão de nome. O
-   `pol` é barrado pelo §9.3.
+   **Retidos: 111** — 103 factories, 7 categories e 1 pol. Eram 121 até a
+   revisão por semelhança do §9.8 vincular 11 deles (entre eles o `order_type`
+   *"Sample"*, os 3 clients e o carrier *MSC*, que deixaram de ser "novos" e
+   viraram par do que já existia). As factories e categories esperam a fila de
+   merge (§9.5): antes dela, inserir uma "fábrica nova" do GSS pode estar
+   criando a terceira cópia de algo que já existe duplicado aqui. O `pol` é
+   barrado pelo §9.3.
 2. **Fila de merge de `factories`** (§9.5) — 37 dos 38 grupos são mecânicos;
    `MSH` é o único que exige decisão humana. Ferramenta de merge ainda não escrita.
 3. **`pols`** — decisão de modelagem pendente (§9.3). É o item que trava o
    recurso inteiro, não um ajuste de dado.
 4. **Lixo local sem par** — `asd`, `123`, `Test`: candidatos a limpeza, não a merge.
-5. **Recursos fora do sync até agora**: `contacts` (← `company`, passo dedicado),
-   as **4 junções** do §3.4, e `agents`/`carriers`/`shipment_models`, que
-   **não têm origem no GSS** (fricções 1–4 do MAPEAMENTO §6) e seguem
-   SOTWISE-owned.
+5. **Recursos fora do sync**: `contacts` (← `company`, passo dedicado) e as
+   **4 junções** do §3.4. `agents` e `carriers` **entraram** (§9.8) — o que não
+   existe mesmo é `shipment_models`, que segue SOTWISE-owned.
 6. **Soft-delete e detecção de sumiço** — sem `deleted_at` na origem, exige
    diferença de conjunto sobre o pull completo. Não implementado.
 
-### 9.8 Fase 5 adiada: o Registration segue editável (decisão de 14/08/2026)
+### 9.8 `agents` e `carriers` existem no GSS — e o pareamento por semelhança
+
+**Correção do §3 e do MAPEAMENTO:** a API **tem** `/core/agent/` e
+`/core/carrier/`, ao contrário do que o ERD indicava. O que não existe é
+`shipment-model` (seis grafias tentadas, todas 404). Apareceram também
+`/core/currency/` (3) e `/core/province/` (129), sem equivalente aqui.
+
+Os dois estão praticamente vazios: **1 registro cada** — `Asia Shipping` e
+`MSC`, criados em 12/11/2025 com e-mail genérico (`msc@msc.com`), com cara de
+semente. Contra 143 `agents` e 24 `carriers` nossos.
+
+Por isso `agents`/`carriers` entram com duas travas:
+
+- **e-mail como critério, nunca como valor.** O e-mail confirma o par que o nome
+  sugere, mas o `asiashipping@as.com` deles não substitui o
+  `sales15.tsn@cn-asgroup.com` nosso. Implementado como `fillOnly`: nesses
+  recursos o GSS só preenche campo vazio.
+- `N/A` e `NA` são ignorados como chave — é o placeholder do cadastro antigo, e
+  casaria dezenas de agentes entre si.
+
+#### Pareamento por semelhança (revisão humana, nunca automático)
+
+Cadastro manual erra grafia dos dois lados, então o dry-run passou a listar os
+**nomes parecidos que não casaram exato** — sem nunca gravá-los. A medida
+combina distância de edição com contenção **por palavra** (não por substring:
+`MSC` é palavra dentro de `MSC Mediterranean Shg`, enquanto `YI` é só um pedaço
+de `Yican` — a primeira versão, por substring, casou um nome de duas letras com
+oito fábricas diferentes). Sufixos jurídicos (`ltda`, `co`, `ltd`, `do brasil`)
+são descartados antes de comparar. Limiar 0,82.
+
+A fila sai em `scripts/sync-gss/review-similares.ts`, que enriquece cada
+candidato com o que realmente decide: **a categoria de produto e a cidade dos
+dois lados**, mais o uso no transacional. Foi o que separou typo de homônimo:
+
+| Veredito | Casos | Evidência |
+|---|---|---|
+| mesma empresa | `Chuangxiang`→`Chuanxiang`, `Fenguang`→`Fengguang`, `Fenying`→`Fengying`, `Hai wang`→`Haiwang`, `Jinchum`→`Jinchun`, `Zhejiang Kreation`→`Kreation` | categoria de produto idêntica (Carburetor, Seat, Sensor…) |
+| empresas diferentes | `Tongqing`≠`Dongqing`, `Yicheng`≠`Licheng`, `Yicheng`≠`Yucheng` | **nenhuma** categoria em comum (Hand switch × Equipment; Electric parts × Plastic) |
+| sem prova | `Bobang(Bonai)`, `Xiwang` | nossa linha sem categoria e sem pedido — ficaram de fora |
+
+Os 11 vínculos aprovados vivem em
+[`scripts/sync-gss/link-aprovados.ts`](../scripts/sync-gss/link-aprovados.ts),
+em código e versionados: vínculo decidido por gente precisa de rastro de quem,
+quando e com base em quê. O script é idempotente e recusa nome ambíguo.
+
+`Movile` foi decisão de negócio, não grafia: o GSS separa `Movile - AM` (#45) e
+`Movile - SP` (#46); o nosso `Movile - SP` já pareava sozinho, e o Henrique
+confirmou que o `Movile` sem sufixo (18 orders) é a unidade do Amazonas.
+
+#### Quatro nomes em que a nossa grafia venceu
+
+Vincular fez o GSS querer reescrever os 11 nomes. Sete eram melhoria (os typos
+eram nossos) e foram aplicados, junto com o país dos 3 clientes. Quatro não —
+estão em `NOME_LOCAL_VENCE`, porque aqui o nome carrega mais informação:
+
+| Fica | Em vez de | Por quê |
+|---|---|---|
+| `Zhejiang Kreation` | `Kreation` | a província distingue a planta |
+| `MSC - Mediterranean Shg Co` | `MSC` | razão social completa |
+| `Samples` | `Sample` | rótulo em 77 orders |
+| `Marquinhos` | `Marquinho` | grafia correta do cliente |
+
+### 9.9 Fase 5 adiada: o Registration segue editável (decisão de 14/08/2026)
 
 O desenho pede que as telas de Registration virem read-only e que o
 `POST /api/{recurso}` saia (§7) — criar biblioteca aqui produz registro **sem

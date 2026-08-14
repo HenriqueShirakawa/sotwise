@@ -70,6 +70,16 @@ async function main() {
 
   for (const p of plans) logPlan(p);
 
+  const quase = plans.flatMap((p) => p.quaseCasam.map((q) => ({ ...q, table: p.table })));
+  if (quase.length) {
+    console.log(`\n== nomes parecidos que NAO casaram exato (${quase.length}) — nada gravado, revisar ==`);
+    console.log("   score  recurso          GSS                                 →  nosso");
+    for (const q of quase) {
+      const email = q.emailBate === null ? "" : q.emailBate ? "  [email BATE]" : "  [email difere]";
+      console.log(`   ${q.score.toFixed(2)}   ${q.table.padEnd(16)} ${(q.gssName + ` (#${q.gssId})`).padEnd(36)} →  ${q.localName}${email}`);
+    }
+  }
+
   if (SHOW_DUPES) {
     console.log("\n== fila de merge (grupos locais com nome repetido) ==");
     for (const p of plans) {
