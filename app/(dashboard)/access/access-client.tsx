@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FlaskConical } from "lucide-react";
+import { Database, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -75,16 +75,29 @@ export function AccessClient({
         description="Define what each role can do, then open exceptions for individual users."
       />
 
-      {/* Protótipo (mock, não-produção) do modelo Role→Company→User. Owner-only,
-          como esta tela. Ver app/(dashboard)/access-lab/. */}
-      <Link
-        href="/access-lab"
-        className="mb-6 inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100"
-      >
-        <FlaskConical className="size-3.5" />
-        Preview: novo modelo de acesso (protótipo)
-        <span aria-hidden>→</span>
-      </Link>
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        {/* Protótipo (mock, não-produção) do modelo Role→Company→User. Owner-only,
+            como esta tela. Ver app/(dashboard)/access-lab/. */}
+        <Link
+          href="/access-lab"
+          className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100"
+        >
+          <FlaskConical className="size-3.5" />
+          Preview: novo modelo de acesso (protótipo)
+          <span aria-hidden>→</span>
+        </Link>
+
+        {/* Diagnóstico da integração com o GSS — o que a origem devolve e o que
+            já pareou aqui. Owner-only, ver app/(dashboard)/access/gss/. */}
+        <Link
+          href="/access/gss"
+          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <Database className="size-3.5" />
+          Dados do GSS
+          <span aria-hidden>→</span>
+        </Link>
+      </div>
 
       <div className="grid gap-8">
         <RoleMatrix roles={roles} />
