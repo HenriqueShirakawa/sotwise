@@ -334,7 +334,7 @@ Mínimo para o sync ser confiável:
 | **2** | Pareamento inicial: export para semear o GSS (caminho A) **ou** rotina de match por nome + fila de resolução (caminho B) | ✅ 841 pareamentos + 618 inserts de geografia gravados; fila de merge (§9.5) e 121 inserts retidos (§9.7) |
 | **3** | Puller com `--dry-run`, ordem do §4.3, upsert por `gss_id`, tradução de FK, junções como conjunto | ✅ motor em `lib/gss/sync.ts` (§9.7): vínculo, campos, insert, revive e detecção de sumiço. Faltam as **junções** e `contacts` |
 | **4** | Cron + logs + os 3 relatórios do §6.5 | ✅ `app/api/cron/sync-gss`, diário às 9h UTC; `gss_sync_state` gravado por recurso. Falta alerta de 2 falhas seguidas |
-| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⬜ |
+| **5** | UI de Registration read-only, `POST /api/*` retirado, `docs/API.md` atualizado | ⏸️ **adiada por decisão** (14/08/2026) — ver §9.8 |
 
 ---
 
@@ -547,3 +547,29 @@ falha parcial da API viraria exclusão em massa. Cada recurso grava
    SOTWISE-owned.
 6. **Soft-delete e detecção de sumiço** — sem `deleted_at` na origem, exige
    diferença de conjunto sobre o pull completo. Não implementado.
+
+### 9.8 Fase 5 adiada: o Registration segue editável (decisão de 14/08/2026)
+
+O desenho pede que as telas de Registration virem read-only e que o
+`POST /api/{recurso}` saia (§7) — criar biblioteca aqui produz registro **sem
+`gss_id`**, invisível para o sync e indistinguível de duplicata. Continua sendo
+o destino correto.
+
+**Não vai agora, por decisão do Henrique:** o ambiente ainda está servindo aos
+testes da integração com o GSS e da migração do Bubble, e travar a criação
+atrapalharia esse trabalho. O que segue de pé, portanto:
+
+- `app/(dashboard)/registration/*/actions.ts` — `create*`, `update*`, `delete*`
+- `POST /api/[resource]` — criação por API
+
+**Risco aceito enquanto durar:** toda biblioteca criada por essas vias nasce
+órfã do GSS. Se depois vier um registro de mesmo nome da origem, ele entra como
+INSERT ao lado — e vira mais um caso para a fila de merge (§9.5), não um
+pareamento automático (o match por nome só pega linha ainda sem vínculo).
+
+**Gatilho para retomar:** quando o GSS virar a fonte operacional de verdade das
+bibliotecas — antes disso, o custo de travar supera o de conviver com o risco.
+
+Na mesma linha, o **`CRON_SECRET` não está cadastrado na Vercel**: a rota
+responde 503 em produção e o agendado não roda. Fica assim de propósito
+enquanto o sync for disparado à mão pelo CLI durante os testes.
