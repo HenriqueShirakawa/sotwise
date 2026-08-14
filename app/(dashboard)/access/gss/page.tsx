@@ -7,7 +7,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/page-header";
 import { gssGet } from "@/lib/gss/client";
 
-import { GssClient, type GssRow } from "./gss-client";
+import { GssClient, type GssRow, type LocalRow } from "./gss-client";
 import { RECURSOS, type Recurso, type RecursoKey } from "./recursos";
 
 /**
@@ -68,9 +68,12 @@ export default async function GssPanelPage({
     };
   });
 
-  // linhas nossas que nenhum id do GSS cobre — o outro lado do buraco
-  const idsDoGss = new Set(itens.map((i) => String(i.id ?? "")));
-  const semPar = locais.filter((l) => !l.gss_id || !idsDoGss.has(l.gss_id));
+  // o nosso lado, cru — cada linha vira uma entrada da coluna direita
+  const localRows: LocalRow[] = locais.map((l) => ({
+    id: l.id,
+    name: l.name,
+    gssId: l.gss_id,
+  }));
 
   return (
     <div>
@@ -91,8 +94,7 @@ export default async function GssPanelPage({
         recursoAtual={key}
         recursos={RECURSOS.map((x) => ({ key: x.key, label: x.label }))}
         rows={linhas}
-        totalLocal={locais.length}
-        semParLocal={semPar.length}
+        localRows={localRows}
         detalheLabel={recurso.detalheLabel}
         erro={erro}
       />
