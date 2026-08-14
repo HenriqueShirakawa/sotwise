@@ -39,10 +39,18 @@ function readConfig():
   const username = process.env.GSS_USERNAME;
   const password = process.env.GSS_PASSWORD;
   if (!cfId || !cfSecret || !username || !password) {
+    // Diagnóstico: nomear QUAIS faltam no runtime (nunca o valor). Se faltam
+    // todas → variáveis no projeto/ambiente errado; se falta só uma → typo na chave.
+    const entradas: [string, string | undefined][] = [
+      ["GSS_CF_ACCESS_CLIENT_ID", cfId],
+      ["GSS_CF_ACCESS_CLIENT_SECRET", cfSecret],
+      ["GSS_USERNAME", username],
+      ["GSS_PASSWORD", password],
+    ];
+    const faltando = entradas.filter(([, v]) => !v).map(([k]) => k);
     return {
       ok: false,
-      error:
-        "Credenciais do GSS ausentes (GSS_CF_ACCESS_CLIENT_ID, GSS_CF_ACCESS_CLIENT_SECRET, GSS_USERNAME, GSS_PASSWORD — ver .env.example).",
+      error: `Credenciais do GSS ausentes no runtime: ${faltando.join(", ")}. Confira Environment Variables → Production no projeto certo (o que serve este domínio).`,
     };
   }
   return { ok: true, base, cfId, cfSecret, username, password };
