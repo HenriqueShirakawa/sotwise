@@ -623,6 +623,27 @@ mesmos headers passam; do datacenter da Postman, não. (Contorno, se alguém
 insistir no Postman: trocar Cloud Agent por Desktop Agent, que sai da máquina
 local.)
 
+**O mesmo muro vale para a Vercel** (confirmado 17/08/2026): o runtime de
+produção sai de IP de datacenter, então ler o GSS **ao vivo** de lá devolve a
+página "Just a moment…" do Cloudflare — é fator de segurança do GSS, não dá para
+furar do nosso lado. Por isso o painel **não lê o GSS ao vivo**: lê um
+**snapshot** no nosso Supabase (`gss_snapshot` + `gss_snapshot_runs`, migration
+`20260817120000_gss_snapshot.sql`), gerado de **máquina allowlistada** por
+[`scripts/sync-gss/snapshot.ts`](../scripts/sync-gss/snapshot.ts):
+
+```
+npx tsx scripts/sync-gss/snapshot.ts            # todos os recursos
+npx tsx scripts/sync-gss/snapshot.ts city       # só um
+```
+
+O gerador espelha a resposta CRUA da API (payload em `jsonb`) e carimba a
+geração; o painel mostra "snapshot tirado há…" e, se a última geração falhou,
+segue exibindo a foto anterior com aviso. Rodar o gerador de dentro de um
+datacenter (Vercel/CI/GitHub Actions) esbarra no mesmo challenge — tem que ser
+de IP allowlistado. **Consequência ainda aberta:** o cron `app/api/cron/gss-sync`
+roda na Vercel e apanha do mesmo jeito; o sync operacional segue disparado à mão
+pelo CLI (ver §9 e a memória do projeto).
+
 Por recurso, a tela mostra a lista do GSS com o par de cada linha e quatro
 contadores — quantos vieram, quantos casaram, quantos do GSS estão sem par e
 **quantos nossos estão sem par**. É o último que explica o caso `agents` sem
