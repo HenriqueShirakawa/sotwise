@@ -537,8 +537,14 @@ falha parcial da API viraria exclusão em massa. Cada recurso grava
    merge (§9.5): antes dela, inserir uma "fábrica nova" do GSS pode estar
    criando a terceira cópia de algo que já existe duplicado aqui. O `pol` é
    barrado pelo §9.3.
-2. **Fila de merge de `factories`** (§9.5) — 37 dos 38 grupos são mecânicos;
-   `MSH` é o único que exige decisão humana. Ferramenta de merge ainda não escrita.
+2. **Fila de merge de `factories`** (§9.5) — **ferramenta escrita** (17/08/2026):
+   [`scripts/sync-gss/merge-factories.ts`](../scripts/sync-gss/merge-factories.ts),
+   dry-run por padrão, `--commit` aplica (com backup). Sobrevivente = a linha com
+   `gss_id`; repõe as 5 FKs e soft-deleta as cópias. Idempotente e re-rodável —
+   feito pra ser executado DE NOVO depois de cada re-migração total do Bubble,
+   que recria as duplicatas. Em 17/08 o retrato era 40 grupos / 52 cópias / 449
+   vínculos ofc, sem nenhum caso de decisão humana (o `MSH` também virou mecânico
+   com o pareamento por `gss_id`).
 3. **`pols`** — decisão de modelagem pendente (§9.3). É o item que trava o
    recurso inteiro, não um ajuste de dado.
 4. **Lixo local sem par** — `asd`, `123`, `Test`: candidatos a limpeza, não a merge.
