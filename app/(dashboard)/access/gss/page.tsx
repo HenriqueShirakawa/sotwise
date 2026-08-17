@@ -83,18 +83,22 @@ export default async function GssPanelPage({
   );
   const porGssId = new Map(locais.filter((l) => l.gss_id).map((l) => [l.gss_id!, l]));
 
-  const linhas: GssRow[] = itens.map((item) => {
-    const id = String(item.id ?? "");
-    const par = porGssId.get(id);
-    return {
-      gssId: id,
-      nome: String(item[recurso.campoNome] ?? "—"),
-      detalhe: recurso.campoDetalhe
-        ? (item[recurso.campoDetalhe] as string | null) || null
-        : null,
-      pareadoCom: par?.name ?? null,
-    };
-  });
+  const linhas: GssRow[] = itens
+    .map((item) => {
+      const id = String(item.id ?? "");
+      const par = porGssId.get(id);
+      return {
+        gssId: id,
+        nome: String(item[recurso.campoNome] ?? "—"),
+        detalhe: recurso.campoDetalhe
+          ? (item[recurso.campoDetalhe] as string | null) || null
+          : null,
+        pareadoCom: par?.name ?? null,
+      };
+    })
+    // Ordena por nome (igual ao lado direito, que vem `.order("name")` do banco);
+    // o snapshot chega por gss_id. `base`: ignora acento e caixa.
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
 
   // o nosso lado, cru — cada linha vira uma entrada da coluna direita
   const localRows: LocalRow[] = locais.map((l) => ({
