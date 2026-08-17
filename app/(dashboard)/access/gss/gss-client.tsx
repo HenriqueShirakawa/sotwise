@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Minus, Search, TriangleAlert } from "lucide-react";
+import { Camera, Check, Minus, Search, TriangleAlert } from "lucide-react";
 
 import {
   Select,
@@ -55,6 +55,25 @@ function norm(s: string) {
     .toLowerCase();
 }
 
+/** Carimbo da última geração do snapshot deste recurso. */
+export type SnapshotInfo = {
+  fetchedAt: string;
+  ok: boolean;
+  error: string | null;
+};
+
+/** "há 3 min", "há 5 h", "há 2 dias" — data absoluta fica no title. */
+function desde(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "agora mesmo";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return `há ${d} dia${d > 1 ? "s" : ""}`;
+}
+
 export function GssClient({
   recursoAtual,
   recursos,
@@ -62,6 +81,7 @@ export function GssClient({
   localRows,
   detalheLabel,
   erro,
+  snapshot,
 }: {
   recursoAtual: string;
   recursos: { key: string; label: string }[];
@@ -69,6 +89,7 @@ export function GssClient({
   localRows: LocalRow[];
   detalheLabel?: string;
   erro: string | null;
+  snapshot: SnapshotInfo | null;
 }) {
   const router = useRouter();
   const [trocando, setTrocando] = useState(false);
@@ -172,9 +193,27 @@ export function GssClient({
         <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <div>
-            <div className="font-medium">Não consegui ler o GSS</div>
+            <div className="font-medium">Snapshot não gerado</div>
             <div className="mt-0.5 font-mono text-xs break-all">{erro}</div>
           </div>
+        </div>
+      ) : null}
+
+      {snapshot ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Camera className="size-3.5 shrink-0" />
+          <span title={new Date(snapshot.fetchedAt).toLocaleString("pt-BR")}>
+            Snapshot da origem tirado {desde(snapshot.fetchedAt)}
+          </span>
+          {!snapshot.ok ? (
+            <span
+              title={snapshot.error ?? undefined}
+              className="inline-flex items-center gap-1 text-amber-600"
+            >
+              <TriangleAlert className="size-3.5" />
+              a última atualização falhou — mostrando a foto anterior
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -202,8 +241,8 @@ export function GssClient({
           onScroll={aoRolarGss}
           vazio={
             erro
-              ? "A leitura do GSS falhou — nada a mostrar deste lado."
-              : "O GSS não devolveu nenhum registro."
+              ? "Sem snapshot para este recurso — nada a mostrar deste lado."
+              : "O snapshot deste recurso está vazio."
           }
           quantidade={gssFiltradas.length}
         >

@@ -969,6 +969,44 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_sync_state"]["Insert"]>;
         Relationships: [];
       };
+      /** Espelho cru da leitura do GSS para o painel /access/gss (uma linha por
+       * recurso+id). Gerado de máquina allowlistada, não pela Vercel. Ver
+       * supabase/migrations/20260817120000_gss_snapshot.sql e INTEGRACAO_GSS §9.9. */
+      gss_snapshot: {
+        Row: {
+          resource: string;
+          gss_id: number;
+          payload: Record<string, unknown>;
+          fetched_at: Timestamp;
+        };
+        Insert: {
+          resource: string;
+          gss_id: number;
+          payload: Record<string, unknown>;
+          fetched_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_snapshot"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Resultado da última geração do snapshot por recurso (carimbo + falha). */
+      gss_snapshot_runs: {
+        Row: {
+          resource: string;
+          fetched_at: Timestamp;
+          count: number;
+          ok: boolean;
+          error: string | null;
+        };
+        Insert: {
+          resource: string;
+          fetched_at?: Timestamp;
+          count?: number;
+          ok?: boolean;
+          error?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_snapshot_runs"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
