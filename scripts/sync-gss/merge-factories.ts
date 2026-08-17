@@ -29,6 +29,8 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../../types/database";
 import { norm } from "../../lib/gss/sync";
@@ -145,7 +147,7 @@ async function main() {
     pre_loading_checklist_steps: await fetchAllCol("pre_loading_checklist_steps", "id, consolidation_point_id", inList("consolidation_point_id")),
     category_factories: await fetchAllCol("category_factories", "category_id, factory_id", inList("factory_id")),
   };
-  const path = `scratchpad-merge-factories-backup-${Date.now()}.json`;
+  const path = join(tmpdir(), `merge-factories-backup-${Date.now()}.json`);
   writeFileSync(path, JSON.stringify(backup, null, 2));
   console.log(`\nBackup das linhas afetadas: ${path}`);
 
