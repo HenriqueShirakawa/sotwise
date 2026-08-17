@@ -537,14 +537,25 @@ falha parcial da API viraria exclusão em massa. Cada recurso grava
    merge (§9.5): antes dela, inserir uma "fábrica nova" do GSS pode estar
    criando a terceira cópia de algo que já existe duplicado aqui. O `pol` é
    barrado pelo §9.3.
-2. **Fila de merge de `factories`** (§9.5) — **ferramenta escrita** (17/08/2026):
-   [`scripts/sync-gss/merge-factories.ts`](../scripts/sync-gss/merge-factories.ts),
-   dry-run por padrão, `--commit` aplica (com backup). Sobrevivente = a linha com
-   `gss_id`; repõe as 5 FKs e soft-deleta as cópias. Idempotente e re-rodável —
-   feito pra ser executado DE NOVO depois de cada re-migração total do Bubble,
-   que recria as duplicatas. Em 17/08 o retrato era 40 grupos / 52 cópias / 449
-   vínculos ofc, sem nenhum caso de decisão humana (o `MSH` também virou mecânico
-   com o pareamento por `gss_id`).
+2. **Fila de merge das bibliotecas** (§9.5) — **ferramenta escrita** (17/08/2026):
+   [`scripts/sync-gss/merge-libraries.ts`](../scripts/sync-gss/merge-libraries.ts),
+   config por tabela com o grafo de FK; dry-run por padrão, `--commit` aplica
+   (backup JSON por tabela em `tmpdir`). Sobrevivente = a linha com `gss_id`
+   (canônica); sem `gss_id`, a mais usada (desempate por id). Repõe as FKs
+   simples e **une** as junções de PK composta (`category_factories`,
+   `agent_contacts`, `carrier_agents`), depois soft-deleta as cópias. Idempotente
+   e re-rodável — feito pra rodar DE NOVO após cada re-migração total do Bubble.
+   Rodar por tabela: `merge-libraries.ts categories agents`.
+
+   **Proteção:** grupos de nome placeholder/branco (`""`, `n/a`, `na`, `none`,
+   `tbd`, `-`…) NÃO são fundidos — "mesmo placeholder" ≠ "mesma entidade" (ex.: 6
+   contatos "N/A" com telefones diferentes). Viram relato para decisão humana.
+
+   Aplicado em 17/08/2026 (produção AGK): `factories` 40 grupos / 52 cópias / 449
+   vínculos; `categories` 4/6; `contacts` 12/12; `agents` 6/6 — todos sem caso de
+   decisão humana, 0 FKs órfãs após. **Segurados p/ revisão manual** (placeholder,
+   quase todos lixo de teste com 0 uso): 9 `categories` em branco, e em `contacts`
+   3 em branco + 4 "N/A" + 2 "NA".
 3. **`pols`** — decisão de modelagem pendente (§9.3). É o item que trava o
    recurso inteiro, não um ajuste de dado.
 4. **Lixo local sem par** — `asd`, `123`, `Test`: candidatos a limpeza, não a merge.
