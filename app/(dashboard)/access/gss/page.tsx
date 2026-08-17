@@ -5,7 +5,6 @@ import { requireOwner } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAll } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/page-header";
-import { gssGet } from "@/lib/gss/client";
 
 import { GssClient, type GssRow, type LocalRow } from "./gss-client";
 import { RECURSOS, type Recurso, type RecursoKey } from "./recursos";
@@ -19,8 +18,10 @@ import { RECURSOS, type Recurso, type RecursoKey } from "./recursos";
  * para responder sem Postman as perguntas que aparecem toda hora: "isso está
  * chegando?", "por que a coluna gss_id está vazia?", "quantos casaram?".
  *
- * Busca só o recurso selecionado — ler os 14 de uma vez leva ~4s e a tela não
- * precisa disso.
+ * Lê o SNAPSHOT (`gss_snapshot`), não o GSS ao vivo: o Cloudflare do GSS
+ * desafia o IP da Vercel (§9.9). O espelho é gerado de máquina allowlistada por
+ * `scripts/sync-gss/snapshot.ts`. Por isso a tela mostra o carimbo de quando a
+ * foto foi tirada.
  */
 export default async function GssPanelPage({
   searchParams,
@@ -37,10 +38,37 @@ export default async function GssPanelPage({
 
   const admin = createAdminClient();
 
-  // 1) o lado do GSS
-  const resposta = await gssGet<Record<string, unknown>[]>(recurso.endpoint);
-  const erro = resposta.ok ? null : resposta.error;
-  const itens = resposta.ok ? resposta.data : [];
+  // 1) o lado do GSS — lido do SNAPSHOT, não ao vivo (§9.9: Cloudflare barra a
+  //    Vercel). O carimbo e o resultado da última geração vêm de gss_snapshot_runs.
+  const snapRows = await fetchAll<{ gss_id: number; payload: Record<string, unknown> }>(
+    (from, to) =>
+      admin
+        .from("gss_snapshot")
+        .select("gss_id, payload")
+        .eq("resource", key)
+        .order("gss_id")
+        .range(from, to)
+        .returns<{ gss_id: number; payload: Record<string, unknown> }[]>()
+  );
+  const itens = snapRows.map((s) => s.payload);
+
+  const { data: run } = await admin
+    .from("gss_snapshot_runs")
+    .select("fetched_at, ok, error")
+    .eq("resource", key)
+    .maybeSingle();
+
+  // Erro "duro" (banner + coluna vazia) só quando NUNCA houve snapshot deste
+  // recurso: aí não há o que mostrar e o operador precisa rodar o gerador. Se já
+  // existe espelho, mostramos ele mesmo que a última tentativa tenha falhado — o
+  // aviso de falha vai no carimbo (prop `snapshot`).
+  const erro =
+    !run && snapRows.length === 0
+      ? "Snapshot ainda não foi gerado. Rode `npx tsx scripts/sync-gss/snapshot.ts` de uma máquina allowlistada — o Cloudflare do GSS bloqueia a Vercel (ver INTEGRACAO_GSS §9.9)."
+      : null;
+  const snapshot = run
+    ? { fetchedAt: run.fetched_at, ok: run.ok, error: run.error }
+    : null;
 
   // 2) o nosso lado, para dizer quem já está pareado
   const locais = await fetchAll<{ id: string; name: string; gss_id: string | null }>(
@@ -79,7 +107,7 @@ export default async function GssPanelPage({
     <div>
       <PageHeader
         title="GSS — dados da origem"
-        description="O que a API do GSS devolve agora, e o que já está pareado no nosso banco."
+        description="Espelho da resposta da API do GSS (snapshot), lado a lado com o que já está pareado no nosso banco."
       >
         <Link
           href="/access"
@@ -97,6 +125,7 @@ export default async function GssPanelPage({
         localRows={localRows}
         detalheLabel={recurso.detalheLabel}
         erro={erro}
+        snapshot={snapshot}
       />
     </div>
   );
