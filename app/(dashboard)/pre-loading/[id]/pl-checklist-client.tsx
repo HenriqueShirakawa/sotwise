@@ -47,6 +47,9 @@ import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-moda
 import { ViewBatchLinesModal } from "./view-batch-lines-modal";
 
 export type Ref = { id: string; name: string };
+/** Um `pol` é a junção (cidade, porto): a cidade distingue linhas de mesmo nome
+ *  de porto (Ningbo aparece 12×, uma por cidade — INTEGRACAO_GSS §9.3). */
+export type PolRef = Ref & { cityId: string | null };
 
 export type PreLoadingDetail = {
   id: string;
@@ -312,7 +315,7 @@ export function PlChecklistClient({
   profiles: Ref[];
   factories: Ref[];
   cities: Ref[];
-  pols: Ref[];
+  pols: PolRef[];
   agentsBrazil: Ref[];
   agentsChina: Ref[];
   agents: Ref[];
@@ -341,6 +344,33 @@ export function PlChecklistClient({
     () => filterSteps(steps, viewPrefs, currentUserId),
     [steps, viewPrefs, currentUserId]
   );
+
+  // Port of Loading é filtrado pela cidade escolhida na etapa "City": cada `pol`
+  // é (cidade, porto), então sem esse filtro a lista mostra o mesmo porto dezenas
+  // de vezes (Ningbo 12×, um por cidade — INTEGRACAO_GSS §9.3). Escolhida a cidade,
+  // sobra o(s) porto(s) dela; deduplicamos por nome para nunca repetir o rótulo.
+  // Sem cidade ainda, caímos na lista completa deduplicada (usável, mas ambígua —
+  // por isso a cidade vem antes). O pol já salvo entra sempre, mesmo fora do filtro.
+  const cityStepId = steps.find((s) => s.step === "city")?.city_id ?? null;
+  const savedPolId = steps.find((s) => s.step === "port_of_loading")?.pol_id ?? null;
+  const polOptions = useMemo<Ref[]>(() => {
+    const inCity = cityStepId ? pols.filter((p) => p.cityId === cityStepId) : pols;
+    // Um representante por nome de porto. Se o pol já salvo estiver no grupo, ele
+    // é o representante — assim o valor selecionado sempre casa com uma opção.
+    const byName = new Map<string, PolRef>();
+    for (const p of inCity) {
+      const key = p.name.trim().toLowerCase();
+      const existing = byName.get(key);
+      if (!existing || p.id === savedPolId) byName.set(key, p);
+    }
+    const out: Ref[] = [...byName.values()].map((p) => ({ id: p.id, name: p.name }));
+    // Cidade mudou e o pol salvo saiu do filtro? Ainda assim mostra o rótulo dele.
+    if (savedPolId && !out.some((o) => o.id === savedPolId)) {
+      const saved = pols.find((p) => p.id === savedPolId);
+      if (saved) out.push({ id: saved.id, name: saved.name });
+    }
+    return out;
+  }, [pols, cityStepId, savedPolId]);
 
   // Agente sem contato cadastrado não exige contato na etapa Agents — mesma
   // conta que o servidor faz para o ícone/`done` (ver lib/checklist-completion).
@@ -609,8 +639,10 @@ export function PlChecklistClient({
                       <SelectField
                         label="Port of Loading"
                         value={s.pol_id}
-                        options={pols}
-                        placeholder="Select Port of Loading"
+                        options={polOptions}
+                        placeholder={
+                          cityStepId ? "Select Port of Loading" : "Select the city first"
+                        }
                         onChange={(v) => save(s.step, { pol_id: v })}
                       />
                     )}

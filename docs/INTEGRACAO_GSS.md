@@ -412,6 +412,16 @@ Regra implementada: `port` do GSS é distribuído por `country_name` — **China
 > real, com o vínculo cidade→porto preservado na migração, ou (b) `pols` é
 > declarado SOTWISE-owned e nunca sincroniza. A regra POL=China/POD=BR segue
 > válida para o **roteamento**; o que não se sustenta é o **pareamento**.
+>
+> **Paliativo de UI (2026-08-18), sem tocar no schema:** o seletor de Port of
+> Loading exibia o mesmo porto dezenas de vezes (Ningbo 12×), impossível de
+> escolher. Agora, na etapa Port of Loading do pre-loading, a **cidade escolhida
+> na etapa City filtra os pols** (via `city_pols`) e a lista é **deduplicada por
+> nome** — sobra o(s) porto(s) daquela cidade. Nos **filtros** (Pre-loading e
+> Shipments) a lista de POL também é deduplicada por nome e a filtragem passou a
+> **casar por nome do porto** (não por `pol_id`), senão escolher "Ningbo" pegaria
+> só 1 das 12 linhas. Isso é camada de exibição; a decisão de modelagem (a)/(b)
+> segue pendente.
 
 ### 9.4 Pareamento é *sticky* (e por que isso importa)
 
