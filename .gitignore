@@ -44,3 +44,6 @@ next-env.d.ts
 # design references (Figma exports) — não são assets de produção, ver design/README.md
 /design/
 /Sotwise.zip
+
+# saida gerada pelo dup-report.ts (relatorio de duplicatas)
+dup-report.xlsx

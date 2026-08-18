@@ -566,6 +566,17 @@ falha parcial da API viraria exclusão em massa. Cada recurso grava
    decisão humana, 0 FKs órfãs após. **Segurados p/ revisão manual** (placeholder,
    quase todos lixo de teste com 0 uso): 9 `categories` em branco, e em `contacts`
    3 em branco + 4 "N/A" + 2 "NA".
+
+   **Revisão (só leitura):**
+   [`scripts/sync-gss/dup-report.ts`](../scripts/sync-gss/dup-report.ts) varre
+   TODAS as bibliotecas e gera um `.xlsx` (aba Resumo + aba Duplicatas) com cada
+   grupo classificado — `dup real (mergeável)`, `PLACEHOLDER (revisar à mão)` ou
+   `MULTI-GSS (decisão humana §9.4)` — contando refs pra expor lixo 0-uso e
+   sugerindo o sobrevivente pela mesma regra do merge. **Não escreve nada.** É o
+   passo de conferência do runbook: após `sync.ts --commit` + `merge-libraries.ts
+   --commit`, rodar `dup-report.ts` pra ver o retrato atual do que sobrou (os
+   placeholders e os `pols` do §9.3). Como cada re-migração recria as duplicatas,
+   revisar o retrato novo vale mais que anotar a decisão de placeholder de hoje.
 3. **`pols`** — decisão de modelagem pendente (§9.3). É o item que trava o
    recurso inteiro, não um ajuste de dado.
 4. **Lixo local sem par** — `asd`, `123`, `Test`: candidatos a limpeza, não a merge.
