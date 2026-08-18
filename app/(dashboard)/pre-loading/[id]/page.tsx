@@ -98,6 +98,7 @@ export default async function PreLoadingChecklistPage({
     factoryRes,
     cityRes,
     polRes,
+    cityPolRes,
     agentRes,
     contactRes,
     agentContactRes,
@@ -135,6 +136,11 @@ export default async function PreLoadingChecklistPage({
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    // Cada `pol` é (cidade, porto): city_pols dá a cidade que distingue linhas de
+    // mesmo nome de porto, usada para filtrar o seletor de POL (ver §9.3).
+    fetchAll<{ pol_id: string; city_id: string }>((from, to) =>
+      admin.from("city_pols").select("pol_id, city_id").range(from, to)
     ),
     fetchAll<{ id: string; name: string; location: string | null }>((from, to) =>
       admin.from("agents").select("id, name, location").is("deleted_at", null).range(from, to)
@@ -235,6 +241,9 @@ export default async function PreLoadingChecklistPage({
   const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
   const allAgents = agentRes;
   const contactNameById = new Map(contactRes.map((c) => [c.id, c.name]));
+  // city_pols é usada como 1-1 (um pol, uma cidade — §9.3); se algum dia houver
+  // 2+, fica a última, o suficiente para o filtro do seletor.
+  const cityByPol = new Map(cityPolRes.map((cp) => [cp.pol_id, cp.city_id]));
 
   // Contatos por agente (via agent_contacts) — alimenta Contact Brazil/China.
   const contactsByAgent: Record<string, Ref[]> = {};
@@ -307,7 +316,9 @@ export default async function PreLoadingChecklistPage({
         .sort(byName)}
       factories={factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName)}
       cities={cityRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
-      pols={polRes.map((p) => ({ id: p.id, name: p.name })).sort(byName)}
+      pols={polRes
+        .map((p) => ({ id: p.id, name: p.name, cityId: cityByPol.get(p.id) ?? null }))
+        .sort(byName)}
       agentsBrazil={allAgents
         .filter((a) => a.location === "brazil")
         .map((a) => ({ id: a.id, name: a.name }))

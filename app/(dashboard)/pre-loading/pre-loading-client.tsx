@@ -185,6 +185,19 @@ export function PreLoadingClient({
 
   const filterCount = activeFilterCount(filters);
 
+  // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
+  // 12×, INTEGRACAO_GSS §9.3). No filtro basta o nome do porto — deduplicamos a
+  // lista e casamos por nome, senão escolher "Ningbo" pegaria só 1 dos 12 ids.
+  const polNameById = useMemo(() => new Map(pols.map((p) => [p.id, p.name])), [pols]);
+  const uniquePols = useMemo(() => {
+    const byName = new Map<string, Ref>();
+    for (const p of pols) {
+      const key = p.name.trim().toLowerCase();
+      if (!byName.has(key)) byName.set(key, p);
+    }
+    return [...byName.values()];
+  }, [pols]);
+
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -199,7 +212,8 @@ export function PreLoadingClient({
       if (filters.agent_brazil_id && r.agent_brazil_id !== filters.agent_brazil_id) return false;
       if (filters.agent_china_id && r.agent_china_id !== filters.agent_china_id) return false;
       if (filters.carrier_id && !r.carrier_ids.includes(filters.carrier_id)) return false;
-      if (filters.pol_id && r.pol_id !== filters.pol_id) return false;
+      if (filters.pol_id && (r.pol ?? null) !== (polNameById.get(filters.pol_id) ?? null))
+        return false;
       if (filters.pod_id && r.pod_id !== filters.pod_id) return false;
       if (filters.consolidation_point_id && r.consolidation_point_id !== filters.consolidation_point_id)
         return false;
@@ -207,7 +221,7 @@ export function PreLoadingClient({
       if (!q) return true;
       return r.pl_number.toLowerCase().includes(q);
     });
-  }, [rows, search, filters]);
+  }, [rows, search, filters, polNameById]);
 
   const columns = useMemo<ColumnDef<PreLoadingRow>[]>(
     () => [
@@ -426,7 +440,7 @@ export function PreLoadingClient({
         profiles={profiles}
         agents={agents}
         carriers={carriers}
-        pols={pols}
+        pols={uniquePols}
         pods={pods}
         factories={factories}
         orders={orders}

@@ -162,6 +162,19 @@ export function ShipmentsClient({
 
   const filterCount = activeFilterCount(filters);
 
+  // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
+  // 12×, INTEGRACAO_GSS §9.3). No filtro basta o nome do porto — deduplicamos a
+  // lista e casamos por nome, senão escolher "Ningbo" pegaria só 1 dos 12 ids.
+  const polNameById = useMemo(() => new Map(pols.map((p) => [p.id, p.name])), [pols]);
+  const uniquePols = useMemo(() => {
+    const byName = new Map<string, Ref>();
+    for (const p of pols) {
+      const key = p.name.trim().toLowerCase();
+      if (!byName.has(key)) byName.set(key, p);
+    }
+    return [...byName.values()];
+  }, [pols]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -185,7 +198,8 @@ export function ShipmentsClient({
         r.consolidation_point_id !== filters.consolidation_point_id
       )
         return false;
-      if (filters.pol_id && r.pol_id !== filters.pol_id) return false;
+      if (filters.pol_id && (r.pol ?? null) !== (polNameById.get(filters.pol_id) ?? null))
+        return false;
       if (filters.pod_id && r.pod_id !== filters.pod_id) return false;
       if (filters.shipment_model_id && r.shipment_model_id !== filters.shipment_model_id)
         return false;
@@ -199,7 +213,7 @@ export function ShipmentsClient({
       if (!q) return true;
       return r.pl_number.toLowerCase().includes(q);
     });
-  }, [rows, search, filters]);
+  }, [rows, search, filters, polNameById]);
 
   const columns = useMemo<ColumnDef<ShipmentRow>[]>(
     () => [
@@ -328,7 +342,7 @@ export function ShipmentsClient({
         orderTypes={orderTypes}
         agents={agents}
         carriers={carriers}
-        pols={pols}
+        pols={uniquePols}
         pods={pods}
         factories={factories}
         shipmentModels={shipmentModels}
