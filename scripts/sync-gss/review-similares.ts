@@ -50,7 +50,7 @@ async function contarUso(): Promise<{
 
 async function main() {
   console.log("\nMontando a fila de revisão (nada é gravado)…\n");
-  const [plans, uso] = await Promise.all([runSync(sb, { commit: false }), contarUso()]);
+  const [{ resources: plans }, uso] = await Promise.all([runSync(sb, { commit: false }), contarUso()]);
 
   const candidatos = plans.flatMap((p) => p.quaseCasam.map((q) => ({ ...q, table: p.table })));
   if (!candidatos.length) {

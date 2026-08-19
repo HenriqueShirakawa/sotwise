@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { DEFAULT_OPTIONS, runSync, willInsert, type ResourcePlan, type SyncOptions } from "@/lib/gss/sync";
+import { DEFAULT_OPTIONS, runSync, willInsert, type JunctionPlan, type ResourcePlan, type SyncOptions } from "@/lib/gss/sync";
 
 /**
  * Sync agendado GSS → SOTWISE (docs/INTEGRACAO_GSS.md §9).
@@ -70,8 +70,9 @@ export async function GET(request: Request) {
   const opts: SyncOptions = { ...DEFAULT_OPTIONS, ...CRON_POLICY, commit: !dry };
 
   try {
-    const plans = await runSync(createAdminClient(), opts);
+    const { resources: plans, junctions } = await runSync(createAdminClient(), opts);
     const total = (f: (p: ResourcePlan) => number) => plans.reduce((s, p) => s + f(p), 0);
+    const jTotal = (f: (j: JunctionPlan) => number) => junctions.reduce((s, j) => s + f(j), 0);
     return Response.json({
       ok: true,
       dry,
@@ -81,8 +82,20 @@ export async function GET(request: Request) {
         fieldsUpdated: total((p) => p.fields.length),
         revived: total((p) => p.revives.length),
         missing: total((p) => p.missing.length),
+        // junções: insert é padrão; delete só relatado (softDelete off na política).
+        junctionLinked: jTotal((j) => j.inserts.length),
+        junctionRemovable: jTotal((j) => j.deletes.length),
       },
       resources: plans.map((p) => summarize(p, opts)),
+      junctions: junctions.map((j) => ({
+        junction: j.table,
+        desired: j.desired,
+        current: j.current,
+        matched: j.matched,
+        inserted: j.inserts.length,
+        removable: j.deletes.length,
+        unresolved: j.unresolved,
+      })),
     });
   } catch (error) {
     // `gss_sync_state` já registrou o erro no recurso que falhou (o motor grava
