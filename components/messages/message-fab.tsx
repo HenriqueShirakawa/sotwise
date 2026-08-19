@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname } from "next/navigation";
-import { Loader2, MessageCircle, Send } from "lucide-react";
+import { Loader2, MessageCircle, MessagesSquare, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -49,7 +49,9 @@ function entityFromPath(pathname: string): { type: MessageEntity; id: string } |
 /**
  * Balão de mensagens, presente em todo o sistema. Dentro de um checklist
  * (Order / Pre-loading / Shipment) abre a thread daquele registro; fora dali,
- * abre a caixa geral com Inbox / My messages.
+ * abre a caixa geral com as abas Received / Sent. De dentro da thread, o atalho
+ * "See all messages" força a caixa geral — assim o hub é alcançável de QUALQUER
+ * tela, não só fora dos registros.
  */
 export function MessageFab({ initialUnread }: { initialUnread: number }) {
   const pathname = usePathname();
@@ -58,6 +60,16 @@ export function MessageFab({ initialUnread }: { initialUnread: number }) {
 
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(initialUnread);
+  /** Dentro de um registro, força a caixa geral (aba All) em vez da thread. */
+  const [seeAll, setSeeAll] = useState(false);
+
+  // Fechar o balão volta ao modo contextual (a thread daquele registro). Não
+  // dá pra trocar de registro com o balão aberto — o modal fecha antes de
+  // navegar —, então zerar aqui basta.
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setSeeAll(false);
+  }, []);
 
   // O contador é a pista de mensagem nova com o balão fechado — e ela chega no
   // instante do envio: o canal avisa, o contador é relido na hora.
@@ -88,15 +100,20 @@ export function MessageFab({ initialUnread }: { initialUnread: number }) {
         ) : null}
       </button>
 
-      {entity ? (
+      {entity && !seeAll ? (
         <ThreadDialog
           open={open}
-          onOpenChange={setOpen}
+          onOpenChange={handleOpenChange}
           entity={entity}
           onUnreadChange={setUnread}
+          onSeeAll={() => setSeeAll(true)}
         />
       ) : (
-        <MessagesBox open={open} onOpenChange={setOpen} onUnreadChange={setUnread} />
+        <MessagesBox
+          open={open}
+          onOpenChange={handleOpenChange}
+          onUnreadChange={setUnread}
+        />
       )}
     </>
   );
@@ -108,11 +125,14 @@ function ThreadDialog({
   onOpenChange,
   entity,
   onUnreadChange,
+  onSeeAll,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entity: { type: MessageEntity; id: string };
   onUnreadChange: (unread: number) => void;
+  /** Troca a thread deste registro pela caixa geral (aba All). */
+  onSeeAll: () => void;
 }) {
   const [payload, setPayload] = useState<ThreadPayload | null>(null);
   /** Igual à caixa geral: a carga roda como transição e o `isPending` é o loading. */
@@ -217,6 +237,7 @@ function ThreadDialog({
                   message={m}
                   number={payload?.context?.number ?? null}
                   client={payload?.context?.client ?? null}
+                  entityType={entity.type}
                   showReceipts
                 />
               ))
@@ -241,6 +262,11 @@ function ThreadDialog({
               </Button>
             </div>
           </div>
+
+          <Button variant="outline" className="w-full gap-1.5" onClick={onSeeAll}>
+            <MessagesSquare className="size-4" />
+            See all messages
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

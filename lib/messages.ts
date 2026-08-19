@@ -91,7 +91,9 @@ export async function loadEntityContext(
       .select("pl_number")
       .eq("id", entityId)
       .maybeSingle();
-    return data ? { number: data.pl_number, client: null } : null;
+    if (!data) return null;
+    const clients = (await loadPlClients([entityId])).get(entityId) ?? [];
+    return { number: data.pl_number, client: joinClientNames(clients) };
   }
 
   const { data } = await admin
@@ -105,11 +107,53 @@ export async function loadEntityContext(
     .select("pl_number")
     .eq("id", data.pre_loading_id)
     .maybeSingle();
-  return { number: pl?.pl_number ?? "—", client: null };
+  const clients = (await loadPlClients([data.pre_loading_id])).get(data.pre_loading_id) ?? [];
+  return { number: pl?.pl_number ?? "—", client: joinClientNames(clients) };
 }
 
 export type EntityRef = { type: MessageEntity; id: string };
-export type EntityContext = { number: string; client: string | null; clientId: string | null };
+/** Um registro pode ter vários clientes (PL é M-N com clients). */
+export type EntityContext = { number: string; clients: { id: string; name: string }[] };
+
+const joinClientNames = (clients: { name: string }[]): string | null =>
+  clients.length ? clients.map((c) => c.name).join(", ") : null;
+
+/**
+ * Clientes de cada Pre-loading (M-N via pre_loading_clients). Usado por PL e por
+ * Shipment (que herda os clientes do seu PL).
+ */
+async function loadPlClients(
+  plIds: string[]
+): Promise<Map<string, { id: string; name: string }[]>> {
+  const out = new Map<string, { id: string; name: string }[]>();
+  const unique = [...new Set(plIds.filter(Boolean))];
+  if (!unique.length) return out;
+
+  const admin = createAdminClient();
+  const { data: links } = await admin
+    .from("pre_loading_clients")
+    .select("pre_loading_id, client_id")
+    .in("pre_loading_id", unique);
+
+  const clientIds = [...new Set((links ?? []).map((l) => l.client_id).filter(Boolean))];
+  const nameById = new Map<string, string>();
+  for (let i = 0; i < clientIds.length; i += 500) {
+    const { data } = await admin
+      .from("clients")
+      .select("id, name")
+      .in("id", clientIds.slice(i, i + 500));
+    for (const c of data ?? []) nameById.set(c.id, c.name);
+  }
+
+  for (const l of links ?? []) {
+    const name = nameById.get(l.client_id);
+    if (!name) continue;
+    const list = out.get(l.pre_loading_id) ?? [];
+    list.push({ id: l.client_id, name });
+    out.set(l.pre_loading_id, list);
+  }
+  return out;
+}
 
 /**
  * Contexto de VÁRIOS registros de uma vez — a caixa geral mistura pedidos, e
@@ -137,10 +181,10 @@ export async function loadEntityContexts(
       : { data: [] };
     const clientById = new Map((clients ?? []).map((c) => [c.id, c.name]));
     for (const o of data ?? []) {
+      const name = o.client_id ? clientById.get(o.client_id) : undefined;
       out.set(key({ type: "order", id: o.id }), {
         number: o.po_number,
-        client: o.client_id ? clientById.get(o.client_id) ?? null : null,
-        clientId: o.client_id,
+        clients: o.client_id && name ? [{ id: o.client_id, name }] : [],
       });
     }
   }
@@ -164,19 +208,18 @@ export async function loadEntityContexts(
       .select("id, pl_number")
       .in("id", allPlIds);
     const plNumber = new Map((data ?? []).map((p) => [p.id, p.pl_number]));
+    const plCli = await loadPlClients(allPlIds);
 
     for (const id of plIds) {
       out.set(key({ type: "pre_loading", id }), {
         number: plNumber.get(id) ?? "—",
-        client: null,
-        clientId: null,
+        clients: plCli.get(id) ?? [],
       });
     }
     for (const [shipmentId, plId] of shipmentToPl) {
       out.set(key({ type: "shipment", id: shipmentId }), {
         number: plNumber.get(plId) ?? "—",
-        client: null,
-        clientId: null,
+        clients: plCli.get(plId) ?? [],
       });
     }
   }

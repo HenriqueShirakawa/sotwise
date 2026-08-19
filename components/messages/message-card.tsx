@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 
 import { formatDateTime } from "@/lib/format";
 import type { ThreadMessage } from "@/lib/messages";
+import type { MessageEntity } from "@/types/database";
 
 /** Limite do compositor (contador 0/500 no Bubble). */
 export const MAX_BODY = 500;
@@ -19,6 +20,7 @@ export function MessageCard({
   message,
   number,
   client,
+  entityType,
   showReceipts = false,
   action,
   footer,
@@ -26,11 +28,15 @@ export function MessageCard({
   message: ThreadMessage;
   number: string | null;
   client: string | null;
+  /** Tipo do registro — decide o rótulo do número (PO vs PL). */
+  entityType?: MessageEntity;
   /** Confirmação de leitura — faz sentido nas mensagens que EU enviei. */
   showReceipts?: boolean;
   action?: ReactNode;
   footer?: ReactNode;
 }) {
+  // Order usa PO; Pre-loading e Shipment usam o PL (mesmo número).
+  const numberLabel = entityType && entityType !== "order" ? "PL" : "PO";
   return (
     <article className="space-y-2 rounded-xl bg-slate-50 p-4 text-sm">
       <div className="flex items-start justify-between gap-2">
@@ -48,7 +54,7 @@ export function MessageCard({
             </p>
           ) : null}
           <p>
-            Number Order: <strong>{number ?? "—"}</strong>
+            {numberLabel}: <strong>{number ?? "—"}</strong>
           </p>
         </div>
         <time className="text-xs text-muted-foreground">

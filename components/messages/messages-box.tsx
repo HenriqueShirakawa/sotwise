@@ -7,14 +7,16 @@ import { toast } from "sonner";
 
 import {
   loadMessagesBox,
-  loadOrderOptions,
+  loadRecordOptions,
   sendMessage,
   setMessageRead,
   type BoxFilters,
   type BoxMessage,
   type BoxPayload,
   type BoxTab,
+  type RecordGroup,
 } from "@/lib/messages-actions";
+import type { MessageEntity } from "@/types/database";
 import { MESSAGES_POLL_LIVE_MS, MESSAGES_POLL_MS } from "@/lib/messages-channel";
 import { useMessagesRealtime } from "@/lib/use-messages-realtime";
 import { usePoll } from "@/lib/use-poll";
@@ -41,10 +43,11 @@ import {
 import { MessageCard, MAX_BODY } from "./message-card";
 
 const EMPTY_FILTERS: BoxFilters = {
-  tab: "inbox",
+  tab: "received",
   status: "all",
   personId: null,
-  recordKey: null,
+  recordGroup: null,
+  recordNumber: null,
   clientId: null,
   from: null,
   to: null,
@@ -52,10 +55,15 @@ const EMPTY_FILTERS: BoxFilters = {
 
 const ANY = "__any__";
 
+/** Só dois grupos que o usuário reconhece: PO (order) e PL (pre-loading + shipment). */
+const GROUP_LABEL: Record<RecordGroup, string> = { po: "PO", pl: "PL" };
+
 /**
- * Caixa geral de mensagens — o que o balão abre FORA de um registro. Espelha a
- * tela do Bubble: abas Inbox / My messages, filtros de status, pessoa, pedido,
- * cliente e período, e o botão que leva ao compositor.
+ * Caixa geral de mensagens — o que o balão abre FORA de um registro. Duas abas:
+ * Received (recebidas, mostra o remetente) e Sent (enviadas, mostra os
+ * destinatários), com filtros de status, pessoa, pedido, cliente e período, e o
+ * botão que leva ao compositor. De dentro de um registro, o atalho "See all
+ * team messages" também traz pra cá.
  */
 export function MessagesBox({
   open,
@@ -128,7 +136,7 @@ export function MessagesBox({
 
   /**
    * "Click here to see" leva ao registro E dá a mensagem por lida — abrir o
-   * assunto é a leitura. Só vale no Inbox: em My messages eu sou o autor e a
+   * assunto é a leitura. Só vale em Received: em Sent eu sou o autor e a
    * leitura mostrada é a dos destinatários, que não é minha para marcar.
    */
   function openRecord(message: BoxMessage) {
@@ -136,7 +144,7 @@ export function MessagesBox({
     const base =
       type === "order" ? "/orders" : type === "pre_loading" ? "/pre-loading" : "/shipments";
 
-    if (filters.tab === "inbox" && !message.read) {
+    if (filters.tab === "received" && !message.read) {
       void setMessageRead(message.id, true).then((res) => {
         if (res.ok) onUnreadChange(res.unread);
       });
@@ -170,7 +178,7 @@ export function MessagesBox({
         ) : (
           <div className="space-y-4">
             <div className="inline-flex rounded-lg bg-slate-100 p-1">
-              {(["inbox", "mine"] as BoxTab[]).map((tab) => (
+              {(["received", "sent"] as BoxTab[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -181,7 +189,7 @@ export function MessagesBox({
                       : "text-slate-500"
                   }`}
                 >
-                  {tab === "inbox" ? "Inbox" : "My messages"}
+                  {tab === "received" ? "Received" : "Sent"}
                 </button>
               ))}
             </div>
@@ -210,7 +218,7 @@ export function MessagesBox({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={ANY}>
-                    {filters.tab === "inbox" ? "Anyone" : "Anyone marked"}
+                    {filters.tab === "received" ? "Anyone" : "Anyone marked"}
                   </SelectItem>
                   {(payload?.options.people ?? []).map((p) => (
                     <SelectItem key={p.id} value={p.id}>
@@ -222,23 +230,67 @@ export function MessagesBox({
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
+              {/* Tipo primeiro: some a ambiguidade entre PO e PL de mesmo número. */}
               <Select
-                value={filters.recordKey ?? ANY}
-                onValueChange={(v) => patch({ recordKey: v === ANY ? null : v })}
+                value={filters.recordGroup ?? ANY}
+                onValueChange={(v) =>
+                  patch({
+                    recordGroup: v === ANY ? null : (v as RecordGroup),
+                    recordNumber: null,
+                  })
+                }
               >
                 <SelectTrigger className="!h-10 w-full bg-white">
-                  <SelectValue placeholder="Choose an Order" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={ANY}>Choose an Order</SelectItem>
-                  {(payload?.options.records ?? []).map((r) => (
-                    <SelectItem key={r.key} value={r.key}>
-                      {r.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value={ANY}>Any type</SelectItem>
+                  <SelectItem value="po">PO</SelectItem>
+                  <SelectItem value="pl">PL</SelectItem>
                 </SelectContent>
               </Select>
 
+              <Select
+                value={
+                  filters.recordNumber
+                    ? `${filters.recordGroup}|${filters.recordNumber}`
+                    : ANY
+                }
+                onValueChange={(v) => {
+                  if (v === ANY) {
+                    patch({ recordNumber: null });
+                    return;
+                  }
+                  const sep = v.indexOf("|");
+                  patch({
+                    recordGroup: v.slice(0, sep) as RecordGroup,
+                    recordNumber: v.slice(sep + 1),
+                  });
+                }}
+              >
+                <SelectTrigger className="!h-10 w-full bg-white">
+                  <SelectValue placeholder="Choose a number" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ANY}>Any number</SelectItem>
+                  {(payload?.options.records ?? [])
+                    .filter((r) => !filters.recordGroup || r.group === filters.recordGroup)
+                    .map((r) => {
+                      // Sem grupo escolhido, carimba PO/PL pra não confundir números iguais.
+                      const label = filters.recordGroup
+                        ? r.number
+                        : `${GROUP_LABEL[r.group]} ${r.number}`;
+                      return (
+                        <SelectItem key={`${r.group}|${r.number}`} value={`${r.group}|${r.number}`}>
+                          {label}
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
               <Select
                 value={filters.clientId ?? ANY}
                 onValueChange={(v) => patch({ clientId: v === ANY ? null : v })}
@@ -255,6 +307,7 @@ export function MessagesBox({
                   ))}
                 </SelectContent>
               </Select>
+              <div />
             </div>
 
             <div className="grid grid-cols-2 items-center gap-2">
@@ -280,7 +333,7 @@ export function MessagesBox({
                 </p>
               ) : messages.length === 0 ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  {filters.tab === "inbox"
+                  {filters.tab === "received"
                     ? "No messages addressed to you."
                     : "You haven't sent any message yet."}
                 </p>
@@ -291,9 +344,10 @@ export function MessagesBox({
                     message={m}
                     number={m.number}
                     client={m.client}
-                    showReceipts={filters.tab === "mine"}
+                    entityType={m.entity.type}
+                    showReceipts={filters.tab === "sent"}
                     action={
-                      filters.tab === "inbox" ? (
+                      filters.tab === "received" ? (
                         <Button
                           variant="outline"
                           size="sm"
@@ -351,23 +405,34 @@ function ComposeMessage({
   onCancel: () => void;
   onSent: () => void | Promise<void>;
 }) {
-  const [orders, setOrders] = useState<{ id: string; name: string }[]>([]);
-  const [orderId, setOrderId] = useState("");
+  const [recordGroup, setRecordGroup] = useState<RecordGroup>("po");
+  // PL agrupa pre_loading + shipment; ao compor, mira o pre_loading (o "PL").
+  const entityType: MessageEntity = recordGroup === "po" ? "order" : "pre_loading";
+  const [records, setRecords] = useState<{ id: string; name: string }[]>([]);
+  const [recordId, setRecordId] = useState("");
   const [recipients, setRecipients] = useState<string[]>([]);
   const [body, setBody] = useState("");
   const [sending, startSending] = useTransition();
 
+  // Carrega os números do grupo escolhido. Trocar o grupo limpa a seleção no
+  // handler (não aqui), pra não cair na regra de setState-dentro-de-efeito.
   useEffect(() => {
-    void loadOrderOptions().then(setOrders);
-  }, []);
+    let alive = true;
+    void loadRecordOptions(entityType).then((opts) => {
+      if (alive) setRecords(opts);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [entityType]);
 
   function handleSend() {
     const text = body.trim();
-    if (!orderId || !text) return;
+    if (!recordId || !text) return;
     startSending(async () => {
       const res = await sendMessage({
-        entity_type: "order",
-        entity_id: orderId,
+        entity_type: entityType,
+        entity_id: recordId,
         body: text,
         recipient_ids: recipients,
       });
@@ -377,7 +442,8 @@ function ComposeMessage({
       }
       setBody("");
       setRecipients([]);
-      setOrderId("");
+      setRecordId("");
+      setRecordGroup("po");
       await onSent();
     });
   }
@@ -394,14 +460,35 @@ function ComposeMessage({
         />
       </div>
 
-      <div className="space-y-1.5">
-        <Label>Order</Label>
-        <SearchSelect
-          value={orderId}
-          onChange={setOrderId}
-          options={orders}
-          placeholder="Choose an Order"
-        />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Record type</Label>
+          <Select
+            value={recordGroup}
+            onValueChange={(v) => {
+              setRecordGroup(v as RecordGroup);
+              setRecordId("");
+              setRecords([]);
+            }}
+          >
+            <SelectTrigger className="!h-10 w-full bg-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="po">PO</SelectItem>
+              <SelectItem value="pl">PL</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>{recordGroup === "po" ? "PO number" : "PL number"}</Label>
+          <SearchSelect
+            value={recordId}
+            onChange={setRecordId}
+            options={records}
+            placeholder={recordGroup === "po" ? "Choose a PO" : "Choose a PL"}
+          />
+        </div>
       </div>
 
       <div className="rounded-xl border p-3">
@@ -419,7 +506,7 @@ function ComposeMessage({
           <Button
             size="sm"
             onClick={handleSend}
-            disabled={pending || sending || !orderId || !body.trim()}
+            disabled={pending || sending || !recordId || !body.trim()}
           >
             {sending ? <Loader2 className="animate-spin" /> : <Send className="size-4" />}
             Send
