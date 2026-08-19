@@ -553,11 +553,9 @@ function EditBatchModal({
 
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            {/* MESMA grade da tabela logo abaixo — colunas, gap e o px-3 da
-                borda —, então cada campo cai exatamente sobre a coluna que vai
-                preencher. Com três colunas iguais em cima e quatro embaixo,
-                nenhum campo batia com a sua coluna. */}
-            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-x-3 sm:px-3">
+            {/* Três campos preenchendo a largura toda do container (o usuário
+                preferiu isso ao alinhamento com as colunas da tabela abaixo). */}
+            <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-foreground">Category</Label>
                 <div className="mt-1.5">
@@ -590,10 +588,6 @@ function EditBatchModal({
                   className="mt-1.5"
                 />
               </div>
-              {/* "Batch No." e lixeira não têm campo aqui: só reservam a coluna
-                  (a lixeira é um botão size-7). */}
-              <div className="hidden sm:block" />
-              <div className="hidden sm:block sm:w-7" />
             </div>
             {/* Roxo (variant default) assim que Category+Factory+Ship req.
                 estão preenchidos; antes disso fica outline e desabilitado. */}
@@ -798,11 +792,9 @@ function CreateBatchModal({
 
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            {/* MESMA grade da tabela logo abaixo — colunas, gap e o px-3 da
-                borda —, então cada campo cai exatamente sobre a coluna que vai
-                preencher. Com três colunas iguais em cima e quatro embaixo,
-                nenhum campo batia com a sua coluna. */}
-            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-x-3 sm:px-3">
+            {/* Três campos preenchendo a largura toda do container (o usuário
+                preferiu isso ao alinhamento com as colunas da tabela abaixo). */}
+            <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-foreground">Category</Label>
                 <div className="mt-1.5">
@@ -835,10 +827,6 @@ function CreateBatchModal({
                   className="mt-1.5"
                 />
               </div>
-              {/* "Batch No." e lixeira não têm campo aqui: só reservam a coluna
-                  (a lixeira é um botão size-7). */}
-              <div className="hidden sm:block" />
-              <div className="hidden sm:block sm:w-7" />
             </div>
             <Button
               variant={canAdd ? "default" : "outline"}
