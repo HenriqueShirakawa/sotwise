@@ -1,12 +1,12 @@
 /**
- * Cria (ou atualiza) um usuário de teste com SENHA para entregar a revisores
- * externos (ex.: App Review da Shopee no dev center). Diferente do fluxo do app
- * (users/actions.ts), aqui setamos senha + email_confirm para o revisor logar
- * direto, sem depender de e-mail de convite (Site URL ainda aponta p/ localhost).
+ * Cria (ou atualiza) um usuário de teste com SENHA, pra logar direto no app sem
+ * depender do e-mail de convite (Site URL ainda aponta p/ localhost). Útil pra
+ * testar de dois lados (ex.: mensagens Received/Sent) com um segundo login.
  *
  * Roda via service_role (lê .env.local), o único acesso que funciona no AGK prod.
- * A senha vem de TEST_USER_PASSWORD (env ou .env.local) — nunca versionada.
+ * Tudo configurável por env — nada versionado. Só a senha é obrigatória:
  *   TEST_USER_PASSWORD='...' npx tsx scripts/create-test-user.ts
+ * Opcional: TEST_USER_EMAIL='...', TEST_USER_NAME='...'.
  */
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
@@ -19,13 +19,13 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   throw new Error("Faltam SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY no .env.local");
 }
 
-// ---- Config do usuário de teste --------------------------------------------
-const EMAIL = "shopee-review@sotwise.dev";
-const PASSWORD = process.env.TEST_USER_PASSWORD!;
+// ---- Config do usuário de teste (tudo por env) -----------------------------
+const EMAIL = process.env.TEST_USER_EMAIL ?? "teste@sotwise.dev";
+const PASSWORD = process.env.TEST_USER_PASSWORD;
 if (!PASSWORD) {
   throw new Error("Defina TEST_USER_PASSWORD (env ou .env.local) antes de rodar");
 }
-const FULL_NAME = "Shopee Review (test)";
+const FULL_NAME = process.env.TEST_USER_NAME ?? "Usuário Teste";
 const ROLE_NAME: "admin" | "user" = "admin";
 const COMPANY: "BR" | "China" = "BR";
 // ----------------------------------------------------------------------------
