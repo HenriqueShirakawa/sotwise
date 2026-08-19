@@ -42,28 +42,34 @@ export default async function UsersPage() {
 
   const admin = createAdminClient();
   // Paginado: a lista inteira vai pro cliente, que pagina (ver lib/fetch-all).
-  const [profilesRes, rolesRes, authInfo] = await Promise.all([
+  const [profilesRes, rolesRes, clientsRes, authInfo] = await Promise.all([
     fetchAll<{
       id: string;
       full_name: string;
       date_of_birth: string | null;
       role_id: string;
       company: UserRow["company"];
+      client_id: string | null;
       status: UserRow["status"];
       hidden: boolean;
     }>((from, to) =>
       admin
         .from("profiles")
-        .select("id, full_name, date_of_birth, role_id, company, status, hidden")
+        .select("id, full_name, date_of_birth, role_id, company, client_id, status, hidden")
         .order("full_name")
         .range(from, to)
     ),
     admin.from("roles").select("id, name").order("name"),
+    // Alimenta o seletor que aparece quando o papel escolhido é `client`.
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("clients").select("id, name").is("deleted_at", null).order("name").range(from, to)
+    ),
     loadAuthInfo(admin),
   ]);
 
   const roles = rolesRes.data ?? [];
   const roleName = new Map(roles.map((r) => [r.id, r.name]));
+  const clientName = new Map(clientsRes.map((c) => [c.id, c.name]));
 
   const rows: UserRow[] = profilesRes.map((p) => {
     const auth = authInfo.get(p.id);
@@ -75,6 +81,8 @@ export default async function UsersPage() {
       role_id: p.role_id,
       role_name: roleName.get(p.role_id) ?? "—",
       company: p.company,
+      client_id: p.client_id,
+      client_name: p.client_id ? clientName.get(p.client_id) ?? null : null,
       status: p.status,
       // Só pendura "Pending" em quem está ativo: bloqueado que nunca entrou
       // continua sendo "Blocked", que é a informação que importa.
@@ -83,5 +91,12 @@ export default async function UsersPage() {
     };
   });
 
-  return <UsersClient data={rows} roles={roles} currentUserId={session.userId} />;
+  return (
+    <UsersClient
+      data={rows}
+      roles={roles}
+      clients={clientsRes}
+      currentUserId={session.userId}
+    />
+  );
 }

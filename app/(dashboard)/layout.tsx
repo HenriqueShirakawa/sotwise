@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireInternal } from "@/lib/dal";
 import { countUnreadMessages } from "@/lib/messages";
 import { AppShell } from "@/components/app-shell/app-shell";
 
@@ -8,8 +8,8 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   // Defesa em profundidade: além do proxy otimista, a DAL confirma sessão,
-  // profile e status. Redireciona se ausente / blocked.
-  const { profile, email, role, permissions, userId } = await verifySession();
+  // profile e status. Redireciona se ausente / blocked / externo.
+  const { profile, email, role, permissions, userId } = await requireInternal();
   const unreadMessages = await countUnreadMessages(userId);
 
   return (

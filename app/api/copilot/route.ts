@@ -53,6 +53,14 @@ export async function POST(request: Request) {
   }
   const session = result.session;
 
+  // Usuário externo não tem copilot. O `can()` de cada ferramenta já negaria
+  // tudo (o papel `client` não recebe feature nenhuma), mas aí a conversa iria
+  // para o modelo antes de morrer — gasto de token da AGK numa chamada que
+  // nunca podia responder nada. Barra aqui, na porta.
+  if (session.isClient) {
+    return Response.json({ error: "Not available for this account." }, { status: 403 });
+  }
+
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "Invalid request body." }, { status: 400 });

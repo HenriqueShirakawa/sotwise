@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { CLIENT_HOME } from "@/lib/dal";
 
 export type AuthActionState = { error?: string; success?: string };
 
@@ -43,14 +44,20 @@ export async function signIn(
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("status")
+    .select("status, roles(name)")
     .eq("id", data.user.id)
-    .single();
+    .single<{ status: string; roles: { name: string } | null }>();
 
   if (!profile || profile.status === "blocked") {
     await supabase.auth.signOut();
     return { error: "This account is blocked. Contact an administrator." };
   }
+
+  // O externo entra no portal, não no app interno — e ignora o `redirectTo`,
+  // que só aponta para rota interna (é o path que o proxy guardou ao barrar o
+  // acesso). Sem isto ele cairia em /orders para ser rebatido pela DAL: chega
+  // no lugar certo, mas piscando uma tela que não é dele.
+  if (profile.roles?.name === "client") redirect(CLIENT_HOME);
 
   const target =
     parsed.data.redirectTo && parsed.data.redirectTo.startsWith("/")

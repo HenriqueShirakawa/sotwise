@@ -33,6 +33,8 @@ export type ClientRow = {
   name: string;
   country_id: string | null;
   country_name: string | null;
+  /** Usuários externos do cliente (papel `client`, ligados por client_id). */
+  users: { name: string; blocked: boolean }[];
   counts: {
     total: number;
     in_negotiation: number;
@@ -72,7 +74,14 @@ export function ClientsClient({
     const q = search.trim().toLowerCase();
     const country = countrySearch.trim().toLowerCase();
     return data.filter((r) => {
-      if (q && !r.name.toLowerCase().includes(q)) return false;
+      // Busca casa com o nome do cliente OU de um usuário dele: "de que cliente
+      // é a Fernanda?" é pergunta natural agora que a coluna existe.
+      if (
+        q &&
+        ![r.name, ...r.users.map((u) => u.name)].some((v) => v.toLowerCase().includes(q))
+      ) {
+        return false;
+      }
       if (country && !(r.country_name ?? "").toLowerCase().includes(country)) return false;
       return true;
     });
@@ -90,6 +99,33 @@ export function ClientsClient({
         header: sortableHeader<ClientRow>("Country"),
         cell: ({ row }) =>
           row.original.country_name ?? <span className="text-muted-foreground">—</span>,
+      },
+      {
+        id: "users",
+        header: "Portal users",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const users = row.original.users;
+          if (!users.length) {
+            return <span className="text-muted-foreground">—</span>;
+          }
+          return (
+            <span className="text-slate-800">
+              {users.map((u, i) => (
+                <span key={u.name + i}>
+                  {i > 0 ? ", " : ""}
+                  {/* Bloqueado aparece riscado: o vínculo existe, o acesso não. */}
+                  <span
+                    className={u.blocked ? "text-muted-foreground line-through" : undefined}
+                    title={u.blocked ? "Access blocked" : undefined}
+                  >
+                    {u.name}
+                  </span>
+                </span>
+              ))}
+            </span>
+          );
+        },
       },
       ...COUNT_COLUMNS.map<ColumnDef<ClientRow>>(({ key, label }) => ({
         id: key,
@@ -156,7 +192,7 @@ export function ClientsClient({
         }}
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Client's name"
+        searchPlaceholder="Client's or portal user's name"
         columns={columns}
         data={filtered}
         defaultSorting={[{ id: "name", desc: false }]}

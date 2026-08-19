@@ -474,7 +474,7 @@ function ComposeMessage({
               setRecords([]);
             }}
           >
-            <SelectTrigger className="!h-10 w-full bg-white">
+            <SelectTrigger className="w-full bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

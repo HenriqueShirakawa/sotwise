@@ -2,7 +2,7 @@
 
 import type { VisibilityState } from "@tanstack/react-table";
 
-import { verifySession } from "@/lib/dal";
+import { requireInternal } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ColumnPrefs } from "@/lib/column-prefs";
 
@@ -16,7 +16,7 @@ export async function saveColumnVisibility(
   listKey: string,
   visibility: VisibilityState
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   const current = (session.profile.ui_preferences ?? {}) as ColumnPrefs;
   const next: ColumnPrefs = { ...current, [listKey]: visibility };

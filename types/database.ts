@@ -149,6 +149,8 @@ export type Database = {
           status: UserStatus;
           hidden: boolean;
           slug: string | null;
+          /** Cliente dono do usuário externo — preenchido só no papel `client`. */
+          client_id: UUID | null;
           ui_preferences: Record<string, unknown>;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -163,6 +165,7 @@ export type Database = {
           status?: UserStatus;
           hidden?: boolean;
           slug?: string | null;
+          client_id?: UUID | null;
           ui_preferences?: Record<string, unknown>;
           created_at?: Timestamp;
           updated_at?: Timestamp;

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { verifySession } from "@/lib/dal";
+import { requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -64,7 +64,7 @@ export async function loadThread(
   entityType: MessageEntity,
   entityId: string
 ): Promise<ThreadPayload> {
-  const session = await verifySession();
+  const session = await requireInternal();
   const me: Option = { id: session.userId, name: session.profile.full_name || "—" };
 
   const parsedType = entitySchema.safeParse(entityType);
@@ -162,7 +162,7 @@ export type BoxPayload = {
 const MAX_BOX_MESSAGES = 200;
 
 export async function loadMessagesBox(filters: BoxFilters): Promise<BoxPayload> {
-  const session = await verifySession();
+  const session = await requireInternal();
   const admin = createAdminClient();
   const me: Option = { id: session.userId, name: session.profile.full_name || "—" };
 
@@ -293,7 +293,7 @@ const numberDesc = (a: string, b: string): number => {
  *    ("999" > "1000"); a ordenação final é numérica, feita aqui.
  */
 export async function loadRecordOptions(type: MessageEntity): Promise<Option[]> {
-  await verifySession();
+  await requireInternal();
   const admin = createAdminClient();
 
   if (type === "order") {
@@ -349,7 +349,7 @@ const byOrderNumberDesc = (a: Option, b: Option) => numberDesc(a.name, b.name);
 export async function sendMessage(
   input: SendMessageInput
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   const parsed = sendSchema.safeParse(input);
   if (!parsed.success) {
@@ -411,7 +411,7 @@ export async function sendMessage(
 
 /** Só o contador do balão — é o que o polling do FAB pede de tempos em tempos. */
 export async function loadUnreadCount(): Promise<number> {
-  const session = await verifySession();
+  const session = await requireInternal();
   return countUnreadMessages(session.userId);
 }
 
@@ -420,7 +420,7 @@ export async function setMessageRead(
   messageId: string,
   read: boolean
 ): Promise<{ ok: true; unread: number } | { ok: false; error: string }> {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   const admin = createAdminClient();
   const { error } = await admin
@@ -438,7 +438,7 @@ export async function markThreadRead(
   entityType: MessageEntity,
   entityId: string
 ): Promise<{ ok: true; unread: number } | { ok: false; error: string }> {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   const admin = createAdminClient();
   const { data: rows } = await admin
@@ -465,7 +465,7 @@ export async function markThreadRead(
 export async function markAllRead(): Promise<
   { ok: true; unread: number } | { ok: false; error: string }
 > {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   const admin = createAdminClient();
   const { error } = await admin

@@ -4,9 +4,24 @@ import "server-only";
  * HTML do e-mail de convite. Inline styles (clientes de e-mail ignoram <style>
  * e classes). Paleta roxa do design system SOTWISE (#640BB7). O CTA leva ao
  * link do Supabase que valida o token e cai em /update-password.
+ *
+ * `clientName` troca o texto para o convite EXTERNO: quem é do cliente não foi
+ * "convidado para o SOTWISE" (não vai operar nada), foi convidado para
+ * acompanhar os próprios pedidos. Mesma casca visual, promessa diferente.
  */
-export function inviteEmailHtml(link: string, fullName?: string): string {
+export function inviteEmailHtml(
+  link: string,
+  fullName?: string,
+  options?: { clientName?: string }
+): string {
   const greeting = fullName ? `Olá, ${escapeHtml(fullName)}` : "Olá";
+  const clientName = options?.clientName;
+  const intro = clientName
+    ? `Você foi convidado para acompanhar os pedidos da ${escapeHtml(clientName)} no
+                  portal da AGK. Clique no botão abaixo para definir sua senha e ativar
+                  seu acesso.`
+    : `Você foi convidado para acessar o SOTWISE. Clique no botão abaixo para
+                  definir sua senha e ativar sua conta.`;
   return `<!DOCTYPE html>
 <html lang="pt-BR">
   <body style="margin:0;padding:0;background:#f4f2f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
@@ -23,8 +38,7 @@ export function inviteEmailHtml(link: string, fullName?: string): string {
               <td style="padding:32px;">
                 <p style="margin:0 0 16px;font-size:16px;color:#1a1523;">${greeting},</p>
                 <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#4a4458;">
-                  Você foi convidado para acessar o SOTWISE. Clique no botão abaixo para
-                  definir sua senha e ativar sua conta.
+                  ${intro}
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>

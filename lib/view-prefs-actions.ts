@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireInternal } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   DEFAULT_VIEW_PREFS,
@@ -12,9 +12,10 @@ import {
 } from "@/lib/view-prefs";
 
 /**
- * Grava as preferências de visualização do PRÓPRIO usuário. `verifySession` e
+ * Grava as preferências de visualização do PRÓPRIO usuário. `requireInternal` e
  * não `requireFeature`: isto é preferência pessoal, não uma feature — todo
- * usuário autenticado ajusta a sua (mesma lógica de `profile/actions.ts`).
+ * usuário interno ajusta a sua (mesma lógica de `profile/actions.ts`); as telas
+ * a que essas preferências se referem não existem no portal do cliente.
  *
  * Mescla com o `ui_preferences` existente para não apagar as preferências de
  * coluna, que dividem o mesmo JSONB.
@@ -22,7 +23,7 @@ import {
 export async function saveViewPrefs(
   input: Partial<ViewPrefs>
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   // Só as chaves conhecidas entram — o corpo vem do cliente.
   const clean: ViewPrefs = { ...DEFAULT_VIEW_PREFS };

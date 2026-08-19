@@ -17,6 +17,48 @@ import {
 
 const PATH = "/users";
 
+type ScopeResult =
+  | { ok: true; isClient: boolean; clientId: string | null; clientName: string | null }
+  | { ok: false; error: string };
+
+/**
+ * Casa o papel escolhido com o vínculo de cliente — a regra que a migration
+ * `20260819120000` não conseguiu expressar como CHECK (o nome do papel mora em
+ * outra tabela).
+ *
+ * Resolve o NOME do papel no banco em vez de confiar no que o form mandou: o
+ * `role_id` chega do browser, e um cliente cadastrado sem `client_id` entraria
+ * sem fronteira de dados. Nos papéis internos o vínculo é forçado a null, para
+ * uma troca de papel não deixar resíduo apontando para um cliente.
+ */
+async function resolveRoleScope(
+  admin: ReturnType<typeof createAdminClient>,
+  roleId: string,
+  clientId: string | null
+): Promise<ScopeResult> {
+  const { data: role } = await admin.from("roles").select("name").eq("id", roleId).single();
+  if (!role) return { ok: false, error: "Invalid profile." };
+
+  if (role.name !== "client") {
+    return { ok: true, isClient: false, clientId: null, clientName: null };
+  }
+  if (!clientId) {
+    return { ok: false, error: "Select the client this user belongs to." };
+  }
+
+  // O cliente precisa existir e estar vivo: apontar para um registro apagado
+  // deixaria a conta num escopo que nenhuma tela consegue mostrar.
+  const { data: client } = await admin
+    .from("clients")
+    .select("id, name")
+    .eq("id", clientId)
+    .is("deleted_at", null)
+    .single();
+  if (!client) return { ok: false, error: "This client no longer exists." };
+
+  return { ok: true, isClient: true, clientId: client.id, clientName: client.name };
+}
+
 /**
  * Cria o usuário no Auth e o profile 1:1 (§3.1). O usuário nasce sem senha e a
  * define por um link de convite, que cai em /auth/callback → /update-password.
@@ -41,6 +83,11 @@ export async function createUserRecord(input: UserCreateInput): Promise<ActionRe
 
   const origin = (await headers()).get("origin") ?? "";
   const admin = createAdminClient();
+
+  // Antes de tocar no Auth: papel inválido aqui não deixa usuário órfão para trás.
+  const scope = await resolveRoleScope(admin, parsed.data.role_id, parsed.data.client_id);
+  if (!scope.ok) return scope;
+
   const { data, error } = await admin.auth.admin.generateLink({
     type: "invite",
     email: parsed.data.email,
@@ -56,6 +103,7 @@ export async function createUserRecord(input: UserCreateInput): Promise<ActionRe
     date_of_birth: parsed.data.date_of_birth,
     role_id: parsed.data.role_id,
     company: parsed.data.company,
+    client_id: scope.clientId,
     status: "active",
   });
   if (profileError) {
@@ -73,8 +121,12 @@ export async function createUserRecord(input: UserCreateInput): Promise<ActionRe
     `&type=invite&next=/update-password`;
   const sent = await sendEmail({
     to: parsed.data.email,
-    subject: "Seu convite para o SOTWISE",
-    html: inviteEmailHtml(link, parsed.data.full_name),
+    subject: scope.isClient
+      ? "Acompanhe seus pedidos no portal da AGK"
+      : "Seu convite para o SOTWISE",
+    html: inviteEmailHtml(link, parsed.data.full_name, {
+      clientName: scope.clientName ?? undefined,
+    }),
   });
   if (!sent.ok) {
     await admin.auth.admin.deleteUser(data.user.id);
@@ -98,6 +150,9 @@ export async function updateUserRecord(
   }
 
   const admin = createAdminClient();
+  const scope = await resolveRoleScope(admin, parsed.data.role_id, parsed.data.client_id);
+  if (!scope.ok) return scope;
+
   const { error } = await admin
     .from("profiles")
     .update({
@@ -105,6 +160,9 @@ export async function updateUserRecord(
       date_of_birth: parsed.data.date_of_birth,
       role_id: parsed.data.role_id,
       company: parsed.data.company,
+      // Promover um cliente a papel interno zera o vínculo (e vice-versa) —
+      // `resolveRoleScope` já devolveu null nesse caso.
+      client_id: scope.clientId,
       hidden: parsed.data.hidden,
     })
     .eq("id", id);
