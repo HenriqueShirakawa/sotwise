@@ -15,7 +15,7 @@ config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../../types/database";
-import { runSync, willInsert, type ResourcePlan, type SyncOptions } from "../../lib/gss/sync";
+import { runSync, willInsert, type JunctionPlan, type ResourcePlan, type SyncOptions } from "../../lib/gss/sync";
 
 const argv = process.argv.slice(2);
 const has = (f: string) => argv.includes(f);
@@ -62,13 +62,27 @@ function logPlan(p: ResourcePlan): void {
   }
 }
 
+function logJunction(j: JunctionPlan): void {
+  console.log(
+    `${j.table.padEnd(20)} desired ${pad(j.desired, 4)}  current ${pad(j.current, 4)}  match ${pad(j.matched, 4)}` +
+    `  insert ${pad(j.inserts.length, 4)}  delete ${pad(j.deletes.length, 4)}${opts.softDelete ? " " : "↷"}  unresolved ${pad(j.unresolved, 4)}`
+  );
+  if (j.deletes.length && !opts.softDelete) {
+    console.log("   ↳ delete só relatado; --soft-delete aplica (hard delete — os dois lados têm gss_id)");
+  }
+}
+
 async function main() {
   const scope = opts.pairOnly ? "pair-only" : opts.insertOnly ? `insert=${[...opts.insertOnly].join(",")}` : "full";
   console.log(`\n== Sync GSS → SOTWISE  [${opts.commit ? "COMMIT" : "DRY-RUN"}, ${scope}${opts.softDelete ? ", soft-delete" : ""}] ==\n`);
 
-  const plans = await runSync(supabase, opts);
+  const { resources: plans, junctions } = await runSync(supabase, opts);
 
   for (const p of plans) logPlan(p);
+  if (junctions.length) {
+    console.log("\n== junções (sincronizadas como conjunto) ==");
+    for (const j of junctions) logJunction(j);
+  }
 
   const quase = plans.flatMap((p) => p.quaseCasam.map((q) => ({ ...q, table: p.table })));
   if (quase.length) {
@@ -92,10 +106,12 @@ async function main() {
   const sum = (f: (p: ResourcePlan) => number) => plans.reduce((s, p) => s + f(p), 0);
   const insOn = sum((p) => (willInsert(p.table, opts) ? p.inserts.length : 0));
   const verb = opts.commit ? "GRAVADO" : "(dry-run)";
+  const jSum = (f: (j: JunctionPlan) => number) => junctions.reduce((s, j) => s + f(j), 0);
   console.log(
     `\nTOTAL ${verb}: link ${sum((p) => p.links.length)}, campos ${sum((p) => p.fields.length)}, ` +
     `revive ${sum((p) => p.revives.length)}, insert ${insOn}/${sum((p) => p.inserts.length)}, ` +
-    `sumiu ${sum((p) => p.missing.length)}${opts.softDelete ? " (apagados)" : " (só relato)"}`
+    `sumiu ${sum((p) => p.missing.length)}${opts.softDelete ? " (apagados)" : " (só relato)"}` +
+    `  |  junção: insert ${jSum((j) => j.inserts.length)}, delete ${jSum((j) => j.deletes.length)}${opts.softDelete ? " (apagados)" : " (só relato)"}`
   );
   if (!opts.commit) console.log("Rode com --commit; restrinja com --pair-only ou --insert=countries,cities.");
 }

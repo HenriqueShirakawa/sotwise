@@ -180,6 +180,41 @@ export type ResourcePlan = {
   skippedInserts: boolean;
 };
 
+/**
+ * Junções sincronizadas como CONJUNTO (docs/INTEGRACAO_GSS.md §4.3): não têm id
+ * nem `gss_id` próprios, então o par é reconstruído traduzindo os ids do GSS para
+ * os uuids locais. Hoje só `category_factories` (Factory × Category), vinda do
+ * endpoint `supplier-category`. As outras três (`city_pols`, `agent_contacts`,
+ * `carrier_agents`) cabem aqui quando entrarem.
+ */
+export type JunctionTable = "category_factories";
+
+export type JunctionPlan = {
+  table: JunctionTable;
+  parentCol: string;
+  childCol: string;
+  /** Pares presentes no GSS e ausentes aqui — entram (padrão). */
+  inserts: Record<string, string>[];
+  /**
+   * Pares que existem aqui, sumiram do GSS e têm OS DOIS lados vinculados ao GSS
+   * (`gss_id`). Vínculo com lado local-only nunca entra nesta lista — não é do
+   * GSS para apagar. Aplicado só com `softDelete` (hard delete, sem volta).
+   */
+  deletes: Record<string, string>[];
+  /** Pares do GSS que já batem com um vínculo local — nada a fazer. */
+  matched: number;
+  /** Total de pares do GSS que resolveram os dois lados para uuid local. */
+  desired: number;
+  /** Vínculos hoje na tabela. */
+  current: number;
+  /**
+   * Pares do GSS em que um dos lados não tem par local (fábrica/categoria ainda
+   * sem `gss_id`, obsoleta, ou segurada na fila de merge). Só contados.
+   */
+  unresolved: number;
+  appliedDeletes: boolean;
+};
+
 /** Se os INSERTs desta tabela entram na gravação. Pura, para o dry-run bater. */
 export function willInsert(table: LibTable, o: SyncOptions): boolean {
   if (o.pairOnly) return false;
@@ -206,6 +241,14 @@ type LooseTable = {
   insert: (rows: Record<string, unknown>[]) => Promise<{ error: PgError }>;
 };
 const loose = (sb: DB, table: LibTable): LooseTable => sb.from(table) as unknown as LooseTable;
+
+/** Builder mínimo para a junção: sem update, com delete por PK composta. */
+type LooseJunction = {
+  select: (columns: string) => LooseSelect;
+  insert: (rows: Record<string, unknown>[]) => Promise<{ error: PgError }>;
+  delete: () => { eq: (c: string, v: string) => { eq: (c: string, v: string) => Promise<{ error: PgError }> } };
+};
+const looseJ = (sb: DB, table: JunctionTable): LooseJunction => sb.from(table) as unknown as LooseJunction;
 
 /** Carrega a tabela inteira, inclusive soft-deletadas (para REVIVE e unique). */
 async function loadLocal(sb: DB, table: LibTable): Promise<LocalRow[]> {
@@ -475,11 +518,139 @@ async function recordState(sb: DB, plan: ResourcePlan, opts: SyncOptions, error?
   if (e) console.warn(`gss_sync_state ${plan.table}: ${e.message}`);
 }
 
+/** Carrega a junção inteira (par de uuids). Ordenada para paginar estável. */
+async function loadJunction(
+  sb: DB,
+  table: JunctionTable,
+  parentCol: string,
+  childCol: string
+): Promise<Record<string, string>[]> {
+  const out: Record<string, string>[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await looseJ(sb, table)
+      .select(`${parentCol},${childCol}`)
+      .order(parentCol)
+      .order(childCol)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`load ${table}: ${error.message}`);
+    const rows = (data ?? []) as Record<string, string>[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Monta o plano de uma junção. `gssPairs` são os pares em id do GSS; os mapas
+ * `*ByGss` traduzem para uuid local, e `*HasGss` diz quais uuids são geridos pelo
+ * GSS (usado só para decidir o que pode ser apagado). Puro — não escreve.
+ */
+export function planJunction(
+  table: JunctionTable,
+  parentCol: string,
+  childCol: string,
+  gssPairs: { parentGss: string; childGss: string }[],
+  current: Record<string, string>[],
+  parentByGss: Map<string, string>,
+  childByGss: Map<string, string>,
+  parentHasGss: Set<string>,
+  childHasGss: Set<string>,
+  opts: SyncOptions
+): JunctionPlan {
+  const key = (p: string, c: string) => `${p}|${c}`;
+  const currentSet = new Set(current.map((r) => key(r[parentCol], r[childCol])));
+
+  const desired = new Set<string>();
+  let unresolved = 0;
+  for (const { parentGss, childGss } of gssPairs) {
+    const p = parentByGss.get(parentGss);
+    const c = childByGss.get(childGss);
+    if (!p || !c) {
+      unresolved++;
+      continue;
+    }
+    desired.add(key(p, c));
+  }
+
+  const inserts: Record<string, string>[] = [];
+  let matched = 0;
+  for (const k of desired) {
+    if (currentSet.has(k)) {
+      matched++;
+      continue;
+    }
+    const [p, c] = k.split("|");
+    inserts.push({ [parentCol]: p, [childCol]: c });
+  }
+
+  // Só entra em `deletes` o vínculo cujos DOIS lados são geridos pelo GSS. Se um
+  // lado é local-only (sem `gss_id`), o vínculo é nosso — o GSS não o conhece e
+  // não pode "sumir" com ele.
+  const deletes: Record<string, string>[] = [];
+  for (const r of current) {
+    if (desired.has(key(r[parentCol], r[childCol]))) continue;
+    if (!parentHasGss.has(r[parentCol]) || !childHasGss.has(r[childCol])) continue;
+    deletes.push({ [parentCol]: r[parentCol], [childCol]: r[childCol] });
+  }
+
+  return {
+    table, parentCol, childCol, inserts, deletes, matched,
+    desired: desired.size,
+    current: currentSet.size,
+    unresolved,
+    appliedDeletes: opts.softDelete,
+  };
+}
+
+/** Grava a junção. Insert por padrão; delete só com `softDelete`. */
+async function applyJunction(sb: DB, plan: JunctionPlan, opts: SyncOptions): Promise<void> {
+  if (!opts.commit || opts.pairOnly) return; // pairOnly é só o pass de gss_id
+  const t = () => looseJ(sb, plan.table);
+
+  const B = 500;
+  for (let i = 0; i < plan.inserts.length; i += B) {
+    const { error } = await t().insert(plan.inserts.slice(i, i + B));
+    if (error) throw new Error(`insert ${plan.table} [${i}..]: ${error.message}`);
+  }
+
+  if (opts.softDelete && plan.deletes.length) {
+    const CH = 25;
+    for (let i = 0; i < plan.deletes.length; i += CH) {
+      await Promise.all(plan.deletes.slice(i, i + CH).map(async (d) => {
+        const { error } = await t().delete().eq(plan.parentCol, d[plan.parentCol]).eq(plan.childCol, d[plan.childCol]);
+        if (error) throw new Error(`delete ${plan.table} ${d[plan.parentCol]}/${d[plan.childCol]}: ${error.message}`);
+      }));
+    }
+  }
+}
+
+async function recordJunctionState(sb: DB, plan: JunctionPlan, opts: SyncOptions, error?: string): Promise<void> {
+  if (!opts.commit || opts.pairOnly) return;
+  const { error: e } = await sb.from("gss_sync_state").upsert(
+    {
+      resource: plan.table,
+      last_run_at: new Date().toISOString(),
+      last_status: error ? "error" : "ok",
+      last_error: error ?? null,
+      rows_upserted: plan.inserts.length,
+      rows_deleted: opts.softDelete ? plan.deletes.length : 0,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "resource" }
+  );
+  if (e) console.warn(`gss_sync_state ${plan.table}: ${e.message}`);
+}
+
 /**
  * Executa o sync inteiro, na ordem de FK do §4.3 (countries primeiro, porque
- * `clients.country_id` depende do mapa dele).
+ * `clients.country_id` depende do mapa dele). Recursos primeiro, junções depois —
+ * a junção precisa dos `gss_id` de fábricas e categorias já gravados.
  */
-export async function runSync(sb: DB, options: Partial<SyncOptions> = {}): Promise<ResourcePlan[]> {
+export async function runSync(
+  sb: DB,
+  options: Partial<SyncOptions> = {}
+): Promise<{ resources: ResourcePlan[]; junctions: JunctionPlan[] }> {
   const opts: SyncOptions = { ...DEFAULT_OPTIONS, ...options };
   const plans: ResourcePlan[] = [];
 
@@ -559,5 +730,35 @@ export async function runSync(sb: DB, options: Partial<SyncOptions> = {}): Promi
   await run(planResource("categories", await loadLocal(sb, "categories"), cats,
     (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
 
-  return plans;
+  // 7) category_factories ← supplier-category (a JUNÇÃO Factory × Category).
+  // Reusa `sc`: cada linha carrega `supplier`+`category` (o par). Relê os mapas
+  // depois dos applies acima, para enxergar fábricas/categorias recém-pareadas.
+  const junctions: JunctionPlan[] = [];
+  {
+    const catRows = await loadLocal(sb, "categories");
+    const facRows = await loadLocal(sb, "factories");
+    const catByGss = new Map<string, string>();
+    const catHasGss = new Set<string>();
+    for (const r of catRows) if (r.deleted_at === null && r.gss_id) { catByGss.set(r.gss_id, r.id); catHasGss.add(r.id); }
+    const facByGss = new Map<string, string>();
+    const facHasGss = new Set<string>();
+    for (const r of facRows) if (r.deleted_at === null && r.gss_id) { facByGss.set(r.gss_id, r.id); facHasGss.add(r.id); }
+
+    const gssPairs = sc.map((row) => ({ parentGss: String(row.category), childGss: String(row.supplier) }));
+    const current = await loadJunction(sb, "category_factories", "category_id", "factory_id");
+    const jp = planJunction(
+      "category_factories", "category_id", "factory_id",
+      gssPairs, current, catByGss, facByGss, catHasGss, facHasGss, opts
+    );
+    try {
+      await applyJunction(sb, jp, opts);
+      await recordJunctionState(sb, jp, opts);
+    } catch (err) {
+      await recordJunctionState(sb, jp, opts, err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+    junctions.push(jp);
+  }
+
+  return { resources: plans, junctions };
 }
