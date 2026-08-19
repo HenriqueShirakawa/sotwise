@@ -91,6 +91,26 @@ async function syncAgentContacts(
   return error?.message ?? null;
 }
 
+/** Idem para `category_factories` (Factory × Category, §3.5.2). */
+async function syncCategoryFactories(
+  admin: AdminClient,
+  categoryId: string,
+  factoryIds: string[]
+): Promise<string | null> {
+  const { error: delError } = await admin
+    .from("category_factories")
+    .delete()
+    .eq("category_id", categoryId);
+  if (delError) return delError.message;
+
+  if (factoryIds.length === 0) return null;
+
+  const { error } = await admin
+    .from("category_factories")
+    .insert(factoryIds.map((factory_id) => ({ category_id: categoryId, factory_id })));
+  return error?.message ?? null;
+}
+
 export const RESOURCES: Record<string, ResourceConfig> = {
   agents: defineResource({
     table: "agents",
@@ -141,6 +161,12 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: categorySchema,
     buildRow: (input, session) => ({ name: input.name, created_by: session.userId }),
+    // Vínculo opcional pela API (ver categorySchema): quem manda só `{ name }`
+    // continua funcionando, quem manda `factory_ids` grava a junção.
+    afterInsert: (id, input, admin) =>
+      input.factory_ids?.length
+        ? syncCategoryFactories(admin, id, input.factory_ids)
+        : Promise.resolve(null),
   }),
 
   factories: defineResource({
