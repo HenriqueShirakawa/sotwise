@@ -70,9 +70,29 @@ export const businessUnitSchema = z.object({
 
 export type BusinessUnitInput = z.infer<typeof businessUnitSchema>;
 
-/** Cadastros name-only ainda sem tela dedicada — usados pela API REST. */
-export const categorySchema = z.object({ name: nameSchema });
+/**
+ * Category — nome + fábricas vinculadas (junção M-N `category_factories`).
+ * A combinação Factory × Category é o nível atômico de controle do sistema
+ * (§3.5.2): pedidos, lotes e checklists penduram nela.
+ *
+ * `factory_ids` é OPCIONAL aqui de propósito. Este schema também valida o
+ * `POST /api/categories`, que hoje aceita `{ name }` puro — exigir o vínculo
+ * quebraria o contrato de quem já chama a API (o middleware do GSS). A regra de
+ * negócio "≥ 1 fábrica" mora no `categoryFormSchema` abaixo, que é o caminho
+ * pelo qual um humano cria categoria.
+ */
+export const categorySchema = z.object({
+  name: nameSchema,
+  factory_ids: z.array(z.uuid()).optional(),
+});
 export type CategoryInput = z.infer<typeof categorySchema>;
+
+/** O que a tela manda: aqui o vínculo é obrigatório (regra de UI do §3.5.2). */
+export const categoryFormSchema = z.object({
+  name: nameSchema,
+  factory_ids: z.array(z.uuid()).min(1, "Link at least one factory."),
+});
+export type CategoryFormInput = z.infer<typeof categoryFormSchema>;
 
 export const citySchema = z.object({ name: nameSchema });
 export type CityInput = z.infer<typeof citySchema>;

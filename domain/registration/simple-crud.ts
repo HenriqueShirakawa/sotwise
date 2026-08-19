@@ -15,6 +15,7 @@ import { bulkNamesSchema, nameSchema, type ActionResult } from "./schema";
  */
 export type SimpleTable =
   | "carriers"
+  | "cities"
   | "pols"
   | "pods"
   | "countries"
@@ -26,6 +27,7 @@ const HAS_CREATED_BY: Record<SimpleTable, boolean> = {
   carriers: true,
   order_types: true,
   shipment_models: true,
+  cities: false,
   pols: false,
   pods: false,
   countries: false,
