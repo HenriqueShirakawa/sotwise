@@ -458,6 +458,9 @@ function ComposeMessage({
           options={people}
           placeholder="Forward to"
         />
+        <p className="text-xs text-muted-foreground">
+          Leave empty to notify your whole team.
+        </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">

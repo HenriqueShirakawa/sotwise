@@ -202,12 +202,17 @@ function ThreadDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <MultiSearchSelect
-            value={recipients}
-            onChange={setRecipients}
-            options={payload?.people ?? []}
-            placeholder="Forward to"
-          />
+          <div className="space-y-1.5">
+            <MultiSearchSelect
+              value={recipients}
+              onChange={setRecipients}
+              options={payload?.people ?? []}
+              placeholder="Forward to"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave empty to notify your whole team.
+            </p>
+          </div>
 
           {/* Dentro do registro os dois campos vêm travados: o pedido e eu. */}
           <div className="grid gap-3 sm:grid-cols-2">

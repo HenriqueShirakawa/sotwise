@@ -369,9 +369,26 @@ export async function sendMessage(
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? "Could not send." };
 
-  const recipients = [...new Set(parsed.data.recipient_ids)].filter(
+  let recipients = [...new Set(parsed.data.recipient_ids)].filter(
     (id) => id !== session.userId
   );
+
+  // Sem destinatário = notificação pra TODA a equipe do remetente: mesma company
+  // (BR = AGK, China = ZK), usuários ativos e não ocultos, menos o próprio autor.
+  if (recipients.length === 0 && session.profile.company) {
+    const team = await fetchAll<{ id: string }>((from, to) =>
+      admin
+        .from("profiles")
+        .select("id")
+        .eq("company", session.profile.company)
+        .eq("status", "active")
+        .eq("hidden", false)
+        .neq("id", session.userId)
+        .range(from, to)
+    );
+    recipients = team.map((t) => t.id);
+  }
+
   if (recipients.length) {
     const { error: linkError } = await admin
       .from("message_recipients")
