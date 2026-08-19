@@ -16,11 +16,21 @@ const dateOfBirthSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date.")
   .nullable();
 
+/**
+ * Cliente dono do usuário externo. Nullable aqui de propósito: o formulário só
+ * mostra o campo quando o papel escolhido é `client`, e este schema não conhece
+ * o NOME do papel (recebe só o `role_id`). A regra "papel client exige cliente,
+ * papel interno exige null" é resolvida no servidor, em `assertClientScope`,
+ * que consulta `roles` — não dá para confiar no que o browser mandou.
+ */
+const clientIdSchema = z.uuid("Select a client.").nullable();
+
 const baseUserFields = {
   full_name: fullNameSchema,
   date_of_birth: dateOfBirthSchema,
   role_id: z.uuid("Select a profile."),
   company: z.enum(COMPANY_VALUES, { message: "Select a company." }),
+  client_id: clientIdSchema,
 };
 
 /** Criação (tela Users, §3.1): o admin informa tudo, inclusive o e-mail. */

@@ -60,10 +60,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Logado abrindo login/forgot → app.
+  // Logado abrindo login/forgot → app. Manda para "/" em vez de "/orders"
+  // porque daqui só dá para ver o cookie, não o papel: quem decide entre app
+  // interno e portal do cliente é o `app/page.tsx`, que enxerga a sessão.
   if (user && REDIRECT_WHEN_AUTHED.includes(pathname)) {
     const url = request.nextUrl.clone();
-    url.pathname = "/orders";
+    url.pathname = "/";
     url.search = "";
     return NextResponse.redirect(url);
   }

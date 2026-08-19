@@ -39,6 +39,7 @@ import {
 import { createUserRecord, updateUserRecord, setUserStatus } from "./actions";
 
 type Role = { id: string; name: string };
+type Client = { id: string; name: string };
 
 export type UserRow = {
   id: string;
@@ -48,6 +49,9 @@ export type UserRow = {
   role_id: string;
   role_name: string;
   company: CompanyType;
+  /** Só no papel `client`: a empresa cujos pedidos este usuário acompanha. */
+  client_id: string | null;
+  client_name: string | null;
   status: UserStatus;
   /** Ativo mas nunca entrou — o convite por e-mail ainda não foi ligado. */
   pending_access: boolean;
@@ -80,10 +84,12 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export function UsersClient({
   data,
   roles,
+  clients,
   currentUserId,
 }: {
   data: UserRow[];
   roles: Role[];
+  clients: Client[];
   currentUserId: string;
 }) {
   const router = useRouter();
@@ -103,8 +109,8 @@ export function UsersClient({
       if (status === "active" && (r.status !== "active" || r.pending_access)) return false;
       if (status === "blocked" && r.status !== "blocked") return false;
       if (!q) return true;
-      return [r.full_name, r.email ?? "", r.role_name, r.company].some((v) =>
-        v.toLowerCase().includes(q)
+      return [r.full_name, r.email ?? "", r.role_name, r.company, r.client_name ?? ""].some(
+        (v) => v.toLowerCase().includes(q)
       );
     });
   }, [data, search, status]);
@@ -135,7 +141,16 @@ export function UsersClient({
         accessorKey: "role_name",
         header: "Profile",
         enableSorting: false,
-        cell: ({ row }) => cap(row.original.role_name),
+        // O papel do externo sozinho não diz nada ("Client" — de quem?), então
+        // o vínculo anda junto. Coluna própria seria vazia em ~todas as linhas.
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap">
+            {cap(row.original.role_name)}
+            {row.original.client_name ? (
+              <span className="text-muted-foreground"> · {row.original.client_name}</span>
+            ) : null}
+          </span>
+        ),
       },
       { accessorKey: "company", header: "Company", enableSorting: false },
       {
@@ -296,6 +311,7 @@ export function UsersClient({
             key={editing?.id ?? "new"}
             editing={editing}
             roles={roles}
+            clients={clients}
             pending={pending}
             onCancel={() => setFormOpen(false)}
             onSubmit={handleSubmit}
@@ -326,12 +342,14 @@ export function UsersClient({
 function UserForm({
   editing,
   roles,
+  clients,
   pending,
   onCancel,
   onSubmit,
 }: {
   editing: UserRow | null;
   roles: Role[];
+  clients: Client[];
   pending: boolean;
   onCancel: () => void;
   onSubmit: (values: UserCreateInput | UserUpdateInput) => void;
@@ -341,10 +359,19 @@ function UserForm({
   const [dateOfBirth, setDateOfBirth] = useState(editing?.date_of_birth ?? "");
   const [roleId, setRoleId] = useState(editing?.role_id ?? "");
   const [company, setCompany] = useState<CompanyType | "">(editing?.company ?? "");
+  const [clientId, setClientId] = useState(editing?.client_id ?? "");
   const [hidden, setHidden] = useState(editing?.hidden ?? false);
 
+  // O campo Client só existe para o papel externo. A checagem é pelo NOME do
+  // papel (o id é uuid gerado), e o servidor repete a validação — aqui é só UI.
+  const isClientRole = roles.find((r) => r.id === roleId)?.name === "client";
+
   const valid =
-    !!fullName.trim() && !!roleId && !!company && (!!editing || !!email.trim());
+    !!fullName.trim() &&
+    !!roleId &&
+    !!company &&
+    (!!editing || !!email.trim()) &&
+    (!isClientRole || !!clientId);
 
   return (
     <form
@@ -357,6 +384,9 @@ function UserForm({
           date_of_birth: dateOfBirth.trim() || null,
           role_id: roleId,
           company,
+          // Papel interno nunca manda vínculo — e o servidor força null de
+          // qualquer forma, então trocar de papel não deixa resíduo.
+          client_id: isClientRole ? clientId : null,
         };
         onSubmit(editing ? { ...base, hidden } : { ...base, email: email.trim() });
       }}
@@ -403,7 +433,7 @@ function UserForm({
         <div className="space-y-1.5">
           <Label>Company</Label>
           <Select value={company} onValueChange={(v) => setCompany(v as CompanyType)}>
-            <SelectTrigger className="!h-10 w-full">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a company" />
             </SelectTrigger>
             <SelectContent>
@@ -420,7 +450,7 @@ function UserForm({
       <div className="space-y-1.5">
         <Label>Profile</Label>
         <Select value={roleId} onValueChange={setRoleId}>
-          <SelectTrigger className="!h-10 w-full">
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Select a profile" />
           </SelectTrigger>
           <SelectContent>
@@ -432,6 +462,28 @@ function UserForm({
           </SelectContent>
         </Select>
       </div>
+
+      {isClientRole ? (
+        <div className="space-y-1.5">
+          <Label>Client</Label>
+          <Select value={clientId} onValueChange={setClientId}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select a client" />
+            </SelectTrigger>
+            <SelectContent>
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            External user — signs in to the client portal and sees this client&apos;s orders
+            only, never the internal screens.
+          </p>
+        </div>
+      ) : null}
 
       {editing ? (
         <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">

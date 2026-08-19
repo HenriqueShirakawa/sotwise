@@ -197,6 +197,43 @@ create trigger trg_roles_updated_at
   for each row execute function public.set_updated_at();
 ```
 
+#### 3.2.1 Papel `client` — usuário externo (implementado 2026-08-19)
+
+Quarto papel, ao lado de `owner`/`admin`/`user`, e o único que **não é interno**: é o
+contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migration
+`20260819120000_client_role_and_scope.sql`.
+
+- **Não recebe nenhuma linha em `role_features`.** A ausência é a regra: como o RBAC é
+  fail closed, todo `requireFeature()` nega, e o cliente é devolvido ao portal. As
+  features do catálogo são todas telas internas — não existe subconjunto delas que faça
+  sentido para quem é de fora.
+- **`profiles.client_id`** (FK → `clients`, nullable) é a fronteira de dados: um usuário
+  pertence a **um** cliente, um cliente tem **N** usuários. Todos os usuários do mesmo
+  cliente enxergam **todos** os pedidos daquele cliente (decisão 7 da Fase 2). `company`
+  (BR/China) **não** se aplica ao externo — quem recorta é o `client_id`.
+- **Obrigatoriedade cruzada** (papel `client` ⇒ `client_id` preenchido; papel interno ⇒
+  `client_id` null) não é CHECK: o nome do papel mora em `roles` e CHECK não faz
+  subquery. Fica em `resolveRoleScope()` (`app/(dashboard)/users/actions.ts`) na
+  escrita, e em `requireClientScope()` (`lib/dal.ts`) na leitura — que **encerra a
+  sessão** de um cliente sem vínculo em vez de deixá-lo entrar sem escopo.
+- **Convite:** mesmo fluxo do 3.1 (admin cria pela tela Users, Resend entrega o link),
+  com seletor de Client no formulário e um texto de e-mail próprio — o externo não foi
+  "convidado para o SOTWISE", foi convidado para acompanhar os pedidos da empresa dele.
+- **Portal:** route group `app/(client)/`, rota `/portal`, casca própria (sem sidebar,
+  sem mensagens, sem copilot). Login, `/` e todo `requireFeature` negado levam o cliente
+  para lá; `requireInternal()` faz o caminho inverso nas telas internas sem feature
+  própria (`/profile`, preferências, mensagens).
+- **Onde se vê o vínculo:** na tela Users (coluna Profile mostra `Client · <empresa>`) e
+  na tela Clients, coluna **Portal users** — os usuários externos daquele cliente, com
+  bloqueado riscado. A busca de Clients passou a casar com nome de usuário também
+  ("de que cliente é a Fernanda?"). Não existe campo "contato do cliente" em `clients`:
+  o contato **é** o usuário.
+- **O que o portal mostra:** número do pedido, referência do cliente, tipo, status e a
+  contagem de itens por estágio. Fora: fábrica, exporter, leader/requester, BU, número
+  de lote (o cliente acompanha produto) e datas de ETD (expor estimativa a terceiro é
+  decisão de negócio ainda não tomada). Pedido `in_negotiation` não aparece; `canceled`
+  aparece.
+
 ---
 
 ### 3.3 role_permissions — matriz CRUD por módulo ⚠️ NÃO USADA NESTA FASE
@@ -302,7 +339,9 @@ create trigger trg_factories_updated_at
 
 Categoria que classifica os pedidos. Tem nome + **lista de fábricas vinculadas** (obrigatório ≥ 1). A combinação **Factory × Category** é o "nível atômico de controle" (Orders, lotes, checklists penduram nela).
 
-⚠️ **Cardinalidade a validar no merge do banco externo.** Leitura atual: **M-para-N** (uma fábrica pode estar em várias categorias; uma categoria tem várias fábricas) — concilia com a tela de Categorias, que monta uma lista de fábricas. Modelada como tabela de junção. Se o merge do banco externo revelar 1-para-N, migrar `category_id` para dentro de `factories`.
+✅ **Cardinalidade M-para-N — CONFIRMADA (2026-08-19).** Uma categoria pode estar em várias fábricas e uma fábrica em várias categorias. Confirmado pelo cliente e pelos dados do GSS, onde `SupplierCategory` é junção de verdade (com `city` + `code` a mais, que não modelamos) — ver [INTEGRACAO_GSS §3](INTEGRACAO_GSS.md). Segue como tabela de junção; a hipótese antiga de migrar `category_id` para dentro de `factories` está **descartada**.
+
+**Tela construída em 2026-08-19** (`/registration/categories`) — era uma das três bibliotecas sem UI; `cities` (3.5.7) e `exporters` (3.5.6) ganharam a sua no mesmo dia, então **todas as bibliotecas têm tela agora**. Nome + multi-select de fábricas, busca também pelo nome da fábrica ("que categorias a Dajin atende?"), soft delete que **não** apaga a junção — pedido antigo continua íntegro. A regra ≥ 1 fábrica é imposta no `categoryFormSchema`; o `POST /api/categories` segue aceitando `{ name }` sem vínculo para não quebrar o contrato de quem já chama a API (o `factory_ids` lá é opcional).
 
 ```sql
 create table public.categories (
@@ -408,6 +447,8 @@ create trigger trg_clients_updated_at
 
 Empresa exportadora. Nome + **sigla (acronym)**, ambos obrigatórios.
 
+**Tela construída em 2026-08-19** (`/registration/exporters`). CRUD com checagem de nome duplicado (mesma do simple-crud — a lição do "Chongqing 4x" no POL) e soft delete. A sigla aparece como badge porque é ela que a lista de Orders mostra na coluna Exporter (`acronym || name`). São 4 exporters em produção.
+
 ```sql
 create table public.exporters (
   id          uuid primary key default gen_random_uuid(),
@@ -431,6 +472,10 @@ Hierarquia geográfica: **Country → City → POL** (cada cidade agrupa POLs), 
 - `cities`: nome + **POLs vinculados** (não obrigatório). Relação City→POL.
 - `pols` (Ports of Loading): só nome (porto de embarque).
 - `pods` (Ports of Discharge): só nome (porto de destino).
+
+**Tela de Cities construída em 2026-08-19** (`/registration/cities`) — cadastro name-only, no molde de POL/POD/Countries, com criação em lote. 652 cidades em produção.
+
+⚠️ **O vínculo `city_pols` não é editável pela tela, de propósito.** Hoje ele é só LIDO (o detalhe do Pre-loading usa a cidade para distinguir dois POLs de mesmo nome — ver `app/(dashboard)/pre-loading/[id]/page.tsx`), e `cities` é uma das 14 bibliotecas que o GSS passa a ser dono. Abrir escrita do vínculo aqui criaria um segundo dono do mesmo dado justamente às vésperas de a integração assumi-lo. Se o vínculo precisar ser mantido à mão antes da Fase 5, é decisão a tomar — não um esquecimento.
 
 ```sql
 create table public.countries (
@@ -1717,6 +1762,7 @@ Lacunas onde o sistema tem a funcionalidade mas **falta a regra definida**. Não
   7. **Visibilidade:** **todos os usuários do mesmo cliente enxergam todos os pedidos do cliente** — o escopo é o `client_id`, sem restrição por usuário individual.
 
   ⚠️ **Modelagem técnica ainda parqueada:** as regras de produto estão travadas, mas o **trigger/outbox** contra `batches` segue aguardando a Fase 1.3 do plano de integração (acompanhamento por produto). Não modelar o disparo contra o `batches` atual ainda. Ver memory `fase2-painel-cliente`.
+- [x] ✅ **Fase 2 — Identidade do cliente: CONSTRUÍDA (2026-08-19).** Papel `client`, `profiles.client_id`, convite com seletor de Client e portal `/portal` (route group `app/(client)/`). Detalhe em **3.2.1**; migration `20260819120000`. **Ordem obrigatória: aplicar a migration ANTES do deploy** — a tela Users passa a selecionar `client_id` e, sem a coluna, o PostgREST devolve erro que o `fetchAll` converte em lista vazia (a tela não quebra, fica *vazia*, que é pior de diagnosticar). Ainda em aberto nesta fase: exibir ou não datas de ETD ao cliente; idioma do portal (hoje segue o inglês do app, enquanto o vocabulário de e-mail da decisão 5 está em PT-BR); reenvio de convite.
 - [ ] **Regra exata do medidor de força de senha** (limiares por comprimento + classes de caractere): proposta da Vista/pub a confirmar. Informativo, não bloqueia o build.
 - [ ] 🔴 **Idioma da interface — CONTRADIÇÃO a resolver.** A documentação das telas (Blocos 1–5) diz que a UI é **100% em inglês**; a seção 9 (Stack técnica, trazida de outro projeto) diz **100% PT-BR + BRL + America/Sao_Paulo**. Só um pode valer para a interface. Confirmar com o cliente. _(Itens como moeda BRL e fuso provavelmente valem; o idioma da UI é o ponto em conflito.)_
 - [ ] **Stack técnica (seção 9) — validar aderência ao Sotwise.** A seção foi trazida de um template/outro projeto e traz menções fora do domínio de logística (sparklines de preço/custo, parser NF-e, "Zesta"). Confirmar quais itens se aplicam de fato ao Sotwise. _(Núcleo — Next.js/Supabase/Vercel/Asaas — é coerente; os exemplos de domínio não.)_

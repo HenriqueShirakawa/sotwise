@@ -332,8 +332,9 @@ function AgentForm({
         <div className="space-y-1.5">
           <Label required>Location</Label>
           <Select value={location} onValueChange={(v) => setLocation(v as AgentLocation)}>
-            {/* !h-10 para casar com o SearchSelect de Country, ao lado. */}
-            <SelectTrigger className="!h-10 w-full">
+            {/* Sem override de altura: o h-8 padrão do SelectTrigger é o mesmo
+                do SearchSelect de Country ao lado, e o do Input. */}
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a location" />
             </SelectTrigger>
             <SelectContent>

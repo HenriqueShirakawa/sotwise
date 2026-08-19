@@ -1,4 +1,4 @@
-import { verifySession } from "@/lib/dal";
+import { requireInternal } from "@/lib/dal";
 import { PageHeader } from "@/components/page-header";
 import { readViewPrefs } from "@/lib/view-prefs";
 
@@ -6,7 +6,7 @@ import { ProfileForm } from "./profile-form";
 import { ViewPrefsCard } from "./view-prefs-card";
 
 export default async function ProfilePage() {
-  const { profile, email, role } = await verifySession();
+  const { profile, email, role } = await requireInternal();
 
   return (
     <div className="mx-auto grid max-w-xl gap-6">

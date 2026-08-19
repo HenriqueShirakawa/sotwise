@@ -8,6 +8,9 @@ export const metadata: Metadata = { title: "Sign in · Sotwise" };
 const ERROR_MESSAGES: Record<string, string> = {
   blocked: "This account is blocked. Contact an administrator.",
   auth: "Authentication failed. Please sign in again.",
+  // Conta de cliente sem empresa vinculada: sem escopo não há o que mostrar, e
+  // a DAL encerra a sessão em vez de deixar entrar sem fronteira de dados.
+  no_client: "This account is not linked to a client yet. Contact an administrator.",
 };
 
 export default async function LoginPage({

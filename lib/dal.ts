@@ -37,6 +37,13 @@ export type SessionProfile = {
   role: string;
   isAdmin: boolean;
   isOwner: boolean;
+  /**
+   * Usuário EXTERNO (do cliente da AGK), não um usuário interno com menos
+   * acesso. Vive em `app/(client)/` e nunca recebe feature do catálogo.
+   */
+  isClient: boolean;
+  /** Fronteira de dados do usuário externo. Null em todo papel interno. */
+  clientId: string | null;
   /** Mapa já resolvido (papel + exceções do usuário). Seguro para o cliente. */
   permissions: PermissionMap;
 };
@@ -86,6 +93,7 @@ export const resolveSession = cache(async (): Promise<SessionResult> => {
 
   const roleName = role?.name ?? "user";
   const isOwner = roleName === "owner";
+  const isClient = roleName === "client";
 
   // O owner não depende de linha em role_features (bypass em código — ver o
   // cabeçalho da migration), então nem consultamos nesse caso.
@@ -114,6 +122,11 @@ export const resolveSession = cache(async (): Promise<SessionResult> => {
       role: roleName,
       isAdmin: roleName === "admin",
       isOwner,
+      isClient,
+      // Só faz sentido no papel externo: se um profile interno tiver a coluna
+      // preenchida (troca de papel malfeita, import), ela é ignorada aqui em
+      // vez de virar escopo fantasma.
+      clientId: isClient ? profile.client_id : null,
       permissions: resolvePermissions({ isOwner, roleGrants, userGrants }),
     },
   };
@@ -142,6 +155,9 @@ export function can(
   return hasFeature(session.permissions, feature, action);
 }
 
+/** Raiz do app do cliente externo (route group `app/(client)/`). */
+export const CLIENT_HOME = "/portal";
+
 /**
  * Para onde mandar quem não pode ver a rota pedida. Não dá para fixar `/orders`
  * como antes: um usuário sem a feature `orders` cairia num loop de redirect
@@ -150,6 +166,11 @@ export function can(
  * acessa).
  */
 function landingPath(session: SessionProfile): string {
+  // O externo não tem feature nenhuma — sem este atalho ele cairia em /profile,
+  // que é tela interna. É por aqui que todo `requireFeature` negado devolve o
+  // cliente para o painel dele, em vez de deixá-lo vagando pelo app interno.
+  if (session.isClient) return CLIENT_HOME;
+
   for (const key of FEATURE_KEYS) {
     if (session.permissions[key].view) return FEATURES[key].routes[0];
   }
@@ -194,5 +215,41 @@ export async function requireAnyFeature(
 export async function requireOwner(): Promise<SessionProfile> {
   const session = await verifySession();
   if (!session.isOwner) redirect(landingPath(session));
+  return session;
+}
+
+/**
+ * Sessão com escopo de cliente — a guarda de TODA page e action do
+ * `app/(client)/`. Devolve o `clientId` já validado para a query poder filtrar
+ * por ele; nenhuma leitura do portal deve rodar sem esse valor na mão.
+ *
+ * Cliente sem `client_id` é conta quebrada (papel trocado na mão, import
+ * incompleto). Cai em signout em vez de landingPath por dois motivos: sem
+ * escopo não existe página para onde mandá-lo — `landingPath` devolveria o
+ * próprio /portal e fecharia um loop de redirect — e a sessão precisa acabar
+ * mesmo, para o admin corrigir o vínculo antes de ele entrar de novo.
+ */
+export async function requireClientScope(): Promise<{
+  session: SessionProfile;
+  clientId: string;
+}> {
+  const session = await verifySession();
+  if (!session.isClient) redirect(landingPath(session));
+  if (!session.clientId) redirect("/auth/signout?reason=no_client");
+  return { session, clientId: session.clientId };
+}
+
+/**
+ * Contraparte: telas internas SEM feature própria (hoje `/profile` e o layout
+ * do dashboard) — todo autenticado entra, menos o externo.
+ *
+ * As telas que TÊM feature já barram o cliente sozinhas, porque o papel
+ * `client` não recebe linha em `role_features` e o mapa resolve tudo `false`.
+ * Esta função cobre o resto, para o externo não esbarrar no chrome interno
+ * (sidebar, caixa de mensagens, copilot) por uma URL digitada.
+ */
+export async function requireInternal(): Promise<SessionProfile> {
+  const session = await verifySession();
+  if (session.isClient) redirect(CLIENT_HOME);
   return session;
 }

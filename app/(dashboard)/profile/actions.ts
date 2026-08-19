@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { verifySession } from "@/lib/dal";
+import { requireInternal } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   profileSelfUpdateSchema,
@@ -13,14 +13,16 @@ import {
 const PATH = "/profile";
 
 /**
- * Edita o próprio perfil (§3.1). `verifySession` em vez de `requireFeature`: aqui
- * qualquer usuário mexe no que é dele. O id vem SEMPRE da sessão, nunca do
- * cliente — senão daria para editar o perfil alheio mandando outro id.
+ * Edita o próprio perfil (§3.1). `requireInternal` em vez de `requireFeature`:
+ * qualquer usuário INTERNO mexe no que é dele — "My profile" não é feature do
+ * catálogo, mas também não é tela do portal do cliente. O id vem SEMPRE da
+ * sessão, nunca do cliente — senão daria para editar o perfil alheio mandando
+ * outro id.
  */
 export async function updateMyProfile(
   input: ProfileSelfUpdateInput
 ): Promise<ActionResult> {
-  const session = await verifySession();
+  const session = await requireInternal();
 
   const parsed = profileSelfUpdateSchema.safeParse(input);
   if (!parsed.success) {
