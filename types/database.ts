@@ -884,6 +884,7 @@ export type Database = {
           city_id: UUID | null;
           pol_id: UUID | null;
           carrier_agent_id: UUID | null;
+          carrier_id: UUID | null;
           agent_brazil_id: UUID | null;
           agent_china_id: UUID | null;
           contact_brazil_id: UUID | null;
@@ -906,6 +907,7 @@ export type Database = {
           city_id?: UUID | null;
           pol_id?: UUID | null;
           carrier_agent_id?: UUID | null;
+          carrier_id?: UUID | null;
           agent_brazil_id?: UUID | null;
           agent_china_id?: UUID | null;
           contact_brazil_id?: UUID | null;

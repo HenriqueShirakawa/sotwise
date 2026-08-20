@@ -37,6 +37,8 @@ async function loadAuthInfo(
   return info;
 }
 
+export const metadata = { title: "Users" };
+
 export default async function UsersPage() {
   const session = await requireFeature("users"); // sem a feature → volta para a primeira tela visível
 

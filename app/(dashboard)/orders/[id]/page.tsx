@@ -29,6 +29,8 @@ const STEP_ORDER: ChecklistStep[] = [
   "pre_loading",
 ];
 
+export const metadata = { title: "Order" };
+
 export default async function OrderDetailPage({
   params,
 }: {

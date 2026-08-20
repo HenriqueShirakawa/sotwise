@@ -14,6 +14,8 @@ type EtdOrderRow = {
   order_factory_category: { order_id: string } | { order_id: string }[] | null;
 };
 
+export const metadata = { title: "Orders" };
+
 export default async function OrdersPage() {
   const { profile } = await requireFeature("orders");
   const admin = createAdminClient();

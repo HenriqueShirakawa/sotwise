@@ -12,7 +12,12 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
-import { BATCH_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
+import {
+  BATCH_STATUS_LABELS,
+  LOADING_STATUS_LABELS,
+  LOADING_STATUS_STYLES,
+  STATUS_COLORS,
+} from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
@@ -39,17 +44,6 @@ import {
 } from "./actions";
 import { EDITABLE_BATCH_STATUSES, type BatchRow, type OfcRow, type Ref } from "./order-detail-client";
 
-const LOADING_STATUS_LABELS: Record<string, string> = {
-  total: "Total",
-  partial: "Partial",
-  none: "None",
-};
-
-const LOADING_STATUS_STYLES: Record<string, string> = {
-  total: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  partial: "border-amber-200 bg-amber-50 text-amber-700",
-  none: "border-slate-200 bg-slate-50 text-slate-500",
-};
 
 const PAGE_SIZE = 8;
 

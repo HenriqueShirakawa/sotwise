@@ -43,6 +43,8 @@ type StepRow = {
 /** Data que a lista e os filtros usam pra uma etapa já cumprida. */
 const stepDate = (s: StepRow | undefined) => s?.completed_on ?? s?.estimated_date ?? null;
 
+export const metadata = { title: "Shipments" };
+
 export default async function ShipmentsPage() {
   const { profile } = await requireFeature("shipments");
   const admin = createAdminClient();
@@ -225,7 +227,7 @@ export default async function ShipmentsPage() {
       shipment_model_id: s.shipment_model_id,
       loading_date: st.loading_date?.estimated_date ?? st.loading_date?.completed_on ?? null,
       ship_date: st.shipping_date?.completed_on ?? st.shipping_date?.estimated_date ?? null,
-      eta: st.eta_brazil?.estimated_date ?? st.eta_brazil?.completed_on ?? null,
+      eta: st.eta_brazil?.completed_on ?? st.eta_brazil?.estimated_date ?? null,
       // Só filtráveis — não têm coluna na lista (docs §3.10.2).
       bl_date: stepDate(st.bl),
       ata_date: stepDate(st.ata_brazil),

@@ -308,7 +308,10 @@ export async function updateChecklistStep(
   const { error } = await admin.from("order_checklist_steps").update(update).eq("id", stepId);
   if (error) return { ok: false, error: error.message };
 
+  // Atribuir/trocar responsável ou concluir/reabrir uma etapa muda a To do list
+  // (pendências do responsável) — revalida pra ela refletir na hora, sem F5.
   revalidatePath(path(orderId));
+  revalidatePath("/todo");
   return { ok: true };
 }
 
@@ -354,14 +357,17 @@ export async function uploadStepAttachment(
 }
 
 export async function getAttachmentDownloadUrl(
-  filePath: string
+  filePath: string,
+  fileName?: string | null
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   await requireFeature("orders", "view");
   const admin = createAdminClient();
 
+  // `{ download }` faz o Storage servir com Content-Disposition: attachment —
+  // sem isso a URL abria inline (aba em branco) em vez de baixar.
   const { data, error } = await admin.storage
     .from(DOCUMENTS_BUCKET)
-    .createSignedUrl(filePath, 60);
+    .createSignedUrl(filePath, 60, { download: fileName ?? true });
   if (error || !data) return { ok: false, error: error?.message ?? "Failed to sign URL." };
 
   return { ok: true, url: data.signedUrl };
@@ -457,7 +463,12 @@ export async function upsertEtdInfo(
   const historyError = await writeEtdHistory(admin, saved, changed, "row", session.userId);
   if (historyError) return { ok: false, error: historyError };
 
+  // O ETD aparece na lista de Orders (coluna ETD) e é a própria tela ETD
+  // Factories — revalida as duas, senão só o detalhe atualiza e as listas ficam
+  // velhas até um F5.
   revalidatePath(path(orderId));
+  revalidatePath("/orders");
+  revalidatePath("/etd-factories");
   return { ok: true };
 }
 
@@ -570,6 +581,31 @@ export async function updateEtdInfoWithReason(
 
   if (!remarks.trim()) return { ok: false, error: "Remarks is required." };
 
+  // ETD (current_date) de lote já embarcado não se altera: a data de saída
+  // virou fato. Só a data trava — Ready/Inspection/remarks seguem corrigíveis
+  // por aqui (é a via oficial de correção). O join é ofc → batch (ver
+  // EDITABLE_BATCH_STATUSES / assertBatchEditable).
+  if (field === "current_date") {
+    const { data: ofcRow } = await admin
+      .from("order_factory_category")
+      .select("batch_id")
+      .eq("id", ofcId)
+      .maybeSingle();
+    if (ofcRow?.batch_id) {
+      const { data: batch } = await admin
+        .from("batches")
+        .select("status")
+        .eq("id", ofcRow.batch_id)
+        .maybeSingle();
+      if (batch && !EDITABLE_BATCH_STATUSES.includes(batch.status)) {
+        return {
+          ok: false,
+          error: "The ETD can't be changed after the batch has shipped.",
+        };
+      }
+    }
+  }
+
   const { data: existing } = await admin
     .from("etd_info")
     .select(
@@ -597,7 +633,11 @@ export async function updateEtdInfoWithReason(
   const historyError = await writeEtdHistory(admin, saved, [field], "modal", session.userId);
   if (historyError) return { ok: false, error: historyError };
 
+  // Mesma razão do upsertEtdInfo: a edição do ETD reflete na lista de Orders e
+  // na tela ETD Factories, não só no detalhe.
   revalidatePath(path(orderId));
+  revalidatePath("/orders");
+  revalidatePath("/etd-factories");
   return { ok: true };
 }
 

@@ -4,6 +4,8 @@ import { fetchAll } from "@/lib/fetch-all";
 
 import { ContactsClient, type ContactRow } from "./contacts-client";
 
+export const metadata = { title: "Contacts" };
+
 export default async function ContactsPage() {
   await requireFeature("registration");
 

@@ -4,6 +4,8 @@ import { fetchAll } from "@/lib/fetch-all";
 
 import { ExportersClient } from "./exporters-client";
 
+export const metadata = { title: "Exporters" };
+
 export default async function ExportersPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

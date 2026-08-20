@@ -5,6 +5,8 @@ import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
 import { createOrderTypes, updateOrderType, deleteOrderType } from "./actions";
 
+export const metadata = { title: "Order Type" };
+
 export default async function OrderTypesPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

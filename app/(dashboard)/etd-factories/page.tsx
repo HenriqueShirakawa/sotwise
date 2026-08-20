@@ -78,6 +78,8 @@ function buildRows(
   return rows;
 }
 
+export const metadata = { title: "ETD factories" };
+
 export default async function EtdFactoriesPage() {
   const { profile } = await requireFeature("etd_factories");
   const admin = createAdminClient();

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import type { BatchStatus, OrderStatus } from "@/types/database";
+import type { BatchStatus, LoadingStatus, OrderStatus } from "@/types/database";
 
 /**
  * Paleta de status compartilhada (Orders + Batches). Chave = label exibido.
@@ -51,4 +51,21 @@ export const BATCH_STATUS_LABELS: Record<BatchStatus, string> = {
   in_transit: "In Transit",
   delivered: "Delivered",
   canceled: "Canceled",
+};
+
+/**
+ * Carga do embarque (`order_factory_category.loading_status`): se aquela entrada
+ * Factory×Category embarcou Total, Parcial ou nada (docs §3.7.x). Definida por
+ * entrada, não pelo lote — um lote pode misturar Total e Partial.
+ */
+export const LOADING_STATUS_LABELS: Record<LoadingStatus, string> = {
+  total: "Total",
+  partial: "Partial",
+  none: "None",
+};
+
+export const LOADING_STATUS_STYLES: Record<LoadingStatus, string> = {
+  total: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  partial: "border-amber-200 bg-amber-50 text-amber-700",
+  none: "border-slate-200 bg-slate-50 text-slate-500",
 };

@@ -6,6 +6,7 @@ import { ChevronDown, Paperclip, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { triggerDownload } from "@/lib/download";
 
 import {
   deleteStepAttachment,
@@ -57,10 +58,10 @@ function FactoryAttachments({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
-  function download(a: { file_path: string }) {
+  function download(a: { file_path: string; file_name?: string | null }) {
     startTransition(async () => {
-      const res = await getAttachmentDownloadUrl(a.file_path);
-      if (res.ok) window.open(res.url, "_blank");
+      const res = await getAttachmentDownloadUrl(a.file_path, a.file_name);
+      if (res.ok) triggerDownload(res.url, a.file_name);
       else toast.error(res.error);
     });
   }

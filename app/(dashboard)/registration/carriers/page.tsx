@@ -5,6 +5,8 @@ import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
 import { createCarriers, updateCarrier, deleteCarrier } from "./actions";
 
+export const metadata = { title: "Carriers" };
+
 export default async function CarriersPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

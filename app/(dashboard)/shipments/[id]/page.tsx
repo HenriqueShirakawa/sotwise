@@ -56,13 +56,15 @@ type StepRow = {
   consolidation_point_id: string | null;
   city_id: string | null;
   pol_id: string | null;
-  carrier_agent_id: string | null;
+  carrier_id: string | null;
   agent_brazil_id: string | null;
   agent_china_id: string | null;
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
 };
+
+export const metadata = { title: "Shipment" };
 
 export default async function ShipmentDetailPage({
   params,
@@ -112,7 +114,7 @@ export default async function ShipmentDetailPage({
       .from("pre_loading_checklist_steps")
       .select(
         "id, step, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
-          "consolidation_point_id, city_id, pol_id, carrier_agent_id, agent_brazil_id, " +
+          "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
           "agent_china_id, contact_brazil_id, contact_china_id, booking_number"
       )
       .eq("pre_loading_id", pl.id)
@@ -133,9 +135,11 @@ export default async function ShipmentDetailPage({
     shipment.shipment_model_id
       ? admin.from("shipment_models").select("name").eq("id", shipment.shipment_model_id).single()
       : Promise.resolve({ data: null }),
-    shipment.carrier_id
-      ? admin.from("carriers").select("name").eq("id", shipment.carrier_id).single()
-      : Promise.resolve({ data: null }),
+    // Todos os carriers (id → nome): resolve tanto o carrier do embarque
+    // (Transport) quanto o da etapa Agents, que agora é escolha direta.
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("carriers").select("id, name").range(from, to)
+    ),
     // Cadastros usados pra resolver os valores das etapas herdadas do PL:
     // paginados para nenhum ficar cortado no teto de 1000 do PostgREST — nome
     // que não vem do mapa apareceria como "—" na tela (ver lib/fetch-all).
@@ -170,6 +174,7 @@ export default async function ShipmentDetailPage({
   const cityNameById = new Map(cityRes.map((c) => [c.id, c.name]));
   const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
   const agentNameById = new Map(agentRes.map((a) => [a.id, a.name]));
+  const carrierNameById = new Map(carrierRes.map((c) => [c.id, c.name]));
   const contactNameById = new Map(contactRes.map((c) => [c.id, c.name]));
   const contactCountByAgent: Record<string, number> = {};
   for (const ac of agentContactRes) {
@@ -325,7 +330,7 @@ export default async function ShipmentDetailPage({
         return s.booking_number;
       case "agents": {
         const parts = [
-          s.carrier_agent_id && `Carrier: ${agentNameById.get(s.carrier_agent_id) ?? "—"}`,
+          s.carrier_id && `Carrier: ${carrierNameById.get(s.carrier_id) ?? "—"}`,
           s.agent_brazil_id && `Brazil: ${agentNameById.get(s.agent_brazil_id) ?? "—"}`,
           s.contact_brazil_id && `(${contactNameById.get(s.contact_brazil_id) ?? "—"})`,
           s.agent_china_id && `China: ${agentNameById.get(s.agent_china_id) ?? "—"}`,
@@ -391,8 +396,8 @@ export default async function ShipmentDetailPage({
       stepByKey.get("shipping_date")?.estimated_date ??
       null,
     eta:
-      stepByKey.get("eta_brazil")?.estimated_date ??
       stepByKey.get("eta_brazil")?.completed_on ??
+      stepByKey.get("eta_brazil")?.estimated_date ??
       null,
     delivery: stepByKey.get("delivered")?.completed_on ?? null,
   };
@@ -418,7 +423,7 @@ export default async function ShipmentDetailPage({
         clients,
         pod: podRes.data?.name ?? null,
         ship_model: modelRes.data?.name ?? null,
-        carrier: carrierRes.data?.name ?? null,
+        carrier: shipment.carrier_id ? (carrierNameById.get(shipment.carrier_id) ?? null) : null,
         container_number: shipment.container_number,
         leader: shipment.leader_id ? (profileNameById.get(shipment.leader_id) ?? null) : null,
         signer: shipment.signer_id ? (profileNameById.get(shipment.signer_id) ?? null) : null,

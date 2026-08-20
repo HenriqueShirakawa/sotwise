@@ -3,7 +3,7 @@ import { Ship } from "lucide-react";
 
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "Sign in · Sotwise" };
+export const metadata: Metadata = { title: "Sign in" };
 
 const ERROR_MESSAGES: Record<string, string> = {
   blocked: "This account is blocked. Contact an administrator.",

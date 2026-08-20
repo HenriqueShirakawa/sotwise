@@ -38,7 +38,7 @@ type StepRow = {
   consolidation_point_id: string | null;
   city_id: string | null;
   pol_id: string | null;
-  carrier_agent_id: string | null;
+  carrier_id: string | null;
   agent_brazil_id: string | null;
   agent_china_id: string | null;
   contact_brazil_id: string | null;
@@ -60,7 +60,7 @@ function emptyStep(step: ChecklistStep): PlStepRow {
     consolidation_point_id: null,
     city_id: null,
     pol_id: null,
-    carrier_agent_id: null,
+    carrier_id: null,
     agent_brazil_id: null,
     agent_china_id: null,
     contact_brazil_id: null,
@@ -68,6 +68,8 @@ function emptyStep(step: ChecklistStep): PlStepRow {
     booking_number: null,
   };
 }
+
+export const metadata = { title: "Pre-loading" };
 
 export default async function PreLoadingChecklistPage({
   params,
@@ -121,7 +123,7 @@ export default async function PreLoadingChecklistPage({
       .from("pre_loading_checklist_steps")
       .select(
         "id, step, done, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
-          "consolidation_point_id, city_id, pol_id, carrier_agent_id, agent_brazil_id, " +
+          "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
           "agent_china_id, contact_brazil_id, contact_china_id, booking_number"
       )
       .eq("pre_loading_id", id)
@@ -327,7 +329,6 @@ export default async function PreLoadingChecklistPage({
         .filter((a) => a.location === "china")
         .map((a) => ({ id: a.id, name: a.name }))
         .sort(byName)}
-      agents={allAgents.map((a) => ({ id: a.id, name: a.name })).sort(byName)}
       contactsByAgent={contactsByAgent}
       carriers={carrierRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
       shipmentModels={shipmentModelRes

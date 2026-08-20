@@ -56,9 +56,11 @@ type StepRow = {
   pol_id: string | null;
   agent_brazil_id: string | null;
   agent_china_id: string | null;
-  carrier_agent_id: string | null;
+  carrier_id: string | null;
   booking_number: string | null;
 };
+
+export const metadata = { title: "Pre-Loading" };
 
 export default async function PreLoadingPage() {
   const { profile } = await requireFeature("pre_loading");
@@ -72,7 +74,6 @@ export default async function PreLoadingPage() {
     plBatches,
     batchRes,
     orderRes,
-    carrierAgentRes,
     podRes,
     factoryRes,
     polRes,
@@ -103,7 +104,7 @@ export default async function PreLoadingPage() {
       admin
         .from("pre_loading_checklist_steps")
         .select(
-          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_agent_id, booking_number"
+          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_id, booking_number"
         )
         .in("step", LIST_STEPS)
         .range(from, to)
@@ -120,9 +121,6 @@ export default async function PreLoadingPage() {
     ),
     fetchAll<{ id: string; po_number: string }>((from, to) =>
       admin.from("orders").select("id, po_number").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ carrier_id: string; agent_id: string }>((from, to) =>
-      admin.from("carrier_agents").select("carrier_id, agent_id").range(from, to)
     ),
     // Cadastros dos seletores e dos filtros: paginados para nenhum ficar cortado
     // no teto de 1000 do PostgREST (ver lib/fetch-all).
@@ -180,15 +178,6 @@ export default async function PreLoadingPage() {
   const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
   const orderIdByBatchId = new Map(batchRes.map((b) => [b.id, b.order_id]));
 
-  // agente -> carriers que o carregam (M-N via carrier_agents) — usado pra
-  // resolver o filtro "Carrier" a partir do carrier_agent_id gravado na etapa Agents.
-  const carrierIdsByAgentId = new Map<string, string[]>();
-  for (const ca of carrierAgentRes) {
-    const arr = carrierIdsByAgentId.get(ca.agent_id) ?? [];
-    arr.push(ca.carrier_id);
-    carrierIdsByAgentId.set(ca.agent_id, arr);
-  }
-
   const stepsByPreLoading = new Map<string, Partial<Record<(typeof LIST_STEPS)[number], StepRow>>>();
   for (const s of stepRows) {
     const entry = stepsByPreLoading.get(s.pre_loading_id) ?? {};
@@ -239,9 +228,9 @@ export default async function PreLoadingPage() {
     const consPointId = steps.consolidation_point?.consolidation_point_id ?? null;
     const polId = steps.port_of_loading?.pol_id ?? null;
     const agentsStep = steps.agents;
-    const carrierIds = agentsStep?.carrier_agent_id
-      ? (carrierIdsByAgentId.get(agentsStep.carrier_agent_id) ?? [])
-      : [];
+    // O Carrier agora é escolha direta na etapa Agents (antes era derivado do
+    // agente via carrier_agents). Mantido como array de 1 p/ o filtro da lista.
+    const carrierIds = agentsStep?.carrier_id ? [agentsStep.carrier_id] : [];
     const plClientsList = clientsByPreLoading.get(pl.id) ?? [];
     const plOrderIds = [...(orderIdsByPreLoading.get(pl.id) ?? [])];
 

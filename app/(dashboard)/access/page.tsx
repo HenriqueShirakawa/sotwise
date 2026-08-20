@@ -23,6 +23,8 @@ function toGrantRow(row: GrantRow): GrantRow {
   };
 }
 
+export const metadata = { title: "Access" };
+
 export default async function AccessPage() {
   const session = await requireOwner();
   const admin = createAdminClient();
