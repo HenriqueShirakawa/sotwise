@@ -1,3 +1,4 @@
+import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, OrderStatus } from "@/types/database";
 
@@ -89,6 +90,18 @@ export async function syncOrderStatus(admin: Admin, orderIds: string[]): Promise
     const { error } = await admin.from("orders").update({ status }).in("id", list);
     if (error) return error.message;
   }
+
+  /**
+   * Notificação ao cliente (Fase 2.1). Fica AQUI, e não em cada action, pela
+   * mesma razão que a captura ficou num trigger: esta função é o único ponto
+   * por onde os nove caminhos de escrita de status já passam.
+   *
+   * Agendado para depois da resposta e sem `await` no resultado — mandar e-mail
+   * não pode atrasar (nem derrubar) a ação do usuário. O evento em si já está
+   * salvo na outbox pelo trigger; aqui é só o empurrão para a fila andar.
+   */
+  await scheduleClientNotificationDispatch();
+
   return null;
 }
 
