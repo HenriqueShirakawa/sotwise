@@ -1010,6 +1010,38 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_snapshot_runs"]["Insert"]>;
         Relationships: [];
       };
+      /** Outbox dos avanços de lote a comunicar ao cliente (Fase 2.1). */
+      client_notifications: {
+        Row: {
+          id: UUID;
+          batch_id: UUID;
+          order_id: UUID;
+          client_id: UUID;
+          from_status: BatchStatus | null;
+          to_status: BatchStatus;
+          created_at: Timestamp;
+          /** null = pendente na fila. */
+          sent_at: Timestamp | null;
+          attempts: number;
+          last_error: string | null;
+          recipients: string[];
+        };
+        Insert: {
+          id?: UUID;
+          batch_id: UUID;
+          order_id: UUID;
+          client_id: UUID;
+          from_status?: BatchStatus | null;
+          to_status: BatchStatus;
+          created_at?: Timestamp;
+          sent_at?: Timestamp | null;
+          attempts?: number;
+          last_error?: string | null;
+          recipients?: string[];
+        };
+        Update: Partial<Database["public"]["Tables"]["client_notifications"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<never, never>;
     Functions: Record<never, never>;
