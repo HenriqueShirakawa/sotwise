@@ -670,14 +670,9 @@ export function ShipmentDetailClient({
                               disabled={
                                 pending || (!s.estimated_date && !s.completed_on)
                               }
-                              // "Shipping date" e "Delivered" registram o fato
-                              // consumado (embarque/entrega): a conclusão não pode
-                              // ser futura. O servidor também recusa.
-                              max={
-                                s.step === "shipping_date" || s.step === "delivered"
-                                  ? todayIso()
-                                  : undefined
-                              }
+                              // "Completed on" é fato consumado — nunca futuro.
+                              // O servidor também recusa (validateStepDates).
+                              max={todayIso()}
                               placeholder={
                                 s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
                               }

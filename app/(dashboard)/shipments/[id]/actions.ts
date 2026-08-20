@@ -5,7 +5,6 @@ import { revalidatePath } from "next/cache";
 import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
-import { todayIso } from "@/lib/format";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -139,18 +138,6 @@ export async function saveShipmentStep(
     patch
   );
   if (dateError) return { ok: false, error: dateError };
-
-  // "Shipping date" e "Delivered" registram um fato consumado (embarque/entrega):
-  // o "Completed on" é a data efetiva e não pode ser futura. Travado no servidor —
-  // a UI também limita (max=hoje), mas a action é a autoridade (§docs 3.10.4).
-  if (
-    "completed_on" in patch &&
-    patch.completed_on &&
-    (step === "shipping_date" || step === "delivered") &&
-    patch.completed_on > todayIso()
-  ) {
-    return { ok: false, error: "The completion date can't be in the future." };
-  }
 
   const completedOn =
     "completed_on" in patch ? (patch.completed_on ?? null) : (existing?.completed_on ?? null);

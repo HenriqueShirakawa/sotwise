@@ -18,7 +18,7 @@ import {
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { formatDateNumeric } from "@/lib/format";
+import { formatDateNumeric, todayIso } from "@/lib/format";
 import { triggerDownload } from "@/lib/download";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import {
@@ -1439,6 +1439,8 @@ export function OrderDetailClient({
                             disabled={
                               stepPending || (!s.estimated_date && !s.completed_on)
                             }
+                            // "Completed on" é fato consumado — nunca futuro.
+                            max={todayIso()}
                             placeholder={
                               s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
                             }
