@@ -638,11 +638,12 @@ function EditBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
+                <span>Loading</span>
                 {/* Reserva a largura da lixeira das linhas (size-7), senão o
                     cabeçalho distribui as colunas numa medida e as linhas noutra. */}
                 <span className="w-7" />
@@ -653,7 +654,7 @@ function EditBatchModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
+                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
                   >
                     <SmallField label="Category" className="max-sm:col-start-1">
                       <span className="block truncate text-slate-700">{r.category_name}</span>
@@ -668,6 +669,11 @@ function EditBatchModal({
                     </SmallField>
                     <SmallField label="Batch No." className="max-sm:col-start-1">
                       <span className="text-slate-700">{batch?.batch_number}</span>
+                    </SmallField>
+                    {/* Total/Partial só existe depois do embarque; antes disso o
+                        badge cai no traço. */}
+                    <SmallField label="Loading" className="max-sm:col-start-1">
+                      <LoadingStatusBadge status={r.loading_status} />
                     </SmallField>
                     <Button
                       variant="ghost"
@@ -875,11 +881,12 @@ function CreateBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
+                <span>Loading</span>
                 {/* Reserva a largura da lixeira das linhas (size-7), senão o
                     cabeçalho distribui as colunas numa medida e as linhas noutra. */}
                 <span className="w-7" />
@@ -890,7 +897,7 @@ function CreateBatchModal({
                 rows.map((r) => (
                   <div
                     key={r.tempId}
-                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
+                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
                   >
                     <SmallField label="Category" className="max-sm:col-start-1">
                       <span className="block truncate text-slate-700">{r.category_name}</span>
@@ -905,6 +912,11 @@ function CreateBatchModal({
                     </SmallField>
                     <SmallField label="Batch No." className="max-sm:col-start-1">
                       <span className="text-slate-700">{batchNumber}</span>
+                    </SmallField>
+                    {/* Lote novo nunca embarcou — o Total/Partial só é atribuído
+                        no embarque, então aqui é sempre o traço. */}
+                    <SmallField label="Loading" className="max-sm:col-start-1">
+                      <LoadingStatusBadge status={null} />
                     </SmallField>
                     <Button
                       variant="ghost"
