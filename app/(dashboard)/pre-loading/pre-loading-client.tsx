@@ -177,6 +177,11 @@ export function PreLoadingClient({
   const openCreate = () => {
     setEditing(null);
     setFormOpen(true);
+    // A lista de lotes selecionáveis é prop do render da página; se um lote foi
+    // criado/movido pra Production com esta página já aberta, ela estaria velha.
+    // Rebusca ao abrir o modal — o modal continua aberto e recebe os dados novos
+    // (a página é dinâmica, então o refresh traz o estado atual do banco).
+    router.refresh();
   };
   const openEdit = (row: PreLoadingRow) => {
     setEditing(row);

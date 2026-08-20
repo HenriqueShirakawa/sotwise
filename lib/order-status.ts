@@ -43,9 +43,12 @@ export function rollupOrderStatus(
   if (some("in_transit")) return "partially_shipped";
   if (all("preloading")) return "pre_loading";
   if (some("preloading")) return "partially_preloading";
-  if (all("in_production")) return "in_production";
-  // Sobra a fase inicial: só in_negotiation, ou a mistura
-  // in_negotiation + in_production — que ainda não é "todos em produção".
+  // Neste ponto só restam lotes in_negotiation e/ou in_production (as fases
+  // seguintes já retornaram acima). Basta UM lote em produção para a Order não
+  // voltar a in_negotiation — regra do cliente: adicionar um lote novo (que
+  // nasce in_negotiation) não regride um pedido que já tem lote adiante. Só
+  // volta a in_negotiation quando TODOS os lotes ativos estão em in_negotiation.
+  if (some("in_production")) return "in_production";
   return "in_negotiation";
 }
 
