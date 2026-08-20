@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+
+import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
 import {
   flexRender,
   getCoreRowModel,
@@ -162,6 +164,21 @@ export function PreLoadingClient({
   initialColumns: VisibilityState;
 }) {
   const router = useRouter();
+
+  // Realtime: a lista reflete PL criado/editado/excluído/embarcado na hora,
+  // mesmo com a tela parada e aberta. Debounce curto coalesce rajadas de pings.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  usePreLoadingRealtime(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 300);
+  });
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    },
+    []
+  );
+
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<PreLoadingFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);

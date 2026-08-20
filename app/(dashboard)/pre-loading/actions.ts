@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireFeature } from "@/lib/dal";
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
+import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadSelectableBatchOptions } from "@/domain/pre-loadings/selectable-batches";
 import {
@@ -191,6 +192,7 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
 
   revalidatePath(PATH);
   revalidatePath("/orders"); // os lotes selecionados mudaram de fase
+  await broadcastPreLoadingPing(); // lista Pre-loading aberta reflete o PL novo
   return { ok: true, id: preLoadingId };
 }
 
@@ -224,6 +226,7 @@ export async function updatePreLoading(
 
   revalidatePath(PATH);
   revalidatePath("/orders"); // tirar lote do PL pode mexer no status da Order
+  await broadcastPreLoadingPing();
   return { ok: true };
 }
 
@@ -256,5 +259,6 @@ export async function deletePreLoading(id: string): Promise<ActionResult> {
 
   revalidatePath(PATH);
   revalidatePath("/orders");
+  await broadcastPreLoadingPing(); // PL excluído sai da lista na hora
   return { ok: true };
 }

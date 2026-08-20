@@ -6,6 +6,7 @@ import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
+import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
@@ -169,6 +170,9 @@ export async function saveShipmentStep(
   for (const p of paths(shipmentId)) revalidatePath(p);
   // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
   revalidatePath("/todo");
+  // Realtime: colunas da lista Shipments (datas/status) mudaram — atualiza quem
+  // está com ela aberta e parada.
+  await broadcastShipmentPing();
   return { ok: true };
 }
 
@@ -430,5 +434,7 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   revalidatePath("/shipments");
   revalidatePath("/pre-loading");
   revalidatePath("/orders");
+  // Realtime: embarque excluído sai da lista Shipments na hora.
+  await broadcastShipmentPing();
   return { ok: true };
 }
