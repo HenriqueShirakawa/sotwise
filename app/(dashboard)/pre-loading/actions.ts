@@ -6,6 +6,7 @@ import { requireFeature } from "@/lib/dal";
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { loadSelectableBatchOptions } from "@/domain/pre-loadings/selectable-batches";
 import {
   preLoadingSchema,
   type ActionResult,
@@ -13,10 +14,24 @@ import {
   type PreLoadingInput,
 } from "@/domain/pre-loadings/schema";
 
+import type { BatchOption } from "./pre-loading-form-modal";
+
 const PATH = "/pre-loading";
 const PAGE = 1000;
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+/**
+ * Lista atual de lotes selecionáveis, buscada na hora. O modal Create/Edit
+ * Pre-loading chama isto ao abrir para não depender da prop do render inicial
+ * da página — um lote criado/movido pra Production com a página já aberta
+ * aparece sem F5.
+ */
+export async function getSelectableBatchOptions(): Promise<BatchOption[]> {
+  await requireFeature("pre_loading");
+  const admin = createAdminClient();
+  return loadSelectableBatchOptions(admin);
+}
 
 /**
  * Próximo `pl_number`: o maior número existente + 1. Os PLs importados do

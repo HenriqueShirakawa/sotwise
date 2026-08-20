@@ -44,7 +44,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
 
-import { deletePreLoading } from "./actions";
+import { deletePreLoading, getSelectableBatchOptions } from "./actions";
 import { PreLoadingFormModal, type BatchOption } from "./pre-loading-form-modal";
 import {
   activeFilterCount,
@@ -174,18 +174,26 @@ export function PreLoadingClient({
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PreLoadingRow | null>(null);
 
+  // A lista de lotes selecionáveis vem como prop do render inicial da página; se
+  // um lote foi criado/movido pra Production com esta página já aberta, a prop
+  // estaria velha. Ao abrir o modal, rebuscamos a lista atual do banco (server
+  // action) e usamos ela por cima da prop — não depende de refresh do route.
+  const [freshBatches, setFreshBatches] = useState<BatchOption[] | null>(null);
+  const refreshBatchOptions = () => {
+    getSelectableBatchOptions()
+      .then(setFreshBatches)
+      .catch(() => {}); // falha silenciosa: cai na prop do render
+  };
+
   const openCreate = () => {
     setEditing(null);
     setFormOpen(true);
-    // A lista de lotes selecionáveis é prop do render da página; se um lote foi
-    // criado/movido pra Production com esta página já aberta, ela estaria velha.
-    // Rebusca ao abrir o modal — o modal continua aberto e recebe os dados novos
-    // (a página é dinâmica, então o refresh traz o estado atual do banco).
-    router.refresh();
+    refreshBatchOptions();
   };
   const openEdit = (row: PreLoadingRow) => {
     setEditing(row);
     setFormOpen(true);
+    refreshBatchOptions();
   };
 
   const filterCount = activeFilterCount(filters);
@@ -432,7 +440,7 @@ export function PreLoadingClient({
         clients={clients}
         profiles={profiles}
         pods={pods}
-        batchOptions={batchOptions}
+        batchOptions={freshBatches ?? batchOptions}
       />
 
       <FiltersModal
