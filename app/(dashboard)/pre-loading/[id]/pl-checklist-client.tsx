@@ -352,7 +352,11 @@ export function PlChecklistClient({
   const cityStepId = steps.find((s) => s.step === "city")?.city_id ?? null;
   const savedPolId = steps.find((s) => s.step === "port_of_loading")?.pol_id ?? null;
   const polOptions = useMemo<Ref[]>(() => {
-    const inCity = cityStepId ? pols.filter((p) => p.cityId === cityStepId) : pols;
+    const filteredByCity = cityStepId ? pols.filter((p) => p.cityId === cityStepId) : pols;
+    // Cidade sem NENHUM porto vinculado (city_pols) travava a etapa — lista
+    // vazia, nada pra escolher. Nesse caso cai na lista completa pra não
+    // bloquear o fluxo: melhor deixar escolher do que impedir de concluir.
+    const inCity = filteredByCity.length > 0 ? filteredByCity : pols;
     // Um representante por nome de porto. Se o pol já salvo estiver no grupo, ele
     // é o representante — assim o valor selecionado sempre casa com uma opção.
     const byName = new Map<string, PolRef>();
