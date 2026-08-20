@@ -424,7 +424,7 @@ function ViewBatchModal({
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span>Loading</span>
+                <span>Status</span>
               </div>
               {pageRows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries for this batch.</p>
@@ -448,7 +448,7 @@ function ViewBatchModal({
                     <SmallField label="Batch No.">
                       <span className="text-slate-700">{batch?.batch_number}</span>
                     </SmallField>
-                    <SmallField label="Loading">
+                    <SmallField label="Status">
                       <LoadingStatusBadge status={r.loading_status} />
                     </SmallField>
                   </div>
@@ -643,7 +643,7 @@ function EditBatchModal({
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span>Loading</span>
+                <span>Status</span>
                 {/* Reserva a largura da lixeira das linhas (size-7), senão o
                     cabeçalho distribui as colunas numa medida e as linhas noutra. */}
                 <span className="w-7" />
@@ -672,7 +672,7 @@ function EditBatchModal({
                     </SmallField>
                     {/* Total/Partial só existe depois do embarque; antes disso o
                         badge cai no traço. */}
-                    <SmallField label="Loading" className="max-sm:col-start-1">
+                    <SmallField label="Status" className="max-sm:col-start-1">
                       <LoadingStatusBadge status={r.loading_status} />
                     </SmallField>
                     <Button
@@ -886,7 +886,7 @@ function CreateBatchModal({
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span>Loading</span>
+                <span>Status</span>
                 {/* Reserva a largura da lixeira das linhas (size-7), senão o
                     cabeçalho distribui as colunas numa medida e as linhas noutra. */}
                 <span className="w-7" />
@@ -915,7 +915,7 @@ function CreateBatchModal({
                     </SmallField>
                     {/* Lote novo nunca embarcou — o Total/Partial só é atribuído
                         no embarque, então aqui é sempre o traço. */}
-                    <SmallField label="Loading" className="max-sm:col-start-1">
+                    <SmallField label="Status" className="max-sm:col-start-1">
                       <LoadingStatusBadge status={null} />
                     </SmallField>
                     <Button
