@@ -6,6 +6,8 @@ import { STEP_LABELS } from "@/lib/checklist";
 import { isStepChecked, plStepFacts, validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatus } from "@/lib/order-status";
+import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
+import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 
@@ -90,6 +92,8 @@ export async function savePreLoadingStep(
   revalidatePath("/pre-loading");
   // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
   revalidatePath("/todo");
+  // Realtime: colunas da lista Pre-loading (datas/booking) mudaram.
+  await broadcastPreLoadingPing();
   return { ok: true };
 }
 
@@ -511,5 +515,8 @@ export async function confirmShipping(
   // Confirmar o embarque CRIA o Shipment — a lista de Shipments precisa
   // refletir o novo registro (senão só aparece após um F5).
   revalidatePath("/shipments");
+  // Realtime: novo embarque na lista Shipments E o PL sai da lista Pre-loading.
+  await broadcastShipmentPing();
+  await broadcastPreLoadingPing();
   return { ok: true };
 }

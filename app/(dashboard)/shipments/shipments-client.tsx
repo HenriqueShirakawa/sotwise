@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
 import {
   flexRender,
   getCoreRowModel,
@@ -154,6 +156,21 @@ export function ShipmentsClient({
   shipmentModels: Ref[];
 }) {
   const router = useRouter();
+
+  // Realtime: a lista reflete embarque criado/alterado/excluído na hora, mesmo
+  // com a tela parada e aberta. Debounce curto coalesce rajadas de pings.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useShipmentsRealtime(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 300);
+  });
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    },
+    []
+  );
+
   const [search, setSearch] = useState("");
   const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
   const [filtersOpen, setFiltersOpen] = useState(false);
