@@ -695,8 +695,8 @@ create trigger trg_orders_updated_at before update on public.orders
 >
 > | Status da Order | Condição sobre os lotes |
 > |---|---|
-> | `in_negotiation` | Estado inicial, ao criar a Order — e enquanto os lotes não estiverem **todos** em produção |
-> | `in_production` | **Todos** os lotes em `in_production` (e etapas Order/PO/PI/deposit payment completas — deposit payment pode estar "NA" em casos específicos) |
+> | `in_negotiation` | **Só enquanto TODOS os lotes ativos estiverem em `in_negotiation`** |
+> | `in_production` | Ao menos 1 lote em `in_production` e os demais em `in_negotiation` (nenhum lote além dessas duas fases) |
 > | `partially_preloading` | Ao menos 1 lote em `preloading` e os demais fora dessa fase |
 > | `pre_loading` | **Todos** os lotes em `preloading` |
 > | `partially_shipped` | Ao menos 1 lote em `in_transit` e os demais ainda não |
@@ -710,6 +710,13 @@ create trigger trg_orders_updated_at before update on public.orders
 > um lote que ainda está em produção. Implementação: `rollupOrderStatus()` em
 > `lib/order-status.ts`, chamada por `syncOrderStatus()` em todo ponto que muda
 > o status ou o conjunto de lotes de uma Order.
+>
+> ⚠️ **Não regride para `in_negotiation` (decisão do cliente, 2026-08-20):** basta
+> **um** lote sair de `in_negotiation` para a Order não voltar mais a esse status.
+> Em especial, **adicionar um lote novo** (que nasce `in_negotiation`) a um pedido
+> que já tem lote em produção **não** derruba a Order de volta para negociação — a
+> mistura `in_negotiation + in_production` resolve como `in_production`. A Order só
+> volta a `in_negotiation` quando **todos** os lotes ativos estão nessa fase.
 >
 > Implementação: coluna materializada em `orders.status`, recalculada por trigger sempre que um `batches.status` mudar (ou via função chamada no fim de cada transição de lote). `pre_loading` do batch **não aparece named diretamente** no status da Order — ele só conta como "ainda em produção" até virar `in_transit`.
 >
