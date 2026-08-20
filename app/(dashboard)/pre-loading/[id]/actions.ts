@@ -508,5 +508,8 @@ export async function confirmShipping(
   revalidatePath(`/pre-loading/${preLoadingId}`);
   revalidatePath("/pre-loading");
   revalidatePath("/orders");
+  // Confirmar o embarque CRIA o Shipment — a lista de Shipments precisa
+  // refletir o novo registro (senão só aparece após um F5).
+  revalidatePath("/shipments");
   return { ok: true };
 }
