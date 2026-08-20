@@ -19,6 +19,19 @@ function path(orderId: string) {
   return `/orders/${orderId}`;
 }
 
+/**
+ * Revalida tudo que um lote alimenta: o detalhe/lista de Orders (rollup de
+ * status) e, quando o lote está em in_production/preloading, a lista de seleção
+ * do Create Pre-loading e a tela ETD Factories (SELECTABLE/ACTIVE_BATCH_STATUSES).
+ * Sem isso, mover um lote pra Production só aparecia nessas telas após um F5.
+ */
+function revalidateBatchViews(orderId: string) {
+  revalidatePath(path(orderId));
+  revalidatePath("/orders");
+  revalidatePath("/pre-loading");
+  revalidatePath("/etd-factories");
+}
+
 /** Batch só é editável (status ou Factory x Category) em in_negotiation/in_production. */
 async function assertBatchEditable(batchId: string) {
   const admin = createAdminClient();
@@ -50,8 +63,7 @@ export async function updateBatchStatus(
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
-  revalidatePath(path(orderId));
-  revalidatePath("/orders");
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -68,7 +80,7 @@ export async function updateBatchNumber(
   const { error } = await admin.from("batches").update({ batch_number }).eq("id", batchId);
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath(path(orderId));
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -107,8 +119,7 @@ export async function createBatch(
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
-  revalidatePath(path(orderId));
-  revalidatePath("/orders");
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -130,8 +141,7 @@ export async function deleteBatch(orderId: string, batchId: string): Promise<Act
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
-  revalidatePath(path(orderId));
-  revalidatePath("/orders");
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -151,7 +161,7 @@ export async function updateOrderFactoryCategoryBatch(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath(path(orderId));
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -221,8 +231,7 @@ export async function bulkImportOrderFactoryCategory(
     if (statusError) return { ok: false, error: statusError };
   }
 
-  revalidatePath(path(orderId));
-  revalidatePath("/orders");
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -249,7 +258,7 @@ export async function createOrderFactoryCategory(
   });
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath(path(orderId));
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -266,7 +275,7 @@ export async function deleteOrderFactoryCategory(
   const { error } = await admin.from("order_factory_category").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath(path(orderId));
+  revalidateBatchViews(orderId);
   return { ok: true };
 }
 
