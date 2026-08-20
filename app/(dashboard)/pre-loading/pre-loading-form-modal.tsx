@@ -210,8 +210,23 @@ export function PreLoadingFormModal({
   const pageIndex = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(pageIndex * ROWS_PER_PAGE, (pageIndex + 1) * ROWS_PER_PAGE);
 
-  const toggleBatch = (id: string) =>
-    setSelected((s) => (s.includes(id) ? s.filter((v) => v !== id) : [...s, id]));
+  const toggleBatch = (batch: BatchOption) => {
+    const isSelected = selected.includes(batch.id);
+    setSelected((s) =>
+      isSelected ? s.filter((v) => v !== batch.id) : [...s, batch.id]
+    );
+    // Ao MARCAR um lote, herda o cliente dele no campo Client (que também é o
+    // filtro), se ainda não estiver lá — poupa o usuário de setar o filtro à
+    // mão. Ao desmarcar não mexe: tirar o cliente na mão fica com o usuário.
+    if (!isSelected && batch.client_id) {
+      const clientId = batch.client_id;
+      setForm((f) =>
+        f.client_ids.includes(clientId)
+          ? f
+          : { ...f, client_ids: [...f.client_ids, clientId] }
+      );
+    }
+  };
 
   const plNumber = editing ? editing.pl_number : nextPlNumber;
   const createDate = editing ? editing.created_date : today;
@@ -392,7 +407,7 @@ export function PreLoadingFormModal({
                           <td className="px-4 py-3">
                             <Checkbox
                               checked={selected.includes(b.id)}
-                              onCheckedChange={() => toggleBatch(b.id)}
+                              onCheckedChange={() => toggleBatch(b)}
                               aria-label={`Select batch ${poBatchLabel(
                                 b.po_number,
                                 b.batch_number
