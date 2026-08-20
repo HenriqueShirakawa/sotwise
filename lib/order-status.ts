@@ -1,4 +1,5 @@
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
+import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, OrderStatus } from "@/types/database";
 
@@ -89,9 +90,20 @@ export async function syncOrderStatus(admin: Admin, orderIds: string[]): Promise
     idsByTarget.set(target, list);
   }
 
+  const changedIds: string[] = [];
   for (const [status, list] of idsByTarget) {
     const { error } = await admin.from("orders").update({ status }).in("id", list);
     if (error) return error.message;
+    changedIds.push(...list);
+  }
+
+  // Realtime: avisa quem está com a lista Orders aberta que o Status PO mudou,
+  // pra refletir na hora (mesmo com a tela parada). Ping só de ids — o valor
+  // novo vem do refetch. Awaited porque em serverless um fetch não-awaited pode
+  // ser descartado antes de sair; o helper engole o erro, então não derruba a
+  // ação. Mesmo padrão do broadcast das mensagens.
+  if (changedIds.length > 0) {
+    await broadcastOrderStatusPing({ order_ids: changedIds });
   }
 
   /**
