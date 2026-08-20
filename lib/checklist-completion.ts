@@ -41,7 +41,7 @@ export type ChecklistFacts = {
   consolidationPointId?: string | null;
   cityId?: string | null;
   polId?: string | null;
-  carrierAgentId?: string | null;
+  carrierId?: string | null;
   agentBrazilId?: string | null;
   agentChinaId?: string | null;
   contactBrazilId?: string | null;
@@ -111,7 +111,7 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if (noDocs) missing.push("a document");
       break;
     case "agents":
-      if (!f.carrierAgentId) missing.push("a carrier agent");
+      if (!f.carrierId) missing.push("a carrier");
       if (!f.agentBrazilId) missing.push("an agent Brazil");
       if (!f.agentChinaId) missing.push("an agent China");
       // Contato só é exigência quando o agente escolhido TEM contato cadastrado:
@@ -201,7 +201,7 @@ export type PlStepFields = {
   consolidation_point_id?: string | null;
   city_id?: string | null;
   pol_id?: string | null;
-  carrier_agent_id?: string | null;
+  carrier_id?: string | null;
   agent_brazil_id?: string | null;
   agent_china_id?: string | null;
   contact_brazil_id?: string | null;
@@ -231,7 +231,7 @@ export function plStepFacts(
     consolidationPointId: s.consolidation_point_id,
     cityId: s.city_id,
     polId: s.pol_id,
-    carrierAgentId: s.carrier_agent_id,
+    carrierId: s.carrier_id,
     agentBrazilId: s.agent_brazil_id,
     agentChinaId: s.agent_china_id,
     contactBrazilId: s.contact_brazil_id,

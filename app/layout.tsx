@@ -14,7 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sotwise",
+  title: {
+    default: "Sotwise",
+    template: "%s | Sotwise",
+  },
   description: "Import/export logistics management",
 };
 

@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
+import { triggerDownload } from "@/lib/download";
 import { hasExtraRequirements, missingLabel, plStepFacts } from "@/lib/checklist-completion";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
@@ -87,7 +88,7 @@ export type PlStepRow = {
   consolidation_point_id: string | null;
   city_id: string | null;
   pol_id: string | null;
-  carrier_agent_id: string | null;
+  carrier_id: string | null;
   agent_brazil_id: string | null;
   agent_china_id: string | null;
   contact_brazil_id: string | null;
@@ -211,8 +212,8 @@ function AttachmentsSection({
 
   function download(a: StepAttachment) {
     startTransition(async () => {
-      const res = await getPreLoadingAttachmentUrl(a.file_path);
-      if (res.ok) window.open(res.url, "_blank");
+      const res = await getPreLoadingAttachmentUrl(a.file_path, a.file_name);
+      if (res.ok) triggerDownload(res.url, a.file_name);
       else toast.error(res.error);
     });
   }
@@ -299,7 +300,6 @@ export function PlChecklistClient({
   pols,
   agentsBrazil,
   agentsChina,
-  agents,
   contactsByAgent,
   carriers,
   shipmentModels,
@@ -318,7 +318,6 @@ export function PlChecklistClient({
   pols: PolRef[];
   agentsBrazil: Ref[];
   agentsChina: Ref[];
-  agents: Ref[];
   contactsByAgent: Record<string, Ref[]>;
   carriers: Ref[];
   shipmentModels: Ref[];
@@ -331,7 +330,6 @@ export function PlChecklistClient({
 }) {
   const router = useRouter();
   const [infoOpen, setInfoOpen] = useState(true);
-  const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
   const [shipOpen, setShipOpen] = useState(false);
   const [viewBatch, setViewBatch] = useState<PlBatchRow | null>(null);
@@ -380,7 +378,12 @@ export function PlChecklistClient({
     return counts;
   }, [contactsByAgent]);
 
-  const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
+  // "Expand all" semeia `openSteps` com todas as etapas visíveis (e limpa no
+  // "Collapse all"); o toggle por-linha é a única fonte de verdade, senão um
+  // `expandAll` sobrepunha e impedia colapsar uma etapa isolada.
+  const allExpanded =
+    visibleSteps.length > 0 && visibleSteps.every((s) => openSteps.has(s.step));
+  const isStepOpen = (step: ChecklistStep) => openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
     setOpenSteps((prev) => {
       const next = new Set(prev);
@@ -517,13 +520,14 @@ export function PlChecklistClient({
           <button
             type="button"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-800"
-            onClick={() => {
-              setExpandAll((v) => !v);
-              setOpenSteps(new Set());
-            }}
+            onClick={() =>
+              setOpenSteps(
+                allExpanded ? new Set() : new Set(visibleSteps.map((s) => s.step))
+              )
+            }
           >
-            {expandAll ? "Collapse all" : "Expand all"}
-            {expandAll ? (
+            {allExpanded ? "Collapse all" : "Expand all"}
+            {allExpanded ? (
               <ChevronsDownUp className="size-4" />
             ) : (
               <ChevronsUpDown className="size-4" />
@@ -649,11 +653,11 @@ export function PlChecklistClient({
                     {s.step === "agents" && (
                       <div className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
                         <SelectField
-                          label="Carrier agent"
-                          value={s.carrier_agent_id}
-                          options={agents}
-                          placeholder="Select carrier agent"
-                          onChange={(v) => save(s.step, { carrier_agent_id: v })}
+                          label="Carrier"
+                          value={s.carrier_id}
+                          options={carriers}
+                          placeholder="Select carrier"
+                          onChange={(v) => save(s.step, { carrier_id: v })}
                         />
                         <SelectField
                           label="Agent Brazil"

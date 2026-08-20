@@ -10,6 +10,8 @@ import { BusinessUnitsClient } from "./business-units-client";
 
 const BUCKET = "business-units";
 
+export const metadata = { title: "Business Unit" };
+
 export default async function BusinessUnitsPage() {
   await requireFeature("registration");
 

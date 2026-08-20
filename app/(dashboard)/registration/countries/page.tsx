@@ -5,6 +5,8 @@ import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
 import { createCountries, updateCountry, deleteCountry } from "./actions";
 
+export const metadata = { title: "Countries" };
+
 export default async function CountriesPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

@@ -19,6 +19,7 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
+import { triggerDownload } from "@/lib/download";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import {
   hasExtraRequirements,
@@ -27,7 +28,13 @@ import {
   piDocumentRequired,
   type ChecklistFacts,
 } from "@/lib/checklist-completion";
-import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS, STATUS_COLORS } from "@/lib/status-colors";
+import {
+  BATCH_STATUS_LABELS,
+  LOADING_STATUS_LABELS,
+  LOADING_STATUS_STYLES,
+  ORDER_STATUS_LABELS,
+  STATUS_COLORS,
+} from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep, LoadingStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -347,6 +354,31 @@ function RowsPagination({
   );
 }
 
+/** Chip Total/Partial/None de uma entrada Factory×Category ("—" quando vazio). */
+function LoadingStatusBadge({ status }: { status: LoadingStatus | null }) {
+  if (!status) return <span className="text-xs text-slate-300">—</span>;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${LOADING_STATUS_STYLES[status]}`}
+    >
+      {LOADING_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+/**
+ * Carga do lote inteiro resumida a partir das suas entradas: Partial se QUALQUER
+ * entrada embarcou parcial, senão Total se todas as marcadas são total, senão
+ * None quando há entradas marcadas sem carga, ou null quando nada foi embarcado.
+ */
+function aggregateLoading(rows: OfcRow[]): LoadingStatus | null {
+  const marked = rows.map((r) => r.loading_status).filter((s): s is LoadingStatus => !!s);
+  if (marked.length === 0) return null;
+  if (marked.includes("partial")) return "partial";
+  if (marked.includes("total")) return "total";
+  return "none";
+}
+
 function ViewBatchModal({
   open,
   onOpenChange,
@@ -387,11 +419,12 @@ function ViewBatchModal({
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
             <div className="overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-4 gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-5 gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
+                <span>Loading</span>
               </div>
               {pageRows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries for this batch.</p>
@@ -399,7 +432,7 @@ function ViewBatchModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-2 gap-x-3 gap-y-2 border-t px-3 py-2.5 text-sm sm:grid-cols-4 sm:gap-y-0"
+                    className="grid grid-cols-2 gap-x-3 gap-y-2 border-t px-3 py-2.5 text-sm sm:grid-cols-5 sm:gap-y-0"
                   >
                     <SmallField label="Category">
                       <span className="text-slate-700">{r.category_name}</span>
@@ -414,6 +447,9 @@ function ViewBatchModal({
                     </SmallField>
                     <SmallField label="Batch No.">
                       <span className="text-slate-700">{batch?.batch_number}</span>
+                    </SmallField>
+                    <SmallField label="Loading">
+                      <LoadingStatusBadge status={r.loading_status} />
                     </SmallField>
                   </div>
                 ))
@@ -932,10 +968,10 @@ function AttachmentsSection({
     });
   }
 
-  function download(a: { file_path: string }) {
+  function download(a: { file_path: string; file_name?: string | null }) {
     startTransition(async () => {
-      const res = await getAttachmentDownloadUrl(a.file_path);
-      if (res.ok) window.open(res.url, "_blank");
+      const res = await getAttachmentDownloadUrl(a.file_path, a.file_name);
+      if (res.ok) triggerDownload(res.url, a.file_name);
       else toast.error(res.error);
     });
   }
@@ -994,7 +1030,6 @@ export function OrderDetailClient({
 }) {
   const router = useRouter();
   const [infoOpen, setInfoOpen] = useState(true);
-  const [expandAll, setExpandAll] = useState(false);
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
   const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
@@ -1043,7 +1078,13 @@ export function OrderDetailClient({
     [checkedSteps, viewPrefs, currentUserId]
   );
 
-  const isStepOpen = (step: ChecklistStep) => expandAll || openSteps.has(step);
+  // "Expand all" só semeia `openSteps` com todas as etapas expansíveis (e limpa
+  // no "Collapse all"). O estado por-linha é a única fonte de verdade — sem isso
+  // um booleano `expandAll` sobrepunha os toggles e travava o colapso individual.
+  const expandableSteps = visibleSteps.filter((s) => s.enabled);
+  const allExpanded =
+    expandableSteps.length > 0 && expandableSteps.every((s) => openSteps.has(s.step));
+  const isStepOpen = (step: ChecklistStep) => openSteps.has(step);
   function toggleStep(step: ChecklistStep) {
     setOpenSteps((prev) => {
       const next = new Set(prev);
@@ -1169,13 +1210,15 @@ export function OrderDetailClient({
           batches.map((b) => {
             const editable = EDITABLE_BATCH_STATUSES.includes(b.status);
             const rows = ofc.filter((r) => r.batch_id === b.id);
+            const loadingAgg = aggregateLoading(rows);
             return (
               <div
                 key={b.id}
                 className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid lg:grid-cols-[1fr_1fr_150px] lg:gap-3"
               >
-                <span className="font-medium text-slate-700 lg:font-normal">
+                <span className="flex items-center gap-2 font-medium text-slate-700 lg:font-normal">
                   {b.batch_number}
+                  {loadingAgg && <LoadingStatusBadge status={loadingAgg} />}
                 </span>
                 <div className="order-last w-full lg:order-none lg:w-auto lg:justify-self-start">
                   {editable ? (
@@ -1250,13 +1293,14 @@ export function OrderDetailClient({
           <button
             type="button"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-800"
-            onClick={() => {
-              setExpandAll((v) => !v);
-              setOpenSteps(new Set());
-            }}
+            onClick={() =>
+              setOpenSteps(
+                allExpanded ? new Set() : new Set(expandableSteps.map((s) => s.step))
+              )
+            }
           >
-            {expandAll ? "Collapse all" : "Expand all"}
-            {expandAll ? (
+            {allExpanded ? "Collapse all" : "Expand all"}
+            {allExpanded ? (
               <ChevronsDownUp className="size-4" />
             ) : (
               <ChevronsUpDown className="size-4" />

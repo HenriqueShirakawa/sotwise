@@ -9,6 +9,8 @@ import {
   deleteShipmentModel,
 } from "./actions";
 
+export const metadata = { title: "Shipment Models" };
+
 export default async function ShipmentModelsPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

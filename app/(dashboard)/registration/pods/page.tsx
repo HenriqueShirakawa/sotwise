@@ -5,6 +5,8 @@ import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
 import { createPods, updatePod, deletePod } from "./actions";
 
+export const metadata = { title: "POD" };
+
 export default async function PodsPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

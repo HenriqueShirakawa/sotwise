@@ -4,6 +4,8 @@ import { fetchAll } from "@/lib/fetch-all";
 
 import { CategoriesClient } from "./categories-client";
 
+export const metadata = { title: "Categories" };
+
 export default async function CategoriesPage() {
   await requireFeature("registration");
 

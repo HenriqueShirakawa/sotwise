@@ -29,6 +29,8 @@ const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
  * encerrou, e a pendência é resíduo da migração, não trabalho. As etapas de
  * embarques ainda em trânsito seguem aparecendo.
  */
+export const metadata = { title: "To do list" };
+
 export default async function TodoPage() {
   const { userId, profile } = await requireFeature("todo");
   const admin = createAdminClient();

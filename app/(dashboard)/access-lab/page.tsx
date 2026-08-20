@@ -14,6 +14,8 @@ import { AccessLabClient } from "./access-lab-client";
  * Owner-only, como a tela real (`requireOwner`, não uma feature do catálogo — a
  * rota nem existe no catálogo de propósito).
  */
+export const metadata = { title: "Access Lab" };
+
 export default async function AccessLabPage() {
   await requireOwner();
   return <AccessLabClient />;

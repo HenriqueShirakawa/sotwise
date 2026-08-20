@@ -62,6 +62,8 @@ async function loadOrderCounts(
   return counts;
 }
 
+export const metadata = { title: "Clients" };
+
 export default async function ClientsPage() {
   await requireFeature("registration");
 

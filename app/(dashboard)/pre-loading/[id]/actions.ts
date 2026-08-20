@@ -24,7 +24,7 @@ export type StepPatch = Partial<{
   consolidation_point_id: string | null;
   city_id: string | null;
   pol_id: string | null;
-  carrier_agent_id: string | null;
+  carrier_id: string | null;
   agent_brazil_id: string | null;
   agent_china_id: string | null;
   contact_brazil_id: string | null;
@@ -88,6 +88,8 @@ export async function savePreLoadingStep(
 
   revalidatePath(`/pre-loading/${preLoadingId}`);
   revalidatePath("/pre-loading");
+  // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
+  revalidatePath("/todo");
   return { ok: true };
 }
 
@@ -158,14 +160,17 @@ export async function uploadPreLoadingStepAttachment(
 }
 
 export async function getPreLoadingAttachmentUrl(
-  filePath: string
+  filePath: string,
+  fileName?: string | null
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   await requireFeature("pre_loading", "view");
   const admin = createAdminClient();
 
+  // `{ download }` força Content-Disposition: attachment (baixa em vez de abrir
+  // inline numa aba em branco).
   const { data, error } = await admin.storage
     .from(DOCUMENTS_BUCKET)
-    .createSignedUrl(filePath, 60);
+    .createSignedUrl(filePath, 60, { download: fileName ?? true });
   if (error || !data) return { ok: false, error: error?.message ?? "Failed to sign URL." };
 
   return { ok: true, url: data.signedUrl };
@@ -286,7 +291,7 @@ export async function confirmShipping(
   const { data: steps } = await admin
     .from("pre_loading_checklist_steps")
     .select(
-      "id, step, completed_on, consolidation_point_id, city_id, pol_id, carrier_agent_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+      "id, step, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
     )
     .eq("pre_loading_id", preLoadingId);
 

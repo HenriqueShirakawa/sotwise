@@ -14,6 +14,8 @@ import { createCities, updateCity, deleteCity } from "./actions";
  * escrita do vínculo por esta tela criaria um segundo dono do mesmo dado às
  * vésperas de a integração assumi-lo. Ver docs/INTEGRACAO_GSS.md §3.
  */
+export const metadata = { title: "Cities" };
+
 export default async function CitiesPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

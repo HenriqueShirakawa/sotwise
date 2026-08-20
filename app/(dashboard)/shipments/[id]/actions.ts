@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireFeature } from "@/lib/dal";
+import { todayIso } from "@/lib/format";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -139,6 +140,18 @@ export async function saveShipmentStep(
   );
   if (dateError) return { ok: false, error: dateError };
 
+  // "Shipping date" e "Delivered" registram um fato consumado (embarque/entrega):
+  // o "Completed on" é a data efetiva e não pode ser futura. Travado no servidor —
+  // a UI também limita (max=hoje), mas a action é a autoridade (§docs 3.10.4).
+  if (
+    "completed_on" in patch &&
+    patch.completed_on &&
+    (step === "shipping_date" || step === "delivered") &&
+    patch.completed_on > todayIso()
+  ) {
+    return { ok: false, error: "The completion date can't be in the future." };
+  }
+
   const completedOn =
     "completed_on" in patch ? (patch.completed_on ?? null) : (existing?.completed_on ?? null);
   const values: ShipmentStepPatch & { done: boolean; signed_by_id?: string } = {
@@ -167,6 +180,8 @@ export async function saveShipmentStep(
   }
 
   for (const p of paths(shipmentId)) revalidatePath(p);
+  // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
+  revalidatePath("/todo");
   return { ok: true };
 }
 
@@ -215,14 +230,17 @@ export async function uploadShipmentStepAttachment(
 }
 
 export async function getShipmentAttachmentUrl(
-  filePath: string
+  filePath: string,
+  fileName?: string | null
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   await requireFeature("shipments", "view");
   const admin = createAdminClient();
 
+  // `{ download }` força Content-Disposition: attachment (baixa em vez de abrir
+  // inline numa aba em branco).
   const { data, error } = await admin.storage
     .from(DOCUMENTS_BUCKET)
-    .createSignedUrl(filePath, 60);
+    .createSignedUrl(filePath, 60, { download: fileName ?? true });
   if (error || !data) return { ok: false, error: error?.message ?? "Failed to sign URL." };
 
   return { ok: true, url: data.signedUrl };

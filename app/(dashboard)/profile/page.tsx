@@ -5,6 +5,8 @@ import { readViewPrefs } from "@/lib/view-prefs";
 import { ProfileForm } from "./profile-form";
 import { ViewPrefsCard } from "./view-prefs-card";
 
+export const metadata = { title: "Profile" };
+
 export default async function ProfilePage() {
   const { profile, email, role } = await requireInternal();
 

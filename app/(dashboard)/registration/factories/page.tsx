@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/page-header";
 
 import { FactoriesClient } from "./factories-client";
 
+export const metadata = { title: "Factories" };
+
 export default async function FactoriesPage() {
   await requireFeature("registration");
 

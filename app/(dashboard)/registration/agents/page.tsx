@@ -6,6 +6,8 @@ import type { AgentLocation } from "@/types/database";
 
 import { AgentsClient } from "./agents-client";
 
+export const metadata = { title: "Agents" };
+
 export default async function AgentsPage() {
   await requireFeature("registration");
 

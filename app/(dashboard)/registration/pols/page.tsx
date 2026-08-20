@@ -5,6 +5,8 @@ import { SimpleRegistrationCrud } from "@/components/registration/simple-crud";
 
 import { createPols, updatePol, deletePol } from "./actions";
 
+export const metadata = { title: "POL" };
+
 export default async function PolsPage() {
   await requireFeature("registration");
   const admin = createAdminClient();

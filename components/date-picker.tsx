@@ -80,6 +80,7 @@ export function DatePicker({
   className,
   id,
   ariaLabel,
+  max,
 }: {
   /** "YYYY-MM-DD" ou null/"" quando vazio. */
   value: string | null | undefined;
@@ -90,10 +91,14 @@ export function DatePicker({
   className?: string;
   id?: string;
   ariaLabel?: string;
+  /** Data máxima selecionável ("YYYY-MM-DD"). Dias posteriores ficam travados. */
+  max?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const selected = parseIso(value);
   const today = parseIso(todayIso())!;
+  // Comparação direta de strings "YYYY-MM-DD" — lexicográfica = cronológica.
+  const isAfterMax = (iso: string) => max != null && iso > max;
 
   // Dia que recebe o foco do teclado — começa no selecionado (ou hoje) e anda
   // com as setas, arrastando o mês visível junto.
@@ -115,6 +120,7 @@ export function DatePicker({
   }
 
   function commit(parts: Parts) {
+    if (isAfterMax(toIso(parts))) return; // dia travado por `max`
     onChange(toIso(parts));
     setOpen(false);
   }
@@ -265,10 +271,12 @@ export function DatePicker({
                 const iso = toIso(parts);
                 const isSelected = !!selected && toIso(selected) === iso;
                 const isToday = toIso(today) === iso;
+                const blocked = isAfterMax(iso);
                 return (
                   <button
                     key={iso}
                     type="button"
+                    disabled={blocked}
                     data-cursor={day === cursor.day}
                     tabIndex={day === cursor.day ? 0 : -1}
                     aria-pressed={isSelected}
@@ -277,7 +285,9 @@ export function DatePicker({
                       "size-9 rounded-md text-sm outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50",
                       isToday && !isSelected && "font-semibold text-primary",
                       isSelected &&
-                        "bg-primary font-medium text-primary-foreground hover:bg-primary"
+                        "bg-primary font-medium text-primary-foreground hover:bg-primary",
+                      blocked &&
+                        "text-muted-foreground/40 hover:bg-transparent disabled:cursor-not-allowed"
                     )}
                     onClick={() => commit(parts)}
                   >
@@ -292,7 +302,8 @@ export function DatePicker({
         <div className="flex items-center justify-between border-t px-2 py-1.5">
           <button
             type="button"
-            className="rounded-md px-2 py-1 text-sm font-medium text-primary hover:bg-accent"
+            disabled={isAfterMax(toIso(today))}
+            className="rounded-md px-2 py-1 text-sm font-medium text-primary hover:bg-accent disabled:opacity-40 disabled:hover:bg-transparent"
             onClick={() => commit(today)}
           >
             Today
