@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+
+import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import {
   flexRender,
   getCoreRowModel,
@@ -310,6 +312,22 @@ export function OrdersClient({
   initialColumns: VisibilityState;
 }) {
   const router = useRouter();
+
+  // Realtime: o Status PO (e o popover de status por lote) reflete na hora
+  // quando um lote muda de status em qualquer lugar — mesmo com esta tela
+  // parada e aberta. Debounce curto coalesce rajadas de pings num só refresh.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useOrdersRealtime(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 300);
+  });
+  useEffect(
+    () => () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    },
+    []
+  );
+
   const [search, setSearch] = useState("");
   const [client, setClient] = useState("all");
   const [filters, setFilters] = useState<OrdersFilters>(EMPTY_FILTERS);
