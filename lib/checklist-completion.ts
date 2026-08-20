@@ -1,3 +1,4 @@
+import { todayIso } from "@/lib/format";
 import type { ChecklistStep } from "@/types/database";
 
 /**
@@ -185,6 +186,13 @@ export function validateStepDates(
   const touchesEstimated = "estimated_date" in patch;
   const touchesCompleted = "completed_on" in patch;
   if (!touchesEstimated && !touchesCompleted) return null;
+
+  // "Completed on" registra um fato consumado — nunca pode ser futuro, em
+  // NENHUMA etapa. Só barra quando o patch está DEFININDO a data (não trava
+  // estado antigo nem a limpeza da data).
+  if (touchesCompleted && patch.completed_on && patch.completed_on > todayIso()) {
+    return "The completion date can't be in the future.";
+  }
 
   const estimated = touchesEstimated ? (patch.estimated_date ?? null) : current.estimated_date;
   const completed = touchesCompleted ? (patch.completed_on ?? null) : current.completed_on;

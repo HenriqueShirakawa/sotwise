@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatDateNumeric } from "@/lib/format";
+import { formatDateNumeric, todayIso } from "@/lib/format";
 import { triggerDownload } from "@/lib/download";
 import { hasExtraRequirements, missingLabel, plStepFacts } from "@/lib/checklist-completion";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
@@ -599,6 +599,8 @@ export function PlChecklistClient({
                         <DatePicker
                           value={s.completed_on}
                           disabled={pending || (!s.estimated_date && !s.completed_on)}
+                          // "Completed on" é fato consumado — nunca futuro.
+                          max={todayIso()}
                           placeholder={
                             s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
                           }
