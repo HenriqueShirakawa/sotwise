@@ -395,7 +395,9 @@ function BulkImportPanel({
   }
 
   const allRegistered = parsedRows.length > 0 && parsedRows.every((r) => r.categoryId && r.factoryId);
-  const allComplete = parsedRows.every((r) => r.batchNumberRaw && r.shipRequirement);
+  // Batch No. é opcional (docs/regras_de_negocio.md §3.7): linha sem lote entra
+  // com batch_id null. Só o Ship requirement segue obrigatório.
+  const allComplete = parsedRows.every((r) => r.shipRequirement);
   const canInsert = allRegistered && allComplete;
 
   function setRowBatch(key: string, batchId: string) {
@@ -534,7 +536,7 @@ function BulkImportPanel({
             <p className="border-t bg-rose-50 px-3 py-2 text-xs text-rose-600">
               {!allRegistered
                 ? "Some rows have a Category or Factory that isn't registered — fix the CSV and re-upload, or register them first."
-                : "Fill in Batch No. and a valid Ship requirement for every row."}
+                : "Fill in a valid Ship requirement for every row."}
             </p>
           )}
         </div>
@@ -596,7 +598,9 @@ export function FactoryCategoryModal({
   }
 
   const visibleFactories = factoriesForCategory(factories, categoryId, factoriesByCategory);
-  const canInsertRow = !!categoryId && !!factoryId && !!batchId && !!shipRequirement;
+  // Lote é opcional (docs/regras_de_negocio.md §3.7) — a entrada pode nascer
+  // sem lote e ser atribuída a um depois pelo seletor "Batch No." da lista.
+  const canInsertRow = !!categoryId && !!factoryId && !!shipRequirement;
 
   /** Trocar de categoria descarta a fábrica que não pertence à nova. */
   function selectCategory(id: string) {
@@ -607,12 +611,12 @@ export function FactoryCategoryModal({
 
   function insertRow() {
     if (!canInsertRow) {
-      toast.error("Fill in Category, Factory, Batch No. and Ship requirement.");
+      toast.error("Fill in Category, Factory and Ship requirement.");
       return;
     }
     startTransition(async () => {
       const res = await createOrderFactoryCategory(orderId, {
-        batch_id: batchId,
+        batch_id: batchId || null,
         category_id: categoryId,
         factory_id: factoryId,
         ship_requirement: shipRequirement,
@@ -630,9 +634,8 @@ export function FactoryCategoryModal({
   }
 
   function removeRow(r: OfcRow) {
-    if (!r.batch_id) return;
     startTransition(async () => {
-      const res = await deleteOrderFactoryCategory(orderId, r.batch_id!, r.id);
+      const res = await deleteOrderFactoryCategory(orderId, r.batch_id, r.id);
       if (res.ok) onChanged();
       else toast.error(res.error);
     });
@@ -728,7 +731,9 @@ export function FactoryCategoryModal({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <Label className="text-foreground">Batch No.</Label>
+                <Label className="text-foreground">
+                  Batch No. <span className="text-muted-foreground">(optional)</span>
+                </Label>
                 <div className="mt-1.5">
                   <BatchPickerPopover
                     batches={batches}
