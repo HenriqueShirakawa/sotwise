@@ -238,7 +238,7 @@ export async function bulkImportOrderFactoryCategory(
 export async function createOrderFactoryCategory(
   orderId: string,
   input: {
-    batch_id: string;
+    batch_id: string | null;
     category_id: string;
     factory_id: string;
     ship_requirement: string;
@@ -247,7 +247,10 @@ export async function createOrderFactoryCategory(
   await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
-  await assertBatchEditable(input.batch_id);
+  // O lote é opcional (docs/regras_de_negocio.md §3.7): a entrada Factory ×
+  // Category pode nascer sem lote e ser atribuída a um depois. A trava de
+  // "lote editável" só se aplica quando há lote.
+  if (input.batch_id) await assertBatchEditable(input.batch_id);
 
   const { error } = await admin.from("order_factory_category").insert({
     order_id: orderId,
@@ -264,13 +267,15 @@ export async function createOrderFactoryCategory(
 
 export async function deleteOrderFactoryCategory(
   orderId: string,
-  batchId: string,
+  batchId: string | null,
   id: string
 ): Promise<ActionResult> {
   await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
-  await assertBatchEditable(batchId);
+  // Entrada sem lote é sempre removível — a trava de lote embarcado só vale
+  // quando existe um lote.
+  if (batchId) await assertBatchEditable(batchId);
 
   const { error } = await admin.from("order_factory_category").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };

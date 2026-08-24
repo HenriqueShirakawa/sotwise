@@ -624,7 +624,7 @@ create trigger trg_shipment_models_updated_at before update on public.shipment_m
 
 ```
 Order (pedido, PO auto)
-  ├── order_factory_category (N entradas: Category + Factory + Batch + Ship requirement)
+  ├── order_factory_category (N entradas: Category + Factory + Ship requirement; Batch opcional)
   │        └── etd_info (1:1 — dados de ETD da entrada) ──< etd_history (log)
   ├── order_checklist_steps (N — estado de cada etapa FIXA do progresso)
   │        └── step_attachments (documentos anexos por etapa)
@@ -787,6 +787,8 @@ create trigger trg_batches_updated_at before update on public.batches
 
 As entradas Category + Factory + Batch + Ship requirement de um pedido. É a `List of Factories x Categories x Lote` do Bubble. Criável manualmente ou via **bulk import CSV**.
 
+> 🔄 **Mudança (2026-08-24) — o lote (Batch No.) passou a ser OPCIONAL na criação da entrada.** Antes, o `batch_id` era exigido junto com a entrada (regra descrita no bloco "atribuição do `batch_id` acontece junto" abaixo, agora **superada**). Agora uma entrada Factory × Category pode nascer **sem lote** (`batch_id` null) e receber um lote depois pelo próprio seletor "Batch No." da lista. Só continua obrigatório o par **Category + Factory + Ship requirement**. Vale para os dois caminhos de criação: "New entry" manual e Bulk import CSV (coluna Batch No. do template vira opcional). Uma entrada **sem lote** não aparece agrupada sob nenhum lote na tela do pedido (que lista por lote), mas fica visível e gerenciável no modal "Factory x Category"; ao receber um lote, passa a aparecer. Entrada sem lote é sempre editável/removível — a trava de "lote embarcado" (`assertBatchEditable`) só se aplica quando há lote. **Não muda a conclusão do PO:** qualquer entrada Factory × Category (com ou sem lote) satisfaz a exigência da etapa. Schema não muda — `batch_id` já era nullable. Implementação: `createOrderFactoryCategory`/`deleteOrderFactoryCategory` (`actions.ts`) e o modal `factory-category-modal.tsx`.
+
 > ✅ **Granularidade do carregamento confirmada:** o status Total/Partial/None (ver 3.7.2) é atribuído **por entrada** `order_factory_category`, não pelo lote inteiro — um lote pode ter várias entradas Factory×Category, cada uma com seu próprio resultado de carregamento. Por isso `batch_id` aqui é mutável: uma entrada Partial/None **migra** para o lote novo criado pelo split.
 
 > ✅ **Confirmado com o cliente (design):** a atribuição do `batch_id` acontece **junto** com a criação da entrada — no modal "Factory x Category" (aberto a partir da etapa PO via botão "+ Factory x Category"), cada linha importada (CSV) ou criada manualmente já tem um seletor de **Batch No.** com opção de escolher um lote existente ou criar um novo ali mesmo ("+ Add batch"). Essa mesma entidade é reexibida em formato agrupado (Factory / Categories (Qty.) / Date of factory) dentro da etapa "Place the order" — são os mesmos dados, não uma tabela nova.
@@ -814,7 +816,7 @@ create table public.order_factory_category (
   order_id         uuid not null references public.orders(id) on delete cascade,
   category_id      uuid not null references public.categories(id),
   factory_id       uuid not null references public.factories(id),
-  batch_id         uuid references public.batches(id),  -- mutável: migra de lote em caso de split
+  batch_id         uuid references public.batches(id),  -- OPCIONAL (null = sem lote ainda); mutável: migra de lote em caso de split
   ship_requirement date not null,               -- data (especulativa) em que a fábrica precisa entregar; sem gatilho automático
   loading_status   public.loading_status,        -- atribuído ao finalizar o Pre-loading daquele lote
   created_at       timestamptz not null default now(),
