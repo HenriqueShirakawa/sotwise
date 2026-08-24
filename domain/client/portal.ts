@@ -107,3 +107,120 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
 
   return rows;
 }
+
+/**
+ * Detalhe de UM pedido para o portal — os produtos e em que estágio cada um
+ * viaja. É a promessa do painel do cliente: "veja onde cada lote está e
+ * exatamente quais produtos viajam nele".
+ *
+ * Mesmas regras de recorte do DTO da lista: nada de número de lote, fábrica,
+ * exporter, ETD ou qualquer campo interno. O cliente enxerga PRODUTO × ESTÁGIO,
+ * porque é isso que ele reconhece (decisão de 2026-08-18).
+ *
+ * O `clientId` entra no próprio filtro do pedido — é a única fronteira entre um
+ * cliente e o de outro. `orderId` vem da URL; sozinho não é confiável, por isso
+ * a query exige as duas colunas e devolve `null` (→ notFound) quando o pedido
+ * não é deste cliente.
+ */
+export type ClientOrderStage = {
+  status: BatchStatus;
+  label: string;
+  /** Produtos (categorias) que estão neste estágio. Ordenados por nome. */
+  products: string[];
+};
+
+export type ClientOrderDetail = {
+  id: string;
+  po_number: string;
+  client_reference: string | null;
+  type: string | null;
+  status: OrderStatus;
+  /** Produtos agrupados por estágio, na ordem do ciclo de vida. */
+  stages: ClientOrderStage[];
+  /** Produtos do pedido ainda sem lote — não começaram a viajar. */
+  pendingProducts: string[];
+};
+
+// Ciclo de vida do lote, da produção à entrega. `canceled` por último: quando
+// aparece, é exceção, não etapa do fluxo feliz.
+const STAGE_ORDER: BatchStatus[] = [
+  "in_negotiation",
+  "in_production",
+  "preloading",
+  "in_transit",
+  "delivered",
+  "canceled",
+];
+
+export async function loadClientOrderDetail(
+  clientId: string,
+  orderId: string
+): Promise<ClientOrderDetail | null> {
+  const admin = createAdminClient();
+
+  const { data: order } = await admin
+    .from("orders")
+    .select("id, po_number, client_reference, order_type_id, status")
+    .eq("id", orderId)
+    .eq("client_id", clientId)
+    .is("deleted_at", null)
+    .not("status", "in", `(${HIDDEN_FROM_CLIENT.join(",")})`)
+    .single();
+
+  if (!order) return null;
+
+  const [batches, ofc, categories, orderType] = await Promise.all([
+    fetchAll<{ id: string; status: BatchStatus }>((from, to) =>
+      admin.from("batches").select("id, status").eq("order_id", orderId).range(from, to)
+    ),
+    fetchAll<{ batch_id: string | null; category_id: string }>((from, to) =>
+      admin
+        .from("order_factory_category")
+        .select("batch_id, category_id")
+        .eq("order_id", orderId)
+        .range(from, to)
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    order.order_type_id
+      ? admin.from("order_types").select("name").eq("id", order.order_type_id).single()
+      : Promise.resolve({ data: null as { name: string } | null }),
+  ]);
+
+  const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const batchStatus = new Map(batches.map((b) => [b.id, b.status]));
+
+  // estágio → produtos (Set para deduplicar: o mesmo produto pode estar em mais
+  // de um lote no mesmo estágio).
+  const byStage = new Map<BatchStatus, Set<string>>();
+  const pending = new Set<string>();
+  for (const row of ofc) {
+    const name = categoryName.get(row.category_id)?.trim();
+    if (!name) continue;
+    const status = row.batch_id ? batchStatus.get(row.batch_id) : undefined;
+    if (!status) {
+      pending.add(name);
+      continue;
+    }
+    const set = byStage.get(status) ?? new Set<string>();
+    set.add(name);
+    byStage.set(status, set);
+  }
+
+  const stages: ClientOrderStage[] = STAGE_ORDER.filter((s) => byStage.has(s)).map((s) => ({
+    status: s,
+    label: BATCH_STATUS_LABELS[s],
+    products: [...byStage.get(s)!].sort((a, b) => a.localeCompare(b)),
+  }));
+
+  return {
+    id: order.id,
+    po_number: order.po_number,
+    client_reference: order.client_reference,
+    type: orderType.data?.name ?? null,
+    status: order.status,
+    stages,
+    pendingProducts: [...pending].sort((a, b) => a.localeCompare(b)),
+  };
+}

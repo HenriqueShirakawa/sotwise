@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Package, Search } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Package, Search } from "lucide-react";
 
 import type { ClientOrder } from "@/domain/client/portal";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
@@ -30,6 +32,7 @@ function progressText(progress: ClientOrder["progress"]) {
 }
 
 export function PortalClient({ orders }: { orders: ClientOrder[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | OrderStatus>("all");
 
@@ -100,9 +103,10 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
               listas internas — ver components/data-cards.tsx). */}
           <div className="grid gap-3 min-[720px]:hidden">
             {filtered.map((o) => (
-              <div
+              <Link
                 key={o.id}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                href={`/portal/${o.id}`}
+                className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -120,7 +124,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                 {o.progress.length > 0 ? (
                   <p className="mt-1 text-sm text-slate-500">{progressText(o.progress)}</p>
                 ) : null}
-              </div>
+              </Link>
             ))}
           </div>
 
@@ -133,13 +137,26 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                   <TableHead>Type</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((o) => (
-                  <TableRow key={o.id}>
+                  <TableRow
+                    key={o.id}
+                    onClick={() => router.push(`/portal/${o.id}`)}
+                    className="cursor-pointer transition-colors hover:bg-slate-50"
+                  >
                     <TableCell className="font-medium text-slate-800">
-                      #{o.po_number}
+                      {/* Link real no PO: dá foco por teclado e navegação sem
+                          depender do onClick da linha (que é só conveniência). */}
+                      <Link
+                        href={`/portal/${o.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="rounded-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        #{o.po_number}
+                      </Link>
                     </TableCell>
                     <TableCell>
                       {o.client_reference ?? <span className="text-slate-400">—</span>}
@@ -154,6 +171,9 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                     </TableCell>
                     <TableCell>
                       <StatusPill label={ORDER_STATUS_LABELS[o.status]} />
+                    </TableCell>
+                    <TableCell className="text-slate-300">
+                      <ChevronRight className="size-4" />
                     </TableCell>
                   </TableRow>
                 ))}
