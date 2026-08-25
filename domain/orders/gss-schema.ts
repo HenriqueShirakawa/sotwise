@@ -38,11 +38,14 @@ export type GssOrderItemInput = z.infer<typeof gssOrderItemSchema>;
  */
 export const gssOrderSchema = z.object({
   gss_id: z.string().trim().min(1, "gss_id is required."),
+  // Obrigatório na CRIAÇÃO (validado no endpoint); no reenvio pode ser omitido —
+  // a order é identificada pelo gss_id, não pelo po_number.
   po_number: z
     .string()
     .trim()
-    .min(1, "po_number is required.")
-    .max(50, "po_number is too long."),
+    .min(1, "po_number cannot be empty.")
+    .max(50, "po_number is too long.")
+    .optional(),
   order_type_gss_id: optionalGssRef,
   client_gss_id: optionalGssRef,
   business_unit_gss_id: optionalGssRef,

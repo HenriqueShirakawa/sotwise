@@ -90,32 +90,43 @@ async function resolveProfileByEmail(
   return { ok: true, id: data };
 }
 
-/** Campos da order derivados do payload (sem gss_id/po_number/status). */
+/**
+ * Campos da order derivados do payload (sem gss_id/po_number/status). É PARCIAL:
+ * inclui SÓ as colunas cujo campo veio no payload (`!== undefined`). Assim o
+ * reenvio toca apenas o que mandar e NÃO zera o resto — essencial porque, no
+ * GSS, criar a order e depois preencher dados/itens acontece em momentos
+ * distintos. `null` explícito limpa a coluna; ausente não mexe. `date_po` não é
+ * defaultado aqui — o default "hoje" vale só na criação (ver POST).
+ */
 async function buildFields(
   admin: AdminClient,
   input: GssOrderInput
 ): Promise<{ ok: true; fields: Record<string, unknown> } | { ok: false; error: string }> {
-  const fields: Record<string, unknown> = {
-    schedule_requested: input.schedule_requested ?? null,
-    client_reference: input.client_reference ?? null,
-    // date_po = data de abertura do pedido (a UI de ETD mostra "—" sem ela).
-    date_po: input.date_po ?? new Date().toISOString().slice(0, 10),
-  };
+  const fields: Record<string, unknown> = {};
+
+  if (input.schedule_requested !== undefined) fields.schedule_requested = input.schedule_requested;
+  if (input.client_reference !== undefined) fields.client_reference = input.client_reference;
+  if (input.date_po !== undefined) fields.date_po = input.date_po;
 
   for (const [key, { table, column }] of Object.entries(FK_LIBS)) {
-    const resolved = await resolveFk(admin, table, input[key as keyof GssOrderInput] as string | null | undefined);
+    const raw = input[key as keyof GssOrderInput] as string | null | undefined;
+    if (raw === undefined) continue; // campo omitido → não mexe nessa coluna
+    const resolved = await resolveFk(admin, table, raw);
     if (!resolved.ok) return resolved;
-    fields[column] = resolved.id;
+    fields[column] = resolved.id; // string → UUID; null explícito → limpa
   }
 
-  // Leader/Requester chegam por e-mail e viram id de profile.
-  const leader = await resolveProfileByEmail(admin, input.leader_email);
-  if (!leader.ok) return leader;
-  fields.leader_id = leader.id;
-
-  const requester = await resolveProfileByEmail(admin, input.requester_email);
-  if (!requester.ok) return requester;
-  fields.requester_id = requester.id;
+  // Leader/Requester chegam por e-mail e viram id de profile (só se vieram).
+  if (input.leader_email !== undefined) {
+    const leader = await resolveProfileByEmail(admin, input.leader_email);
+    if (!leader.ok) return leader;
+    fields.leader_id = leader.id;
+  }
+  if (input.requester_email !== undefined) {
+    const requester = await resolveProfileByEmail(admin, input.requester_email);
+    if (!requester.ok) return requester;
+    fields.requester_id = requester.id;
+  }
 
   return { ok: true, fields };
 }
@@ -236,12 +247,25 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (lookupError) return json({ error: lookupError.message }, 500);
 
   if (existing) {
-    const { data, error } = await admin
-      .from("orders")
-      .update({ ...built.fields, po_number: input.po_number })
-      .eq("id", existing.id)
-      .select("id, po_number")
-      .single();
+    const updateRow: Record<string, unknown> = { ...built.fields };
+    if (input.po_number !== undefined) updateRow.po_number = input.po_number;
+
+    // Se o reenvio só trouxe itens (nada de cabeçalho nem po_number), não há
+    // coluna para o SET — busca a order para devolver id/po_number sem um UPDATE
+    // vazio (que o PostgREST rejeitaria).
+    const { data, error } =
+      Object.keys(updateRow).length > 0
+        ? await admin
+            .from("orders")
+            .update(updateRow as never)
+            .eq("id", existing.id)
+            .select("id, po_number")
+            .single()
+        : await admin
+            .from("orders")
+            .select("id, po_number")
+            .eq("id", existing.id)
+            .single();
     if (error) {
       // Colisão de po_number com OUTRA order.
       if (error.code === "23505") {
@@ -255,9 +279,23 @@ export async function POST(request: NextRequest): Promise<Response> {
     return json({ data, created: false }, 200);
   }
 
+  // A partir daqui é CRIAÇÃO: po_number é obrigatório para nascer a order.
+  if (!input.po_number) {
+    return json({ error: "po_number is required to create an order." }, 400);
+  }
+
+  // date_po default = hoje SÓ na criação (a UI de ETD mostra "—" sem ela).
+  const createRow: Record<string, unknown> = {
+    ...built.fields,
+    gss_id: input.gss_id,
+    po_number: input.po_number,
+  };
+  if (createRow.date_po === undefined) {
+    createRow.date_po = new Date().toISOString().slice(0, 10);
+  }
   const { data, error } = await admin
     .from("orders")
-    .insert({ ...built.fields, gss_id: input.gss_id, po_number: input.po_number })
+    .insert(createRow as never)
     .select("id, po_number")
     .single();
   if (error) {
