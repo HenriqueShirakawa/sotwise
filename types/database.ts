@@ -706,6 +706,34 @@ export type Database = {
         >;
         Relationships: [];
       };
+      factory_products: {
+        Row: {
+          id: UUID;
+          factory_id: UUID;
+          category_id: UUID;
+          city_id: UUID | null;
+          code: string | null;
+          gss_id: string | null;
+          deleted_at: Timestamp | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          factory_id: UUID;
+          category_id: UUID;
+          city_id?: UUID | null;
+          code?: string | null;
+          gss_id?: string | null;
+          deleted_at?: Timestamp | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["factory_products"]["Insert"]
+        >;
+        Relationships: [];
+      };
       etd_info: {
         Row: {
           id: UUID;
