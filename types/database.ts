@@ -1048,7 +1048,12 @@ export type Database = {
       };
     };
     Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Functions: {
+      profile_id_by_email: {
+        Args: { p_email: string };
+        Returns: string | null;
+      };
+    };
     Enums: {
       company_type: CompanyType;
       user_status: UserStatus;

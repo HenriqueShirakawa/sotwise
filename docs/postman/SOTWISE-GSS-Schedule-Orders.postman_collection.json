@@ -1,0 +1,320 @@
+{
+  "info": {
+    "name": "SOTWISE — GSS Schedule de Orders",
+    "description": "Teste da via inbound GSS → SOTWISE que agenda (schedule) orders.\n\nEndpoint: POST /api/gss/orders\nAuth: Authorization: Bearer {{gss_inbound_secret}} (server-to-server, NÃO é o API_TOKEN dos cadastros)\n\nO campo central do agendamento é `schedule_requested` (data YYYY-MM-DD). O POST é idempotente por `gss_id`: reenviar o mesmo gss_id ATUALIZA a order (não duplica). `po_number` é unique no banco — colisão devolve 409. O checklist das 10 etapas é semeado pelo trigger `trg_orders_seed_checklist` a cada INSERT.\n\nRode a collection inteira em ordem (Runner): as requisições geram um gss_id/po_number únicos por execução, então não colidem entre rodadas.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{gss_inbound_secret}}", "type": "string" }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Gera um gss_id/po_number únicos por execução da collection,",
+          "// para que rodadas repetidas não colidam (409) sem querer.",
+          "if (!pm.collectionVariables.get('run_stamp')) {",
+          "  const stamp = Date.now().toString();",
+          "  pm.collectionVariables.set('run_stamp', stamp);",
+          "  pm.collectionVariables.set('run_gss_id', 'GSS-TEST-' + stamp);",
+          "  pm.collectionVariables.set('run_po_number', 'PO-TEST-' + stamp);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "https://sotwise-pi.vercel.app", "type": "string" },
+    { "key": "run_stamp", "value": "", "type": "string" },
+    { "key": "run_gss_id", "value": "", "type": "string" },
+    { "key": "run_po_number", "value": "", "type": "string" },
+    { "key": "created_order_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Agendar order (criar) — 201",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}\",\n  \"po_number\": \"{{run_po_number}}\",\n  \"schedule_requested\": \"2026-09-15\",\n  \"client_reference\": \"REF via Postman\",\n  \"date_po\": \"2026-08-25\"\n}"
+        },
+        "description": "Cria uma order agendada. Só `gss_id` e `po_number` são obrigatórios; `schedule_requested` é a data do agendamento. As FKs de biblioteca (order_type_gss_id, client_gss_id, business_unit_gss_id, exporter_gss_id) são opcionais e resolvidas pelo gss_id da lib — ver a requisição 7."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201 (criada)', () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.test('created === true', () => pm.expect(b.created).to.eql(true));",
+              "pm.test('devolve id e po_number', () => {",
+              "  pm.expect(b.data).to.have.property('id');",
+              "  pm.expect(b.data.po_number).to.eql(pm.collectionVariables.get('run_po_number'));",
+              "});",
+              "if (b.data && b.data.id) pm.collectionVariables.set('created_order_id', b.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Reenviar mesma order (idempotente / atualiza) — 200",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}\",\n  \"po_number\": \"{{run_po_number}}\",\n  \"schedule_requested\": \"2026-10-01\",\n  \"client_reference\": \"REF atualizada via Postman\"\n}"
+        },
+        "description": "Mesmo `gss_id` da requisição 1: o endpoint faz UPDATE em vez de INSERT (idempotência). Note o `schedule_requested` mudado — deve refletir na order sem criar duplicata."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200 (atualizada)', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('created === false', () => pm.expect(b.created).to.eql(false));",
+              "pm.test('mesmo id da criação (não duplicou)', () => {",
+              "  pm.expect(b.data.id).to.eql(pm.collectionVariables.get('created_order_id'));",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Colisão de po_number — 409",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-B\",\n  \"po_number\": \"{{run_po_number}}\",\n  \"schedule_requested\": \"2026-09-20\"\n}"
+        },
+        "description": "gss_id NOVO mas o MESMO po_number da requisição 1. `po_number` é unique no banco → 409."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 409 (po_number em uso)', () => pm.response.to.have.status(409));",
+              "pm.test('mensagem menciona po_number', () => {",
+              "  pm.expect(pm.response.json().error.toLowerCase()).to.include('po_number');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Sem autenticação — 401",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-NOAUTH\",\n  \"po_number\": \"{{run_po_number}}-NOAUTH\"\n}"
+        },
+        "description": "Sem o header Authorization (auth = No Auth). Deve responder 401 antes de tocar no banco."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Payload inválido (sem po_number) — 400",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-INVALID\",\n  \"schedule_requested\": \"2026-09-15\"\n}"
+        },
+        "description": "Falta o `po_number` (obrigatório). O schema Zod rejeita → 400 com `error` + lista `issues`."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 400', () => pm.response.to.have.status(400));",
+              "pm.test('traz lista de issues', () => {",
+              "  pm.expect(pm.response.json()).to.have.property('issues');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. schedule_requested com formato errado — 400",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-BADDATE\",\n  \"po_number\": \"{{run_po_number}}-BADDATE\",\n  \"schedule_requested\": \"15/09/2026\"\n}"
+        },
+        "description": "`schedule_requested` precisa ser YYYY-MM-DD. Data em outro formato → 400 (\"Date must be YYYY-MM-DD.\")."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 400', () => pm.response.to.have.status(400));",
+              "pm.test('mensagem cita o formato de data', () => {",
+              "  pm.expect(pm.response.json().error).to.include('YYYY-MM-DD');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. FK de biblioteca inexistente — 400",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-FK\",\n  \"po_number\": \"{{run_po_number}}-FK\",\n  \"schedule_requested\": \"2026-09-15\",\n  \"client_gss_id\": \"NAO-EXISTE-NO-GSS\"\n}"
+        },
+        "description": "Um `*_gss_id` de biblioteca que não existe no SOTWISE não resolve para UUID → 400 (\"No clients found for gss_id '…'.\")."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 400', () => pm.response.to.have.status(400));",
+              "pm.test('mensagem cita o gss_id não resolvido', () => {",
+              "  pm.expect(pm.response.json().error.toLowerCase()).to.include('gss_id');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Agendar com FKs de biblioteca (template) — 201",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders",
+          "host": ["{{base_url}}"],
+          "path": ["api", "gss", "orders"]
+        },
+        "body": {
+          "mode": "raw",
+          "options": { "raw": { "language": "json" } },
+          "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-FULL\",\n  \"po_number\": \"{{run_po_number}}-FULL\",\n  \"schedule_requested\": \"2026-09-15\",\n  \"client_reference\": \"Pedido completo\",\n  \"date_po\": \"2026-08-25\",\n  \"order_type_gss_id\": \"{{order_type_gss_id}}\",\n  \"client_gss_id\": \"{{client_gss_id}}\",\n  \"business_unit_gss_id\": \"{{business_unit_gss_id}}\",\n  \"exporter_gss_id\": \"{{exporter_gss_id}}\",\n  \"leader_email\": \"{{leader_email}}\",\n  \"requester_email\": \"{{requester_email}}\"\n}"
+        },
+        "description": "Exemplo COMPLETO com as 4 FKs de biblioteca resolvidas por gss_id. Preencha as variáveis order_type_gss_id / client_gss_id / business_unit_gss_id / exporter_gss_id no environment com valores REAIS do GSS antes de rodar — senão cai no 400 da requisição 7. Por isso fica fora do fluxo padrão (desabilite ou pule no Runner se não tiver os gss_ids)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Só valida quando as 4 FKs foram preenchidas no environment.",
+              "const filled = ['order_type_gss_id','client_gss_id','business_unit_gss_id','exporter_gss_id']",
+              "  .every(k => (pm.variables.get(k) || '').length > 0);",
+              "if (!filled) {",
+              "  pm.test.skip('FKs de biblioteca não preenchidas — pulando (ver descrição)');",
+              "} else {",
+              "  pm.test('status 201', () => pm.response.to.have.status(201));",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
