@@ -32,6 +32,11 @@ export const gssOrderSchema = z.object({
   schedule_requested: optionalDate,
   client_reference: z.string().trim().max(200, "Reference is too long.").nullish(),
   date_po: optionalDate,
+  // Leader/Requester são usuários do SOTWISE (profiles). Profiles não têm gss_id,
+  // então o GSS os identifica pelo e-mail — resolvido para o id do profile no
+  // endpoint via public.profile_id_by_email().
+  leader_email: z.email("Invalid leader e-mail.").nullish(),
+  requester_email: z.email("Invalid requester e-mail.").nullish(),
 });
 
 export type GssOrderInput = z.infer<typeof gssOrderSchema>;
