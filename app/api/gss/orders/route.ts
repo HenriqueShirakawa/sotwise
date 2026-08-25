@@ -3,7 +3,11 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { gssOrderSchema, type GssOrderInput } from "@/domain/orders/gss-schema";
+import {
+  gssOrderSchema,
+  type GssOrderInput,
+  type GssOrderItemInput,
+} from "@/domain/orders/gss-schema";
 
 /**
  * Via de entrada GSS → SOTWISE para criar/atualizar ORDERS (push).
@@ -19,6 +23,11 @@ import { gssOrderSchema, type GssOrderInput } from "@/domain/orders/gss-schema";
  *   4. Upsert por `orders.gss_id` (idempotente: retry do GSS não duplica).
  *   5. O checklist NÃO é semeado aqui — o trigger `trg_orders_seed_checklist`
  *      (migration 20260824120000) cria as 10 etapas em todo INSERT de order.
+ *   6. `items[]` (opcional) vira as linhas Factory×Category em
+ *      `order_factory_category`: cada item traz o `gss_id` do supplier-category
+ *      (→ `factory_products` → fábrica+categoria). As linhas nascem SEM lote
+ *      (o usuário atribui depois). Não destrutivo: reenvio só ADICIONA pares
+ *      novos, preservando o lote que o usuário já atribuiu.
  *
  * `po_number` vem do GSS e é unique no banco: colisão com um número já usado
  * (pela app ou por outra order) responde 409. `requester_id`/`leader_id`
@@ -111,6 +120,87 @@ async function buildFields(
   return { ok: true, fields };
 }
 
+/**
+ * Cria as linhas Factory×Category (order_factory_category) da order a partir de
+ * `items`. Cada item traz o `gss_id` do supplier-category, do qual derivamos
+ * fábrica+categoria via `factory_products`. As linhas nascem SEM lote
+ * (`batch_id` null) — o usuário atribui o lote depois no SOTWISE.
+ *
+ * Idempotente e NÃO destrutivo: um par (factory, category) que já existe na
+ * order não é recriado nem tem `batch_id`/`ship_requirement` sobrescritos — assim
+ * um reenvio do GSS pode ADICIONAR linhas novas sem apagar o trabalho de lote do
+ * usuário. Pares duplicados dentro do mesmo payload são colapsados.
+ */
+async function applyOrderItems(
+  admin: AdminClient,
+  orderId: string,
+  items: GssOrderItemInput[] | null | undefined
+): Promise<{ ok: true } | { ok: false; error: string; status: 400 | 500 }> {
+  if (!items || items.length === 0) return { ok: true };
+
+  // Resolve todos os supplier-category ANTES de inserir (fail-fast).
+  const resolved: { factory_id: string; category_id: string; ship_requirement: string }[] = [];
+  for (const item of items) {
+    const { data, error } = await admin
+      .from("factory_products")
+      .select("factory_id, category_id")
+      .eq("gss_id", item.supplier_category_gss_id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error) return { ok: false, status: 500, error: error.message };
+    if (!data) {
+      return {
+        ok: false,
+        status: 400,
+        error: `No factory_products found for supplier_category_gss_id '${item.supplier_category_gss_id}'.`,
+      };
+    }
+    resolved.push({
+      factory_id: (data as { factory_id: string }).factory_id,
+      category_id: (data as { category_id: string }).category_id,
+      ship_requirement: item.ship_requirement,
+    });
+  }
+
+  // Pares já existentes na order → não recriar (preserva lote + ship_requirement).
+  const { data: existingRows, error: exErr } = await admin
+    .from("order_factory_category")
+    .select("factory_id, category_id")
+    .eq("order_id", orderId);
+  if (exErr) return { ok: false, status: 500, error: exErr.message };
+
+  const seen = new Set(
+    (existingRows ?? []).map(
+      (r) => `${(r as { factory_id: string }).factory_id}:${(r as { category_id: string }).category_id}`
+    )
+  );
+
+  const toInsert: {
+    order_id: string;
+    factory_id: string;
+    category_id: string;
+    ship_requirement: string;
+  }[] = [];
+  for (const r of resolved) {
+    const key = `${r.factory_id}:${r.category_id}`;
+    if (seen.has(key)) continue; // já existe (na order ou repetido no payload)
+    seen.add(key);
+    toInsert.push({
+      order_id: orderId,
+      factory_id: r.factory_id,
+      category_id: r.category_id,
+      ship_requirement: r.ship_requirement,
+      // batch_id fica null de propósito — o usuário atribui o lote depois.
+    });
+  }
+
+  if (toInsert.length === 0) return { ok: true };
+
+  const { error: insErr } = await admin.from("order_factory_category").insert(toInsert);
+  if (insErr) return { ok: false, status: 500, error: insErr.message };
+  return { ok: true };
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const expected = process.env.GSS_INBOUND_SECRET;
   if (!expected) {
@@ -159,6 +249,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
       return json({ error: error.message }, 500);
     }
+    // Reenvio pode adicionar linhas Factory×Category novas (sem apagar as antigas).
+    const items = await applyOrderItems(admin, data.id, input.items);
+    if (!items.ok) return json({ error: items.error }, items.status);
     return json({ data, created: false }, 200);
   }
 
@@ -180,5 +273,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   // O trigger trg_orders_seed_checklist já semeou as 10 etapas do checklist.
+  // Agora as linhas Factory×Category (sem lote — o usuário atribui depois).
+  const items = await applyOrderItems(admin, data.id, input.items);
+  if (!items.ok) return json({ error: items.error }, items.status);
+
   return json({ data, created: true }, 201);
 }

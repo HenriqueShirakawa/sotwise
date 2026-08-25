@@ -10,6 +10,24 @@ const optionalDate = z
 const optionalGssRef = z.string().trim().min(1).nullish();
 
 /**
+ * Uma linha Factory×Category da order. O GSS a identifica pelo `gss_id` do
+ * supplier-category (= `factory_products.gss_id`), do qual o endpoint deriva a
+ * fábrica e a categoria. `ship_requirement` é obrigatória por linha; a linha
+ * nasce SEM lote (batch) — o usuário atribui o lote depois no SOTWISE.
+ */
+const gssOrderItemSchema = z.object({
+  supplier_category_gss_id: z
+    .string()
+    .trim()
+    .min(1, "supplier_category_gss_id is required."),
+  ship_requirement: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "ship_requirement must be YYYY-MM-DD."),
+});
+
+export type GssOrderItemInput = z.infer<typeof gssOrderItemSchema>;
+
+/**
  * Payload que o GSS manda em POST /api/gss/orders para criar/atualizar uma
  * order (via inbound push — oposta ao pull das bibliotecas).
  *
@@ -37,6 +55,9 @@ export const gssOrderSchema = z.object({
   // endpoint via public.profile_id_by_email().
   leader_email: z.email("Invalid leader e-mail.").nullish(),
   requester_email: z.email("Invalid requester e-mail.").nullish(),
+  // Linhas Factory×Category da order (order_factory_category). Opcional: pode
+  // vir vazio ou omitido. Ver gssOrderItemSchema.
+  items: z.array(gssOrderItemSchema).nullish(),
 });
 
 export type GssOrderInput = z.infer<typeof gssOrderSchema>;
