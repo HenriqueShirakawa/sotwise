@@ -117,4 +117,100 @@ export const orderTypeSchema = z.object({
 });
 export type OrderTypeInput = z.infer<typeof orderTypeSchema>;
 
+/* -------------------------------------------------------------------------- */
+/* Schemas de ATUALIZAÇÃO (PATCH /api/{recurso}/{id})                          */
+/*                                                                            */
+/* Espelham os schemas de criação, mas com todo campo OPCIONAL: um PATCH toca */
+/* só o que envia. A allowlist de campos é a mesma — nada de `gss_id`,        */
+/* `created_by`, `id`. O par e-mail/`email_na` segue a mesma regra da criação */
+/* (§3.5.3), só que validada apenas quando um dos dois é enviado.             */
+/* -------------------------------------------------------------------------- */
+
+/** Campos de e-mail opcionais para PATCH (nullable: `null` == "sem e-mail"). */
+const emailUpdateFields = {
+  email: z.email("Invalid e-mail address.").max(200).nullable().optional(),
+  email_na: z.boolean().optional(),
+};
+
+/**
+ * Refino do par e-mail num PATCH — só dispara quando `email` ou `email_na` vem
+ * no corpo. Semântica: `email_na:true` marca "sem e-mail" (e não pode vir com um
+ * e-mail junto); caso contrário, um e-mail preenchido é obrigatório. Omitir os
+ * dois mantém o valor atual.
+ */
+const emailUpdateRefine = (
+  data: { email?: string | null; email_na?: boolean },
+  ctx: z.RefinementCtx
+) => {
+  if (data.email === undefined && data.email_na === undefined) return;
+  if (data.email_na === true) {
+    if (data.email) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["email"],
+        message: 'Marked "N/A" but an e-mail was provided.',
+      });
+    }
+    return;
+  }
+  if (!data.email) {
+    ctx.addIssue({ code: "custom", path: ["email"], message: emailOrNaMessage.message });
+  }
+};
+
+/** Recursos name-only — o único campo editável é `name`, então é obrigatório. */
+export const nameUpdateSchema = z.object({ name: nameSchema });
+export type NameUpdateInput = z.infer<typeof nameUpdateSchema>;
+
+export const clientUpdateSchema = z.object({
+  name: nameSchema.optional(),
+  country_id: z.uuid("Select a country.").optional(),
+});
+export type ClientUpdateInput = z.infer<typeof clientUpdateSchema>;
+
+export const exporterUpdateSchema = z.object({
+  name: nameSchema.optional(),
+  acronym: z
+    .string()
+    .trim()
+    .min(1, "Acronym is required.")
+    .max(50, "Acronym is too long.")
+    .optional(),
+});
+export type ExporterUpdateInput = z.infer<typeof exporterUpdateSchema>;
+
+export const orderTypeUpdateSchema = z.object({
+  name: nameSchema.optional(),
+  color: z.string().trim().min(1).max(50).optional(),
+  icon_path: z.string().trim().min(1).max(500).optional(),
+});
+export type OrderTypeUpdateInput = z.infer<typeof orderTypeUpdateSchema>;
+
+export const contactUpdateSchema = z
+  .object({
+    name: nameSchema.optional(),
+    ...emailUpdateFields,
+    phone_number: phoneSchema.optional(),
+  })
+  .superRefine(emailUpdateRefine);
+export type ContactUpdateInput = z.infer<typeof contactUpdateSchema>;
+
+export const agentUpdateSchema = z
+  .object({
+    name: nameSchema.optional(),
+    country_id: z.uuid("Select a country.").optional(),
+    location: z.enum(["brazil", "china"], { message: "Select a location." }).optional(),
+    ...emailUpdateFields,
+    phone_number: phoneSchema.optional(),
+    contact_ids: z.array(z.uuid()).optional(),
+  })
+  .superRefine(emailUpdateRefine);
+export type AgentUpdateInput = z.infer<typeof agentUpdateSchema>;
+
+export const categoryUpdateSchema = z.object({
+  name: nameSchema.optional(),
+  factory_ids: z.array(z.uuid()).optional(),
+});
+export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
+
 export type ActionResult = { ok: true } | { ok: false; error: string };
