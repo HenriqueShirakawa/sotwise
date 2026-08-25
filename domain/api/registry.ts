@@ -5,14 +5,21 @@ import { z } from "zod";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import {
   agentSchema,
+  agentUpdateSchema,
   businessUnitSchema,
   categorySchema,
+  categoryUpdateSchema,
   citySchema,
   clientSchema,
+  clientUpdateSchema,
   contactSchema,
+  contactUpdateSchema,
   exporterSchema,
+  exporterUpdateSchema,
   nameSchema,
+  nameUpdateSchema,
   orderTypeSchema,
+  orderTypeUpdateSchema,
 } from "@/domain/registration/schema";
 
 /**
@@ -46,7 +53,7 @@ export type ResourceTable =
 /** `userId` é null quando a chamada veio por token de serviço (created_by null). */
 export type ResourceSession = { userId: string | null };
 
-export interface ResourceConfig<I = unknown> {
+export interface ResourceConfig<I = unknown, U = unknown> {
   table: ResourceTable;
   /** Colunas retornadas no GET. */
   select: string;
@@ -56,11 +63,35 @@ export interface ResourceConfig<I = unknown> {
   buildRow: (input: I, session: ResourceSession) => Record<string, unknown>;
   /** Pós-insert opcional (ex.: sincronizar junção M-N). Retorna erro ou null. */
   afterInsert?: (id: string, input: I, admin: AdminClient) => Promise<string | null>;
+  /** Validação do corpo do PATCH (campos opcionais — só toca o que vier). */
+  updateSchema: z.ZodType<U>;
+  /**
+   * Monta o `set` do UPDATE a partir do corpo do PATCH. Inclui **só** as colunas
+   * presentes no corpo — nunca `id`, `created_by` nem `created_at`. Junção fica a
+   * cargo de `afterUpdate` (fora do `set`), então o retorno pode ser `{}`.
+   */
+  buildUpdate: (input: U) => Record<string, unknown>;
+  /** Pós-update opcional (junção M-N). Só age quando o campo veio no corpo. */
+  afterUpdate?: (id: string, input: U, admin: AdminClient) => Promise<string | null>;
 }
 
-/** Preserva a inferência de `I` por recurso, apagando-a no Record final. */
-function defineResource<I>(cfg: ResourceConfig<I>): ResourceConfig {
+/** Preserva a inferência de `I`/`U` por recurso, apagando-a no Record final. */
+function defineResource<I, U>(cfg: ResourceConfig<I, U>): ResourceConfig {
   return cfg as ResourceConfig;
+}
+
+/**
+ * Resolve o par e-mail/`email_na` de um PATCH em colunas. Retorna `null` quando
+ * nenhum dos dois veio (não mexe). A consistência já foi validada pelo
+ * `emailUpdateRefine` do schema — aqui é só a tradução para colunas.
+ */
+function emailUpdateColumns(input: {
+  email?: string | null;
+  email_na?: boolean;
+}): { email: string | null; email_na: boolean } | null {
+  if (input.email === undefined && input.email_na === undefined) return null;
+  if (input.email_na === true) return { email: null, email_na: true };
+  return { email: input.email as string, email_na: false };
 }
 
 /** Objeto name-only — carriers/factories/pols/pods/countries/shipment_models. */
@@ -126,6 +157,22 @@ export const RESOURCES: Record<string, ResourceConfig> = {
       created_by: session.userId,
     }),
     afterInsert: (id, input, admin) => syncAgentContacts(admin, id, input.contact_ids),
+    updateSchema: agentUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.country_id !== undefined) row.country_id = input.country_id;
+      if (input.location !== undefined) row.location = input.location;
+      if (input.phone_number !== undefined) row.phone_number = input.phone_number;
+      const email = emailUpdateColumns(input);
+      if (email) Object.assign(row, email);
+      return row;
+    },
+    // `contact_ids` ausente = não mexe na junção; presente (mesmo `[]`) = regrava.
+    afterUpdate: (id, input, admin) =>
+      input.contact_ids !== undefined
+        ? syncAgentContacts(admin, id, input.contact_ids)
+        : Promise.resolve(null),
   }),
 
   contacts: defineResource({
@@ -139,6 +186,15 @@ export const RESOURCES: Record<string, ResourceConfig> = {
       phone_number: input.phone_number,
       created_by: session.userId,
     }),
+    updateSchema: contactUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.phone_number !== undefined) row.phone_number = input.phone_number;
+      const email = emailUpdateColumns(input);
+      if (email) Object.assign(row, email);
+      return row;
+    },
   }),
 
   "business-units": defineResource({
@@ -147,6 +203,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     schema: businessUnitSchema,
     // icon_path é nullable (migração de reconcile) — via JSON criamos só o nome.
     buildRow: (input, session) => ({ name: input.name, created_by: session.userId }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   carriers: defineResource({
@@ -154,6 +212,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: nameOnlySchema,
     buildRow: (input, session) => ({ name: input.name, created_by: session.userId }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   categories: defineResource({
@@ -167,6 +227,17 @@ export const RESOURCES: Record<string, ResourceConfig> = {
       input.factory_ids?.length
         ? syncCategoryFactories(admin, id, input.factory_ids)
         : Promise.resolve(null),
+    updateSchema: categoryUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      return row;
+    },
+    // `factory_ids` ausente = não mexe na junção; presente (mesmo `[]`) = regrava.
+    afterUpdate: (id, input, admin) =>
+      input.factory_ids !== undefined
+        ? syncCategoryFactories(admin, id, input.factory_ids)
+        : Promise.resolve(null),
   }),
 
   factories: defineResource({
@@ -174,6 +245,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: nameOnlySchema,
     buildRow: (input, session) => ({ name: input.name, created_by: session.userId }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   cities: defineResource({
@@ -181,6 +254,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: citySchema,
     buildRow: (input) => ({ name: input.name }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   pols: defineResource({
@@ -188,6 +263,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: nameOnlySchema,
     buildRow: (input) => ({ name: input.name }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   pods: defineResource({
@@ -195,6 +272,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: nameOnlySchema,
     buildRow: (input) => ({ name: input.name }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   clients: defineResource({
@@ -206,6 +285,13 @@ export const RESOURCES: Record<string, ResourceConfig> = {
       country_id: input.country_id,
       created_by: session.userId,
     }),
+    updateSchema: clientUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.country_id !== undefined) row.country_id = input.country_id;
+      return row;
+    },
   }),
 
   countries: defineResource({
@@ -213,6 +299,8 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: nameOnlySchema,
     buildRow: (input) => ({ name: input.name }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 
   exporters: defineResource({
@@ -224,6 +312,13 @@ export const RESOURCES: Record<string, ResourceConfig> = {
       acronym: input.acronym,
       created_by: session.userId,
     }),
+    updateSchema: exporterUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.acronym !== undefined) row.acronym = input.acronym;
+      return row;
+    },
   }),
 
   "order-types": defineResource({
@@ -237,6 +332,14 @@ export const RESOURCES: Record<string, ResourceConfig> = {
       if (input.icon_path !== undefined) row.icon_path = input.icon_path;
       return row;
     },
+    updateSchema: orderTypeUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.color !== undefined) row.color = input.color;
+      if (input.icon_path !== undefined) row.icon_path = input.icon_path;
+      return row;
+    },
   }),
 
   "shipment-models": defineResource({
@@ -244,5 +347,7 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     select: "id, name",
     schema: nameOnlySchema,
     buildRow: (input, session) => ({ name: input.name, created_by: session.userId }),
+    updateSchema: nameUpdateSchema,
+    buildUpdate: (input) => ({ name: input.name }),
   }),
 };

@@ -20,6 +20,16 @@ Complementa [`docs/SCHEMA.md`](SCHEMA.md) (schema do nosso lado) e
 > `sotwise_sync`, nem view, nem role read-only, nem `updated_at` filtrável, nem
 > paginação. O §3 fica como o **contrato ideal a negociar**; o §9 descreve o que
 > existe e o que já foi executado em cima disso.
+>
+> 📥 **Nova via _inbound_ (2026-08-24) — o GSS cria ORDERS.** Tudo neste
+> documento é _pull_ (SOTWISE puxa bibliotecas; GSS é dono delas). A partir de
+> agora o GSS também **empurra** pedidos: `POST /api/gss/orders` cria/atualiza
+> uma order no SOTWISE. É a **primeira via _push_ GSS → SOTWISE** e é de
+> **pedidos**, não de bibliotecas — direção oposta ao resto daqui. Contrato do
+> payload, idempotência (`orders.gss_id`) e a cascata do checklist (trigger
+> `trg_orders_seed_checklist`) estão em
+> [`docs/regras_de_negocio.md` §3.7.5](regras_de_negocio.md#375-order_checklist_steps--step_attachments).
+> Env: `GSS_INBOUND_SECRET`.
 
 ---
 
@@ -321,7 +331,7 @@ Mínimo para o sync ser confiável:
 | Telas de Registration com Create / Edit / Delete | **Read-only**, com aviso de onde o dado é mantido. Só o ícone permanece editável (§6.4). |
 | Server Actions de CRUD dos cadastros (`domain/registration/*`) | Reduzidas a leitura. |
 | `GET /api/{recurso}` | **Fica** — é a nossa API de leitura para terceiros, independente do sync. |
-| [`docs/API.md`](API.md) | Reescrever a parte do `POST` quando o read-only entrar. As lacunas listadas lá (falta de `PATCH`/`DELETE`, `gss_id` ignorado, ausência de upsert) deixam de ser problema: nenhuma delas está no caminho do pull. |
+| [`docs/API.md`](API.md) | Reescrever a parte de escrita (`POST`/`PATCH`) quando o read-only entrar. O `PATCH /api/{recurso}/{id}` foi adicionado em 25/08/2026 (create+read+update, sem PUT/DELETE) — decisão do Henrique de dar caminho de atualização ao integrador enquanto a Fase 5 (§9.10) segue adiada. `gss_id` continua ignorado (nem no POST nem no PATCH) e não há upsert: nenhuma dessas vias está no caminho do pull. |
 
 ---
 

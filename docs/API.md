@@ -4,7 +4,7 @@ Referência para integração externa com as bibliotecas de cadastro (agents, cl
 
 - **Base URL:** `https://sotwise-pi.vercel.app`
 - **Formato:** JSON em todas as requisições e respostas (`Content-Type: application/json`)
-- **Verbos disponíveis:** `GET` (listar) e `POST` (criar). Não existem `PUT`, `PATCH` nem `DELETE`.
+- **Verbos disponíveis:** `GET` (listar), `POST` (criar) e `PATCH` (atualizar). Não existem `PUT` (substituição total) nem `DELETE` — o soft-delete é feito pelo app/pela origem, por decisão.
 
 Todos os recursos seguem exatamente o mesmo contrato — o que muda entre eles são apenas os campos.
 
@@ -49,10 +49,13 @@ Não há headers `Access-Control-*`. A API é **servidor → servidor**; chamada
 Sucesso sempre devolve os dados dentro de `data`:
 
 ```jsonc
-// GET  → 200
+// GET   → 200
 { "data": [ { "id": "…", "name": "…" }, … ] }
 
-// POST → 201
+// POST  → 201
+{ "data": { "id": "…", "name": "…" } }
+
+// PATCH → 200
 { "data": { "id": "…", "name": "…" } }
 ```
 
@@ -66,17 +69,17 @@ Erro sempre devolve `error` com uma mensagem legível:
 
 | Status | Quando acontece |
 |---|---|
-| `200` | GET com sucesso |
+| `200` | GET ou PATCH com sucesso |
 | `201` | POST com sucesso — o corpo traz o registro criado, já com o `id` gerado |
-| `400` | Corpo inválido (falha de validação) **ou** FK apontando para um id inexistente |
+| `400` | Corpo inválido (falha de validação), FK apontando para um id inexistente, ou PATCH sem nenhum campo a atualizar |
 | `401` | Não autenticado / token inválido |
 | `403` | Conta bloqueada |
-| `404` | Recurso não existe na URL — `{ "error": "Unknown resource 'xyz'." }` |
-| `405` | Verbo não suportado (`PUT`, `PATCH`, `DELETE`) — **corpo vazio**, sem JSON |
+| `404` | Recurso não existe na URL (`{ "error": "Unknown resource 'xyz'." }`) **ou** PATCH cujo `{id}` não existe / já foi excluído (`{ "error": "Record not found." }`) |
+| `405` | Verbo não suportado (`PUT`, `DELETE`) — **corpo vazio**, sem JSON |
 | `409` | Violação de unicidade. Nenhum campo exposto por esta API é único, então na prática não dispara |
 | `500` | Erro inesperado no servidor |
 
-Verbos auxiliares: `OPTIONS` devolve `204` com `Allow: GET, HEAD, OPTIONS, POST`; `HEAD` executa o mesmo caminho do `GET` e também exige autenticação.
+Verbos auxiliares: `OPTIONS` devolve `204` com o header `Allow` das rotas — `GET, HEAD, OPTIONS, POST` na coleção (`/api/{recurso}`) e `OPTIONS, PATCH` no item (`/api/{recurso}/{id}`); `HEAD` executa o mesmo caminho do `GET` e também exige autenticação.
 
 ### Erro de validação (`400`)
 
@@ -143,6 +146,47 @@ Campos gerados pelo servidor: `id`, `created_at`, `updated_at`, `deleted_at`, `c
 > ⚠️ **Campos desconhecidos são descartados em silêncio, sem erro.** A validação remove tudo que não está documentado e devolve `201` normalmente. Ou seja: enviar `{"name":"Maersk","gss_id":"G1"}` cria o registro **sem** o `gss_id`, e a resposta não avisa nada. Não existe pareamento por id externo (`gss_id`/`bubble_id`) nesta API — nem no corpo aceito, nem no retorno.
 
 > **Sem upsert:** cada POST é uma inserção nova. Repetir a mesma chamada cria um registro duplicado — nenhum campo exposto é único, então não há `409` para te proteger. A idempotência é responsabilidade do integrador.
+
+---
+
+## 4.1. `PATCH /api/{recurso}/{id}` — atualizar
+
+Atualiza **um** registro existente, identificado pelo `id` na URL. O corpo é um objeto JSON **parcial**: só as colunas enviadas mudam; o que não vier fica como está. Devolve `200` com o registro já atualizado.
+
+```bash
+curl -s -X PATCH "https://sotwise-pi.vercel.app/api/carriers/3f6d…" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Maersk Line"}'
+```
+
+```jsonc
+// 200
+{ "data": { "id": "3f6d…", "name": "Maersk Line" } }
+```
+
+Regras:
+
+- **Só campos documentados.** Os campos aceitos são os mesmos do POST daquele recurso (§6), todos opcionais. Campos desconhecidos (incl. `gss_id`/`bubble_id`) são **descartados em silêncio**, igual ao POST.
+- **Corpo vazio → `400`** (`{ "error": "No fields to update." }`). Não há PATCH "no-op".
+- **Id inexistente ou já excluído (soft-delete) → `404`** (`{ "error": "Record not found." }`). Só registros ativos são alcançáveis.
+- **Nada de `id`, `created_by`, `created_at`** é alterável por aqui.
+- **Não é upsert.** PATCH nunca cria; se o `id` não existe, é `404`. Para criar, use o POST.
+
+### Campo de e-mail (`contacts` e `agents`)
+
+O par `email` / `email_na` segue a mesma regra da criação, validada **só quando um dos dois é enviado**:
+
+- `{"email_na": true}` → marca "sem e-mail" (grava `email = null`). Enviar um `email` preenchido junto é `400`.
+- `{"email": "novo@x.com"}` → grava o e-mail e marca `email_na = false` automaticamente.
+- `{"email_na": false}` sozinho (sem `email`) → `400`: ou manda um e-mail, ou marca `N/A`.
+- Não enviar nenhum dos dois → o e-mail atual não muda.
+
+### Vínculos M-N (`agents.contact_ids`, `categories.factory_ids`)
+
+A lista é sincronizada **como conjunto**: se o campo vier no corpo, os vínculos são **regravados** por completo (o que estava e não veio é removido); `[]` limpa todos. Omitir o campo **não mexe** na junção.
+
+> ⚠️ Como no POST, a junção do `agents` é gravada numa segunda etapa: id de contato inexistente/repetido em `contact_ids` resulta em `500` **com o restante do PATCH já aplicado**. Valide os ids com `GET /api/contacts` antes.
 
 ---
 
