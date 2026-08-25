@@ -366,6 +366,26 @@ create table public.category_factories (
 
 > Regra de UI: vincular ao menos uma fábrica é obrigatório ao criar/editar categoria. Reforçar na aplicação (o banco não impõe "≥1" sozinho).
 
+##### 3.5.2.1 factory_products (produtos da fábrica) — decisão 2026-08-25
+
+✅ Revisão do "que não modelamos": o `SupplierCategory` do GSS **não é junção pura** — é a **tabela de PRODUTO** da fábrica, com `id` próprio, `code` e `city`. A mesma fábrica repete o par (categoria) em linhas distintas pelo `code` (no GSS: **1067 linhas para 1035 pares**, 287 codes, 139 cidades). Passamos a modelar essa granularidade em **`factory_products`** — **aditivo**: `category_factories` continua (o app usa nos filtros de Pre-loading/Shipments) e vira um derivado; `factory_products` é a camada fina que guarda `code`/`city`.
+
+Sync por `gss_id` (id da supplier-category no GSS), traduzindo supplier→factory / category→category / city→city — `scripts/sync-gss/sync-products.ts`. Validado ao vivo: **1058 dos 1067 resolvem** (9 unresolved = fábricas ainda "Só no GSS"). Migration `20260825120000_factory_products.sql`. **Pronto no código; aplicação no AGK sob demanda.** UI ainda não existe.
+
+```sql
+create table public.factory_products (
+  id          uuid primary key default gen_random_uuid(),
+  factory_id  uuid not null references public.factories(id)  on delete cascade,
+  category_id uuid not null references public.categories(id) on delete cascade,
+  city_id     uuid references public.cities(id),          -- nullable ("TBC"/vazio no GSS)
+  code        text,                                        -- código do produto ("A","G1"…)
+  gss_id      text unique,                                 -- id da supplier-category no GSS
+  deleted_at  timestamptz,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+```
+
 #### 3.5.3 contacts
 
 Contatos avulsos (nome, e-mail, telefone). **Sem dono** — é uma lista simples, vinculável a partir de Agents (e potencialmente Clients/Exporters). Todos os campos obrigatórios, **exceto e-mail que aceita "N/A"** (quando não há e-mail). Tem export XLS.
