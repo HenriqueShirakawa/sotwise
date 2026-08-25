@@ -103,7 +103,7 @@ function BatchPickerPopover({
           className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-white px-2.5 text-sm disabled:opacity-50"
         >
           <Search className="size-4 shrink-0 text-muted-foreground" />
-          <span className={selected ? "text-slate-800" : "text-muted-foreground"}>
+          <span className={`min-w-0 truncate ${selected ? "text-slate-800" : "text-muted-foreground"}`}>
             {selected?.batch_number ?? "Select batch"}
           </span>
         </button>

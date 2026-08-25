@@ -594,6 +594,7 @@ export type Database = {
           updated_at: Timestamp;
           created_by: UUID | null;
           bubble_id: string | null;
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -614,6 +615,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["orders"]["Insert"]>;
         Relationships: [];
