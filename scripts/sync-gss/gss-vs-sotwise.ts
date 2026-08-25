@@ -8,13 +8,17 @@
  * Lado nosso: as tabelas de biblioteca (com `gss_id` já pareado por `sync.ts`).
  * Abas: Resumo + uma por recurso (RECURSOS) + "Fabricas x Orders" + "Mudanças".
  *
+ * Cada aba de biblioteca traz um JOIN de Orders (Nº de orders / Última order /
+ * Orders (PO)) — a via até a order é diferente por biblioteca (ver ORDER_JOIN):
+ *   direto em orders        clients, order_types, business_units, exporters
+ *   via order_factory_categ factories, categories
+ *   via pre-loading→batches pods, cities, pols, agents, carriers, contacts
+ *   via clients.country_id  countries
+ *
  * Classificação por linha:
  *   Pareado                         nossa linha tem gss_id que casa com o GSS
  *   Só no GSS                       gss_id sem par local
  *   Só no nosso banco (sem gss_id)  nossa linha sem gss_id
- *
- * A coluna "Mudou desde doc anterior" e a aba "Mudanças" comparam com o xlsx
- * baseline (o documento anterior), quando informado.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -25,6 +29,7 @@ import { RECURSOS, type Recurso } from "../../lib/gss/recursos";
 
 const OUT = process.argv[2] ?? "GSS_vs_SOTWISE_bibliotecas.xlsx";
 const BASELINE = process.argv[3] ?? "";
+const PO_LIMIT = 30; // máximo de POs listados por célula
 
 const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -32,6 +37,7 @@ const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_
 
 type Snap = { resource: string; gss_id: number; payload: Record<string, any> };
 type Local = { id: string; name: string | null; gss_id: string | null };
+type Order = { id: string; po_number: string; date_po: string | null; created_at: string; status: string };
 
 const norm = (s: any) =>
   String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
@@ -83,12 +89,120 @@ function mudou(gssId: string | null, paired: boolean, base?: BaselineSheet): str
   return "";
 }
 
+// ---------- JOIN de Orders por biblioteca ----------
+type OrderMaps = {
+  ordersById: Map<string, Order>;
+  /** table -> (localId -> set de order ids) */
+  byTable: Map<string, Map<string, Set<string>>>;
+};
+
+function addLink(m: Map<string, Set<string>>, key: string | null | undefined, orderId: string) {
+  if (!key) return;
+  (m.get(key) ?? m.set(key, new Set()).get(key)!).add(orderId);
+}
+
+async function buildOrderMaps(): Promise<OrderMaps> {
+  const orders = await fetchAll<Order & { client_id: string | null; order_type_id: string | null; business_unit_id: string | null; exporter_id: string | null }>(
+    "orders",
+    "id, po_number, date_po, created_at, status, client_id, order_type_id, business_unit_id, exporter_id",
+    (q) => q.is("deleted_at", null)
+  );
+  const ordersById = new Map<string, Order>(orders.map((o) => [o.id, o]));
+
+  const byTable = new Map<string, Map<string, Set<string>>>();
+  const tbl = (t: string) => byTable.get(t) ?? byTable.set(t, new Map()).get(t)!;
+
+  // diretos em orders
+  for (const o of orders) {
+    addLink(tbl("clients"), o.client_id, o.id);
+    addLink(tbl("order_types"), o.order_type_id, o.id);
+    addLink(tbl("business_units"), o.business_unit_id, o.id);
+    addLink(tbl("exporters"), o.exporter_id, o.id);
+  }
+
+  // factories / categories via order_factory_category
+  const ofc = await fetchAll<{ factory_id: string | null; category_id: string | null; order_id: string | null }>(
+    "order_factory_category", "factory_id, category_id, order_id"
+  );
+  for (const r of ofc) {
+    if (!r.order_id) continue;
+    addLink(tbl("factories"), r.factory_id, r.order_id);
+    addLink(tbl("categories"), r.category_id, r.order_id);
+  }
+
+  // countries via clients.country_id
+  const clients = await fetchAll<{ id: string; country_id: string | null }>("clients", "id, country_id");
+  const clientCountry = new Map(clients.map((c) => [c.id, c.country_id]));
+  for (const o of orders) {
+    const country = o.client_id ? clientCountry.get(o.client_id) : null;
+    addLink(tbl("countries"), country, o.id);
+  }
+
+  // pre-loading -> set de orders (via pre_loading_batches -> batches.order_id)
+  const batches = await fetchAll<{ id: string; order_id: string | null }>("batches", "id, order_id");
+  const batchOrder = new Map(batches.map((b) => [b.id, b.order_id]));
+  const plBatches = await fetchAll<{ pre_loading_id: string; batch_id: string }>("pre_loading_batches", "pre_loading_id, batch_id");
+  const plOrders = new Map<string, Set<string>>();
+  for (const r of plBatches) {
+    const oid = batchOrder.get(r.batch_id);
+    if (oid) addLink(plOrders, r.pre_loading_id, oid);
+  }
+  const spreadPl = (m: Map<string, Set<string>>, key: string | null | undefined, plId: string) => {
+    if (!key) return;
+    const set = plOrders.get(plId);
+    if (!set) return;
+    const dst = m.get(key) ?? m.set(key, new Set()).get(key)!;
+    for (const oid of set) dst.add(oid);
+  };
+
+  // pods via pre_loadings.pod_id
+  const pls = await fetchAll<{ id: string; pod_id: string | null }>("pre_loadings", "id, pod_id", (q) => q.is("deleted_at", null));
+  for (const p of pls) spreadPl(tbl("pods"), p.pod_id, p.id);
+
+  // cities/pols/agents/contacts via pre_loading_checklist_steps
+  const steps = await fetchAll<{
+    pre_loading_id: string; city_id: string | null; pol_id: string | null;
+    agent_brazil_id: string | null; agent_china_id: string | null; carrier_agent_id: string | null;
+    contact_brazil_id: string | null; contact_china_id: string | null;
+  }>("pre_loading_checklist_steps", "pre_loading_id, city_id, pol_id, agent_brazil_id, agent_china_id, carrier_agent_id, contact_brazil_id, contact_china_id");
+  for (const s of steps) {
+    spreadPl(tbl("cities"), s.city_id, s.pre_loading_id);
+    spreadPl(tbl("pols"), s.pol_id, s.pre_loading_id);
+    spreadPl(tbl("agents"), s.agent_brazil_id, s.pre_loading_id);
+    spreadPl(tbl("agents"), s.agent_china_id, s.pre_loading_id);
+    spreadPl(tbl("agents"), s.carrier_agent_id, s.pre_loading_id);
+    spreadPl(tbl("contacts"), s.contact_brazil_id, s.pre_loading_id);
+    spreadPl(tbl("contacts"), s.contact_china_id, s.pre_loading_id);
+  }
+
+  // carriers via shipments.carrier_id
+  const ships = await fetchAll<{ pre_loading_id: string; carrier_id: string | null }>("shipments", "pre_loading_id, carrier_id", (q) => q.is("deleted_at", null));
+  for (const s of ships) spreadPl(tbl("carriers"), s.carrier_id, s.pre_loading_id);
+
+  return { ordersById, byTable };
+}
+
+/** Colunas de Orders para uma linha (id local) de uma tabela. */
+function orderCols(maps: OrderMaps, table: string, localId: string | null) {
+  const empty = { "Nº de orders": "", "Última order": "", "Orders (PO)": "" };
+  if (!localId) return empty;
+  const set = maps.byTable.get(table)?.get(localId);
+  if (!set || !set.size) return { "Nº de orders": 0, "Última order": "", "Orders (PO)": "" };
+  const os = [...set].map((id) => maps.ordersById.get(id)).filter(Boolean) as Order[];
+  os.sort((a, b) => String(b.date_po ?? b.created_at).localeCompare(String(a.date_po ?? a.created_at)));
+  return {
+    "Nº de orders": os.length,
+    "Última order": (os[0]?.date_po ?? os[0]?.created_at ?? "").slice(0, 10),
+    "Orders (PO)": os.slice(0, PO_LIMIT).map((o) => o.po_number).join(", ") + (os.length > PO_LIMIT ? " …" : ""),
+  };
+}
+
 async function main() {
-  // snapshot do GSS
   const snap = await fetchAll<Snap>("gss_snapshot", "resource, gss_id, payload");
   const byResource = new Map<string, Snap[]>();
   for (const s of snap) (byResource.get(s.resource) ?? byResource.set(s.resource, []).get(s.resource)!).push(s);
 
+  const maps = await buildOrderMaps();
   const baseline = loadBaseline(BASELINE);
   const wb = XLSX.utils.book_new();
   const resumo: any[] = [];
@@ -119,17 +233,15 @@ async function main() {
       if (rec.detalheLabel) row[rec.detalheLabel] = g.detalhe;
       row["Nome no nosso banco"] = local?.name ?? "";
       row["Status"] = paired ? "Pareado" : "Só no GSS";
+      Object.assign(row, orderCols(maps, rec.table, local?.id ?? null));
       const m = mudou(g.gss_id, paired, base);
       row["Mudou desde doc anterior"] = m;
       if (m) {
         mudancas.push({
-          Biblioteca: rec.label,
-          gss_id: g.gss_id,
-          "Nome no GSS": g.name,
+          Biblioteca: rec.label, gss_id: g.gss_id, "Nome no GSS": g.name,
           "Nome no nosso banco": local?.name ?? "",
           Antes: m === "NOVO" ? "(não existia)" : "Só no GSS",
-          Agora: paired ? "Pareado" : "Só no GSS",
-          Mudança: m,
+          Agora: paired ? "Pareado" : "Só no GSS", Mudança: m,
         });
       }
       out.push(row);
@@ -141,6 +253,7 @@ async function main() {
       if (rec.detalheLabel) row[rec.detalheLabel] = "";
       row["Nome no nosso banco"] = l.name ?? "";
       row["Status"] = "Só no nosso banco (sem gss_id)";
+      Object.assign(row, orderCols(maps, rec.table, l.id));
       row["Mudou desde doc anterior"] = "";
       out.push(row);
     }
@@ -163,29 +276,16 @@ async function main() {
     });
   }
 
-  // ---------- Fábricas × Orders (recomputa a aba Suppliers com contagem) ----------
+  // ---------- Fábricas × Orders (uma linha por fábrica × order) ----------
   const facs = await fetchAll<Local>("factories", "id, name, gss_id", (q) => q.is("deleted_at", null));
   const facById = new Map(facs.map((f) => [f.id, f]));
-  const orders = await fetchAll<{ id: string; po_number: string; date_po: string | null; created_at: string; status: string }>(
-    "orders", "id, po_number, date_po, created_at, status", (q) => q.is("deleted_at", null)
-  );
-  const orderById = new Map(orders.map((o) => [o.id, o]));
-  const ofc = await fetchAll<{ factory_id: string; order_id: string }>("order_factory_category", "factory_id, order_id");
-
-  // factory_id -> set de order_ids
-  const ordersByFac = new Map<string, Set<string>>();
-  for (const r of ofc) {
-    if (!r.factory_id || !r.order_id) continue;
-    (ordersByFac.get(r.factory_id) ?? ordersByFac.set(r.factory_id, new Set()).get(r.factory_id)!).add(r.order_id);
-  }
-
-  // aba "Fabricas x Orders": uma linha por (fábrica, order)
+  const facOrders = maps.byTable.get("factories") ?? new Map();
   const fxo: any[] = [];
-  for (const [facId, orderIds] of ordersByFac) {
+  for (const [facId, orderIds] of facOrders) {
     const f = facById.get(facId);
     if (!f) continue;
     for (const oid of orderIds) {
-      const o = orderById.get(oid);
+      const o = maps.ordersById.get(oid);
       if (!o) continue;
       fxo.push({
         "Fábrica": f.name ?? "",
@@ -200,30 +300,6 @@ async function main() {
   fxo.sort((a, b) => norm(a["Fábrica"]).localeCompare(norm(b["Fábrica"])) || String(a.PO).localeCompare(String(b.PO)));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fxo), "Fabricas x Orders");
 
-  // enriquecer a aba Suppliers → factories com Nº de orders / última / POs
-  const supIdx = wb.SheetNames.indexOf("Suppliers → factories".slice(0, 31));
-  if (supIdx >= 0) {
-    const sheet = wb.Sheets[wb.SheetNames[supIdx]];
-    const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-    const localByName = new Map<string, Local>();
-    for (const f of facs) localByName.set(norm(f.name), f);
-    for (const row of rows) {
-      const f = localByName.get(norm(row["Nome no nosso banco"]));
-      if (f && ordersByFac.has(f.id)) {
-        const oids = [...ordersByFac.get(f.id)!].map((id) => orderById.get(id)).filter(Boolean) as any[];
-        oids.sort((a, b) => String(b.date_po ?? b.created_at).localeCompare(String(a.date_po ?? a.created_at)));
-        row["Nº de orders"] = oids.length;
-        row["Última order"] = (oids[0]?.date_po ?? oids[0]?.created_at ?? "").slice(0, 10);
-        row["Orders (PO)"] = oids.slice(0, 20).map((o) => o.po_number).join(", ");
-      } else {
-        row["Nº de orders"] = "";
-        row["Última order"] = "";
-        row["Orders (PO)"] = "";
-      }
-    }
-    wb.Sheets[wb.SheetNames[supIdx]] = XLSX.utils.json_to_sheet(rows);
-  }
-
   // ---------- Mudanças (agregado NOVO/PAREOU vs doc anterior) ----------
   if (BASELINE) {
     mudancas.sort((a, b) => String(a.Biblioteca).localeCompare(String(b.Biblioteca)) || norm(a["Nome no GSS"]).localeCompare(norm(b["Nome no GSS"])));
@@ -233,14 +309,11 @@ async function main() {
   }
 
   // ---------- Resumo (primeira aba) ----------
-  const wsResumo = XLSX.utils.json_to_sheet(resumo);
-  XLSX.utils.book_append_sheet(wb, wsResumo, "Resumo");
-  // move Resumo para o começo
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumo), "Resumo");
   wb.SheetNames = ["Resumo", ...wb.SheetNames.filter((n) => n !== "Resumo")];
 
   XLSX.writeFile(wb, OUT);
   console.log(`\n✔ ${OUT}`);
-  console.log("\nResumo:");
   console.table(resumo);
   console.log(`Fabricas x Orders: ${fxo.length} linhas`);
 }
