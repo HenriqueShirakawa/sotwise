@@ -22,7 +22,9 @@ import { gssOrderSchema, type GssOrderInput } from "@/domain/orders/gss-schema";
  *
  * `po_number` vem do GSS e é unique no banco: colisão com um número já usado
  * (pela app ou por outra order) responde 409. `requester_id`/`leader_id`
- * apontam para `profiles` (usuários do SOTWISE, sem `gss_id`) e nascem NULL.
+ * apontam para `profiles` (usuários do SOTWISE, sem `gss_id`); o GSS os manda
+ * por e-mail (`leader_email`/`requester_email`), resolvido para o id do profile
+ * via a função `public.profile_id_by_email`. Ausentes → NULL.
  */
 
 export const dynamic = "force-dynamic";
@@ -67,6 +69,18 @@ async function resolveFk(
   return { ok: true, id: (data as { id: string }).id };
 }
 
+/** Traduz um e-mail no id do profile (usuário do SOTWISE). null quando não informado. */
+async function resolveProfileByEmail(
+  admin: AdminClient,
+  email: string | null | undefined
+): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
+  if (!email) return { ok: true, id: null };
+  const { data, error } = await admin.rpc("profile_id_by_email", { p_email: email });
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: `No SOTWISE user found for e-mail '${email}'.` };
+  return { ok: true, id: data };
+}
+
 /** Campos da order derivados do payload (sem gss_id/po_number/status). */
 async function buildFields(
   admin: AdminClient,
@@ -84,6 +98,15 @@ async function buildFields(
     if (!resolved.ok) return resolved;
     fields[column] = resolved.id;
   }
+
+  // Leader/Requester chegam por e-mail e viram id de profile.
+  const leader = await resolveProfileByEmail(admin, input.leader_email);
+  if (!leader.ok) return leader;
+  fields.leader_id = leader.id;
+
+  const requester = await resolveProfileByEmail(admin, input.requester_email);
+  if (!requester.ok) return requester;
+  fields.requester_id = requester.id;
 
   return { ok: true, fields };
 }
