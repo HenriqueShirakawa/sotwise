@@ -202,8 +202,8 @@
             "type": "text/javascript",
             "exec": [
               "pm.test('status 400', () => pm.response.to.have.status(400));",
-              "pm.test('traz lista de issues', () => {",
-              "  pm.expect(pm.response.json()).to.have.property('issues');",
+              "pm.test('erro menciona po_number (obrigatório na criação)', () => {",
+              "  pm.expect(pm.response.json().error.toLowerCase()).to.include('po_number');",
               "});"
             ]
           }
