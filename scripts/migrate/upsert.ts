@@ -18,6 +18,28 @@ export async function upsertByBubbleId(table: string, rows: Row[]): Promise<numb
   return n;
 }
 
+/**
+ * Upsert MESCLANDO por uma chave arbitrária (ON CONFLICT <onConflict> DO UPDATE).
+ * Usado quando a linha já pode ter sido criada por outro caminho (ex.: um trigger
+ * AFTER INSERT que semeia a linha por (order_id, step) sem bubble_id) e queremos
+ * ENRIQUECÊ-la com os dados do Bubble, não colidir. Diferente do upsertByBubbleId
+ * (que casa por bubble_id e quebraria numa unique diferente) e do upsertJunction
+ * (que ignora duplicatas em vez de atualizar).
+ */
+export async function upsertByKey(table: string, rows: Row[], onConflict: string): Promise<number> {
+  const clean = rows.filter(Boolean);
+  if (clean.length === 0) return 0;
+  const BATCH = 500;
+  let n = 0;
+  for (let i = 0; i < clean.length; i += BATCH) {
+    const chunk = clean.slice(i, i + BATCH);
+    const { error } = await supabaseAdmin.from(table).upsert(chunk, { onConflict });
+    if (error) throw new Error(`upsertByKey ${table} [${i}..]: ${error.message}`);
+    n += chunk.length;
+  }
+  return n;
+}
+
 /** Upsert de tabela de junção (sem bubble_id) — ON CONFLICT na PK composta, DO NOTHING. */
 export async function upsertJunction(table: string, rows: Row[], onConflict: string): Promise<number> {
   if (rows.length === 0) return 0;

@@ -6,7 +6,7 @@
 import { supabaseAdmin } from "./client";
 import { fetchAll } from "./bubble";
 import {
-  upsertByBubbleId, upsertJunction, loadIdMap, tableCount,
+  upsertByBubbleId, upsertByKey, upsertJunction, loadIdMap, tableCount,
   str, reqStr, bool, ref, dateOnly, tsz,
 } from "./upsert";
 
@@ -711,7 +711,11 @@ async function importChecklist() {
       });
     }
   }
-  results.order_checklist_steps = { fetched: orderSteps.size, upserted: await upsertByBubbleId("order_checklist_steps", [...orderSteps.values()]), skipped: skip };
+  // Casa por (order_id, step), NÃO por bubble_id: o trigger `trg_orders_seed_checklist`
+  // (AFTER INSERT ON orders) já semeia as 10 etapas da fase Order sem bubble_id. O
+  // upsert por bubble_id colidiria na unique (order_id, step); casar por essa chave
+  // MESCLA os dados do Bubble sobre a linha semeada (grava bubble_id, datas, etc.).
+  results.order_checklist_steps = { fetched: orderSteps.size, upserted: await upsertByKey("order_checklist_steps", [...orderSteps.values()], "order_id,step"), skipped: skip };
   results.pre_loading_checklist_steps = { fetched: plSteps.size, upserted: await upsertByBubbleId("pre_loading_checklist_steps", [...plSteps.values()]) };
   return results;
 }
