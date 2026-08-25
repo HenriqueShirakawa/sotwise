@@ -183,6 +183,18 @@ o `updated_at` do pai.
 > [MAPEAMENTO_GSS §2](MAPEAMENTO_GSS.md#2-o-que-os-dados-provam-sobre-o-glossário)
 > e §6.
 
+> **Produtos da fábrica — decisão de 2026-08-25.** A "reviravolta" acima virou
+> tabela: `supplier-category` NÃO é junção pura — é a **tabela de PRODUTO** da
+> fábrica (id próprio, `code`, `city`, timestamps). A mesma fábrica repete o par
+> (categoria) em linhas distintas pelo `code`: **1067 linhas / 1035 pares**, 287
+> codes, 139 cidades. O sync colapsava isso na junção `category_factories` e
+> perdia `code`/`city` + ~32 linhas. Modelado como **`factory_products`** (aditivo,
+> a junção continua para os filtros do app): migration
+> `20260825120000_factory_products.sql` + `scripts/sync-gss/sync-products.ts`
+> (upsert por `gss_id`, traduz supplier/category/city → uuid). Validado ao vivo:
+> **1058 dos 1067 resolvem** (9 unresolved = fábricas ainda "Só no GSS"). Pronto
+> no código; aplicação no AGK sob demanda.
+
 ---
 
 ## 4. Do nosso lado
