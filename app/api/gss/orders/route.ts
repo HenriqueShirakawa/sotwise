@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import {
   gssOrderSchema,
   type GssOrderInput,
@@ -276,6 +277,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     // Reenvio pode adicionar linhas Factory×Category novas (sem apagar as antigas).
     const items = await applyOrderItems(admin, data.id, input.items);
     if (!items.ok) return json({ error: items.error }, items.status);
+    // Ping realtime: a lista Orders aberta atualiza sozinha (ex.: a order passa a
+    // ser visível quando ganha a 1ª linha Factory×Category).
+    await broadcastOrderStatusPing({ order_ids: [data.id] });
     return json({ data, created: false }, 200);
   }
 
@@ -314,6 +318,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Agora as linhas Factory×Category (sem lote — o usuário atribui depois).
   const items = await applyOrderItems(admin, data.id, input.items);
   if (!items.ok) return json({ error: items.error }, items.status);
+
+  // Ping realtime: se a order já nasceu com Factory×Category, aparece na lista
+  // aberta sem F5 (a visibilidade da lista exige ≥1 linha — ver orders/page.tsx).
+  await broadcastOrderStatusPing({ order_ids: [data.id] });
 
   return json({ data, created: true }, 201);
 }

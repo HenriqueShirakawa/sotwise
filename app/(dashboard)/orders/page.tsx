@@ -14,28 +14,38 @@ type EtdOrderRow = {
   order_factory_category: { order_id: string } | { order_id: string }[] | null;
 };
 
+type OrderListRow = {
+  id: string;
+  po_number: string;
+  order_type_id: string | null;
+  business_unit_id: string | null;
+  client_id: string | null;
+  client_reference: string | null;
+  requester_id: string | null;
+  exporter_id: string | null;
+  leader_id: string | null;
+  status: OrderRow["status"];
+  schedule_requested: string | null;
+  created_at: string;
+};
+
+/**
+ * Regra de visibilidade (2026-08-25): order criada a partir deste instante só
+ * aparece na lista se tiver ≥1 linha Factory×Category. As anteriores ficam
+ * "grandfathered" (sempre visíveis) — não escondemos as ~388 orders migradas
+ * que nasceram sem F×C. O corte é a data em que a regra entrou.
+ */
+const NEW_ORDER_CUTOFF = new Date("2026-08-25T00:00:00Z");
+
 export const metadata = { title: "Orders" };
 
 export default async function OrdersPage() {
   const { profile } = await requireFeature("orders");
   const admin = createAdminClient();
 
-  const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =
+  const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes, ofcOrderIdRows] =
     await Promise.all([
-      fetchAll<{
-        id: string;
-        po_number: string;
-        order_type_id: string | null;
-        business_unit_id: string | null;
-        client_id: string | null;
-        client_reference: string | null;
-        requester_id: string | null;
-        exporter_id: string | null;
-        leader_id: string | null;
-        status: OrderRow["status"];
-        schedule_requested: string | null;
-        created_at: string;
-      }>((from, to) =>
+      fetchAll<OrderListRow>((from, to) =>
         admin
           .from("orders")
           .select(
@@ -77,7 +87,13 @@ export default async function OrdersPage() {
       fetchAll<{ id: string; full_name: string | null }>((from, to) =>
         admin.from("profiles").select("id, full_name").range(from, to)
       ),
+      // order_ids que têm ≥1 Factory×Category — base da regra de visibilidade.
+      fetchAll<{ order_id: string }>((from, to) =>
+        admin.from("order_factory_category").select("order_id").range(from, to)
+      ),
     ]);
+
+  const ordersWithFactoryCategory = new Set(ofcOrderIdRows.map((r) => r.order_id));
 
   const buMap = new Map(buRes.map((b) => [b.id, b.name]));
   const typeMap = new Map(typeRes.map((t) => [t.id, { name: t.name, color: t.color }]));
@@ -106,7 +122,15 @@ export default async function OrdersPage() {
     if (!current || e.initial_date < current) etdByOrder.set(orderId, e.initial_date);
   }
 
-  const rows: OrderRow[] = orders.map((o) => {
+  const rows: OrderRow[] = orders
+    // Regra de visibilidade: order nova (>= corte) só aparece com ≥1 F×C; as
+    // anteriores ao corte ficam sempre visíveis (não escondemos as migradas).
+    .filter(
+      (o) =>
+        new Date(o.created_at) < NEW_ORDER_CUTOFF ||
+        ordersWithFactoryCategory.has(o.id)
+    )
+    .map((o) => {
     const type = o.order_type_id ? typeMap.get(o.order_type_id) : undefined;
     return {
       id: o.id,
