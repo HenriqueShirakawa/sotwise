@@ -228,11 +228,21 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   bloqueado riscado. A busca de Clients passou a casar com nome de usuário também
   ("de que cliente é a Fernanda?"). Não existe campo "contato do cliente" em `clients`:
   o contato **é** o usuário.
-- **O que o portal mostra:** número do pedido, referência do cliente, tipo, status e a
-  contagem de itens por estágio. Fora: fábrica, exporter, leader/requester, BU, número
-  de lote (o cliente acompanha produto) e datas de ETD (expor estimativa a terceiro é
-  decisão de negócio ainda não tomada). Pedido `in_negotiation` não aparece; `canceled`
-  aparece.
+- **O que o portal mostra:** número do pedido, referência do cliente, tipo, status,
+  **número do lote** (`.01/.02`), **data de schedule** (`schedule_requested`) e a quebra
+  do pedido **por lote** — cada lote com status, barra de progresso (In Production →
+  Pre-Loading → In Transit → Delivered) e as categorias de produto que viajam nele; mais
+  a visão "All products" (categoria × lote × status). Fora: fábrica, exporter,
+  leader/requester, BU e datas de ETD (expor estimativa a terceiro segue sem decisão).
+  **Não aparece porque o banco não guarda:** quantidade, descrição de produto e datas por
+  etapa do lote — o produto fica na granularidade de **categoria**. Documents/History/
+  Messages estão desenhados no portal como abas "coming soon" (dependem de decisão +
+  backend). Pedido `in_negotiation` não aparece; `canceled` aparece.
+- ⚠️ **Reversão do recorte (2026-08-26):** a decisão de 2026-08-18 escondia o número do
+  lote (cliente acompanhava só produto × estágio). Foi revertida a pedido do Henrique
+  para o portal casar com o desenho do Claude Design "Portal do Cliente Sotwise" — o
+  cliente externo agora **vê o lote**. O que continua fora é campo interno da AGK ou dado
+  que o banco não modela (acima).
 
 ---
 
