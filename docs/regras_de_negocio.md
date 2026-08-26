@@ -232,10 +232,14 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   **número do lote** (`.01/.02`), **data de schedule** (`schedule_requested`) e a quebra
   do pedido **por lote** — cada lote com status, barra de progresso (In Production →
   Pre-Loading → In Transit → Delivered) e as categorias de produto que viajam nele; mais
-  a visão "All products" (categoria × lote × status). Fora: fábrica, exporter,
-  leader/requester, BU e datas de ETD (expor estimativa a terceiro segue sem decisão).
-  **Não aparece porque o banco não guarda:** quantidade, descrição de produto e datas por
-  etapa do lote — o produto fica na granularidade de **categoria**. Documents/History/
+  a visão "All products" (categoria × lote × status). Cada lote mostra também a **ETA ao
+  Brasil** (passo `eta_brazil` do checklist) ou a **data de entrega** (`delivered`/
+  `ata_brazil`) quando já entregue — expor essa estimativa ao cliente foi autorizado em
+  2026-08-26 (antes era "decisão não tomada"). É por PEDIDO (o checklist é do pedido), então
+  a mesma ETA se repete nos lotes. Fora: fábrica, exporter, leader/requester, BU e o resto
+  do ETD interno. **Não aparece porque o banco não guarda:** quantidade, descrição de
+  produto, código de produto por linha e datas por etapa do lote — o produto fica na
+  granularidade de **categoria**. Documents/History/
   Messages estão desenhados no portal como abas "coming soon" (dependem de decisão +
   backend). Pedido `in_negotiation` não aparece; `canceled` aparece.
 - ⚠️ **Reversão do recorte (2026-08-26):** a decisão de 2026-08-18 escondia o número do
