@@ -3,7 +3,7 @@ import "server-only";
 import { fetchAll } from "@/lib/fetch-all";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { BatchStatus, OrderStatus } from "@/types/database";
+import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 
 /**
  * Leitura do portal do cliente externo.
@@ -164,6 +164,14 @@ export type ClientOrderDetail = {
   status: OrderStatus;
   /** Data pedida de embarque (orders.schedule_requested). */
   scheduleRequested: string | null;
+  /**
+   * ETA ao Brasil (passo `eta_brazil` do checklist do pedido). É estimativa
+   * interna; expô-la ao cliente foi autorizado em 2026-08-26 (ver o cabeçalho
+   * do arquivo). Por pedido, não por lote — o checklist é do pedido.
+   */
+  etaBrazil: string | null;
+  /** Data de entrega efetiva (passo `delivered`/`ata_brazil`), quando houver. */
+  deliveredOn: string | null;
   /** Lotes do pedido, ordenados pelo número. */
   batches: ClientOrderBatch[];
   /** Produtos do pedido ainda sem lote — não começaram a viajar. */
@@ -187,7 +195,7 @@ export async function loadClientOrderDetail(
 
   if (!order) return null;
 
-  const [batches, ofc, categories, orderType] = await Promise.all([
+  const [batches, ofc, categories, orderType, checklist] = await Promise.all([
     fetchAll<{ id: string; batch_number: string; status: BatchStatus }>((from, to) =>
       admin
         .from("batches")
@@ -208,9 +216,32 @@ export async function loadClientOrderDetail(
     order.order_type_id
       ? admin.from("order_types").select("name").eq("id", order.order_type_id).single()
       : Promise.resolve({ data: null as { name: string } | null }),
+    // Datas do checklist do pedido para ETA e entrega. Só os passos que
+    // interessam ao cliente — não é a régua interna toda.
+    fetchAll<{
+      step: ChecklistStep;
+      enabled: boolean;
+      estimated_date: string | null;
+      completed_on: string | null;
+    }>((from, to) =>
+      admin
+        .from("order_checklist_steps")
+        .select("step, enabled, estimated_date, completed_on")
+        .eq("order_id", orderId)
+        .in("step", ["eta_brazil", "ata_brazil", "delivered"])
+        .range(from, to)
+    ),
   ]);
 
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+
+  // ETA = estimativa do passo eta_brazil; entrega = ata_brazil/delivered
+  // efetivos. Passo desabilitado (enabled=false) não conta.
+  const stepOf = new Map(checklist.filter((s) => s.enabled !== false).map((s) => [s.step, s]));
+  const etaStep = stepOf.get("eta_brazil");
+  const etaBrazil = etaStep?.estimated_date ?? etaStep?.completed_on ?? null;
+  const deliveredOn =
+    stepOf.get("delivered")?.completed_on ?? stepOf.get("ata_brazil")?.completed_on ?? null;
 
   // lote → produtos (Set para deduplicar: a mesma categoria pode aparecer em
   // mais de uma entrada Factory×Category dentro do mesmo lote).
@@ -247,6 +278,8 @@ export async function loadClientOrderDetail(
     type: orderType.data?.name ?? null,
     status: order.status,
     scheduleRequested: order.schedule_requested,
+    etaBrazil,
+    deliveredOn,
     batches: clientBatches,
     pendingProducts: [...pending].sort((a, b) => a.localeCompare(b)),
   };

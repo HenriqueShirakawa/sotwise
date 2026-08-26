@@ -86,34 +86,56 @@ function BatchProgress({ status }: { status: BatchStatus }) {
   );
 }
 
-function BatchCard({ batch }: { batch: ClientOrderBatch }) {
+function BatchCard({
+  batch,
+  eta,
+}: {
+  batch: ClientOrderBatch;
+  eta: { label: string; value: string };
+}) {
+  const count = batch.products.length;
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-[#fbfaff] px-5 py-4">
-        <div className="flex flex-wrap items-baseline gap-2.5">
-          <span className="font-mono text-[15px] font-medium text-slate-900">
-            Batch {batch.code}
-          </span>
-          <StatusPill label={batch.label} />
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 bg-[#fbfaff] px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-2.5">
+            <span className="font-mono text-[15px] font-medium text-slate-900">
+              Batch {batch.code}
+            </span>
+            <StatusPill label={batch.label} />
+          </div>
+          <div className="mt-1 truncate text-xs text-slate-500">
+            {count} {count === 1 ? "product" : "products"}
+            {count > 0 ? ` · ${batch.products.join(", ")}` : ""}
+          </div>
         </div>
-        <span className="text-xs text-slate-400">
-          {batch.products.length} {batch.products.length === 1 ? "product" : "products"}
-        </span>
+        <div className="text-right">
+          <div className="font-mono text-[10px] tracking-[0.08em] text-slate-400 uppercase">
+            {eta.label}
+          </div>
+          <div className="mt-0.5 font-mono text-[13px] text-slate-700">{eta.value}</div>
+        </div>
       </div>
 
       <BatchProgress status={batch.status} />
 
-      {batch.products.length > 0 ? (
-        <ul className="flex flex-wrap gap-2 p-5">
-          {batch.products.map((product) => (
-            <li
-              key={product}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700"
-            >
-              {product}
-            </li>
-          ))}
-        </ul>
+      {count > 0 ? (
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 text-left">
+              <th className="px-5 py-3 font-medium text-slate-500">
+                Product <span className="text-slate-300">↑↓</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {batch.products.map((product) => (
+              <tr key={product} className="border-b border-slate-100 last:border-0">
+                <td className="px-5 py-3.5 font-medium text-slate-800">{product}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : (
         <p className="px-5 py-5 text-sm text-slate-400">No products in this batch yet.</p>
       )}
@@ -148,6 +170,14 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
     ...order.pendingProducts,
   ]).size;
   const scheduleReq = formatDate(order.scheduleRequested);
+
+  // Slot direito do card do lote: entrega (se o lote já foi) ou ETA ao Brasil
+  // (estimativa do pedido). Repetimos a ETA do pedido em cada lote — não há ETA
+  // por lote no banco; é a mesma para o pedido inteiro.
+  const batchEta = (batch: ClientOrderBatch) =>
+    batch.status === "delivered"
+      ? { label: "Delivered", value: formatDate(order.deliveredOn) ?? "—" }
+      : { label: "ETA", value: formatDate(order.etaBrazil) ?? "to be confirmed" };
 
   // "All products": cada categoria com o lote em que viaja e o status do lote.
   const flatProducts = order.batches.flatMap((b) =>
@@ -277,7 +307,7 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
         ) : grouping === "batch" ? (
           <div className="space-y-3">
             {order.batches.map((batch) => (
-              <BatchCard key={batch.id} batch={batch} />
+              <BatchCard key={batch.id} batch={batch} eta={batchEta(batch)} />
             ))}
 
             {order.pendingProducts.length > 0 ? (
