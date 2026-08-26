@@ -366,19 +366,6 @@ function LoadingStatusBadge({ status }: { status: LoadingStatus | null }) {
   );
 }
 
-/**
- * Carga do lote inteiro resumida a partir das suas entradas: Partial se QUALQUER
- * entrada embarcou parcial, senão Total se todas as marcadas são total, senão
- * None quando há entradas marcadas sem carga, ou null quando nada foi embarcado.
- */
-function aggregateLoading(rows: OfcRow[]): LoadingStatus | null {
-  const marked = rows.map((r) => r.loading_status).filter((s): s is LoadingStatus => !!s);
-  if (marked.length === 0) return null;
-  if (marked.includes("partial")) return "partial";
-  if (marked.includes("total")) return "total";
-  return "none";
-}
-
 function ViewBatchModal({
   open,
   onOpenChange,
@@ -1222,7 +1209,6 @@ export function OrderDetailClient({
           batches.map((b) => {
             const editable = EDITABLE_BATCH_STATUSES.includes(b.status);
             const rows = ofc.filter((r) => r.batch_id === b.id);
-            const loadingAgg = aggregateLoading(rows);
             return (
               <div
                 key={b.id}
@@ -1230,7 +1216,6 @@ export function OrderDetailClient({
               >
                 <span className="flex items-center gap-2 font-medium text-slate-700 lg:font-normal">
                   {b.batch_number}
-                  {loadingAgg && <LoadingStatusBadge status={loadingAgg} />}
                 </span>
                 <div className="order-last w-full lg:order-none lg:w-auto lg:justify-self-start">
                   {editable ? (
