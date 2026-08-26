@@ -55,22 +55,22 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
   }, [orders, search, status]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-1 duration-300">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">My orders</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My orders</h1>
         <p className="mt-1 text-sm text-slate-500">
           Follow the progress of your orders with AGK.
         </p>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+        <div className="relative flex-1 sm:max-w-[380px]">
+          <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-slate-400" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Order number or your reference"
-            className="!h-11 bg-white pl-9"
+            className="!h-11 rounded-xl bg-white pl-10"
           />
         </div>
         <Select value={status} onValueChange={(v) => setStatus(v as "all" | OrderStatus)}>
@@ -106,12 +106,12 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
               <Link
                 key={o.id}
                 href={`/portal/${o.id}`}
-                className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+                className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-violet-300 hover:bg-slate-50"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">#{o.po_number}</p>
-                    {o.type ? <p className="text-xs text-slate-500">{o.type}</p> : null}
+                    <p className="font-mono text-[15px] text-slate-900">#{o.po_number}</p>
+                    {o.type ? <p className="mt-0.5 text-xs text-slate-500">{o.type}</p> : null}
                   </div>
                   <StatusPill label={ORDER_STATUS_LABELS[o.status]} />
                 </div>
@@ -129,7 +129,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
           </div>
 
           <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white min-[720px]:block">
-            <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
+            <Table className="[&_td]:py-3.5 [&_th]:py-3.5 [&_thead_tr]:bg-[#fbfaff]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Order</TableHead>
@@ -147,7 +147,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                     onClick={() => router.push(`/portal/${o.id}`)}
                     className="cursor-pointer transition-colors hover:bg-slate-50"
                   >
-                    <TableCell className="font-medium text-slate-800">
+                    <TableCell className="font-mono text-[13px] text-slate-900">
                       {/* Link real no PO: dá foco por teclado e navegação sem
                           depender do onClick da linha (que é só conveniência). */}
                       <Link
@@ -180,6 +180,12 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
               </TableBody>
             </Table>
           </div>
+
+          {/* Contagem real — a lista não é paginada (o cliente tem poucos
+              pedidos), então nada de controles de página falsos aqui. */}
+          <p className="text-sm text-slate-500">
+            {filtered.length} {filtered.length === 1 ? "record" : "records"}
+          </p>
         </>
       )}
     </div>
