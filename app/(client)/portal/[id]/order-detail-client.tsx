@@ -10,27 +10,28 @@ import {
   Package,
 } from "lucide-react";
 
-import type { ClientOrderDetail } from "@/domain/client/portal";
+import type { ClientOrderBatch, ClientOrderDetail } from "@/domain/client/portal";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { StatusPill } from "@/components/status-pill";
 import { cn } from "@/lib/utils";
-import type { BatchStatus, OrderStatus } from "@/types/database";
+import type { BatchStatus } from "@/types/database";
 
 /**
  * Detalhe do pedido no portal do cliente. Só apresentação — a leitura já veio
- * escopada por `clientId` na page. Mostra os produtos agrupados por estágio,
- * sem citar lote nem qualquer campo interno da AGK (recorte de 2026-08-18).
+ * escopada por `clientId` na page. Segue o desenho do Claude Design: o pedido
+ * quebrado por LOTE, com barra de progresso por lote e o toggle "By batch /
+ * All products".
  *
- * O shell de abas (Products / Documents / History / Messages) espelha o desenho
- * do portal, mas só "Products" está ligado a dado real: documentos, histórico e
- * mensagens dependem de decisão de exposição + backend que ainda não existem, e
- * por isso entram como "coming soon" — nunca com dado fabricado.
+ * O que não aparece não é esquecimento: quantidade, descrição e datas por etapa
+ * não existem no banco (ver domain/client/portal.ts). O produto fica na
+ * granularidade de CATEGORIA. Documentos, histórico e mensagens dependem de
+ * decisão + backend que ainda não existem → "coming soon", nunca dado fabricado.
  */
 
-type Tab = "products" | "documents" | "history" | "messages";
+type Tab = "batches" | "documents" | "history" | "messages";
+type Grouping = "batch" | "flat";
 
-/** Ciclo de vida que o cliente acompanha — o mesmo dos lotes, sem in_negotiation
- *  nem canceled (que não são etapas do fluxo feliz). */
+/** Ciclo de vida que o cliente acompanha, sem in_negotiation nem canceled. */
 const STEPS: { status: BatchStatus; label: string }[] = [
   { status: "in_production", label: "In Production" },
   { status: "preloading", label: "Pre-Loading" },
@@ -38,30 +39,30 @@ const STEPS: { status: BatchStatus; label: string }[] = [
   { status: "delivered", label: "Delivered" },
 ];
 
-/** Em que passo do ciclo o pedido está, a partir do status do pedido. */
-const STATUS_STEP: Record<OrderStatus, number> = {
+/** Em que passo do ciclo o lote está. -1 = fora do fluxo (negotiation/canceled). */
+const BATCH_STEP: Record<BatchStatus, number> = {
   in_negotiation: -1,
   in_production: 0,
-  partially_preloading: 1,
-  pre_loading: 1,
-  partially_shipped: 2,
-  shipped: 2,
-  partially_delivered: 3,
+  preloading: 1,
+  in_transit: 2,
   delivered: 3,
   canceled: -1,
 };
 
-function StageProgress({ order }: { order: ClientOrderDetail }) {
-  const current = STATUS_STEP[order.status];
-  // Quantos produtos há em cada estágio do ciclo — para dar peso a cada passo.
-  const countByStatus = new Map(order.stages.map((s) => [s.status, s.products.length]));
+function formatDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
 
+/** Barra de 4 passos para um lote — sem datas por etapa (o banco não guarda). */
+function BatchProgress({ status }: { status: BatchStatus }) {
+  const current = BATCH_STEP[status];
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 border-b border-slate-100 px-5 py-4 sm:grid-cols-4">
       {STEPS.map((step, i) => {
         const done = current > i;
         const active = current === i;
-        const count = countByStatus.get(step.status) ?? 0;
         return (
           <div key={step.status} className="min-w-0">
             <div
@@ -78,14 +79,44 @@ function StageProgress({ order }: { order: ClientOrderDetail }) {
             >
               {step.label}
             </div>
-            {count > 0 ? (
-              <div className="mt-0.5 font-mono text-[10px] text-slate-400">
-                {count} {count === 1 ? "product" : "products"}
-              </div>
-            ) : null}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function BatchCard({ batch }: { batch: ClientOrderBatch }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-[#fbfaff] px-5 py-4">
+        <div className="flex flex-wrap items-baseline gap-2.5">
+          <span className="font-mono text-[15px] font-medium text-slate-900">
+            Batch {batch.code}
+          </span>
+          <StatusPill label={batch.label} />
+        </div>
+        <span className="text-xs text-slate-400">
+          {batch.products.length} {batch.products.length === 1 ? "product" : "products"}
+        </span>
+      </div>
+
+      <BatchProgress status={batch.status} />
+
+      {batch.products.length > 0 ? (
+        <ul className="flex flex-wrap gap-2 p-5">
+          {batch.products.map((product) => (
+            <li
+              key={product}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700"
+            >
+              {product}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="px-5 py-5 text-sm text-slate-400">No products in this batch yet.</p>
+      )}
     </div>
   );
 }
@@ -108,14 +139,23 @@ function ComingSoon({ icon: Icon, title, description }: {
 }
 
 export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
-  const [tab, setTab] = useState<Tab>("products");
+  const [tab, setTab] = useState<Tab>("batches");
+  const [grouping, setGrouping] = useState<Grouping>("batch");
 
-  const hasProducts = order.stages.length > 0 || order.pendingProducts.length > 0;
-  const productCount =
-    new Set([...order.stages.flatMap((s) => s.products), ...order.pendingProducts]).size;
+  const hasBatches = order.batches.length > 0;
+  const productLines = new Set([
+    ...order.batches.flatMap((b) => b.products),
+    ...order.pendingProducts,
+  ]).size;
+  const scheduleReq = formatDate(order.scheduleRequested);
 
-  const tabs: { id: Tab; label: string; icon: typeof Package }[] = [
-    { id: "products", label: "Products", icon: Package },
+  // "All products": cada categoria com o lote em que viaja e o status do lote.
+  const flatProducts = order.batches.flatMap((b) =>
+    b.products.map((name) => ({ name, batch: b.code, status: b.label }))
+  );
+
+  const tabs: { id: Tab; label: string; icon: typeof Package; count?: number }[] = [
+    { id: "batches", label: "Batches", icon: Package, count: order.batches.length },
     { id: "documents", label: "Documents", icon: FileText },
     { id: "history", label: "History", icon: Clock },
     { id: "messages", label: "Messages", icon: MessageSquare },
@@ -131,7 +171,7 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
         My orders
       </Link>
 
-      {/* Cabeçalho do pedido — cartão no lugar do título solto (desenho do portal). */}
+      {/* Cabeçalho do pedido. */}
       <div className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-6">
         <div className="min-w-0">
           <div className="font-mono text-2xl font-medium text-slate-900">
@@ -146,112 +186,157 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
                 </strong>
               </span>
             ) : null}
-            {order.client_reference && (order.type || productCount > 0) ? (
-              <span aria-hidden className="text-slate-300">
-                ·
-              </span>
+            {order.client_reference && (order.type || hasBatches) ? (
+              <span aria-hidden className="text-slate-300">·</span>
             ) : null}
             {order.type ? <span>{order.type}</span> : null}
-            {order.type && productCount > 0 ? (
-              <span aria-hidden className="text-slate-300">
-                ·
-              </span>
+            {order.type && hasBatches ? (
+              <span aria-hidden className="text-slate-300">·</span>
             ) : null}
-            {productCount > 0 ? (
+            {hasBatches ? (
               <span>
-                {productCount} product {productCount === 1 ? "line" : "lines"}
+                {order.batches.length} {order.batches.length === 1 ? "batch" : "batches"} ·{" "}
+                {productLines} product {productLines === 1 ? "line" : "lines"}
               </span>
             ) : null}
           </div>
+          {scheduleReq ? (
+            <div className="mt-2 font-mono text-xs text-slate-400">
+              Schedule req. {scheduleReq}
+            </div>
+          ) : null}
         </div>
         <StatusPill label={ORDER_STATUS_LABELS[order.status]} />
       </div>
 
-      {/* Barra de abas — segmented control do desenho. */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1">
-        {tabs.map((t) => {
-          const activeTab = tab === t.id;
-          return (
+      {/* Abas + toggle de agrupamento (só na aba Batches). */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1">
+          {tabs.map((t) => {
+            const activeTab = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  activeTab
+                    ? "bg-accent text-accent-foreground"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                )}
+              >
+                <t.icon className="size-4" />
+                {t.label}
+                {typeof t.count === "number" ? (
+                  <span className="font-mono text-[11px] text-slate-400">{t.count}</span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+
+        {tab === "batches" && hasBatches ? (
+          <div className="flex gap-1 rounded-xl border border-slate-200 bg-white p-1">
             <button
-              key={t.id}
               type="button"
-              onClick={() => setTab(t.id)}
+              onClick={() => setGrouping("batch")}
               className={cn(
-                "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                activeTab
-                  ? "bg-accent text-accent-foreground"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                grouping === "batch"
+                  ? "bg-slate-100 text-slate-800"
+                  : "text-slate-400 hover:text-slate-600"
               )}
             >
-              <t.icon className="size-4" />
-              {t.label}
+              By batch
             </button>
-          );
-        })}
+            <button
+              type="button"
+              onClick={() => setGrouping("flat")}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                grouping === "flat"
+                  ? "bg-slate-100 text-slate-800"
+                  : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              All products
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      {tab === "products" ? (
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-slate-700">Progress</h2>
-            <p className="mt-0.5 mb-5 text-sm text-slate-500">
-              See where each part of your order stands and exactly which products travel in it.
+      {tab === "batches" ? (
+        !hasBatches && order.pendingProducts.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center">
+            <Package className="mx-auto size-8 text-slate-300" />
+            <p className="mt-3 text-sm text-slate-500">
+              No products to show for this order yet.
             </p>
-            <StageProgress order={order} />
           </div>
+        ) : grouping === "batch" ? (
+          <div className="space-y-3">
+            {order.batches.map((batch) => (
+              <BatchCard key={batch.id} batch={batch} />
+            ))}
 
-          {!hasProducts ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center">
-              <Package className="mx-auto size-8 text-slate-300" />
-              <p className="mt-3 text-sm text-slate-500">
-                No products to show for this order yet.
+            {order.pendingProducts.length > 0 ? (
+              <section className="rounded-2xl border border-dashed border-slate-200 bg-white p-5">
+                <p className="text-sm font-medium text-slate-500">Not in production yet</p>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {order.pendingProducts.map((product) => (
+                    <li
+                      key={product}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500"
+                    >
+                      {product}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {hasBatches ? (
+              <p className="text-xs text-slate-400">
+                A batch moves as one block. If part of it doesn&apos;t load, that quantity
+                moves to the next batch and you see it here.
               </p>
+            ) : null}
+          </div>
+        ) : (
+          // All products — cada categoria com o lote e o status do lote.
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-[#fbfaff] text-left">
+                    <th className="px-5 py-3 font-medium text-slate-600">Product</th>
+                    <th className="px-4 py-3 font-medium text-slate-600">Batch No.</th>
+                    <th className="px-5 py-3 font-medium text-slate-600">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {flatProducts.map((p, i) => (
+                    <tr key={`${p.name}-${p.batch}-${i}`} className="border-b border-slate-100">
+                      <td className="px-5 py-3.5 font-medium text-slate-800">{p.name}</td>
+                      <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{p.batch}</td>
+                      <td className="px-5 py-3.5">
+                        <StatusPill label={p.status} />
+                      </td>
+                    </tr>
+                  ))}
+                  {order.pendingProducts.map((name) => (
+                    <tr key={`pending-${name}`} className="border-b border-slate-100">
+                      <td className="px-5 py-3.5 font-medium text-slate-800">{name}</td>
+                      <td className="px-4 py-3.5 text-slate-300">—</td>
+                      <td className="px-5 py-3.5 text-xs text-slate-400">Not in production yet</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {order.stages.map((stage) => (
-                <section
-                  key={stage.status}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
-                >
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-[#fbfaff] px-5 py-4">
-                    <StatusPill label={stage.label} />
-                    <span className="text-xs text-slate-400">
-                      {stage.products.length}{" "}
-                      {stage.products.length === 1 ? "product" : "products"}
-                    </span>
-                  </div>
-                  <ul className="flex flex-wrap gap-2 p-5">
-                    {stage.products.map((product) => (
-                      <li
-                        key={product}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-700"
-                      >
-                        {product}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-
-              {order.pendingProducts.length > 0 ? (
-                <section className="rounded-2xl border border-dashed border-slate-200 bg-white p-5">
-                  <p className="text-sm font-medium text-slate-500">Not in production yet</p>
-                  <ul className="mt-3 flex flex-wrap gap-2">
-                    {order.pendingProducts.map((product) => (
-                      <li
-                        key={product}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500"
-                      >
-                        {product}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-            </div>
-          )}
-        </div>
+          </div>
+        )
       ) : null}
 
       {tab === "documents" ? (
