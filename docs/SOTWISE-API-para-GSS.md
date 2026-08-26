@@ -24,6 +24,26 @@ Sem token válido a resposta é `401` com corpo JSON (a API nunca redireciona pa
 
 ---
 
+## Glossário de códigos de status HTTP
+
+Todo código usado nas duas áreas desta API (Orders e Bibliotecas), com o que ele significa aqui. Os detalhes específicos de cada endpoint estão nas seções [1.4](#14-respostas) e [2.4](#24-códigos-de-status).
+
+| Código | Nome | O que significa nesta API |
+|---|---|---|
+| **200** OK | Sucesso | Requisição processada sem criar nada novo — leitura (`GET`) ou atualização de um registro já existente (`PATCH`, ou `POST` de order cujo `gss_id` já existia). |
+| **201** Created | Criado | Um registro **novo** foi criado (`POST` que cria uma order ou um item de biblioteca). O corpo traz o registro com o `id` gerado. |
+| **400** Bad Request | Requisição inválida | O que foi enviado tem algum problema: campo obrigatório faltando, formato errado (data, e-mail, uuid), ou uma referência (`gss_id`, FK) que não existe do lado do SOTWISE. É sempre erro de quem chamou — corrigir o payload e reenviar. |
+| **401** Unauthorized | Não autenticado | Faltou o header `Authorization` ou o token está errado. Conferir se é o token certo para a área (`GSS_INBOUND_SECRET` vs `API_TOKEN`) e o prefixo `Bearer `. |
+| **403** Forbidden | Acesso negado | Autenticado, mas sem permissão — só se aplica a sessão de usuário (conta bloqueada). Não deve acontecer com os tokens de integração. |
+| **404** Not Found | Não encontrado | A URL não corresponde a nenhum recurso, ou o `{id}` de um `PATCH` não existe (ou já foi excluído). |
+| **409** Conflict | Conflito de dados | O que foi enviado colide com algo que já existe — hoje isso é só o `po_number` de uma order duplicado. |
+| **500** Internal Server Error | Erro interno | Falha inesperada do lado do SOTWISE (ex.: erro de banco). Não é problema do payload — se persistir, reportar ao time do SOTWISE com a mensagem recebida. |
+| **503** Service Unavailable | Indisponível | Configuração faltando no ambiente do SOTWISE (ex.: `GSS_INBOUND_SECRET` não definido). Também é um problema do lado do SOTWISE, não do payload. |
+
+> Regra geral: **4xx** = revise o que foi enviado; **5xx** = problema do lado do SOTWISE, não repita a chamada indefinidamente sem avisar o time.
+
+---
+
 # Parte 1 — Via inbound de Orders
 
 `POST /api/gss/orders` — o GSS **cria ou atualiza** uma order no SOTWISE.
@@ -129,16 +149,108 @@ Mesmo `gss_id`, só os itens (não precisa reenviar o cabeçalho):
 
 ## 1.4. Respostas
 
+Resumo:
+
 | Status | Quando |
 |---|---|
-| `201` | Order **criada** — `{ "data": { "id", "po_number" }, "created": true }` |
-| `200` | Order **atualizada** — `{ "data": { "id", "po_number" }, "created": false }` |
-| `400` | Payload inválido, FK/`gss_id` inexistente, e-mail sem usuário, `supplier_category_gss_id` inexistente, ou criação sem `po_number` |
+| `201` | Order **criada** |
+| `200` | Order **atualizada** (reenvio de um `gss_id` já existente) |
+| `400` | Payload inválido, FK/`gss_id` de biblioteca inexistente, e-mail sem usuário, `supplier_category_gss_id` inexistente, ou criação sem `po_number` |
 | `401` | Token ausente/incorreto |
 | `409` | `po_number` já usado por outra order |
-| `503` | `GSS_INBOUND_SECRET` não configurado no servidor |
+| `500` | Erro inesperado no servidor (ex.: falha ao gravar as linhas Factory×Category) |
+| `503` | `GSS_INBOUND_SECRET` não configurado no servidor — reportar ao time do SOTWISE, não é erro do payload |
 
-Erro sempre traz `{ "error": "mensagem" }` (e `issues` nos erros de validação).
+Erro sempre traz `{ "error": "mensagem" }`; erros de validação de schema também trazem `issues` (formato Zod).
+
+### `201` — order criada
+
+```jsonc
+{ "data": { "id": "3f6d1a2e-…", "po_number": "1001" }, "created": true }
+```
+
+### `200` — order atualizada
+
+Mesmo formato do `201`, com `created: false`. Acontece sempre que o `gss_id` já existe — inclusive quando o POST só trouxe `items[]` (sem tocar em nenhum campo do cabeçalho).
+
+```jsonc
+{ "data": { "id": "3f6d1a2e-…", "po_number": "1001" }, "created": false }
+```
+
+### `400` — payload inválido (falha de schema)
+
+Campo obrigatório faltando, data fora do formato `YYYY-MM-DD`, e-mail mal formado, etc. A mensagem em `error` é a do **primeiro** problema encontrado; `issues` traz a lista completa.
+
+```jsonc
+{
+  "error": "gss_id is required.",
+  "issues": [
+    { "code": "too_small", "path": ["gss_id"], "message": "gss_id is required." }
+  ]
+}
+```
+
+### `400` — `gss_id` de biblioteca não encontrado
+
+`order_type_gss_id`, `client_gss_id`, `business_unit_gss_id` ou `exporter_gss_id` aponta para um `gss_id` que não existe na biblioteca correspondente no SOTWISE (o registro ainda não foi puxado/criado por lá).
+
+```jsonc
+{ "error": "No clients found for gss_id '9999'." }
+```
+
+### `400` — e-mail sem usuário correspondente
+
+`leader_email` ou `requester_email` não bate com nenhum usuário cadastrado no SOTWISE.
+
+```jsonc
+{ "error": "No SOTWISE user found for e-mail 'foo@example.com'." }
+```
+
+### `400` — `supplier_category_gss_id` inexistente (em `items[]`)
+
+Nenhum `factory_products` (supplier-category) no SOTWISE tem esse `gss_id`. Nenhum item da chamada é gravado — a resolução é feita **antes** da inserção (fail-fast).
+
+```jsonc
+{ "error": "No factory_products found for supplier_category_gss_id '999'." }
+```
+
+### `400` — criação sem `po_number`
+
+Só ocorre quando o `gss_id` ainda **não existe** no SOTWISE (é a primeira chamada para esse pedido) e `po_number` não veio no payload.
+
+```jsonc
+{ "error": "po_number is required to create an order." }
+```
+
+### `401` — token ausente ou incorreto
+
+```jsonc
+{ "error": "Unauthorized." }
+```
+
+### `409` — `po_number` já em uso
+
+Colisão de unicidade: outro `gss_id` já usa esse `po_number`. Pode acontecer na criação ou num reenvio que tenta trocar o `po_number` para um valor já ocupado.
+
+```jsonc
+{ "error": "po_number '1001' is already in use." }
+```
+
+### `500` — erro inesperado
+
+Falha não prevista (ex.: erro do banco ao gravar `order_factory_category` depois de já ter resolvido os itens, ou ao consultar a order existente). A `error` traz a mensagem crua do banco — reportar ao time do SOTWISE.
+
+```jsonc
+{ "error": "<mensagem interna>" }
+```
+
+### `503` — integração não configurada
+
+O `GSS_INBOUND_SECRET` não está definido no ambiente do SOTWISE. Indica um problema de configuração do lado do SOTWISE, não do payload enviado.
+
+```jsonc
+{ "error": "GSS_INBOUND_SECRET not configured." }
+```
 
 ---
 
@@ -236,13 +348,16 @@ Content-Type: application/json
 
 | Status | Quando |
 |---|---|
-| `200` | GET / PATCH ok |
-| `201` | POST criou (corpo traz o registro com `id`) |
-| `400` | Corpo inválido, FK inexistente, ou PATCH sem campos |
-| `401` | Não autenticado / token inválido |
-| `404` | Recurso inexistente na URL, ou `{id}` do PATCH não encontrado |
-| `409` | Violação de unicidade |
-| `500` | Erro inesperado |
+| `200` | `GET` ou `PATCH` com sucesso |
+| `201` | `POST` criou — corpo traz o registro com o `id` gerado |
+| `400` | Corpo inválido (falha de validação, com `issues`), FK apontando para um id inexistente (ex.: `country_id` de `clients`), ou `PATCH` sem nenhum campo a atualizar (`{ "error": "No fields to update." }`) |
+| `401` | Não autenticado / token inválido — `{ "error": "Unauthorized" }` ou `{ "error": "Invalid token" }` |
+| `403` | Conta do usuário bloqueada (só relevante para sessão de navegador, não para o token de serviço) |
+| `404` | Recurso inexistente na URL (`{ "error": "Unknown resource 'xyz'." }`) **ou** `{id}` do `PATCH` não encontrado/já excluído (`{ "error": "Record not found." }`) |
+| `409` | Violação de unicidade — nenhum campo desta API é único hoje, então na prática não dispara |
+| `500` | Erro inesperado no servidor. Caso especial: em `agents`, se algum id de `contact_ids` não existir, o vínculo falha com `500` **depois** do agente já ter sido criado (sem rollback) — validar os ids com `GET /api/contacts` antes de enviar |
+
+> Detalhe completo (query params, regras de e-mail, ordem de criação dos recursos) em [`docs/API.md`](./API.md).
 
 ---
 
