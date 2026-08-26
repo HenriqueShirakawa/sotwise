@@ -156,7 +156,16 @@ export type EtdInfoRow = {
   remarks: string | null;
 };
 
-export type BatchRow = { id: string; batch_number: string; status: BatchStatus };
+export type BatchRow = {
+  id: string;
+  batch_number: string;
+  status: BatchStatus;
+  split_from_batch_id: string | null;
+};
+
+/** OfcRow com o número do lote onde a linha vive hoje — no modo linhagem uma
+ *  linha do lote embarcado pode estar fisicamente num lote-filho do split. */
+type OfcRowWithBatch = OfcRow & { batch_number: string };
 export type Ref = { id: string; name: string };
 
 type OrderDetail = {
@@ -305,7 +314,7 @@ function BatchStatusSelect({
 const ROWS_PAGE_SIZE = 10;
 
 /** Ordena por Category, depois Factory — mesmo critério do modal Factory x Category. */
-function sortByCategoryFactory(rows: OfcRow[]): OfcRow[] {
+function sortByCategoryFactory<T extends OfcRow>(rows: T[]): T[] {
   return [...rows].sort(
     (a, b) =>
       a.category_name.localeCompare(b.category_name) ||
@@ -375,7 +384,7 @@ function ViewBatchModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   batch: BatchRow | null;
-  rows: OfcRow[];
+  rows: OfcRowWithBatch[];
 }) {
   const [page, setPage] = useState(0);
   const openFor = open ? batch?.id ?? null : null;
@@ -433,7 +442,7 @@ function ViewBatchModal({
                       </span>
                     </SmallField>
                     <SmallField label="Batch No.">
-                      <span className="text-slate-700">{batch?.batch_number}</span>
+                      <span className="text-slate-700">{r.batch_number}</span>
                     </SmallField>
                     <SmallField label="Status">
                       <LoadingStatusBadge status={r.loading_status} />
@@ -1036,6 +1045,42 @@ export function OrderDetailClient({
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
 
+  // No Confirm Shipping a entrada Partial/None sai do lote embarcado e migra
+  // para um lote-filho (split, docs §3.7.2). O lote que embarcou continua sendo
+  // o dono daquela linha — ela é o que ele carregou/pediu — então o "View batch"
+  // do lote precisa mostrá-la mesmo depois de migrada, subindo pela linhagem
+  // `split_from_batch_id`. Sem isto o lote embarcado aparece vazio. Cada lote
+  // "possui" a si mesmo + todos os descendentes do split (cadeia de vários
+  // níveis: o filho embarca e splita de novo).
+  const ownedBatchIds = useMemo(() => {
+    const childrenOf = new Map<string, string[]>();
+    for (const b of batches) {
+      if (!b.split_from_batch_id) continue;
+      const arr = childrenOf.get(b.split_from_batch_id) ?? [];
+      arr.push(b.id);
+      childrenOf.set(b.split_from_batch_id, arr);
+    }
+    const map = new Map<string, Set<string>>();
+    for (const b of batches) {
+      const owned = new Set<string>([b.id]);
+      const stack = [...(childrenOf.get(b.id) ?? [])];
+      let guard = 0;
+      while (stack.length && guard++ < 100) {
+        const id = stack.pop()!;
+        if (owned.has(id)) continue;
+        owned.add(id);
+        stack.push(...(childrenOf.get(id) ?? []));
+      }
+      map.set(b.id, owned);
+    }
+    return map;
+  }, [batches]);
+
+  const batchNumberById = useMemo(
+    () => new Map(batches.map((b) => [b.id, b.batch_number])),
+    [batches]
+  );
+
   // ETD: exige "Initial date" em TODAS as entradas Factory×Category. Sem
   // nenhuma entrada não há o que preencher, então o requisito não é cumprido.
   const etdInitialFilled =
@@ -1208,7 +1253,18 @@ export function OrderDetailClient({
         ) : (
           batches.map((b) => {
             const editable = EDITABLE_BATCH_STATUSES.includes(b.status);
-            const rows = ofc.filter((r) => r.batch_id === b.id);
+            // Edição só mexe nas linhas fisicamente neste lote.
+            const ownRows = ofc.filter((r) => r.batch_id === b.id);
+            // Visualização inclui as que migraram no split (lote embarcado), com
+            // o número do lote onde vivem hoje para a coluna "Batch No.".
+            const owned = ownedBatchIds.get(b.id) ?? new Set([b.id]);
+            const viewRows: OfcRowWithBatch[] = ofc
+              .filter((r) => r.batch_id && owned.has(r.batch_id))
+              .map((r) => ({
+                ...r,
+                batch_number:
+                  (r.batch_id && batchNumberById.get(r.batch_id)) || b.batch_number,
+              }));
             return (
               <div
                 key={b.id}
@@ -1252,7 +1308,7 @@ export function OrderDetailClient({
                     open
                     onOpenChange={(o) => !o && setViewBatch(null)}
                     batch={b}
-                    rows={rows}
+                    rows={viewRows}
                   />
                 )}
                 {editBatch?.id === b.id && (
@@ -1261,7 +1317,7 @@ export function OrderDetailClient({
                     onOpenChange={(o) => !o && setEditBatch(null)}
                     orderId={orderId}
                     batch={b}
-                    rows={rows}
+                    rows={ownRows}
                     categories={categories}
                     factories={factories}
                     factoriesByCategory={factoriesByCategory}

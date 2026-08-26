@@ -83,7 +83,7 @@ export default async function OrderDetailPage({
     ),
     admin
       .from("batches")
-      .select("id, batch_number, status")
+      .select("id, batch_number, status, split_from_batch_id")
       .eq("order_id", order.id)
       .order("batch_number"),
     admin
@@ -244,6 +244,7 @@ export default async function OrderDetailPage({
         id: b.id,
         batch_number: b.batch_number,
         status: b.status,
+        split_from_batch_id: b.split_from_batch_id,
       }))}
       ofc={ofc}
       etdByOfc={etdByOfc}

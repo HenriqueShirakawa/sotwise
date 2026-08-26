@@ -675,7 +675,7 @@ export async function getOrderEtdStepData(
   const [batchesRes, ofcRes, categoriesRes, factoriesRes] = await Promise.all([
     admin
       .from("batches")
-      .select("id, batch_number, status")
+      .select("id, batch_number, status, split_from_batch_id")
       .eq("order_id", orderId)
       .order("batch_number"),
     admin
@@ -734,6 +734,7 @@ export async function getOrderEtdStepData(
     id: b.id,
     batch_number: b.batch_number,
     status: b.status,
+    split_from_batch_id: b.split_from_batch_id,
   }));
 
   return { ok: true, ofc, batches, etdByOfc };
