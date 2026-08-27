@@ -182,6 +182,41 @@ async function buildOrderMaps(): Promise<OrderMaps> {
   return { ordersById, byTable };
 }
 
+/**
+ * `factories` também é referenciada fora de `order_factory_category` (que é o
+ * que "Nº de orders" mede): como local de consolidação da carga
+ * (`pre_loading_checklist_steps.consolidation_point_id`) e como local de
+ * despacho do ETD (`etd_info.dispatch_location_id`). Uma fábrica com 0 orders
+ * não é necessariamente "sem uso" — pode estar nessas outras pontas.
+ */
+async function buildFactoryOtherUsage(): Promise<Map<string, string>> {
+  const consolCount = new Map<string, number>();
+  const steps = await fetchAll<{ consolidation_point_id: string | null }>(
+    "pre_loading_checklist_steps", "consolidation_point_id"
+  );
+  for (const s of steps) {
+    if (!s.consolidation_point_id) continue;
+    consolCount.set(s.consolidation_point_id, (consolCount.get(s.consolidation_point_id) ?? 0) + 1);
+  }
+
+  const dispatchCount = new Map<string, number>();
+  const etd = await fetchAll<{ dispatch_location_id: string | null }>("etd_info", "dispatch_location_id");
+  for (const e of etd) {
+    if (!e.dispatch_location_id) continue;
+    dispatchCount.set(e.dispatch_location_id, (dispatchCount.get(e.dispatch_location_id) ?? 0) + 1);
+  }
+
+  const out = new Map<string, string>();
+  const ids = new Set([...consolCount.keys(), ...dispatchCount.keys()]);
+  for (const id of ids) {
+    const parts: string[] = [];
+    if (consolCount.get(id)) parts.push(`Consolidation Point: ${consolCount.get(id)}x`);
+    if (dispatchCount.get(id)) parts.push(`Dispatch location (ETD): ${dispatchCount.get(id)}x`);
+    out.set(id, parts.join(" | "));
+  }
+  return out;
+}
+
 /** Colunas de Orders para uma linha (id local) de uma tabela. */
 function orderCols(maps: OrderMaps, table: string, localId: string | null) {
   const empty = { "Nº de orders": "", "Última order": "", "Orders (PO)": "" };
@@ -203,6 +238,7 @@ async function main() {
   for (const s of snap) (byResource.get(s.resource) ?? byResource.set(s.resource, []).get(s.resource)!).push(s);
 
   const maps = await buildOrderMaps();
+  const factoryOtherUsage = await buildFactoryOtherUsage();
   const baseline = loadBaseline(BASELINE);
   const wb = XLSX.utils.book_new();
   const resumo: any[] = [];
@@ -234,6 +270,9 @@ async function main() {
       row["Nome no nosso banco"] = local?.name ?? "";
       row["Status"] = paired ? "Pareado" : "Só no GSS";
       Object.assign(row, orderCols(maps, rec.table, local?.id ?? null));
+      if (rec.table === "factories") {
+        row["Outro uso (fora de Orders)"] = local ? (factoryOtherUsage.get(local.id) ?? "") : "";
+      }
       const m = mudou(g.gss_id, paired, base);
       row["Mudou desde doc anterior"] = m;
       if (m) {
@@ -254,6 +293,9 @@ async function main() {
       row["Nome no nosso banco"] = l.name ?? "";
       row["Status"] = "Só no nosso banco (sem gss_id)";
       Object.assign(row, orderCols(maps, rec.table, l.id));
+      if (rec.table === "factories") {
+        row["Outro uso (fora de Orders)"] = factoryOtherUsage.get(l.id) ?? "";
+      }
       row["Mudou desde doc anterior"] = "";
       out.push(row);
     }
