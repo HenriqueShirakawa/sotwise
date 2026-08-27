@@ -27,13 +27,17 @@ type OrderListRow = {
   status: OrderRow["status"];
   schedule_requested: string | null;
   created_at: string;
+  gss_id: string | null;
 };
 
 /**
- * Regra de visibilidade (2026-08-25): order criada a partir deste instante só
- * aparece na lista se tiver ≥1 linha Factory×Category. As anteriores ficam
- * "grandfathered" (sempre visíveis) — não escondemos as ~388 orders migradas
- * que nasceram sem F×C. O corte é a data em que a regra entrou.
+ * Regra de visibilidade (2026-08-25): order que veio do GSS (`gss_id` não
+ * nulo) só aparece na lista se já tiver ≥1 linha Factory×Category — o push do
+ * GSS manda os itens no mesmo POST, então a ausência de F×C indica payload
+ * incompleto. Orders criadas direto no SOTWISE (`gss_id` nulo, via "Create
+ * Order") nunca tiveram F×C na criação — o usuário atribui fábrica/categoria
+ * depois — então ficam sempre visíveis, como antes desta regra existir.
+ * NEW_ORDER_CUTOFF grandfathers as ~388 orders migradas antes da regra.
  */
 const NEW_ORDER_CUTOFF = new Date("2026-08-25T00:00:00Z");
 
@@ -49,7 +53,7 @@ export default async function OrdersPage() {
         admin
           .from("orders")
           .select(
-            "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, created_at"
+            "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, created_at, gss_id"
           )
           .is("deleted_at", null)
           .order("po_number", { ascending: false })
@@ -123,10 +127,12 @@ export default async function OrdersPage() {
   }
 
   const rows: OrderRow[] = orders
-    // Regra de visibilidade: order nova (>= corte) só aparece com ≥1 F×C; as
-    // anteriores ao corte ficam sempre visíveis (não escondemos as migradas).
+    // Regra de visibilidade: só orders do GSS (gss_id setado) exigem ≥1 F×C, e
+    // só a partir do corte; orders criadas direto no SOTWISE e as anteriores ao
+    // corte ficam sempre visíveis (não escondemos as migradas).
     .filter(
       (o) =>
+        !o.gss_id ||
         new Date(o.created_at) < NEW_ORDER_CUTOFF ||
         ordersWithFactoryCategory.has(o.id)
     )
