@@ -152,8 +152,18 @@ export type ClientOrderBatch = {
   code: string;
   status: BatchStatus;
   label: string;
-  /** Produtos (categorias) que viajam neste lote. Ordenados por nome. */
-  products: string[];
+  /**
+   * Produtos (categorias) que viajam neste lote — uma entrada por linha
+   * Factory×Category, sem deduplicar (a mesma categoria pode repetir se vier
+   * de mais de uma fábrica). Ordenados por nome.
+   */
+  products: ClientOrderProduct[];
+};
+
+export type ClientOrderProduct = {
+  name: string;
+  /** `order_factory_category.ship_requirement` — data em que a fábrica precisa entregar. */
+  shipRequirement: string;
 };
 
 export type ClientOrderDetail = {
@@ -203,12 +213,13 @@ export async function loadClientOrderDetail(
         .eq("order_id", orderId)
         .range(from, to)
     ),
-    fetchAll<{ batch_id: string | null; category_id: string }>((from, to) =>
-      admin
-        .from("order_factory_category")
-        .select("batch_id, category_id")
-        .eq("order_id", orderId)
-        .range(from, to)
+    fetchAll<{ batch_id: string | null; category_id: string; ship_requirement: string }>(
+      (from, to) =>
+        admin
+          .from("order_factory_category")
+          .select("batch_id, category_id, ship_requirement")
+          .eq("order_id", orderId)
+          .range(from, to)
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
@@ -243,9 +254,11 @@ export async function loadClientOrderDetail(
   const deliveredOn =
     stepOf.get("delivered")?.completed_on ?? stepOf.get("ata_brazil")?.completed_on ?? null;
 
-  // lote → produtos (Set para deduplicar: a mesma categoria pode aparecer em
-  // mais de uma entrada Factory×Category dentro do mesmo lote).
-  const byBatch = new Map<string, Set<string>>();
+  // lote → produtos, UMA linha por entrada Factory×Category (sem deduplicar):
+  // é a mesma granularidade da tabela interna (docs §3.5.2), só sem a coluna
+  // Factory, que segue interna à AGK. Ship req. entrou a pedido do Henrique
+  // (2026-08-27) — é a mesma coluna que a tabela interna mostra.
+  const byBatch = new Map<string, ClientOrderProduct[]>();
   const pending = new Set<string>();
   for (const row of ofc) {
     const name = categoryName.get(row.category_id)?.trim();
@@ -254,9 +267,9 @@ export async function loadClientOrderDetail(
       pending.add(name);
       continue;
     }
-    const set = byBatch.get(row.batch_id) ?? new Set<string>();
-    set.add(name);
-    byBatch.set(row.batch_id, set);
+    const list = byBatch.get(row.batch_id) ?? [];
+    list.push({ name, shipRequirement: row.ship_requirement });
+    byBatch.set(row.batch_id, list);
   }
 
   const clientBatches: ClientOrderBatch[] = batches
@@ -265,9 +278,7 @@ export async function loadClientOrderDetail(
       code: b.batch_number,
       status: b.status,
       label: BATCH_STATUS_LABELS[b.status],
-      products: [...(byBatch.get(b.id) ?? new Set<string>())].sort((a, b) =>
-        a.localeCompare(b)
-      ),
+      products: (byBatch.get(b.id) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
     }))
     .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 

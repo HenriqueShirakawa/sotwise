@@ -35,7 +35,7 @@ export default async function ClientLayout({
   return (
     <div className="flex min-h-full flex-1 flex-col bg-slate-50">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/80">
-        <div className="mx-auto flex h-16 w-full max-w-[1120px] items-center justify-between gap-4 px-4 sm:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-[80%] items-center justify-between gap-4 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             {/* Logo leva de volta à lista — mesmo gesto do header do mockup. */}
             <Link
@@ -58,7 +58,7 @@ export default async function ClientLayout({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 py-8 pb-16 sm:px-6">
+      <main className="mx-auto w-full max-w-[80%] flex-1 px-4 py-8 pb-16 sm:px-6">
         {children}
       </main>
     </div>

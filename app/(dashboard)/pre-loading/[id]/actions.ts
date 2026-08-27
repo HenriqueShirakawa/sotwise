@@ -479,9 +479,12 @@ export async function confirmShipping(
         });
       }
 
+      // O None/Partial gravado no passo 2 pertence ao embarque que acabou de
+      // sair; o lote de destino ainda não passou por PL→Shipment, então o
+      // status volta a "—" até esse lote embarcar por conta própria.
       const { error: mvErr } = await admin
         .from("order_factory_category")
-        .update({ batch_id: targetId })
+        .update({ batch_id: targetId, loading_status: null })
         .in("id", toMove);
       if (mvErr) return { ok: false, error: mvErr.message };
     }
