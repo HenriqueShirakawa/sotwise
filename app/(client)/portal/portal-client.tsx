@@ -31,6 +31,10 @@ function progressText(progress: ClientOrder["progress"]) {
   return progress.map((p) => `${p.count} ${p.label}`).join(" · ");
 }
 
+function batchCountText(count: number) {
+  return `${count} ${count === 1 ? "batch" : "batches"}`;
+}
+
 function formatDate(iso: string | null): string | null {
   if (!iso) return null;
   const [y, m, d] = iso.slice(0, 10).split("-");
@@ -95,7 +99,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white px-6 py-16 text-center">
+        <div className="rounded-xl border border-dashed bg-white px-6 py-16 text-center">
           <Package className="mx-auto size-8 text-slate-300" />
           <p className="mt-3 text-sm text-slate-500">
             {orders.length === 0
@@ -114,7 +118,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                 <Link
                   key={o.id}
                   href={`/portal/${o.id}`}
-                  className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-violet-300 hover:bg-slate-50"
+                  className="block rounded-xl border bg-white p-4 shadow-sm transition-colors hover:border-violet-300 hover:bg-slate-50"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -132,8 +136,8 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                   {o.batchNumbers.length > 0 ? (
                     <p className="mt-1 text-sm text-slate-600">
                       <span className="text-slate-400">Batch No.: </span>
-                      <span className="font-mono text-[#350065]">
-                        {o.batchNumbers.join("/")}
+                      <span className="font-mono text-accent-foreground">
+                        {batchCountText(o.batchNumbers.length)}
                       </span>
                     </p>
                   ) : null}
@@ -141,8 +145,8 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                     <p className="mt-1 text-sm text-slate-500">{progressText(o.progress)}</p>
                   ) : null}
                   {scheduleReq ? (
-                    <p className="mt-1 font-mono text-xs text-slate-400">
-                      Schedule req. {scheduleReq}
+                    <p className="mt-1 text-xs text-slate-400">
+                      Schedule req. <span className="font-mono">{scheduleReq}</span>
                     </p>
                   ) : null}
                 </Link>
@@ -150,17 +154,29 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
             })}
           </div>
 
-          <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white min-[720px]:block">
-            <Table className="min-w-[820px] [&_td]:py-3.5 [&_th]:py-3.5 [&_thead_tr]:bg-[#fbfaff]">
+          <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
+            <Table className="min-w-[820px] [&_td]:py-3.5 [&_th]:py-3.5 [&_thead_tr]:bg-slate-50/80">
               <TableHeader>
-                <TableRow>
-                  <TableHead>Order</TableHead>
-                  <TableHead>Your reference</TableHead>
-                  <TableHead>Batch No.</TableHead>
-                  <TableHead>Progress</TableHead>
-                  <TableHead>Schedule req.</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10" />
+                <TableRow className="hover:bg-slate-50/80">
+                  <TableHead className="px-4 text-xs font-semibold whitespace-nowrap text-slate-500">
+                    Order
+                  </TableHead>
+                  <TableHead className="px-4 text-xs font-semibold whitespace-nowrap text-slate-500">
+                    Your reference
+                  </TableHead>
+                  <TableHead className="px-4 text-xs font-semibold whitespace-nowrap text-slate-500">
+                    Batch No.
+                  </TableHead>
+                  <TableHead className="px-4 text-xs font-semibold whitespace-nowrap text-slate-500">
+                    Progress
+                  </TableHead>
+                  <TableHead className="px-4 text-xs font-semibold whitespace-nowrap text-slate-500">
+                    Schedule req.
+                  </TableHead>
+                  <TableHead className="px-4 text-xs font-semibold whitespace-nowrap text-slate-500">
+                    Status
+                  </TableHead>
+                  <TableHead className="w-10 px-4" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -168,9 +184,9 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                   <TableRow
                     key={o.id}
                     onClick={() => router.push(`/portal/${o.id}`)}
-                    className="cursor-pointer transition-colors hover:bg-slate-50"
+                    className="cursor-pointer transition-colors hover:bg-slate-50/60"
                   >
-                    <TableCell className="font-mono text-[13px] text-slate-900">
+                    <TableCell className="px-4 text-sm font-mono text-[13px] text-slate-900">
                       {/* Link real no PO: dá foco por teclado e navegação sem
                           depender do onClick da linha (que é só conveniência). */}
                       <Link
@@ -181,32 +197,32 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                         #{o.po_number}
                       </Link>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-4 text-sm">
                       {o.client_reference ?? <span className="text-slate-400">—</span>}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-[#350065]">
+                    <TableCell className="px-4 text-sm font-mono text-xs text-accent-foreground">
                       {o.batchNumbers.length > 0 ? (
-                        o.batchNumbers.join("/")
+                        batchCountText(o.batchNumbers.length)
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-slate-500">
+                    <TableCell className="px-4 text-sm text-slate-500">
                       {o.progress.length > 0 ? (
                         progressText(o.progress)
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-slate-500">
+                    <TableCell className="px-4 text-sm font-mono text-xs text-slate-500">
                       {formatDate(o.scheduleRequested) ?? (
                         <span className="text-slate-400">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="px-4 text-sm">
                       <StatusPill label={ORDER_STATUS_LABELS[o.status]} />
                     </TableCell>
-                    <TableCell className="text-slate-300">
+                    <TableCell className="px-4 text-sm text-slate-300">
                       <ChevronRight className="size-4" />
                     </TableCell>
                   </TableRow>
