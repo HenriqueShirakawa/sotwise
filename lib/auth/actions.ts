@@ -6,6 +6,8 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendEmail } from "@/lib/email/resend";
+import { resetPasswordEmailHtml } from "@/lib/email/reset-password";
 import { CLIENT_HOME } from "@/lib/dal";
 
 export type AuthActionState = { error?: string; success?: string };
@@ -79,9 +81,19 @@ const resetSchema = z.object({
 
 /**
  * Envia o e-mail de reset. Link expira em 24h (config do projeto).
- * Nota: por privacidade, o Supabase não revela se o e-mail existe — retornamos
- * sempre sucesso neutro. (O MD pede "erro para e-mail não cadastrado", o que
- * vaza existência de conta; revisar essa regra com o cliente — ver §3.12.1.)
+ *
+ * NÃO usa `resetPasswordForEmail`: aquele caminho entrega pelo SMTP do Supabase
+ * (o "Custom SMTP" do painel é restrito a Owner/Admin da org) e monta o link a
+ * partir do Site URL — que aqui aponta para `localhost:3000` e não temos acesso
+ * para corrigir. Em produção isso dava e-mail que não chegava e, se chegasse,
+ * link quebrado. Mesmo contorno do convite (users/actions.ts): `generateLink`
+ * emite o token sem enviar nada, montamos a URL para o NOSSO /auth/callback com
+ * `token_hash` e despachamos pelo Resend — sem depender de config no painel.
+ *
+ * Nota: por privacidade, não revelamos se o e-mail existe — retornamos sempre
+ * sucesso neutro, e a falha do generateLink é engolida de propósito. (O MD pede
+ * "erro para e-mail não cadastrado", o que vaza existência de conta; revisar
+ * essa regra com o cliente — ver §3.12.1.)
  */
 export async function requestPasswordReset(
   _prev: AuthActionState,
@@ -93,10 +105,26 @@ export async function requestPasswordReset(
   }
 
   const origin = (await headers()).get("origin") ?? "";
-  const supabase = await createClient();
-  await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${origin}/auth/callback?next=/update-password`,
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email: parsed.data.email,
   });
+
+  if (!error && data.properties) {
+    // O convite grava full_name no metadata; sem ele o e-mail cai no "Olá".
+    const metaName = data.user?.user_metadata?.full_name;
+    const link =
+      `${origin}/auth/callback` +
+      `?token_hash=${encodeURIComponent(data.properties.hashed_token)}` +
+      `&type=recovery&next=/update-password`;
+    await sendEmail({
+      to: parsed.data.email,
+      subject: "Redefinir sua senha do SOTWISE",
+      html: resetPasswordEmailHtml(link, typeof metaName === "string" ? metaName : undefined),
+    });
+  }
 
   return {
     success: "If that email is registered, a reset link has been sent.",

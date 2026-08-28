@@ -70,8 +70,8 @@ async function resolveRoleScope(
  * para {origin}/auth/callback?token_hash=...&type=invite — token_hash chega ao
  * servidor (o fragmento `#access_token` do fluxo padrão nunca chegaria).
  *
- * Ainda depende de config no painel do Supabase (Auth → URL Configuration): o
- * domínio de produção precisa estar em Site URL / Redirect URLs. Ver §3.1.
+ * Como a URL é montada por nós e o token_hash é verificado no callback, o fluxo
+ * não depende do Site URL / Redirect URLs do painel do Supabase. Ver §3.1.
  */
 export async function createUserRecord(input: UserCreateInput): Promise<ActionResult> {
   await requireFeature("users", "create");
