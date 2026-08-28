@@ -7,8 +7,9 @@ import { createClient } from "@/lib/supabase/server";
  * Callback do Supabase Auth. Trata os dois formatos de link:
  *  - PKCE: `?code=...` → exchangeCodeForSession
  *  - Token hash (recovery/magic link): `?token_hash=...&type=...` → verifyOtp
- * Usado pelo reset de senha (redireciona para /update-password).
- * A URL de produção precisa estar liberada no Supabase (Auth → URL Configuration).
+ * Usado pelo convite e pelo reset de senha (ambos caem em /update-password).
+ * Os dois links são montados pelo app com `token_hash`, então NÃO dependem do
+ * Site URL / Redirect URLs do painel do Supabase.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
