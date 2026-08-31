@@ -599,6 +599,30 @@ falha parcial da API viraria exclusão em massa. Cada recurso grava
    --commit`, rodar `dup-report.ts` pra ver o retrato atual do que sobrou (os
    placeholders e os `pols` do §9.3). Como cada re-migração recria as duplicatas,
    revisar o retrato novo vale mais que anotar a decisão de placeholder de hoje.
+   **Revisão do documento comparativo (31/08/2026)** — o dedup do
+   `merge-libraries.ts` agrupa por nome normalizado, então nunca enxerga a cópia
+   *escrita errado* (`Fenguang` ≠ `Fengguang`, `Zhuguan` ≠ `Zhiguan`): ela vive
+   no documento como "Só no nosso banco (sem gss_id)". A revisão do Rapha sobre a
+   aba `Suppliers → factories` trouxe 34 decisões nossas (as marcadas "@Gustavo"
+   são para a origem corrigir), aplicadas por
+   [`scripts/sync-gss/aplicar-revisao-fabricas.ts`](../scripts/sync-gss/aplicar-revisao-fabricas.ts)
+   — mesma mecânica de FK + backup do merge, só que dirigida por **pares
+   explícitos**. Aplicado em produção 31/08/2026: **17 apelidos fundidos** (149
+   referências movidas) e **12 retiradas** do cadastro; 762 → 733 fábricas ativas.
+   Esse script também repõe `factory_products`, que o `merge-libraries.ts` ainda
+   não conhece (a tabela nasceu depois, em `20260825120000`).
+
+   **"Pode deletar" virou soft-delete, não delete.**
+   `order_factory_category.factory_id` é `ON DELETE CASCADE`: apagar a fábrica
+   apagaria junto entradas Factory × Category de pedidos reais — e as 12 tinham
+   1 a 4 orders cada. O soft-delete tira do cadastro e das seleções e deixa o
+   histórico do pedido de pé.
+
+   **Fica aberto:** 5 linhas que "não são fábrica, são ponto de consolidação"
+   (`Zenchum Office` 826 usos, `Best services intl Freight Ltd` 42, `Hangzhou
+   Laiying` 7, `Shouzen` 7, `Unknow` 7). Fábrica e ponto de consolidação dividem
+   a tabela `factories` (via `pre_loading_checklist_steps.consolidation_point_id`);
+   separar os dois é mudança de modelo, não correção de dado.
 3. **`pols`** — decisão de modelagem pendente (§9.3). É o item que trava o
    recurso inteiro, não um ajuste de dado.
 4. **Lixo local sem par** — `asd`, `123`, `Test`: candidatos a limpeza, não a merge.
