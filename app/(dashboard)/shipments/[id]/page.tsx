@@ -249,6 +249,23 @@ export default async function ShipmentDetailPage({
         .returns<OfcEmbed[]>()
     : { data: [] as OfcEmbed[] };
 
+  // O carregamento que ESTE embarque registrou, por lote × entrada. A entrada
+  // que migrou no split tem `loading_status` null hoje (o status é do lote de
+  // destino, que ainda vai carregar) — quem guarda o Partial/None do embarque é
+  // o snapshot. Sem snapshot (embarque anterior à tabela) sobra o status atual.
+  const loadedRes = batchIds.length
+    ? await admin
+        .from("shipment_loaded_lines")
+        .select("batch_id, order_factory_category_id, loading_status")
+        .in("batch_id", batchIds)
+    : { data: [] };
+  const loadedByBatch = new Map<string, Map<string, LoadingStatus>>();
+  for (const l of loadedRes.data ?? []) {
+    const m = loadedByBatch.get(l.batch_id) ?? new Map<string, LoadingStatus>();
+    m.set(l.order_factory_category_id, l.loading_status);
+    loadedByBatch.set(l.batch_id, m);
+  }
+
   const categoryNameById = new Map(
     (
       await fetchAll<{ id: string; name: string }>((from, to) =>
@@ -271,7 +288,7 @@ export default async function ShipmentDetailPage({
       order_id: o.order_id,
       factory: factoryNameById.get(o.factory_id) ?? "—",
       category: categoryNameById.get(o.category_id) ?? "—",
-      loading_status: o.loading_status,
+      loading_status: loadedByBatch.get(targetBatchId)?.get(o.id) ?? o.loading_status,
       etd_initial: etd?.initial_date ?? null,
       moved_to: ancestor ? (descendantNumberById.get(o.batch_id) ?? null) : null,
     });

@@ -887,6 +887,28 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["shipments"]["Insert"]>;
         Relationships: [];
       };
+      shipment_loaded_lines: {
+        Row: {
+          id: UUID;
+          shipment_id: UUID;
+          batch_id: UUID;
+          order_factory_category_id: UUID;
+          loading_status: LoadingStatus;
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          shipment_id: UUID;
+          batch_id: UUID;
+          order_factory_category_id: UUID;
+          loading_status: LoadingStatus;
+          created_at?: Timestamp;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["shipment_loaded_lines"]["Insert"]
+        >;
+        Relationships: [];
+      };
       pre_loading_clients: {
         Row: { pre_loading_id: UUID; client_id: UUID };
         Insert: { pre_loading_id: UUID; client_id: UUID };

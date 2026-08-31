@@ -163,9 +163,6 @@ export type BatchRow = {
   split_from_batch_id: string | null;
 };
 
-/** OfcRow com o número do lote onde a linha vive hoje — no modo linhagem uma
- *  linha do lote embarcado pode estar fisicamente num lote-filho do split. */
-type OfcRowWithBatch = OfcRow & { batch_number: string };
 export type Ref = { id: string; name: string };
 
 type OrderDetail = {
@@ -384,7 +381,7 @@ function ViewBatchModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   batch: BatchRow | null;
-  rows: OfcRowWithBatch[];
+  rows: OfcRow[];
 }) {
   const [page, setPage] = useState(0);
   const openFor = open ? batch?.id ?? null : null;
@@ -442,7 +439,7 @@ function ViewBatchModal({
                       </span>
                     </SmallField>
                     <SmallField label="Batch No.">
-                      <span className="text-slate-700">{r.batch_number}</span>
+                      <span className="text-slate-700">{batch?.batch_number}</span>
                     </SmallField>
                     <SmallField label="Status">
                       <LoadingStatusBadge status={r.loading_status} />
@@ -1014,6 +1011,7 @@ export function OrderDetailClient({
   batches,
   ofc,
   etdByOfc,
+  loadedByBatch,
   categories,
   factories,
   factoriesByCategory,
@@ -1027,6 +1025,8 @@ export function OrderDetailClient({
   batches: BatchRow[];
   ofc: OfcRow[];
   etdByOfc: Record<string, EtdInfoRow>;
+  /** Carregamento congelado no embarque: lote → entrada → Total/Partial/None. */
+  loadedByBatch: Record<string, Record<string, LoadingStatus>>;
   categories: Ref[];
   factories: Ref[];
   factoriesByCategory: Record<string, string[]>;
@@ -1075,11 +1075,6 @@ export function OrderDetailClient({
     }
     return map;
   }, [batches]);
-
-  const batchNumberById = useMemo(
-    () => new Map(batches.map((b) => [b.id, b.batch_number])),
-    [batches]
-  );
 
   // ETD: exige "Initial date" em TODAS as entradas Factory×Category. Sem
   // nenhuma entrada não há o que preencher, então o requisito não é cumprido.
@@ -1255,15 +1250,20 @@ export function OrderDetailClient({
             const editable = EDITABLE_BATCH_STATUSES.includes(b.status);
             // Edição só mexe nas linhas fisicamente neste lote.
             const ownRows = ofc.filter((r) => r.batch_id === b.id);
-            // Visualização inclui as que migraram no split (lote embarcado), com
-            // o número do lote onde vivem hoje para a coluna "Batch No.".
+            // Visualização inclui as que migraram no split (lote embarcado).
+            // A linha é exibida como deste lote — número e status do embarque
+            // DELE, não do lote de destino: "no embarque do .01 essa entrada foi
+            // Partial" continua verdade depois que ela migrou para o .02.
             const owned = ownedBatchIds.get(b.id) ?? new Set([b.id]);
-            const viewRows: OfcRowWithBatch[] = ofc
+            const loaded = loadedByBatch[b.id];
+            const viewRows: OfcRow[] = ofc
               .filter((r) => r.batch_id && owned.has(r.batch_id))
               .map((r) => ({
                 ...r,
-                batch_number:
-                  (r.batch_id && batchNumberById.get(r.batch_id)) || b.batch_number,
+                // Sem snapshot (embarque anterior à tabela, ou lote que ainda
+                // não embarcou) vale o status atual da linha — e só quando ela
+                // é fisicamente deste lote.
+                loading_status: loaded?.[r.id] ?? (r.batch_id === b.id ? r.loading_status : null),
               }));
             return (
               <div

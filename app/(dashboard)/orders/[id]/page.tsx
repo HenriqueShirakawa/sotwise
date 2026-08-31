@@ -5,7 +5,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { displayBu } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChecklistStep } from "@/types/database";
+import type { ChecklistStep, LoadingStatus } from "@/types/database";
 
 import {
   OrderDetailClient,
@@ -194,6 +194,22 @@ export default async function OrderDetailPage({
     loading_status: o.loading_status,
   }));
 
+  // O que cada lote embarcou, por entrada — congelado no Confirm Shipping
+  // (tabela shipment_loaded_lines). É o que o "View batch" mostra na coluna
+  // Status: a entrada marcada Partial migra para o lote-filho do split e perde
+  // o loading_status atual, mas o embarque que a carregou continua registrado.
+  const batchIds = (batchesRes.data ?? []).map((b) => b.id);
+  const loadedRes = batchIds.length
+    ? await admin
+        .from("shipment_loaded_lines")
+        .select("batch_id, order_factory_category_id, loading_status")
+        .in("batch_id", batchIds)
+    : { data: [] };
+  const loadedByBatch: Record<string, Record<string, LoadingStatus>> = {};
+  for (const l of loadedRes.data ?? []) {
+    (loadedByBatch[l.batch_id] ??= {})[l.order_factory_category_id] = l.loading_status;
+  }
+
   const ofcIds = ofc.map((o) => o.id);
   const etdRes = ofcIds.length
     ? await admin
@@ -248,6 +264,7 @@ export default async function OrderDetailPage({
       }))}
       ofc={ofc}
       etdByOfc={etdByOfc}
+      loadedByBatch={loadedByBatch}
       categories={categoriesRes.map((c) => ({ id: c.id, name: c.name }))}
       factories={factoriesRes.map((f) => ({ id: f.id, name: f.name }))}
       factoriesByCategory={factoriesByCategory}

@@ -384,14 +384,31 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   }
 
   // No lote que já existia, voltam só as linhas que ESTE embarque empurrou pra
-  // lá — reconhecíveis pelo loading_status gravado no Confirm Shipping. O que
+  // lá — as que ele registrou como não-Total no snapshot do carregamento. O que
   // era dele fica onde está, e o lote não é apagado.
+  //
+  // O snapshot é a fonte: o próprio split zera o loading_status da
+  // linha que migra, então filtrar por ele (como se fazia antes) não achava ninguém.
+  // Embarque confirmado ANTES da tabela existir não tem snapshot — aí sobra o
+  // filtro antigo, que é o comportamento que esse dado já tinha.
+  const { data: loadedLines, error: loadedErr } = await admin
+    .from("shipment_loaded_lines")
+    .select("order_factory_category_id, loading_status")
+    .eq("shipment_id", shipmentId);
+  if (loadedErr) return { ok: false, error: loadedErr.message };
+  const pushedOutIds = (loadedLines ?? [])
+    .filter((l) => l.loading_status !== "total")
+    .map((l) => l.order_factory_category_id);
+  const hasSnapshot = (loadedLines ?? []).length > 0;
+
   for (const child of merged) {
-    const { error } = await admin
+    const query = admin
       .from("order_factory_category")
       .update({ batch_id: child.split_from_batch_id })
-      .eq("batch_id", child.id)
-      .in("loading_status", ["none", "partial"]);
+      .eq("batch_id", child.id);
+    const { error } = hasSnapshot
+      ? await query.in("id", pushedOutIds)
+      : await query.in("loading_status", ["none", "partial"]);
     if (error) return { ok: false, error: error.message };
 
     // A linhagem foi anotada por este embarque; sem ele, o lote volta a não ter

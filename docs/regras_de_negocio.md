@@ -819,6 +819,31 @@ create trigger trg_batches_updated_at before update on public.batches
 
 > Nota de implementação: como o número reseta por pedido, gerar `batch_number` = `.` + (contagem de lotes daquele `order_id` + 1, com 2 dígitos). O split (Partial/None) cria o próximo `.NN` na sequência do pedido.
 
+##### Registro do carregamento (o que cada lote embarcou) — 2026-08-28
+
+O split move a entrada Partial/None para o lote de destino e **zera** o `loading_status` dela — aquele status era do embarque que saiu, e o lote de destino ainda vai carregar. Sem mais nada, o lote que embarcou perdia o registro do próprio carregamento: no "View batch" do lote `.01` a entrada aparecia com o número do lote `.02` e **sem status**, quando o fato é "no embarque do `.01` essa entrada foi Partial".
+
+Regra: **o carregamento é fato do embarque, não estado da entrada.** No Confirm Shipping grava-se um snapshot por (lote embarcado × entrada) com o status escolhido; `order_factory_category.loading_status` continua sendo só o **estado atual** da entrada (null enquanto o lote onde ela vive não embarcar).
+
+```sql
+create table public.shipment_loaded_lines (
+  id                        uuid primary key default gen_random_uuid(),
+  shipment_id               uuid not null references public.shipments(id) on delete cascade,
+  batch_id                  uuid not null references public.batches(id) on delete cascade,   -- o lote que EMBARCOU
+  order_factory_category_id uuid not null references public.order_factory_category(id) on delete cascade,
+  loading_status            public.loading_status not null,
+  created_at                timestamptz not null default now(),
+  unique (batch_id, order_factory_category_id)
+);
+```
+
+Consequências na UI e nas ações:
+
+- **"View batch" (detalhe do pedido):** o lote mostra as entradas próprias **+ as que migraram** pela linhagem `split_from_batch_id`, todas com a coluna **Batch No. = o lote que está sendo visto** e o **Status do embarque dele**. A mesma entrada aparece no lote `.01` como Partial e no `.02` como "—" (o `.02` ainda não carregou) — cada lote conta a sua própria verdade. Antes a coluna mostrava o lote onde a entrada vive hoje (`.02`), o que lia como se a linha não fosse do lote aberto.
+- **"View parts" (detalhe do embarque):** mesma fonte; a entrada migrada volta a exibir Partial/None (com o "→ .02" indicando para onde foi o saldo).
+- **Desfazer embarque (`deleteShipment`):** as entradas que voltam para o lote de origem são as registradas como não-Total **neste** embarque. Antes o filtro era pelo `loading_status`, que o próprio split já tinha zerado — no caso "lote de destino já existia" ninguém voltava.
+- **Sem snapshot** (embarques confirmados antes desta tabela, incluindo o dado migrado do Bubble) vale o `loading_status` atual da entrada, e só para a entrada que é fisicamente daquele lote — o comportamento que esse dado já tinha. Não há como reconstruir Partial vs None de um split antigo: o dado nunca foi gravado.
+
 #### 3.7.3 order_factory_category (entradas)
 
 As entradas Category + Factory + Batch + Ship requirement de um pedido. É a `List of Factories x Categories x Lote` do Bubble. Criável manualmente ou via **bulk import CSV**.
