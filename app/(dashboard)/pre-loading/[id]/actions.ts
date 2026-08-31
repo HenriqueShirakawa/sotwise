@@ -244,7 +244,8 @@ export type ConfirmShippingInput = {
 /**
  * "Confirm Shipping": converte um Pre-loading concluído num Shipment (regra
  * 3.9.6 + split 3.7.2). Cria o shipment 1:1, grava o loading_status de cada
- * entrada Factory×Category, e roda o split por lote:
+ * entrada Factory×Category (e o snapshot do que este embarque carregou, em
+ * shipment_loaded_lines), e roda o split por lote:
  *   - entradas Total ficam no lote, que vai para `in_transit`;
  *   - entradas None/Partial migram para o próximo lote do pedido que já esteja
  *     aberto (in negotiation / in production) ou, se não houver, para um lote
@@ -371,18 +372,24 @@ export async function confirmShipping(
   }
 
   // 1. Shipment (1:1). O unique em pre_loading_id também barra confirmação dupla.
-  const { error: shipErr } = await admin.from("shipments").insert({
-    pre_loading_id: preLoadingId,
-    container_number: input.container_number.trim(),
-    carrier_id: input.carrier_id,
-    shipment_model_id: input.shipment_model_id,
-    leader_id: input.shipment_leader_id,
-    signer_id: input.signer_id,
-    estimated_date: input.estimated_date,
-    status: "in_transit",
-    created_by: session.userId,
-  });
-  if (shipErr) return { ok: false, error: shipErr.message };
+  const { data: shipment, error: shipErr } = await admin
+    .from("shipments")
+    .insert({
+      pre_loading_id: preLoadingId,
+      container_number: input.container_number.trim(),
+      carrier_id: input.carrier_id,
+      shipment_model_id: input.shipment_model_id,
+      leader_id: input.shipment_leader_id,
+      signer_id: input.signer_id,
+      estimated_date: input.estimated_date,
+      status: "in_transit",
+      created_by: session.userId,
+    })
+    .select("id")
+    .single();
+  if (shipErr || !shipment) {
+    return { ok: false, error: shipErr?.message ?? "Failed to create the shipment." };
+  }
 
   // 2. loading_status por entrada.
   for (const value of ["total", "partial", "none"] as const) {
@@ -394,6 +401,23 @@ export async function confirmShipping(
         .in("id", ids);
       if (error) return { ok: false, error: error.message };
     }
+  }
+
+  // 2b. Snapshot do que ESTE embarque carregou, por lote × entrada. O passo 3
+  // move as entradas não-Total para outro lote e zera o loading_status delas —
+  // sem este registro o lote que embarcou perde o próprio histórico (a linha
+  // aparecia no lote de destino e sem status). Ver docs §3.7.2.
+  const loadedLines = (ofcRows ?? [])
+    .filter((o) => !!o.batch_id)
+    .map((o) => ({
+      shipment_id: shipment.id,
+      batch_id: o.batch_id as string,
+      order_factory_category_id: o.id,
+      loading_status: statusByOfc.get(o.id)!,
+    }));
+  if (loadedLines.length) {
+    const { error } = await admin.from("shipment_loaded_lines").insert(loadedLines);
+    if (error) return { ok: false, error: error.message };
   }
 
   // 3. Split: agrupa as entradas não-Total por lote de origem.
