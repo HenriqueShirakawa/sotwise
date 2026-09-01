@@ -35,7 +35,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "https://sotwise-pi.vercel.app",
+      "value": "https://sotwise.vercel.app",
       "type": "string"
     },
     {

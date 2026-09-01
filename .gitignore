@@ -47,3 +47,5 @@ next-env.d.ts
 
 # saida gerada pelo dup-report.ts (relatorio de duplicatas)
 dup-report.xlsx
+
+.vercel
