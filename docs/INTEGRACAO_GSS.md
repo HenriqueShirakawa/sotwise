@@ -694,6 +694,32 @@ estão em `NOME_LOCAL_VENCE`, porque aqui o nome carrega mais informação:
 | `Samples` | `Sample` | rótulo em 77 orders |
 | `Marquinhos` | `Marquinho` | grafia correta do cliente |
 
+#### Mais dois, em 2026-09-01: o GSS desdobrou fornecedores
+
+A equipe do GSS reorganizou os fornecedores nas listas deles. O `/core/supplier/`
+foi de 736 para 756 linhas, e o que apareceu não é uniforme:
+
+| Caso | Qtde | O que é |
+|---|---:|---|
+| cadastro novo | 20 | fornecedores que não existiam (Badou, Baichang, Xiwang…) |
+| desdobramento | 7 | `Base + sufixo` de fornecedor que já temos: `Dafeng W`, `Dongchen AC`, `Haorui Hood`, `Longxin C`, `Xingjie H`, `Xintianben A`, `Yicheng W` |
+| renomeação | 1 | o supplier **106**, ao qual a nossa `Kaershida` estava pareada, virou **`Kaershida P`** lá — e criaram o **107** com o nome `Kaershida` |
+
+Um quarto caso saiu na conferência linha a linha: o supplier **663**, pareado à
+nossa `Tianfa`, hoje se chama **`Puruisi`** — nome inteiro diferente, não sufixo.
+
+Os dois últimos entraram em `NOME_LOCAL_VENCE` (`factories:106`, `factories:663`):
+sem a trava, o passo FIELDS renomearia fábricas em uso nas orders com base numa
+reorganização que ninguém validou deste lado.
+
+Aplicado no mesmo dia com `sync --commit --insert=factories`: 28 inserts (as 761
+fábricas vivas passaram a ter 756 com `gss_id`), 27 vínculos novos em
+`category_factories`, mais 4 links e 4 `country_id` em `clients` que o mesmo
+passo trouxe. **Efeito colateral conhecido:** como a nossa `Kaershida` (106)
+ficou com o nome travado e a 107 entrou com o nome que veio do GSS, existem
+agora **duas fábricas chamadas `Kaershida`** — a distinção depende de a AGK
+dizer qual é qual.
+
 ### 9.9 Painel de leitura do GSS, dentro do app
 
 [`/access/gss`](../app/(dashboard)/access/gss/page.tsx) — **owner-only**, pela
