@@ -9,15 +9,18 @@ import {
   type GssOrderInput,
   type GssOrderItemInput,
 } from "@/domain/orders/gss-schema";
+import { listGssOrders, parseGssOrderQuery } from "@/domain/orders/gss-read";
 
 /**
- * Via de entrada GSS → SOTWISE para criar/atualizar ORDERS (push).
+ * Via GSS ↔ SOTWISE de ORDERS. Mesmo path, mesmo segredo, dois sentidos:
  *
- *   POST /api/gss/orders
+ *   POST /api/gss/orders   → o GSS cria/atualiza uma order (push)
+ *   GET  /api/gss/orders   → o GSS lê as orders e o que virou delas (pull)
+ *
  *   Authorization: Bearer $GSS_INBOUND_SECRET
  *
- * É a primeira via inbound da integração (o resto é pull: o SOTWISE puxa as
- * bibliotecas). Fluxo:
+ * O POST é a primeira via inbound da integração (o resto é pull: o SOTWISE puxa
+ * as bibliotecas). Fluxo:
  *   1. Autoriza por secret dedicado (server-to-server, não sessão de usuário).
  *   2. Valida o payload (domain/orders/gss-schema.ts).
  *   3. Resolve cada `*_gss_id` para o UUID interno da biblioteca.
@@ -50,6 +53,25 @@ function secretMatches(provided: string, expected: string): boolean {
   const a = createHash("sha256").update(provided).digest();
   const b = createHash("sha256").update(expected).digest();
   return timingSafeEqual(a, b);
+}
+
+/**
+ * Porta de entrada dos dois métodos: server-to-server por secret dedicado (não
+ * sessão de usuário). Devolve a resposta de erro quando barra, `null` quando
+ * libera. 503 = o ambiente do SOTWISE está sem a env (problema nosso, não do
+ * chamador); 401 = token ausente ou errado.
+ */
+function denyUnauthorized(request: NextRequest): Response | null {
+  const expected = process.env.GSS_INBOUND_SECRET;
+  if (!expected) {
+    return json({ error: "GSS_INBOUND_SECRET not configured." }, 503);
+  }
+  const header = request.headers.get("authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token || !secretMatches(token, expected)) {
+    return json({ error: "Unauthorized." }, 401);
+  }
+  return null;
 }
 
 /** Bibliotecas cujo `gss_id` o payload referencia → coluna FK na order. */
@@ -213,16 +235,58 @@ async function applyOrderItems(
   return { ok: true };
 }
 
+/**
+ * Leitura das orders pelo GSS (pull). Sempre devolve uma LISTA — filtrar por
+ * `?gss_id=` é o jeito de ler uma order específica, e a forma da resposta não
+ * muda com o filtro (uma lista de 0 ou 1 item), o que simplifica o lado do GSS.
+ *
+ *   GET /api/gss/orders?gss_id=&po_number=&status=&updated_since=&order=&limit=&offset=&include=items,checklist
+ *
+ * `updated_since` + `order=asc` é a varredura incremental: o GSS guarda o maior
+ * `updated_at` que viu e pede só o que mudou desde então. Os blocos pesados
+ * (`items`, `checklist`) só vêm se pedidos em `include`. Ver domain/orders/gss-read.ts.
+ */
+export async function GET(request: NextRequest): Promise<Response> {
+  const denied = denyUnauthorized(request);
+  if (denied) return denied;
+
+  const parsed = parseGssOrderQuery(request.nextUrl.searchParams);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const where = issue?.path.join(".");
+    return json(
+      {
+        error: where ? `Invalid '${where}': ${issue?.message}` : (issue?.message ?? "Invalid query."),
+        issues: parsed.error.issues,
+      },
+      400
+    );
+  }
+  const query = parsed.data;
+
+  const admin = createAdminClient();
+  try {
+    const { data, total } = await listGssOrders(admin, query);
+    return json(
+      {
+        data,
+        pagination: {
+          limit: query.limit,
+          offset: query.offset,
+          returned: data.length,
+          total,
+        },
+      },
+      200
+    );
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : "Failed to list orders." }, 500);
+  }
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
-  const expected = process.env.GSS_INBOUND_SECRET;
-  if (!expected) {
-    return json({ error: "GSS_INBOUND_SECRET not configured." }, 503);
-  }
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!token || !secretMatches(token, expected)) {
-    return json({ error: "Unauthorized." }, 401);
-  }
+  const denied = denyUnauthorized(request);
+  if (denied) return denied;
 
   const body = await request.json().catch(() => null);
   const parsed = gssOrderSchema.safeParse(body);

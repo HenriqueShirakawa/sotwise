@@ -1,13 +1,17 @@
 {
   "info": {
-    "name": "SOTWISE — GSS Schedule de Orders",
-    "description": "Teste da via inbound GSS → SOTWISE que agenda (schedule) orders.\n\nEndpoint: POST /api/gss/orders\nAuth: Authorization: Bearer {{gss_inbound_secret}} (server-to-server, NÃO é o API_TOKEN dos cadastros)\n\nO campo central do agendamento é `schedule_requested` (data YYYY-MM-DD). O POST é idempotente por `gss_id`: reenviar o mesmo gss_id ATUALIZA a order (não duplica). `po_number` é unique no banco — colisão devolve 409. O checklist das 10 etapas é semeado pelo trigger `trg_orders_seed_checklist` a cada INSERT.\n\nRode a collection inteira em ordem (Runner): as requisições geram um gss_id/po_number únicos por execução, então não colidem entre rodadas.",
+    "name": "SOTWISE — GSS Orders (POST + GET)",
+    "description": "Teste da via inbound GSS → SOTWISE que agenda (schedule) orders.\n\nEndpoints: POST /api/gss/orders (o GSS cria/atualiza) e GET /api/gss/orders (o GSS lê status, lote e checklist)\nAuth: Authorization: Bearer {{gss_inbound_secret}} (server-to-server, NÃO é o API_TOKEN dos cadastros)\n\nO campo central do agendamento é `schedule_requested` (data YYYY-MM-DD). O POST é idempotente por `gss_id`: reenviar o mesmo gss_id ATUALIZA a order (não duplica). `po_number` é unique no banco — colisão devolve 409. O checklist das 10 etapas é semeado pelo trigger `trg_orders_seed_checklist` a cada INSERT.\n\nRode a collection inteira em ordem (Runner): as requisições geram um gss_id/po_number únicos por execução, então não colidem entre rodadas.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
     "bearer": [
-      { "key": "token", "value": "{{gss_inbound_secret}}", "type": "string" }
+      {
+        "key": "token",
+        "value": "{{gss_inbound_secret}}",
+        "type": "string"
+      }
     ]
   },
   "event": [
@@ -29,11 +33,31 @@
     }
   ],
   "variable": [
-    { "key": "base_url", "value": "https://sotwise-pi.vercel.app", "type": "string" },
-    { "key": "run_stamp", "value": "", "type": "string" },
-    { "key": "run_gss_id", "value": "", "type": "string" },
-    { "key": "run_po_number", "value": "", "type": "string" },
-    { "key": "created_order_id", "value": "", "type": "string" }
+    {
+      "key": "base_url",
+      "value": "https://sotwise-pi.vercel.app",
+      "type": "string"
+    },
+    {
+      "key": "run_stamp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "run_gss_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "run_po_number",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "created_order_id",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -41,16 +65,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}\",\n  \"po_number\": \"{{run_po_number}}\",\n  \"schedule_requested\": \"2026-09-15\",\n  \"client_reference\": \"REF via Postman\",\n  \"date_po\": \"2026-08-25\"\n}"
         },
         "description": "Cria uma order agendada. Só `gss_id` e `po_number` são obrigatórios; `schedule_requested` é a data do agendamento. As FKs de biblioteca (order_type_gss_id, client_gss_id, business_unit_gss_id, exporter_gss_id) são opcionais e resolvidas pelo gss_id da lib — ver a requisição 7."
@@ -79,16 +116,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}\",\n  \"po_number\": \"{{run_po_number}}\",\n  \"schedule_requested\": \"2026-10-01\",\n  \"client_reference\": \"REF atualizada via Postman\"\n}"
         },
         "description": "Mesmo `gss_id` da requisição 1: o endpoint faz UPDATE em vez de INSERT (idempotência). Note o `schedule_requested` mudado — deve refletir na order sem criar duplicata."
@@ -115,16 +165,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-B\",\n  \"po_number\": \"{{run_po_number}}\",\n  \"schedule_requested\": \"2026-09-20\"\n}"
         },
         "description": "gss_id NOVO mas o MESMO po_number da requisição 1. `po_number` é unique no banco → 409."
@@ -147,19 +210,34 @@
     {
       "name": "4. Sem autenticação — 401",
       "request": {
-        "auth": { "type": "noauth" },
+        "auth": {
+          "type": "noauth"
+        },
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-NOAUTH\",\n  \"po_number\": \"{{run_po_number}}-NOAUTH\"\n}"
         },
         "description": "Sem o header Authorization (auth = No Auth). Deve responder 401 antes de tocar no banco."
@@ -181,16 +259,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-INVALID\",\n  \"schedule_requested\": \"2026-09-15\"\n}"
         },
         "description": "Falta o `po_number` (obrigatório). O schema Zod rejeita → 400 com `error` + lista `issues`."
@@ -215,16 +306,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-BADDATE\",\n  \"po_number\": \"{{run_po_number}}-BADDATE\",\n  \"schedule_requested\": \"15/09/2026\"\n}"
         },
         "description": "`schedule_requested` precisa ser YYYY-MM-DD. Data em outro formato → 400 (\"Date must be YYYY-MM-DD.\")."
@@ -249,16 +353,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-FK\",\n  \"po_number\": \"{{run_po_number}}-FK\",\n  \"schedule_requested\": \"2026-09-15\",\n  \"client_gss_id\": \"NAO-EXISTE-NO-GSS\"\n}"
         },
         "description": "Um `*_gss_id` de biblioteca que não existe no SOTWISE não resolve para UUID → 400 (\"No clients found for gss_id '…'.\")."
@@ -283,16 +400,29 @@
       "request": {
         "method": "POST",
         "header": [
-          { "key": "Content-Type", "value": "application/json" }
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
         ],
         "url": {
           "raw": "{{base_url}}/api/gss/orders",
-          "host": ["{{base_url}}"],
-          "path": ["api", "gss", "orders"]
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ]
         },
         "body": {
           "mode": "raw",
-          "options": { "raw": { "language": "json" } },
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          },
           "raw": "{\n  \"gss_id\": \"{{run_gss_id}}-FULL\",\n  \"po_number\": \"{{run_po_number}}-FULL\",\n  \"schedule_requested\": \"2026-09-15\",\n  \"client_reference\": \"Pedido completo\",\n  \"date_po\": \"2026-08-25\",\n  \"order_type_gss_id\": \"{{order_type_gss_id}}\",\n  \"client_gss_id\": \"{{client_gss_id}}\",\n  \"business_unit_gss_id\": \"{{business_unit_gss_id}}\",\n  \"exporter_gss_id\": \"{{exporter_gss_id}}\",\n  \"leader_email\": \"{{leader_email}}\",\n  \"requester_email\": \"{{requester_email}}\",\n  \"items\": [\n    { \"supplier_category_gss_id\": \"{{supplier_category_gss_id_1}}\", \"ship_requirement\": \"2026-09-10\" },\n    { \"supplier_category_gss_id\": \"{{supplier_category_gss_id_2}}\", \"ship_requirement\": \"2026-09-15\" }\n  ]\n}"
         },
         "description": "Exemplo COMPLETO com as 4 FKs de biblioteca resolvidas por gss_id. Preencha as variáveis order_type_gss_id / client_gss_id / business_unit_gss_id / exporter_gss_id no environment com valores REAIS do GSS antes de rodar — senão cai no 400 da requisição 7. Por isso fica fora do fluxo padrão (desabilite ou pule no Runner se não tiver os gss_ids)."
@@ -311,6 +441,201 @@
               "} else {",
               "  pm.test('status 201', () => pm.response.to.have.status(201));",
               "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Listar orders (página) — 200",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders?limit=5&order=desc",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "limit",
+              "value": "5",
+              "description": "1–200 (default 50)"
+            },
+            {
+              "key": "order",
+              "value": "desc",
+              "description": "asc | desc, por updated_at (default desc)"
+            }
+          ]
+        },
+        "description": "Lista as orders mais recentes. A resposta é SEMPRE uma lista, com `pagination` (limit/offset/returned/total). As bibliotecas vêm como { id, name, gss_id } — o gss_id é a chave que o GSS usa para reconciliar."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('devolve data[] e pagination', () => {",
+              "  pm.expect(b.data).to.be.an('array');",
+              "  pm.expect(b.pagination).to.have.property('total');",
+              "});",
+              "pm.test('respeita o limit', () => pm.expect(b.data.length).to.be.at.most(5));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Ler a order criada (gss_id + include) — 200",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders?gss_id={{run_gss_id}}&include=items,checklist",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "gss_id",
+              "value": "{{run_gss_id}}",
+              "description": "id do pedido no GSS (o mesmo do POST)"
+            },
+            {
+              "key": "include",
+              "value": "items,checklist",
+              "description": "blocos extras: items | checklist"
+            }
+          ]
+        },
+        "description": "Lê de volta a order criada na requisição 1, com as linhas Factory×Category (incluindo o lote atribuído no SOTWISE) e as 10 etapas do checklist da fase Order. Filtrar por gss_id NÃO muda a forma da resposta: continua uma lista, de 0 ou 1 item."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('achou exatamente a order do POST', () => {",
+              "  pm.expect(b.data.length).to.eql(1);",
+              "  pm.expect(b.data[0].gss_id).to.eql(pm.collectionVariables.get('run_gss_id'));",
+              "});",
+              "pm.test('include trouxe items e checklist', () => {",
+              "  pm.expect(b.data[0].items).to.be.an('array');",
+              "  pm.expect(b.data[0].checklist).to.be.an('array');",
+              "});",
+              "pm.test('o trigger semeou as 10 etapas da fase Order', () =>",
+              "  pm.expect(b.data[0].checklist.length).to.eql(10));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Sincronização incremental (updated_since) — 200",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders?updated_since=2026-01-01T00:00:00Z&order=asc&limit=50",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "updated_since",
+              "value": "2026-01-01T00:00:00Z",
+              "description": "ISO 8601 com fuso — só o que mudou desde então"
+            },
+            {
+              "key": "order",
+              "value": "asc",
+              "description": "cronológico, para varrer sem pular nada"
+            },
+            {
+              "key": "limit",
+              "value": "50",
+              "description": "pagine com offset até returned < limit"
+            }
+          ]
+        },
+        "description": "O uso principal do GET pelo GSS: guardar o maior updated_at já visto e pedir só o que mudou desde então. A ordenação é updated_at + id (o id desempata, então nenhuma order pula nem repete entre páginas)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('vem em ordem cronológica', () => {",
+              "  const dates = b.data.map((o) => o.updated_at);",
+              "  pm.expect(dates).to.eql([...dates].sort());",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Query param inválido — 400",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/gss/orders?status=nao_existe",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "gss",
+            "orders"
+          ],
+          "query": [
+            {
+              "key": "status",
+              "value": "nao_existe",
+              "description": "status fora da lista de OrderStatus"
+            }
+          ]
+        },
+        "description": "Valor inválido em query param responde 400 com `issues[]` apontando o campo — mesmo padrão de erro do POST."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 400', () => pm.response.to.have.status(400));",
+              "pm.test('aponta o campo com problema', () => {",
+              "  const b = pm.response.json();",
+              "  pm.expect(b.error).to.include('status');",
+              "  pm.expect(b.issues).to.be.an('array');",
+              "});"
             ]
           }
         }
