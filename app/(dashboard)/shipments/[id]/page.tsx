@@ -143,8 +143,12 @@ export default async function ShipmentDetailPage({
     // Cadastros usados pra resolver os valores das etapas herdadas do PL:
     // paginados para nenhum ficar cortado no teto de 1000 do PostgREST — nome
     // que não vem do mapa apareceria como "—" na tela (ver lib/fetch-all).
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("factories").select("id, name").range(from, to)
+    // `factories` vem com as soft-deletadas de propósito: esta lista alimenta
+    // DOIS usos. O mapa id→nome precisa delas (senão uma fábrica retirada do
+    // cadastro deixaria "—" no histórico de quem já a tinha atribuída); o
+    // seletor de Dispatch location, não — ele é filtrado abaixo.
+    fetchAll<{ id: string; name: string; deleted_at: string | null }>((from, to) =>
+      admin.from("factories").select("id, name, deleted_at").range(from, to)
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("cities").select("id, name").range(from, to)
@@ -425,7 +429,10 @@ export default async function ShipmentDetailPage({
     .sort((a, b) => a.name.localeCompare(b.name));
 
   // Cadastro de fábricas — o modal de ETD usa no campo "Dispatch location".
+  // Só as ativas: uma fábrica retirada do cadastro não pode voltar a ser
+  // escolhida aqui (segue visível no histórico via `factoryNameById`).
   const factories: Ref[] = factoryRes
+    .filter((f) => !f.deleted_at)
     .map((f) => ({ id: f.id, name: f.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
