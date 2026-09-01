@@ -103,6 +103,10 @@ export const NOME_LOCAL_VENCE = new Set([
   // reescreveria o nome de fábricas em uso nas orders:
   "factories:106", // era "Kaershida"; virou "Kaershida P" lá, e criaram o 107 "Kaershida"
   "factories:663", // era "Tianfa"; virou "Puruisi" lá — nome inteiro diferente, não sufixo
+  // "Zenchum Office" > "CHONGQING ZENCHUM ELECTROMECHANICAL TECHNOLOGY CO., LTD."
+  // — a razão social não cabe no seletor, e aqui a linha é o 2º ponto de
+  // consolidação mais usado do sistema (826), não um fornecedor.
+  "factories:761",
 ]);
 
 export function norm(s: string | null | undefined): string {
