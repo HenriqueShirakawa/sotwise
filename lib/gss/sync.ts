@@ -98,6 +98,11 @@ export const NOME_LOCAL_VENCE = new Set([
   "carriers:1", // "MSC - Mediterranean Shg Co" > "MSC"
   "order_types:4", // "Samples" > "Sample" — rótulo em 77 orders
   "clients:38", // "Marquinhos" > "Marquinho"
+  // 2026-09-01 — o GSS desdobrou fornecedores em vários registros e, no caminho,
+  // renomeou dois aos quais já estávamos pareados. Sem estas duas travas o sync
+  // reescreveria o nome de fábricas em uso nas orders:
+  "factories:106", // era "Kaershida"; virou "Kaershida P" lá, e criaram o 107 "Kaershida"
+  "factories:663", // era "Tianfa"; virou "Puruisi" lá — nome inteiro diferente, não sufixo
 ]);
 
 export function norm(s: string | null | undefined): string {
