@@ -720,6 +720,29 @@ ficou com o nome travado e a 107 entrou com o nome que veio do GSS, existem
 agora **duas fábricas chamadas `Kaershida`** — a distinção depende de a AGK
 dizer qual é qual.
 
+#### E o pareamento fechou: 761 ↔ 761
+
+Sobravam 5 fábricas nossas sem `gss_id` — e a razão de sobrarem é estrutural: a
+nossa `factories` faz **dois papéis**, fornecedor (o que o GSS tem) e **ponto de
+consolidação** (o que o GSS não tinha). As 5 eram do segundo tipo: `Zenchum
+Office` sozinha é o 2º ponto de consolidação mais usado do sistema (826 usos em
+`pre_loading_checklist_steps.consolidation_point_id`) e **nunca** foi fornecedora
+de nada — 0 linhas em `order_factory_category`.
+
+A AGK criou as 5 como supplier no mesmo dia (ids 757–761). Quatro vieram com o
+nome idêntico e o passo LINK pegou sozinho; a quinta veio com a razão social
+(`CHONGQING ZENCHUM ELECTROMECHANICAL TECHNOLOGY CO., LTD.` — supplier 761 sobre
+a company 93) e foi vinculada à mão à nossa `Zenchum Office`, com o nome travado
+em `NOME_LOCAL_VENCE`: a razão social não cabe no seletor de Dispatch location,
+onde essa linha aparece 826 vezes.
+
+⚠️ O vínculo dela **precisou ser manual e a `--pair-only` foi obrigatória**: por
+nome ela nunca casaria, e o `insert` teria criado uma segunda fábrica
+`CHONGQING ZENCHUM…` ao lado da `Zenchum Office` que já existe.
+
+Resultado: `factories` com **`match 761, link 0, insert 0, localOnly 0`** — os
+dois lados idênticos, nenhuma fábrica sem par de nenhum dos lados.
+
 ### 9.9 Painel de leitura do GSS, dentro do app
 
 [`/access/gss`](../app/(dashboard)/access/gss/page.tsx) — **owner-only**, pela
