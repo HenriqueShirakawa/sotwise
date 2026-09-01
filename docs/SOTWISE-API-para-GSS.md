@@ -1,8 +1,8 @@
 # SOTWISE — API de Integração (para o time do GSS)
 
-Documento de referência para integração **GSS → SOTWISE**. Cobre:
+Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 
-1. **Via inbound de Orders** — o GSS cria/atualiza pedidos no SOTWISE (push).
+1. **Orders** — o GSS cria/atualiza pedidos no SOTWISE (`POST`, push) e lê o estado deles de volta (`GET`, pull — §1.5).
 2. **API de Bibliotecas (cadastros)** — CRUD dos cadastros de referência.
 
 - **Base URL:** `https://sotwise-pi.vercel.app`
@@ -17,7 +17,7 @@ Há **dois tokens distintos**, um para cada área. Ambos vão no header `Authori
 
 | Área | Header | Token |
 |---|---|---|
-| Via inbound de Orders (`/api/gss/orders`) | `Authorization: Bearer <GSS_INBOUND_SECRET>` | `GSS_INBOUND_SECRET` |
+| Orders — POST e GET (`/api/gss/orders`) | `Authorization: Bearer <GSS_INBOUND_SECRET>` | `GSS_INBOUND_SECRET` |
 | Bibliotecas / cadastros (`/api/{recurso}`) | `Authorization: Bearer <API_TOKEN>` | `API_TOKEN` |
 
 Sem token válido a resposta é `401` com corpo JSON (a API nunca redireciona para tela de login).
@@ -44,9 +44,9 @@ Todo código usado nas duas áreas desta API (Orders e Bibliotecas), com o que e
 
 ---
 
-# Parte 1 — Via inbound de Orders
+# Parte 1 — Orders
 
-`POST /api/gss/orders` — o GSS **cria ou atualiza** uma order no SOTWISE.
+Dois sentidos no mesmo path e com o mesmo token: `POST` — o GSS **cria ou atualiza** uma order no SOTWISE (§1.1 a §1.4); `GET` — o GSS **lê** as orders e o estado delas (§1.5).
 
 ```
 POST https://sotwise-pi.vercel.app/api/gss/orders
@@ -254,6 +254,117 @@ O `GSS_INBOUND_SECRET` não está definido no ambiente do SOTWISE. Indica um pro
 
 ---
 
+## 1.5. Ler orders — `GET /api/gss/orders`
+
+O caminho de volta: o GSS **lê** as orders do SOTWISE e o que virou delas (status, lote atribuído, checklist). Mesmo path e **mesmo token** do POST.
+
+```
+GET https://sotwise-pi.vercel.app/api/gss/orders
+Authorization: Bearer <GSS_INBOUND_SECRET>
+```
+
+A resposta é **sempre uma lista**, mesmo filtrando por uma order só — assim o formato não muda conforme o filtro.
+
+### Query params (todos opcionais)
+
+| Param | Valores | Default | Para quê |
+|---|---|---|---|
+| `gss_id` | id do pedido no GSS | — | Ler **uma** order específica (a chave que o GSS já usa no POST) |
+| `po_number` | número da PO | — | Ler uma order pelo número |
+| `status` | `in_negotiation`, `in_production`, `partially_preloading`, `pre_loading`, `partially_shipped`, `shipped`, `partially_delivered`, `delivered`, `canceled` | — | Filtrar pela fase |
+| `updated_since` | ISO 8601 com fuso (`2026-09-01T00:00:00Z`) | — | Só o que mudou desde então (sincronização incremental) |
+| `order` | `asc` \| `desc` (por `updated_at`) | `desc` | `asc` para varrer em ordem cronológica |
+| `limit` | 1–200 | 50 | Tamanho da página |
+| `offset` | ≥ 0 | 0 | Deslocamento da página |
+| `include` | `items`, `checklist` (separados por vírgula) | vazio | Blocos extras — só vêm se pedidos |
+
+Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issues[]` apontando o campo.
+
+### Sincronização incremental (o uso principal)
+
+O GSS guarda o maior `updated_at` que já viu e pede só o que mudou:
+
+```
+GET /api/gss/orders?updated_since=2026-09-01T12:00:00Z&order=asc&limit=200
+```
+
+Pagine com `offset` até `returned < limit`. A ordenação é `updated_at` + `id` (o `id` desempata, então nenhuma order pula ou repete entre páginas).
+
+### Resposta `200`
+
+```jsonc
+{
+  "data": [
+    {
+      "id": "0f63d999-…",                 // UUID interno do SOTWISE
+      "gss_id": "12345",                  // id do pedido no GSS (null se a order nasceu no SOTWISE)
+      "po_number": "1601",
+      "status": "partially_shipped",
+      "asap": false,
+      "schedule_requested": "2026-08-28",
+      "client_reference": "Tester 28/08",
+      "date_po": "2026-08-28",
+      "order_type":    { "id": "1364838b-…", "name": "Sales", "gss_id": "1" },
+      "client":        { "id": "1468aa94-…", "name": "AGK",   "gss_id": "1" },
+      "business_unit": { "id": "8ed55e47-…", "name": "Other", "gss_id": "6" },
+      "exporter":      { "id": "2770eb04-…", "name": "AGK",   "gss_id": "3" },
+      "leader":    { "id": "46c4eb13-…", "name": "André Mazzuchelli" },
+      "requester": { "id": "45b0bc3e-…", "name": "Amy" },
+      "created_at": "2026-08-28T20:40:41.406099+00:00",
+      "updated_at": "2026-08-28T20:50:36.391853+00:00"
+    }
+  ],
+  "pagination": { "limit": 50, "offset": 0, "returned": 1, "total": 1651 }
+}
+```
+
+- Cada **biblioteca** sai com `gss_id` ao lado do nome — o GSS reconcilia pela mesma chave que usa para escrever, sem conhecer os UUIDs internos. `gss_id: null` = o cadastro ainda não foi pareado com o GSS.
+- **Leader/Requester** saem como `{ id, name }`. O POST os aceita por e-mail; o e-mail não volta no GET porque mora em `auth.users`, fora do alcance da API.
+- `total` é a contagem do filtro **sem** paginação; `returned` é o tamanho desta página.
+
+### `include=items` — linhas Factory × Category
+
+```jsonc
+"items": [
+  {
+    "id": "70df42d1-…",
+    "factory":  { "id": "d81ed13a-…", "name": "Aok",      "gss_id": "523" },
+    "category": { "id": "52cb8d40-…", "name": "Absorber", "gss_id": "6" },
+    "ship_requirement": "2026-08-28",
+    "loading_status": null,                                  // total | partial | none | null
+    "batch": { "id": "1b58fb15-…", "batch_number": ".02", "status": "in_production" }
+  }
+]
+```
+
+O `batch` é o lote que o **usuário do SOTWISE** atribuiu depois (o POST cria a linha sem lote) — é a informação que o GSS não tem de outro jeito. `batch: null` = ainda sem lote.
+
+### `include=checklist` — as 10 etapas da fase Order
+
+```jsonc
+"checklist": [
+  { "step": "order", "enabled": true, "done": true,  "estimated_date": "2026-08-28", "completed_on": "2026-08-28" },
+  { "step": "po",    "enabled": true, "done": true,  "estimated_date": "2026-08-28", "completed_on": "2026-08-28" },
+  { "step": "pi",    "enabled": true, "done": false, "estimated_date": null,         "completed_on": null }
+]
+```
+
+Vem na ordem canônica das telas: `order`, `po`, `pi`, `deposit_payment`, `packing_confirm`, `condition_confirm`, `place_the_order`, `etd`, `balance_payment`, `pre_loading`. As fases Pre-loading e Shipment **não** estão neste endpoint.
+
+### Códigos
+
+| Código | Quando |
+|---|---|
+| `200` | Sucesso — inclusive quando o filtro não casa nada (`data: []`, `total: 0`). Não existe 404 aqui |
+| `400` | Query param inválido (status fora da lista, `include` desconhecido, `limit > 200`, data fora do ISO 8601) |
+| `401` | Token ausente ou errado |
+| `500` | Erro inesperado do lado do SOTWISE |
+| `503` | `GSS_INBOUND_SECRET` não configurado no ambiente |
+
+> Orders excluídas não aparecem. Custo: pedir `include` só quando precisar — cada bloco custa queries a mais, e `items` sobre 200 orders é bem mais pesado que a lista pura.
+
+---
+
 # Parte 2 — API de Bibliotecas (cadastros)
 
 CRUD dos cadastros de referência (factories, clients, categories etc.).
@@ -364,5 +475,5 @@ Content-Type: application/json
 ## Observações da integração (contexto)
 
 - **Bibliotecas:** o GSS é a **fonte** delas; o SOTWISE normalmente **puxa** (pull). A API acima permite escrita, mas o pareamento SOTWISE↔GSS é por `gss_id` (não exposto nesta API de cadastros).
-- **Orders:** a via inbound (Parte 1) é a direção **push** (GSS → SOTWISE).
+- **Orders:** o `POST` (Parte 1) é a direção **push** (GSS → SOTWISE); o `GET` (§1.5) é o **pull** de volta, para o GSS ver status, lote e checklist.
 - **Factory × Category:** no GSS correspondem aos registros de **supplier-category**; o `supplier_category_gss_id` de cada `item` é o id desse registro.
