@@ -30,6 +30,14 @@ Complementa [`docs/SCHEMA.md`](SCHEMA.md) (schema do nosso lado) e
 > `trg_orders_seed_checklist`) estão em
 > [`docs/regras_de_negocio.md` §3.7.5](regras_de_negocio.md#375-order_checklist_steps--step_attachments).
 > Env: `GSS_INBOUND_SECRET`.
+>
+> 📤 **Volta da via (2026-09-01) — o GSS LÊ as orders.** `GET /api/gss/orders`,
+> mesmo path e mesmo secret do push. Fecha o ciclo: o GSS escrevia a order e não
+> tinha como saber o que virou dela (status, lote atribuído, checklist) — estado
+> que só existe no SOTWISE. Filtros (`gss_id`, `updated_since`, …), paginação e
+> os blocos opt-in `include=items,checklist` estão em
+> [`docs/SOTWISE-API-para-GSS.md` §1.5](SOTWISE-API-para-GSS.md). Só código
+> (`domain/orders/gss-read.ts`), sem migration.
 
 ---
 
