@@ -2,7 +2,7 @@
 
 Referência para integração externa com as bibliotecas de cadastro (agents, clients, factories etc.).
 
-- **Base URL:** `https://sotwise.vercel.app`
+- **Base URL:** `https://sot.gssdatahub.com` — o endereço antigo `https://sotwise.vercel.app` continua atendendo o mesmo app, mas use o domínio acima.
 - **Formato:** JSON em todas as requisições e respostas (`Content-Type: application/json`)
 - **Verbos disponíveis:** `GET` (listar), `POST` (criar) e `PATCH` (atualizar). Não existem `PUT` (substituição total) nem `DELETE` — o soft-delete é feito pelo app/pela origem, por decisão.
 
@@ -117,7 +117,7 @@ Retorna os registros **ativos** (excluídos via soft-delete não aparecem), orde
 > `q` vai direto para o `ILIKE` sem escapar `%` e `_` — os dois funcionam como curinga. Se o termo buscado puder conter esses caracteres, escape antes de enviar.
 
 ```bash
-curl -s "https://sotwise.vercel.app/api/factories?q=hi&limit=50&offset=0" \
+curl -s "https://sot.gssdatahub.com/api/factories?q=hi&limit=50&offset=0" \
   -H "Authorization: Bearer $API_TOKEN"
 ```
 
@@ -130,7 +130,7 @@ curl -s "https://sotwise.vercel.app/api/factories?q=hi&limit=50&offset=0" \
 Cria **um** registro por chamada. O corpo é um objeto JSON — arrays não são aceitos.
 
 ```bash
-curl -s -X POST "https://sotwise.vercel.app/api/carriers" \
+curl -s -X POST "https://sot.gssdatahub.com/api/carriers" \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"Maersk"}'
@@ -154,7 +154,7 @@ Campos gerados pelo servidor: `id`, `created_at`, `updated_at`, `deleted_at`, `c
 Atualiza **um** registro existente, identificado pelo `id` na URL. O corpo é um objeto JSON **parcial**: só as colunas enviadas mudam; o que não vier fica como está. Devolve `200` com o registro já atualizado.
 
 ```bash
-curl -s -X PATCH "https://sotwise.vercel.app/api/carriers/3f6d…" \
+curl -s -X PATCH "https://sot.gssdatahub.com/api/carriers/3f6d…" \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"Maersk Line"}'
@@ -324,7 +324,7 @@ Os demais (`carriers`, `categories`, `factories`, `cities`, `pols`, `pods`, `exp
 Para descobrir um `country_id`, busque pelo nome:
 
 ```bash
-curl -s "https://sotwise.vercel.app/api/countries?q=china" \
+curl -s "https://sot.gssdatahub.com/api/countries?q=china" \
   -H "Authorization: Bearer $API_TOKEN"
 ```
 
@@ -335,7 +335,7 @@ curl -s "https://sotwise.vercel.app/api/countries?q=china" \
 Criar um agente na China, do zero:
 
 ```bash
-BASE="https://sotwise.vercel.app"
+BASE="https://sot.gssdatahub.com"
 AUTH="Authorization: Bearer $API_TOKEN"
 JSON="Content-Type: application/json"
 

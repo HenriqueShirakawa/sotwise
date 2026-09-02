@@ -35,7 +35,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "https://sotwise.vercel.app",
+      "value": "https://sot.gssdatahub.com",
       "type": "string"
     },
     {

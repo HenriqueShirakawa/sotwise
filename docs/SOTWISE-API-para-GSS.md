@@ -5,7 +5,7 @@ Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 1. **Orders** — o GSS cria/atualiza pedidos no SOTWISE (`POST`, push) e lê o estado deles de volta (`GET`, pull — §1.5).
 2. **API de Bibliotecas (cadastros)** — CRUD dos cadastros de referência.
 
-- **Base URL:** `https://sotwise.vercel.app`
+- **Base URL:** `https://sot.gssdatahub.com` — o endereço antigo `https://sotwise.vercel.app` continua atendendo o mesmo app, mas use o domínio acima.
 - **Formato:** JSON em todas as requisições e respostas (`Content-Type: application/json`)
 - **Transporte:** servidor → servidor (não há CORS; chamadas de navegador de outra origem são bloqueadas)
 
@@ -49,7 +49,7 @@ Todo código usado nas duas áreas desta API (Orders e Bibliotecas), com o que e
 Dois sentidos no mesmo path e com o mesmo token: `POST` — o GSS **cria ou atualiza** uma order no SOTWISE (§1.1 a §1.4); `GET` — o GSS **lê** as orders e o estado delas (§1.5).
 
 ```
-POST https://sotwise.vercel.app/api/gss/orders
+POST https://sot.gssdatahub.com/api/gss/orders
 Authorization: Bearer <GSS_INBOUND_SECRET>
 Content-Type: application/json
 ```
@@ -259,7 +259,7 @@ O `GSS_INBOUND_SECRET` não está definido no ambiente do SOTWISE. Indica um pro
 O caminho de volta: o GSS **lê** as orders do SOTWISE e o que virou delas (status, lote atribuído, checklist). Mesmo path e **mesmo token** do POST.
 
 ```
-GET https://sotwise.vercel.app/api/gss/orders
+GET https://sot.gssdatahub.com/api/gss/orders
 Authorization: Bearer <GSS_INBOUND_SECRET>
 ```
 
@@ -370,9 +370,9 @@ Vem na ordem canônica das telas: `order`, `po`, `pi`, `deposit_payment`, `packi
 CRUD dos cadastros de referência (factories, clients, categories etc.).
 
 ```
-GET   https://sotwise.vercel.app/api/{recurso}       → listar
-POST  https://sotwise.vercel.app/api/{recurso}       → criar 1 registro
-PATCH https://sotwise.vercel.app/api/{recurso}/{id}  → atualizar 1 registro
+GET   https://sot.gssdatahub.com/api/{recurso}       → listar
+POST  https://sot.gssdatahub.com/api/{recurso}       → criar 1 registro
+PATCH https://sot.gssdatahub.com/api/{recurso}/{id}  → atualizar 1 registro
 Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 ```
