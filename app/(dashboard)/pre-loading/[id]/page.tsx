@@ -280,19 +280,25 @@ export default async function PreLoadingChecklistPage({
         .in("batch_id", plBatchIds)
         .returns<OfcLineEmbed[]>()
     : { data: [] as OfcLineEmbed[] };
-  const shipmentLines = (ofcLinesRes.data ?? []).map((o) => {
-    const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
-    return {
-      id: o.id,
-      batch_id: o.batch_id,
-      ship_requirement: o.ship_requirement,
-      factory: o.factories?.name ?? "—",
-      category: o.categories?.name ?? "—",
-      etd_initial: etd?.initial_date ?? null,
-      po_number: o.orders?.po_number ?? "—",
-      batch_number: o.batches?.batch_number ?? "—",
-    };
-  });
+  const shipmentLines = (ofcLinesRes.data ?? [])
+    .map((o) => {
+      const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
+      return {
+        id: o.id,
+        batch_id: o.batch_id,
+        ship_requirement: o.ship_requirement,
+        factory: o.factories?.name ?? "—",
+        category: o.categories?.name ?? "—",
+        etd_initial: etd?.initial_date ?? null,
+        po_number: o.orders?.po_number ?? "—",
+        batch_number: o.batches?.batch_number ?? "—",
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.factory.localeCompare(b.factory, undefined, { numeric: true }) ||
+        (Number(a.po_number) || 0) - (Number(b.po_number) || 0)
+    );
 
   return (
     <PlChecklistClient
