@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp01, ArrowUpAZ, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/date-picker";
@@ -43,26 +44,56 @@ export type ShipmentLine = {
 
 type LoadStatus = "none" | "partial" | "total";
 
-/** Cabeçalho de coluna ordenada — ícone do critério + badge com a prioridade (1ª/2ª). */
-function SortableHeader({
+/** Chave de ordenação clicável na tabela do modal: fábrica ou nº do PO. */
+type SortKey = "factory" | "po";
+/** 0 = fora da ordenação, 1 = ativa (roxo claro), 2 = primária (roxo forte). */
+type SortLevel = 0 | 1 | 2;
+
+/**
+ * Clicar numa coluna liga/avança sua prioridade: 1º clique acende (claro),
+ * 2º clique vira primária (forte) e rebaixa a outra coluna a secundária.
+ * Clicar de novo na primária reseta as duas (volta à ordem padrão do servidor).
+ */
+function toggleSortLevel(
+  levels: Record<SortKey, SortLevel>,
+  key: SortKey
+): Record<SortKey, SortLevel> {
+  const other: SortKey = key === "factory" ? "po" : "factory";
+  if (levels[key] === 2) return { factory: 0, po: 0 };
+  if (levels[key] === 1) return { [key]: 2, [other]: 1 } as Record<SortKey, SortLevel>;
+  return { ...levels, [key]: 1 };
+}
+
+/** Cabeçalho clicável — fica roxo claro no 1º clique, roxo forte (primária) no 2º. */
+function SortHeaderButton({
   label,
-  icon: Icon,
-  priority,
-  title,
+  level,
+  onClick,
 }: {
   label: string;
-  icon: typeof ArrowUpAZ;
-  priority: number;
-  title: string;
+  level: SortLevel;
+  onClick: () => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1" title={title}>
+    <button
+      type="button"
+      onClick={onClick}
+      title={
+        level === 2
+          ? "Ordenação primária — clique para redefinir"
+          : level === 1
+            ? "Ordenação ativa — clique para tornar primária"
+            : "Clique para ordenar por esta coluna"
+      }
+      className={cn(
+        "-mx-2 -my-1 rounded-md px-2 py-1 font-medium transition-colors",
+        level === 2 && "bg-primary text-primary-foreground",
+        level === 1 && "bg-primary/15 text-primary",
+        level === 0 && "hover:bg-slate-200"
+      )}
+    >
       {label}
-      <Icon className="size-3.5 text-muted-foreground" />
-      <span className="flex size-3.5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">
-        {priority}
-      </span>
-    </span>
+    </button>
   );
 }
 
@@ -143,6 +174,27 @@ export function ConfirmShippingModal({
   const [shipmentModelId, setShipmentModelId] = useState("");
   const [signerId, setSignerId] = useState(currentUserId);
   const [statuses, setStatuses] = useState<Record<string, LoadStatus>>({});
+  const [sortLevels, setSortLevels] = useState<Record<SortKey, SortLevel>>({
+    factory: 0,
+    po: 0,
+  });
+
+  const sortedLines = useMemo(() => {
+    const active = (Object.keys(sortLevels) as SortKey[])
+      .filter((k) => sortLevels[k] > 0)
+      .sort((a, b) => sortLevels[b] - sortLevels[a]); // primária (2) antes da ativa (1)
+    if (active.length === 0) return lines;
+    return [...lines].sort((a, b) => {
+      for (const key of active) {
+        const cmp =
+          key === "factory"
+            ? a.factory.localeCompare(b.factory, undefined, { numeric: true })
+            : (Number(a.po_number) || 0) - (Number(b.po_number) || 0);
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    });
+  }, [lines, sortLevels]);
 
   const allLinesSet = lines.length > 0 && lines.every((l) => statuses[l.id]);
   const headerFilled =
@@ -270,7 +322,7 @@ export function ConfirmShippingModal({
 
         {/* Abaixo de sm cada linha vira card — a tabela tem 5 colunas + select. */}
         <div className="mt-2 divide-y rounded-xl border sm:hidden">
-          {lines.map((l) => (
+          {sortedLines.map((l) => (
             <div key={l.id} className="space-y-3 px-3 py-3 text-sm">
               <div>
                 <p className="font-medium text-slate-800">
@@ -307,28 +359,26 @@ export function ConfirmShippingModal({
             <thead className="bg-slate-50 text-left text-xs whitespace-nowrap text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">
-                  <SortableHeader
+                  <SortHeaderButton
                     label="Factories"
-                    icon={ArrowUpAZ}
-                    priority={1}
-                    title="Ordenação primária: fábrica (A-Z)"
+                    level={sortLevels.factory}
+                    onClick={() => setSortLevels((s) => toggleSortLevel(s, "factory"))}
                   />
                 </th>
                 <th className="px-3 py-2 font-medium">Categories</th>
                 <th className="px-3 py-2 font-medium">ETD Initial</th>
                 <th className="px-3 py-2 font-medium">
-                  <SortableHeader
+                  <SortHeaderButton
                     label="PO Nº / Batch Nº"
-                    icon={ArrowUp01}
-                    priority={2}
-                    title="Ordenação secundária: nº do PO (crescente)"
+                    level={sortLevels.po}
+                    onClick={() => setSortLevels((s) => toggleSortLevel(s, "po"))}
                   />
                 </th>
                 <th className="px-3 py-2 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => (
+              {sortedLines.map((l) => (
                 <tr key={l.id} className="border-t">
                   <td className="px-3 py-2">{l.factory}</td>
                   <td className="px-3 py-2">{l.category}</td>
