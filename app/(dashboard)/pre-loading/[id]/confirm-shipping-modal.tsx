@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ArrowUp01, ArrowUpAZ, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
@@ -42,6 +42,29 @@ export type ShipmentLine = {
 };
 
 type LoadStatus = "none" | "partial" | "total";
+
+/** Cabeçalho de coluna ordenada — ícone do critério + badge com a prioridade (1ª/2ª). */
+function SortableHeader({
+  label,
+  icon: Icon,
+  priority,
+  title,
+}: {
+  label: string;
+  icon: typeof ArrowUpAZ;
+  priority: number;
+  title: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1" title={title}>
+      {label}
+      <Icon className="size-3.5 text-muted-foreground" />
+      <span className="flex size-3.5 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600">
+        {priority}
+      </span>
+    </span>
+  );
+}
 
 /** Só campo obrigatório vazio bloqueia o Confirm. */
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
@@ -283,10 +306,24 @@ export function ConfirmShippingModal({
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs whitespace-nowrap text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 font-medium">Factories</th>
+                <th className="px-3 py-2 font-medium">
+                  <SortableHeader
+                    label="Factories"
+                    icon={ArrowUpAZ}
+                    priority={1}
+                    title="Ordenação primária: fábrica (A-Z)"
+                  />
+                </th>
                 <th className="px-3 py-2 font-medium">Categories</th>
                 <th className="px-3 py-2 font-medium">ETD Initial</th>
-                <th className="px-3 py-2 font-medium">PO Nº / Batch Nº</th>
+                <th className="px-3 py-2 font-medium">
+                  <SortableHeader
+                    label="PO Nº / Batch Nº"
+                    icon={ArrowUp01}
+                    priority={2}
+                    title="Ordenação secundária: nº do PO (crescente)"
+                  />
+                </th>
                 <th className="px-3 py-2 font-medium">Status</th>
               </tr>
             </thead>
