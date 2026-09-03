@@ -46,50 +46,25 @@ type LoadStatus = "none" | "partial" | "total";
 
 /** Chave de ordenação clicável na tabela do modal: fábrica ou nº do PO. */
 type SortKey = "factory" | "po";
-/** 0 = fora da ordenação, 1 = ativa (roxo claro), 2 = primária (roxo forte). */
-type SortLevel = 0 | 1 | 2;
 
-/**
- * Clicar numa coluna liga/avança sua prioridade: 1º clique acende (claro),
- * 2º clique vira primária (forte) e rebaixa a outra coluna a secundária.
- * Clicar de novo na primária reseta as duas (volta à ordem padrão do servidor).
- */
-function toggleSortLevel(
-  levels: Record<SortKey, SortLevel>,
-  key: SortKey
-): Record<SortKey, SortLevel> {
-  const other: SortKey = key === "factory" ? "po" : "factory";
-  if (levels[key] === 2) return { factory: 0, po: 0 };
-  if (levels[key] === 1) return { [key]: 2, [other]: 1 } as Record<SortKey, SortLevel>;
-  return { ...levels, [key]: 1 };
-}
-
-/** Cabeçalho clicável — fica roxo claro no 1º clique, roxo forte (primária) no 2º. */
+/** Cabeçalho clicável — a coluna prioritária fica roxa, a outra fica neutra. */
 function SortHeaderButton({
   label,
-  level,
+  active,
   onClick,
 }: {
   label: string;
-  level: SortLevel;
+  active: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={
-        level === 2
-          ? "Ordenação primária — clique para redefinir"
-          : level === 1
-            ? "Ordenação ativa — clique para tornar primária"
-            : "Clique para ordenar por esta coluna"
-      }
+      title={active ? "Ordenação prioritária" : "Clique para tornar esta coluna prioritária"}
       className={cn(
         "-mx-2 -my-1 rounded-md px-2 py-1 font-medium transition-colors",
-        level === 2 && "bg-primary text-primary-foreground",
-        level === 1 && "bg-primary/15 text-primary",
-        level === 0 && "hover:bg-slate-200"
+        active ? "bg-primary text-primary-foreground" : "hover:bg-slate-200"
       )}
     >
       {label}
@@ -174,27 +149,17 @@ export function ConfirmShippingModal({
   const [shipmentModelId, setShipmentModelId] = useState("");
   const [signerId, setSignerId] = useState(currentUserId);
   const [statuses, setStatuses] = useState<Record<string, LoadStatus>>({});
-  const [sortLevels, setSortLevels] = useState<Record<SortKey, SortLevel>>({
-    factory: 0,
-    po: 0,
-  });
+  // Só uma coluna é prioritária por vez; a outra entra como critério de desempate.
+  const [primarySort, setPrimarySort] = useState<SortKey>("factory");
 
   const sortedLines = useMemo(() => {
-    const active = (Object.keys(sortLevels) as SortKey[])
-      .filter((k) => sortLevels[k] > 0)
-      .sort((a, b) => sortLevels[b] - sortLevels[a]); // primária (2) antes da ativa (1)
-    if (active.length === 0) return lines;
-    return [...lines].sort((a, b) => {
-      for (const key of active) {
-        const cmp =
-          key === "factory"
-            ? a.factory.localeCompare(b.factory, undefined, { numeric: true })
-            : (Number(a.po_number) || 0) - (Number(b.po_number) || 0);
-        if (cmp !== 0) return cmp;
-      }
-      return 0;
-    });
-  }, [lines, sortLevels]);
+    const byFactory = (a: ShipmentLine, b: ShipmentLine) =>
+      a.factory.localeCompare(b.factory, undefined, { numeric: true });
+    const byPo = (a: ShipmentLine, b: ShipmentLine) =>
+      (Number(a.po_number) || 0) - (Number(b.po_number) || 0);
+    const [first, second] = primarySort === "factory" ? [byFactory, byPo] : [byPo, byFactory];
+    return [...lines].sort((a, b) => first(a, b) || second(a, b));
+  }, [lines, primarySort]);
 
   const allLinesSet = lines.length > 0 && lines.every((l) => statuses[l.id]);
   const headerFilled =
@@ -361,8 +326,8 @@ export function ConfirmShippingModal({
                 <th className="px-3 py-2 font-medium">
                   <SortHeaderButton
                     label="Factories"
-                    level={sortLevels.factory}
-                    onClick={() => setSortLevels((s) => toggleSortLevel(s, "factory"))}
+                    active={primarySort === "factory"}
+                    onClick={() => setPrimarySort("factory")}
                   />
                 </th>
                 <th className="px-3 py-2 font-medium">Categories</th>
@@ -370,8 +335,8 @@ export function ConfirmShippingModal({
                 <th className="px-3 py-2 font-medium">
                   <SortHeaderButton
                     label="PO Nº / Batch Nº"
-                    level={sortLevels.po}
-                    onClick={() => setSortLevels((s) => toggleSortLevel(s, "po"))}
+                    active={primarySort === "po"}
+                    onClick={() => setPrimarySort("po")}
                   />
                 </th>
                 <th className="px-3 py-2 font-medium">Status</th>
