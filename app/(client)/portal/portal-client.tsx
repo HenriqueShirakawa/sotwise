@@ -3,11 +3,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Package, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Package, Search } from "lucide-react";
 
 import type { ClientOrder } from "@/domain/client/portal";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { StatusPill } from "@/components/status-pill";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -41,10 +42,14 @@ function formatDate(iso: string | null): string | null {
   return y && m && d ? `${d}/${m}/${y}` : iso;
 }
 
+/** Mesmo tamanho de página das listas internas (Orders, Registration…). */
+const PAGE_SIZE = 10;
+
 export function PortalClient({ orders }: { orders: ClientOrder[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | OrderStatus>("all");
+  const [page, setPage] = useState(0);
 
   // Só os status que este cliente realmente tem — um filtro cheio de opções que
   // não devolvem nada é ruído para quem tem 3 pedidos.
@@ -63,6 +68,20 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
       );
     });
   }, [orders, search, status]);
+
+  // Muda o filtro/busca -> volta pra 1ª página, senão o usuário pode ficar
+  // numa página que não existe mais pro conjunto filtrado novo. Ajuste durante
+  // a própria renderização (não em efeito) — padrão recomendado do React pra
+  // "resetar estado quando outro estado muda" sem re-render em cascata.
+  const filterKey = `${search}|${status}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(0);
+  }
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-1 duration-300">
@@ -112,7 +131,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
           {/* Cards no mobile real; tabela de 720px pra cima (mesma régua das
               listas internas — ver components/data-cards.tsx). */}
           <div className="grid gap-3 min-[720px]:hidden">
-            {filtered.map((o) => {
+            {paged.map((o) => {
               const scheduleReq = formatDate(o.scheduleRequested);
               return (
                 <Link
@@ -180,7 +199,7 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((o) => (
+                {paged.map((o) => (
                   <TableRow
                     key={o.id}
                     onClick={() => router.push(`/portal/${o.id}`)}
@@ -231,11 +250,34 @@ export function PortalClient({ orders }: { orders: ClientOrder[] }) {
             </Table>
           </div>
 
-          {/* Contagem real — a lista não é paginada (o cliente tem poucos
-              pedidos), então nada de controles de página falsos aqui. */}
-          <p className="text-sm text-slate-500">
-            {filtered.length} {filtered.length === 1 ? "record" : "records"}
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-slate-500">
+              Page {page + 1} of {pageCount} · Total: {filtered.length}{" "}
+              {filtered.length === 1 ? "record" : "records"}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-lg"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                aria-label="Previous page"
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-lg"
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={page >= pageCount - 1}
+                aria-label="Next page"
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          </div>
         </>
       )}
     </div>
