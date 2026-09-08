@@ -39,6 +39,14 @@ export type BatchStatus =
 export type LoadingStatus = "total" | "partial" | "none";
 /** Registro ao qual uma thread de mensagens está ancorada. */
 export type MessageEntity = "order" | "pre_loading" | "shipment";
+/** Resultado de UM destinatário, congelado em `checklist_step_emails.recipients`. */
+export type StepEmailRecipient = {
+  user_id: UUID;
+  name: string;
+  email: string;
+  ok: boolean;
+  error: string | null;
+};
 export type ChecklistPhase = "order" | "preloading" | "shipment";
 export type ChecklistStep =
   | "order"
@@ -1094,6 +1102,33 @@ export type Database = {
           recipients?: string[];
         };
         Update: Partial<Database["public"]["Tables"]["client_notifications"]["Insert"]>;
+        Relationships: [];
+      };
+      // Mesmo padrão do step_attachments: exatamente UMA de checklist_step_id
+      // (Orders) / pre_loading_step_id (Pre-loading/Shipment) é preenchida por
+      // linha — check `checklist_step_emails_one_owner` no banco.
+      checklist_step_emails: {
+        Row: {
+          id: UUID;
+          checklist_step_id: UUID | null;
+          pre_loading_step_id: UUID | null;
+          sender_id: UUID;
+          subject: string;
+          body: string;
+          recipients: StepEmailRecipient[];
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          checklist_step_id?: UUID | null;
+          pre_loading_step_id?: UUID | null;
+          sender_id: UUID;
+          subject: string;
+          body: string;
+          recipients?: StepEmailRecipient[];
+          created_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["checklist_step_emails"]["Insert"]>;
         Relationships: [];
       };
     };

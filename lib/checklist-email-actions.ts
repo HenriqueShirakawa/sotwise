@@ -1,0 +1,207 @@
+"use server";
+
+import { z } from "zod";
+
+import { requireFeature, requireInternal } from "@/lib/dal";
+import { fetchAll } from "@/lib/fetch-all";
+import { checklistStepEmailHtml } from "@/lib/email/checklist-step";
+import { sendEmail } from "@/lib/email/resend";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { ChecklistStep, StepEmailRecipient } from "@/types/database";
+
+export type Option = { id: string; name: string };
+
+/**
+ * E-mail manual disparado a partir de UMA etapa do checklist, com destinatários
+ * escolhidos à mão (diferente do `messages`, que é 100% interno, e do
+ * `client_notifications`, que é automático). Order tem sua própria tabela de
+ * etapas; Pre-loading e Shipment compartilham o checklist único do PL — só a
+ * etapa (`step`) muda entre as duas telas.
+ */
+export type StepOwner =
+  | { kind: "order"; stepId: string }
+  | { kind: "pre_loading"; preLoadingId: string; step: ChecklistStep };
+
+export type StepEmailRow = {
+  id: string;
+  subject: string;
+  body: string;
+  sender_name: string;
+  recipients: StepEmailRecipient[];
+  created_at: string;
+};
+
+type Admin = ReturnType<typeof createAdminClient>;
+
+/**
+ * Destinatários selecionáveis — ativos, não ocultos. Mesmo critério do
+ * "Forward to" do módulo de mensagens (`loadPeople` em `lib/messages-actions.ts`),
+ * duplicado aqui de propósito: são módulos independentes, sem razão pra
+ * acoplar um ao outro por uma query de 6 linhas.
+ */
+export async function loadStepRecipientOptions(): Promise<Option[]> {
+  await requireInternal();
+  const admin = createAdminClient();
+  const data = await fetchAll<{ id: string; full_name: string }>((from, to) =>
+    admin
+      .from("profiles")
+      .select("id, full_name")
+      .eq("status", "active")
+      .eq("hidden", false)
+      .order("full_name")
+      .range(from, to)
+  );
+  return data.filter((p) => p.full_name.trim()).map((p) => ({ id: p.id, name: p.full_name }));
+}
+
+/** Acha o id da linha de etapa sem criar — etapa nunca tocada não tem e-mail
+ *  nenhum, não há por que criar linha só pra ler histórico vazio. */
+async function findStepId(admin: Admin, owner: StepOwner): Promise<string | null> {
+  if (owner.kind === "order") return owner.stepId;
+  const { data } = await admin
+    .from("pre_loading_checklist_steps")
+    .select("id")
+    .eq("pre_loading_id", owner.preLoadingId)
+    .eq("step", owner.step)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+/** Mesmo `ensureStepId` já usado em orders/[id] e shipments/[id] pros anexos:
+ *  a linha da etapa nasce sob demanda na primeira ação (anexo ou, agora, e-mail). */
+async function ensureStepId(
+  admin: Admin,
+  owner: StepOwner
+): Promise<{ id: string } | { error: string }> {
+  if (owner.kind === "order") return { id: owner.stepId };
+
+  const found = await findStepId(admin, owner);
+  if (found) return { id: found };
+
+  const { data, error } = await admin
+    .from("pre_loading_checklist_steps")
+    .insert({ pre_loading_id: owner.preLoadingId, step: owner.step })
+    .select("id")
+    .single();
+  if (error || !data) return { error: error?.message ?? "Could not create the step." };
+  return { id: data.id };
+}
+
+const ownerColumn = (owner: StepOwner) =>
+  owner.kind === "order" ? ("checklist_step_id" as const) : ("pre_loading_step_id" as const);
+
+export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailRow[]> {
+  await requireInternal();
+  const admin = createAdminClient();
+  const stepId = await findStepId(admin, owner);
+  if (!stepId) return [];
+
+  const { data } = await admin
+    .from("checklist_step_emails")
+    .select("id, subject, body, sender_id, recipients, created_at")
+    .eq(ownerColumn(owner), stepId)
+    .order("created_at", { ascending: false });
+
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+
+  const senderIds = [...new Set(rows.map((r) => r.sender_id))];
+  const { data: senders } = await admin
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", senderIds);
+  const nameById = new Map((senders ?? []).map((s) => [s.id, s.full_name]));
+
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    body: r.body,
+    sender_name: nameById.get(r.sender_id) ?? "—",
+    recipients: r.recipients,
+    created_at: r.created_at,
+  }));
+}
+
+const sendSchema = z.object({
+  feature: z.enum(["orders", "pre_loading", "shipments"]),
+  recipient_ids: z.array(z.uuid()).min(1, "Select at least one recipient."),
+  subject: z.string().trim().min(1, "Write a subject.").max(200, "Subject is too long."),
+  body: z.string().trim().min(1, "Write a message.").max(5000, "Message is too long."),
+});
+
+export type SendStepEmailInput = z.infer<typeof sendSchema>;
+
+/**
+ * Envio síncrono, um `sendEmail` por destinatário (igual ao loop de
+ * `domain/client/notifications.ts`): ninguém vê o e-mail dos colegas, e uma
+ * falha individual não derruba os outros. Sem fila/outbox — é uma ação manual
+ * e pontual, não um evento de sistema; o resultado de cada destinatário já
+ * fica congelado na ÚNICA linha de histórico, independente de sucesso total,
+ * parcial ou falha total.
+ */
+export async function sendStepEmail(
+  owner: StepOwner,
+  input: SendStepEmailInput
+): Promise<{ ok: true; sent: number; failed: number } | { ok: false; error: string }> {
+  const parsed = sendSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const session = await requireFeature(parsed.data.feature, "edit");
+  const admin = createAdminClient();
+
+  const stepRow = await ensureStepId(admin, owner);
+  if ("error" in stepRow) return { ok: false, error: stepRow.error };
+
+  const recipientIds = [...new Set(parsed.data.recipient_ids)];
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id, full_name")
+    .in("id", recipientIds);
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+
+  const html = checklistStepEmailHtml({
+    subject: parsed.data.subject,
+    senderName: session.profile.full_name,
+    body: parsed.data.body,
+  });
+
+  const recipients: StepEmailRecipient[] = [];
+  for (const userId of recipientIds) {
+    const { data } = await admin.auth.admin.getUserById(userId);
+    const email = data.user?.email ?? null;
+    const name = nameById.get(userId) ?? "—";
+    if (!email) {
+      recipients.push({ user_id: userId, name, email: "", ok: false, error: "No e-mail on file." });
+      continue;
+    }
+    const sent = await sendEmail({ to: email, subject: parsed.data.subject, html });
+    recipients.push({
+      user_id: userId,
+      name,
+      email,
+      ok: sent.ok,
+      error: sent.ok ? null : sent.error,
+    });
+  }
+
+  const ownerFields =
+    owner.kind === "order"
+      ? { checklist_step_id: stepRow.id, pre_loading_step_id: null }
+      : { checklist_step_id: null, pre_loading_step_id: stepRow.id };
+
+  const { error: insertError } = await admin.from("checklist_step_emails").insert({
+    ...ownerFields,
+    sender_id: session.userId,
+    subject: parsed.data.subject,
+    body: parsed.data.body,
+    recipients,
+  });
+  if (insertError) return { ok: false, error: insertError.message };
+
+  const sent = recipients.filter((r) => r.ok).length;
+  const failed = recipients.length - sent;
+  if (sent === 0) return { ok: false, error: "Could not deliver to any recipient." };
+  return { ok: true, sent, failed };
+}
