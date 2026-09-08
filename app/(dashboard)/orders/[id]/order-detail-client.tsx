@@ -74,6 +74,7 @@ import { factoriesForCategory } from "@/lib/factory-category";
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
+import { StepEmailSection } from "@/components/checklist/step-email-section";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -1531,6 +1532,11 @@ export function OrderDetailClient({
                       ) : (
                         <AttachmentsSection orderId={orderId} step={s} />
                       )}
+                      <StepEmailSection
+                        owner={{ kind: "order", stepId: s.id }}
+                        feature="orders"
+                        defaultSubject={`${order.po_number} — ${STEP_LABELS[s.step]}`}
+                      />
                       {s.step === "po" && (
                         <Button
                           type="button"

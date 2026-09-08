@@ -1171,6 +1171,17 @@ create table public.step_attachments (
 > ✅ **Etapa "Place the Order" — visão agrupada por Factory (print da tela):** os campos padrão da etapa (Estimated date/Responsible/Completed on/Signed by) aparecem normalmente, e abaixo deles a **mesma entidade `order_factory_category`** da etapa PO é reexibida **agrupada por Factory**: uma linha por Factory com **"N° of categories"** = contagem de entradas daquela Factory neste pedido (não distinct — duas entradas com a mesma Category em lotes diferentes contam 2). Cada linha expande (chevron) pra uma sub-tabela **Categories | Batch Number**. Paginado (10 Factories por página).
 > - **Anexo por grupo:** o botão **"+ Attach"** de cada linha faz upload de documento vinculado a **essa combinação (Factory + etapa "Place the Order" + pedido)**, não à etapa inteira — por isso `step_attachments` ganhou a coluna `factory_id` (nullable; demais etapas continuam com anexo por etapa só, `factory_id = null`). A lista "Attached documents" some da UI genérica de etapa só pra "Place the Order" (substituída pelo anexo por Factory).
 
+##### E-mail manual por etapa + histórico (decisão 2026-09-08)
+
+Pedido do cliente: em cada etapa do checklist (Order/Pre-loading/Shipment), poder mandar um e-mail escolhendo à mão quem recebe — diferente do módulo de mensagens (`messages`, 100% interno, nunca sai e-mail de verdade) e do outbox de notificação de cliente (`client_notifications`, automático por trigger, destinatário sempre o `client` do pedido). Descartado o caminho "alias externo com reply-all": o cliente quer poder **excluir** gente do envio, o que um alias compartilhado não permite.
+
+- **Tabela nova `checklist_step_emails`** (migration `20260908120000`), mesmo padrão de dono-polimórfico do `step_attachments`: `checklist_step_id` (Order) OU `pre_loading_step_id` (Pre-loading/Shipment — o mesmo checklist único do PL), exatamente um preenchido por linha (`check checklist_step_emails_one_owner`).
+- **Envio síncrono, sem fila** — diferente do `client_notifications`: é uma ação manual e pontual de um usuário interno, não um evento de sistema em massa. O resultado por destinatário (`ok`/`error`) já fica congelado em `recipients` (jsonb) na ÚNICA linha de histórico, mesmo em caso de falha parcial ou total.
+- **Destinatários selecionáveis = todos os usuários ativos** (`status='active'`, `hidden=false`), mesmo critério do "Forward to" das mensagens — não restrito a quem já está ligado ao pedido/cliente.
+- **E-mail resolvido por `admin.auth.admin.getUserById`** por destinatário (igual `client_notifications`) — `profiles` não tem coluna `email`, mora só em `auth.users`.
+- Código: `lib/checklist-email-actions.ts` (server actions), `lib/email/checklist-step.ts` (template HTML), `components/checklist/step-email-section.tsx` (UI compartilhada pelas 3 telas — botão "Send email" + histórico expansível, ao lado do "Attached documents" de cada etapa).
+- ⚠️ **Depende do `EMAIL_FROM` de produção ter domínio verificado no Resend** (ver §6/nota de infra do Resend) — sem isso, o default `onboarding@resend.dev` só entrega pro dono da conta, e os envios desta feature falham silenciosamente do mesmo jeito que qualquer outro e-mail do sistema.
+
 #### Camada 2 do RBAC — "Profile Filters for Steps" (rua 25), 🔴 escopo indefinido
 
 Depois de ler o card da rua 25 (**Users → Profile Step Permissions**), o desenho real desta funcionalidade ficou claro — e é diferente de uma matriz de permissão positiva:

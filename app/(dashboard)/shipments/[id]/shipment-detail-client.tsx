@@ -48,6 +48,7 @@ import {
   type ShipmentStepPatch,
 } from "./actions";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
+import { StepEmailSection } from "@/components/checklist/step-email-section";
 
 export type Ref = { id: string; name: string };
 
@@ -725,6 +726,15 @@ export function ShipmentDetailClient({
                       step={s.step}
                       attachments={s.attachments}
                       readOnly={readOnly}
+                    />
+                    <StepEmailSection
+                      owner={{
+                        kind: "pre_loading",
+                        preLoadingId: shipment.pre_loading_id,
+                        step: s.step,
+                      }}
+                      feature="shipments"
+                      defaultSubject={`PL - ${shipment.pl_number} — ${STEP_LABELS[s.step]}`}
                     />
                   </div>
                 )}
