@@ -734,7 +734,7 @@ export function ShipmentDetailClient({
                         step: s.step,
                       }}
                       feature="shipments"
-                      defaultSubject={`PL - ${shipment.pl_number} — ${STEP_LABELS[s.step]}`}
+                      defaultSubject={`PL - ${shipment.pl_number} - Shipment - ${STEP_LABELS[s.step]}`}
                       recordPath={`/shipments/${shipment.id}`}
                     />
                   </div>
