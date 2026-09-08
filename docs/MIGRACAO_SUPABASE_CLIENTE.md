@@ -35,6 +35,9 @@ separadas uma da outra:
 > bash scripts/migrate-project/espelhar.sh --conferir
 > ```
 >
+> No **PowerShell** o `bash` não está no PATH; chame o Git Bash pelo caminho:
+> `& "C:\Program Files\Git\bin\bash.exe" scripts/migrate-project/espelhar.sh`
+>
 > As seções abaixo continuam valendo como explicação do que ele faz e para
 > quando algum passo precisar ser rodado à mão. Os §0–§2, §8 e §9 são humanos.
 

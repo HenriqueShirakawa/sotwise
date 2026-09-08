@@ -48,4 +48,13 @@ next-env.d.ts
 # saida gerada pelo dup-report.ts (relatorio de duplicatas)
 dup-report.xlsx
 
+# artefatos da migração p/ Supabase do cliente (docs/MIGRACAO_SUPABASE_CLIENTE.md)
+# — o espelhar.sh já gera isso fora do repo, mas os passos §2/§3/§9 rodados à
+# mão escrevem aqui; tem dados pessoais e hash de senha, nunca committar
+/01-schema.sql
+/02-auth.sql
+/03-dados.sql
+/origem-contagens.txt
+/destino-contagens.txt
+
 .vercel
