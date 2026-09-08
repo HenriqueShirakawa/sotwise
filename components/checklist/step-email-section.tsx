@@ -120,25 +120,25 @@ export function StepEmailSection({
           type="button"
           className={`flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition-colors ${
             count
-              ? "border-primary bg-transparent text-primary hover:bg-primary/5"
+              ? "border-emerald-600 bg-transparent text-emerald-700 hover:bg-emerald-50"
               : "border-transparent text-muted-foreground disabled:cursor-default"
           }`}
           disabled={count === 0}
           aria-expanded={count ? historyOpen : undefined}
           onClick={() => setHistoryOpen((o) => !o)}
         >
-          <Mail className={`size-4 ${count ? "text-primary" : "text-slate-400"}`} />
+          <Mail className={`size-4 ${count ? "text-emerald-600" : "text-slate-400"}`} />
           Emails sent
           <span
-            className={`rounded-full px-2 py-0.5 text-xs ${
-              count ? "border border-primary text-primary" : "bg-slate-200 text-slate-600"
+            className={`rounded-md px-2 py-0.5 text-xs ${
+              count ? "border border-emerald-600 text-emerald-700" : "bg-slate-200 text-slate-600"
             }`}
           >
             {count ?? "…"}
           </span>
           {!!count && (
             <ChevronDown
-              className={`size-3.5 text-primary transition-transform ${historyOpen ? "rotate-180" : ""}`}
+              className={`size-3.5 text-emerald-600 transition-transform ${historyOpen ? "rotate-180" : ""}`}
             />
           )}
         </button>
