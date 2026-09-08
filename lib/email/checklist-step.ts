@@ -25,8 +25,11 @@ export function checklistStepEmailHtml(params: {
   body: string; // texto simples digitado pelo usuário; quebras de linha viram <br>
   facts?: StepEmailFacts | null;
   actionUrl?: string | null;
+  /** URL absoluta pro `public/logo-sotwise.svg` (precisa de origin — e-mail
+   *  não resolve caminho relativo). Sem isto, cai pro texto "SOTWISE" antigo. */
+  logoUrl?: string | null;
 }): string {
-  const { subject, senderName, body, facts, actionUrl } = params;
+  const { subject, senderName, body, facts, actionUrl, logoUrl } = params;
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br>");
 
   const factRows: { label: string; value: string }[] = [];
@@ -68,8 +71,12 @@ export function checklistStepEmailHtml(params: {
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:480px;width:100%;">
             <tr>
-              <td style="background:#640BB7;padding:24px 32px;">
-                <span style="color:#ffffff;font-size:20px;font-weight:700;letter-spacing:0.5px;">SOTWISE</span>
+              <td style="background:#ffffff;padding:24px 32px;border-bottom:1px solid #eceaf1;">
+                ${
+                  logoUrl
+                    ? `<img src="${escapeHtml(logoUrl)}" alt="SOTWISE" width="62" height="32" style="display:block;height:32px;width:auto;border:0;" />`
+                    : `<span style="color:#640BB7;font-size:20px;font-weight:700;letter-spacing:0.5px;">SOTWISE</span>`
+                }
               </td>
             </tr>
             <tr>
