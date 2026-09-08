@@ -1,10 +1,11 @@
 "use server";
 
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { requireFeature, requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
-import { checklistStepEmailHtml } from "@/lib/email/checklist-step";
+import { checklistStepEmailHtml, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, StepEmailRecipient } from "@/types/database";
@@ -90,6 +91,70 @@ async function ensureStepId(
 const ownerColumn = (owner: StepOwner) =>
   owner.kind === "order" ? ("checklist_step_id" as const) : ("pre_loading_step_id" as const);
 
+/**
+ * Os mesmos campos exibidos na tela (Estimated date/Responsible/Completed
+ * on/Signed by) — só entram no e-mail de destinatário INTERNO (ver
+ * `checklistStepEmailHtml`). Etapa recém-criada (`ensureStepId`) não tem
+ * nada preenchido ainda; devolve tudo `null`, que o template já sabe omitir.
+ */
+async function loadStepFacts(admin: Admin, owner: StepOwner, stepId: string): Promise<StepEmailFacts> {
+  const table = owner.kind === "order" ? "order_checklist_steps" : "pre_loading_checklist_steps";
+  const { data } = await admin
+    .from(table)
+    .select("estimated_date, completed_on, responsible_id, signed_by_id")
+    .eq("id", stepId)
+    .maybeSingle();
+  if (!data) return { estimatedDate: null, completedOn: null, responsible: null, signedBy: null };
+
+  const profileIds = [data.responsible_id, data.signed_by_id].filter(
+    (id): id is string => Boolean(id)
+  );
+  const nameById = new Map<string, string>();
+  if (profileIds.length) {
+    const { data: profs } = await admin.from("profiles").select("id, full_name").in("id", profileIds);
+    for (const p of profs ?? []) nameById.set(p.id, p.full_name);
+  }
+
+  return {
+    estimatedDate: data.estimated_date,
+    completedOn: data.completed_on,
+    responsible: data.responsible_id ? (nameById.get(data.responsible_id) ?? null) : null,
+    signedBy: data.signed_by_id ? (nameById.get(data.signed_by_id) ?? null) : null,
+  };
+}
+
+/**
+ * Quem é `client` entre os destinatários escolhidos — é o que decide se o
+ * e-mail dele traz os campos internos e o botão "Go to" (ver `sendStepEmail`).
+ * Papel vem por join manual (roles é uma tabela de 4 linhas; não vale a pena
+ * um embed do PostgREST pra isso).
+ */
+async function loadIsClientByUserId(
+  admin: Admin,
+  userIds: string[]
+): Promise<Map<string, boolean>> {
+  const { data: profiles } = await admin.from("profiles").select("id, role_id").in("id", userIds);
+  const roleIds = [...new Set((profiles ?? []).map((p) => p.role_id))];
+  const { data: roles } = roleIds.length
+    ? await admin.from("roles").select("id, name").in("id", roleIds)
+    : { data: [] };
+  const roleNameById = new Map((roles ?? []).map((r) => [r.id, r.name]));
+  return new Map(
+    (profiles ?? []).map((p) => [p.id, roleNameById.get(p.role_id) === "client"])
+  );
+}
+
+/** Origin da request atual, pro botão "Go to" virar um link absoluto. Fora de
+ *  um ciclo de request (não deveria acontecer aqui, mas por segurança) o botão
+ *  simplesmente some — sem link quebrado. */
+async function currentOrigin(): Promise<string | undefined> {
+  try {
+    return (await headers()).get("origin") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailRow[]> {
   await requireInternal();
   const admin = createAdminClient();
@@ -127,6 +192,9 @@ const sendSchema = z.object({
   recipient_ids: z.array(z.uuid()).min(1, "Select at least one recipient."),
   subject: z.string().trim().min(1, "Write a subject.").max(200, "Subject is too long."),
   body: z.string().trim().min(1, "Write a message.").max(5000, "Message is too long."),
+  /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" pro
+   *  destinatário interno; cliente nunca recebe esse link. */
+  recordPath: z.string().trim().min(1),
 });
 
 export type SendStepEmailInput = z.infer<typeof sendSchema>;
@@ -161,7 +229,24 @@ export async function sendStepEmail(
     .in("id", recipientIds);
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
 
-  const html = checklistStepEmailHtml({
+  const [facts, isClientById, origin] = await Promise.all([
+    loadStepFacts(admin, owner, stepRow.id),
+    loadIsClientByUserId(admin, recipientIds),
+    currentOrigin(),
+  ]);
+  const actionUrl = origin ? `${origin}${parsed.data.recordPath}` : null;
+
+  // Destinatário `client` nunca recebe Estimated date/Responsible/Completed
+  // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
+  // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
+  const internalHtml = checklistStepEmailHtml({
+    subject: parsed.data.subject,
+    senderName: session.profile.full_name,
+    body: parsed.data.body,
+    facts,
+    actionUrl,
+  });
+  const clientHtml = checklistStepEmailHtml({
     subject: parsed.data.subject,
     senderName: session.profile.full_name,
     body: parsed.data.body,
@@ -176,6 +261,7 @@ export async function sendStepEmail(
       recipients.push({ user_id: userId, name, email: "", ok: false, error: "No e-mail on file." });
       continue;
     }
+    const html = isClientById.get(userId) ? clientHtml : internalHtml;
     const sent = await sendEmail({ to: email, subject: parsed.data.subject, html });
     recipients.push({
       user_id: userId,
