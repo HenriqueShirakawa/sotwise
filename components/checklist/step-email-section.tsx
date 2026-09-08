@@ -32,9 +32,11 @@ import { MultiSearchSelect } from "@/components/multi-search-select";
  * de checklist (Order/Pre-loading/Shipment) porque a lógica de compor +
  * histórico é idêntica; só o `owner`/`feature` mudam por tela.
  *
- * Histórico e lista de destinatários carregam sob demanda (ao abrir o
- * histórico ou o compositor), não no primeiro paint da etapa — evita N
- * requests simultâneos quando várias etapas estão expandidas.
+ * O histórico carrega assim que a etapa expande (mesmo sem abrir a lista),
+ * pra a contagem em "Emails sent" já aparecer certa de cara — igual ao pill
+ * de "Attached documents" nunca mostra "…". A lista de destinatários, essa
+ * sim, só carrega ao abrir o compositor (é maior e só serve pra quem vai
+ * mandar um e-mail agora).
  */
 export function StepEmailSection({
   owner,
@@ -59,11 +61,9 @@ export function StepEmailSection({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    if ((historyOpen || composeOpen) && history === null) {
-      loadStepEmailHistory(owner).then(setHistory);
-    }
+    loadStepEmailHistory(owner).then(setHistory);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyOpen, composeOpen]);
+  }, []);
 
   useEffect(() => {
     if (composeOpen && recipientOptions.length === 0) {
