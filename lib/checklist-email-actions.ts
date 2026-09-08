@@ -235,21 +235,25 @@ export async function sendStepEmail(
     currentOrigin(),
   ]);
   const actionUrl = origin ? `${origin}${parsed.data.recordPath}` : null;
+  const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
 
   // Destinatário `client` nunca recebe Estimated date/Responsible/Completed
   // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
   // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
+  // O logo é só marca — vai pros dois.
   const internalHtml = checklistStepEmailHtml({
     subject: parsed.data.subject,
     senderName: session.profile.full_name,
     body: parsed.data.body,
     facts,
     actionUrl,
+    logoUrl,
   });
   const clientHtml = checklistStepEmailHtml({
     subject: parsed.data.subject,
     senderName: session.profile.full_name,
     body: parsed.data.body,
+    logoUrl,
   });
 
   const recipients: StepEmailRecipient[] = [];
