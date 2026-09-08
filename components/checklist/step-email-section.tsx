@@ -131,7 +131,7 @@ export function StepEmailSection({
           Emails sent
           <span
             className={`rounded-md px-2 py-0.5 text-xs ${
-              count ? "border border-emerald-600 text-emerald-700" : "bg-slate-200 text-slate-600"
+              count ? "text-emerald-700" : "bg-slate-200 text-slate-600"
             }`}
           >
             {count ?? "…"}
