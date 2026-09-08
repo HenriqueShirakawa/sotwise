@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ChevronDown, Mail, Send } from "lucide-react";
+import { ChevronDown, Mail, Send, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/lib/format";
@@ -244,10 +244,11 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
           <span
             key={r.user_id}
             title={r.error ?? undefined}
-            className={`rounded-md px-2 py-0.5 text-xs font-medium ${
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${
               r.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
             }`}
           >
+            <User className="size-3" />
             {r.name}
           </span>
         ))}
