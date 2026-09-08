@@ -1,18 +1,65 @@
 import "server-only";
 
+import { formatDateNumeric } from "@/lib/format";
+
+export type StepEmailFacts = {
+  estimatedDate: string | null;
+  completedOn: string | null;
+  responsible: string | null;
+  signedBy: string | null;
+};
+
 /**
  * HTML do e-mail manual disparado a partir de uma etapa do checklist. Mesma
  * casca visual do convite (`lib/email/invite.ts`) — cabeçalho roxo do design
- * system, corpo simples — mas sem CTA: aqui não há link de ação, só a
- * mensagem que o usuário interno escreveu.
+ * system, corpo simples.
+ *
+ * `facts`/`actionUrl` só chegam preenchidos para destinatário INTERNO (não
+ * `client`) — quem recebeu o e-mail decide o que é exibido, não o remetente:
+ * um cliente nunca deve ver Responsible/Completed on/Signed by nem o botão
+ * "Go to", mesmo que o usuário interno tenha esses dados na tela.
  */
 export function checklistStepEmailHtml(params: {
   subject: string; // já traz o contexto (ex: "PO - 1000 — Booking"), digitado/editado pelo usuário
   senderName: string;
   body: string; // texto simples digitado pelo usuário; quebras de linha viram <br>
+  facts?: StepEmailFacts | null;
+  actionUrl?: string | null;
 }): string {
-  const { subject, senderName, body } = params;
+  const { subject, senderName, body, facts, actionUrl } = params;
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br>");
+
+  const factRows: { label: string; value: string }[] = [];
+  if (facts?.estimatedDate) factRows.push({ label: "Estimated date", value: formatDateNumeric(facts.estimatedDate) });
+  if (facts?.responsible) factRows.push({ label: "Responsible", value: facts.responsible });
+  if (facts?.completedOn) factRows.push({ label: "Completed on", value: formatDateNumeric(facts.completedOn) });
+  if (facts?.signedBy) factRows.push({ label: "Signed by", value: facts.signedBy });
+
+  const factsHtml = factRows.length
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border-top:1px solid #eceaf1;border-bottom:1px solid #eceaf1;">
+        ${factRows
+          .map(
+            (r) => `<tr>
+              <td style="padding:8px 0;font-size:13px;color:#8b8698;">${escapeHtml(r.label)}</td>
+              <td style="padding:8px 0;font-size:13px;color:#1a1523;text-align:right;">${escapeHtml(r.value)}</td>
+            </tr>`
+          )
+          .join("")}
+      </table>`
+    : "";
+
+  const buttonHtml = actionUrl
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 20px;">
+        <tr>
+          <td style="border-radius:8px;background:#640BB7;">
+            <a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:10px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+              Go to
+            </a>
+          </td>
+        </tr>
+      </table>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
   <body style="margin:0;padding:0;background:#f4f2f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
@@ -33,6 +80,8 @@ export function checklistStepEmailHtml(params: {
                 <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#1a1523;">
                   ${bodyHtml}
                 </p>
+                ${factsHtml}
+                ${buttonHtml}
                 <p style="margin:0;font-size:13px;color:#8b8698;">
                   Enviado por ${escapeHtml(senderName)} via SOTWISE.
                 </p>

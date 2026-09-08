@@ -40,10 +40,14 @@ export function StepEmailSection({
   owner,
   feature,
   defaultSubject,
+  recordPath,
 }: {
   owner: StepOwner;
   feature: "orders" | "pre_loading" | "shipments";
   defaultSubject: string;
+  /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" no
+   *  e-mail, só pra destinatário interno (nunca pra `client`). */
+  recordPath: string;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -90,6 +94,7 @@ export function StepEmailSection({
         recipient_ids: recipientIds,
         subject,
         body,
+        recordPath,
       });
       if (!res.ok) {
         toast.error(res.error);
