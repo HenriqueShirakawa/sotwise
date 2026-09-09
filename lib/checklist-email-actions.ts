@@ -1,14 +1,17 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { headers } from "next/headers";
 import { z } from "zod";
 
 import { requireFeature, requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChecklistStep, StepEmailRecipient } from "@/types/database";
+import type { ChecklistStep, StepEmailRecipient, StepEmailReply } from "@/types/database";
 
 export type Option = { id: string; name: string };
 
@@ -32,9 +35,28 @@ export type StepEmailRow = {
   created_at: string;
   /** Nulo só em linhas de antes da Fase 2.1 (coluna aditiva, sem backfill). */
   status: "success" | "partial" | "failed" | null;
+  /** Respostas do cliente por e-mail (Resend inbound), mais antiga primeiro. */
+  replies: StepEmailReply[];
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+/**
+ * Domínio pro qual a resposta do cliente volta — derivado de `EMAIL_FROM`
+ * ("SOTWISE <no-reply@mail.gssdatahub.com>" → "mail.gssdatahub.com"), não
+ * hardcoded: o mesmo domínio já verificado no Resend pra ENVIO é o que
+ * precisa ter "Receiving" ativado (ver docs/regras_de_negocio.md).
+ */
+function replyDomain(): string {
+  const match = (process.env.EMAIL_FROM ?? "").match(/@([^>\s]+)/);
+  return match?.[1] ?? "resend.dev";
+}
+
+/** Endereço de resposta único desta linha — o próprio id É o token que o
+ *  webhook usa pra achar a linha de volta (ver app/api/webhooks/resend). */
+function replyToAddress(emailRowId: string): string {
+  return `reply+${emailRowId}@${replyDomain()}`;
+}
 
 /**
  * Destinatários selecionáveis — ativos, não ocultos. Mesmo critério do
@@ -212,7 +234,7 @@ async function currentOrigin(): Promise<string | undefined> {
 }
 
 export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailRow[]> {
-  await requireInternal();
+  const session = await requireInternal();
   const admin = createAdminClient();
   const stepId = await findStepId(admin, owner);
   if (!stepId) return [];
@@ -233,6 +255,12 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     .in("id", senderIds);
   const nameById = new Map((senders ?? []).map((s) => [s.id, s.full_name]));
 
+  const repliesByEmailId = await loadRepliesByEmailIds(
+    admin,
+    rows.map((r) => r.id),
+    session.userId
+  );
+
   return rows.map((r) => ({
     id: r.id,
     subject: r.subject,
@@ -241,7 +269,23 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     recipients: r.recipients,
     created_at: r.created_at,
     status: r.status,
+    replies: repliesByEmailId.get(r.id) ?? [],
   }));
+}
+
+/** "Mark as read" de UMA resposta, chamado ao abrir o card no histórico
+ *  (mesmo espírito de `markThreadRead` do módulo de mensagens). */
+export async function markEmailReplyRead(replyId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireInternal();
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("checklist_step_email_reply_recipients")
+    .update({ read_at: new Date().toISOString() })
+    .eq("reply_id", replyId)
+    .eq("user_id", session.userId)
+    .is("read_at", null);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 const sendSchema = z.object({
@@ -295,6 +339,13 @@ export async function sendStepEmail(
   const actionUrl = origin ? `${origin}${parsed.data.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
 
+  // Gerado ANTES do envio: precisa estar no Reply-To de cada `sendEmail`, mas
+  // a linha em `checklist_step_emails` só nasce DEPOIS (o insert final abaixo
+  // usa este mesmo id explícito). O token da resposta É o id da linha — sem
+  // isso, teria ovo-e-galinha (id só existiria depois do envio).
+  const emailRowId = randomUUID();
+  const replyTo = replyToAddress(emailRowId);
+
   // Destinatário `client` nunca recebe Estimated date/Responsible/Completed
   // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
   // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
@@ -326,7 +377,7 @@ export async function sendStepEmail(
       continue;
     }
     const html = isClientById.get(userId) ? clientHtml : internalHtml;
-    const sent = await sendEmail({ to: email, subject: parsed.data.subject, html });
+    const sent = await sendEmail({ to: email, subject: parsed.data.subject, html, replyTo });
     recipients.push({
       user_id: userId,
       name,
@@ -349,6 +400,7 @@ export async function sendStepEmail(
     sent === recipients.length ? "success" : sent === 0 ? "failed" : "partial";
 
   const { error: insertError } = await admin.from("checklist_step_emails").insert({
+    id: emailRowId,
     ...ownerFields,
     sender_id: session.userId,
     subject: parsed.data.subject,

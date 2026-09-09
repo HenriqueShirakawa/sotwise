@@ -28,6 +28,7 @@ const DICT: Record<
     signedBy: string;
     goTo: string;
     sentVia: (name: string) => string;
+    replyHint: string;
   }
 > = {
   "pt-BR": {
@@ -38,6 +39,7 @@ const DICT: Record<
     signedBy: "Assinado por",
     goTo: "Acessar",
     sentVia: (name) => `Enviado por ${name} via SOTWISE.`,
+    replyHint: "Responda este e-mail para enviar uma mensagem ao time.",
   },
   en: {
     htmlLang: "en",
@@ -47,6 +49,7 @@ const DICT: Record<
     signedBy: "Signed by",
     goTo: "Go to",
     sentVia: (name) => `Sent by ${name} via SOTWISE.`,
+    replyHint: "Reply to this email to send a message to the team.",
   },
   zh: {
     htmlLang: "zh",
@@ -56,6 +59,7 @@ const DICT: Record<
     signedBy: "签署人",
     goTo: "前往",
     sentVia: (name) => `由 ${name} 通过 SOTWISE 发送。`,
+    replyHint: "回复此邮件即可给团队发送消息。",
   },
 };
 
@@ -143,8 +147,11 @@ export function checklistStepEmailHtml(params: {
                 </p>
                 ${factsHtml}
                 ${buttonHtml}
-                <p style="margin:0;font-size:13px;color:#8b8698;">
+                <p style="margin:0 0 4px;font-size:13px;color:#8b8698;">
                   ${escapeHtml(t.sentVia(senderName))}
+                </p>
+                <p style="margin:0;font-size:13px;color:#8b8698;">
+                  ${escapeHtml(t.replyHint)}
                 </p>
               </td>
             </tr>

@@ -8,6 +8,7 @@ import { formatDateTime } from "@/lib/format";
 import {
   loadStepEmailHistory,
   loadStepRecipientOptions,
+  markEmailReplyRead,
   sendStepEmail,
   type Option,
   type StepEmailRow,
@@ -120,6 +121,7 @@ export function StepEmailSection({
   }
 
   const count = history?.length ?? null;
+  const unreadReplies = history?.reduce((n, row) => n + row.replies.filter((r) => !r.read_by_me).length, 0) ?? 0;
 
   return (
     <div>
@@ -135,7 +137,12 @@ export function StepEmailSection({
           aria-expanded={count ? historyOpen : undefined}
           onClick={() => setHistoryOpen((o) => !o)}
         >
-          <Mail className={`size-4 ${count ? "text-emerald-600" : "text-slate-400"}`} />
+          <span className="relative">
+            <Mail className={`size-4 ${count ? "text-emerald-600" : "text-slate-400"}`} />
+            {unreadReplies > 0 && (
+              <span className="absolute -top-1 -right-1 size-2 rounded-full bg-rose-500" />
+            )}
+          </span>
           Emails sent
           <span
             className={`rounded-md px-2 py-0.5 text-xs ${
@@ -144,6 +151,11 @@ export function StepEmailSection({
           >
             {count ?? "…"}
           </span>
+          {unreadReplies > 0 && (
+            <span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">
+              {unreadReplies} new {unreadReplies === 1 ? "reply" : "replies"}
+            </span>
+          )}
           {!!count && (
             <ChevronDown
               className={`size-3.5 text-emerald-600 transition-transform ${historyOpen ? "rotate-180" : ""}`}
@@ -229,20 +241,35 @@ export function StepEmailSection({
 
 function EmailHistoryCard({ row }: { row: StepEmailRow }) {
   const [open, setOpen] = useState(false);
+  const [locallyRead, setLocallyRead] = useState<Set<string>>(new Set());
   const failedCount = row.recipients.filter((r) => !r.ok).length;
+  const unreadReplies = row.replies.filter((r) => !r.read_by_me && !locallyRead.has(r.id));
+
+  function toggle() {
+    if (!open && unreadReplies.length > 0) {
+      setLocallyRead((prev) => new Set([...prev, ...unreadReplies.map((r) => r.id)]));
+      for (const r of unreadReplies) void markEmailReplyRead(r.id);
+    }
+    setOpen(!open);
+  }
 
   return (
     <div className="rounded-md bg-white px-3 py-2 text-sm">
       <button
         type="button"
         className="flex w-full items-start justify-between gap-2 text-left"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
       >
         <span>
           <span className="font-medium text-slate-800">{row.subject}</span>
           <span className="ml-2 text-xs text-muted-foreground">
             {row.sender_name} · {formatDateTime(row.created_at)}
           </span>
+          {unreadReplies.length > 0 && (
+            <span className="ml-2 rounded-md bg-rose-50 px-1.5 py-0.5 text-xs font-medium text-rose-700">
+              {unreadReplies.length} new {unreadReplies.length === 1 ? "reply" : "replies"}
+            </span>
+          )}
         </span>
         <ChevronDown
           className={`mt-0.5 size-3.5 shrink-0 text-slate-400 transition-transform ${
@@ -269,6 +296,24 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
         <p className="mt-1 text-xs text-rose-600">
           {failedCount} of {row.recipients.length} failed to deliver.
         </p>
+      )}
+      {open && row.replies.length > 0 && (
+        <div className="mt-3 space-y-2 border-t border-slate-100 pt-2">
+          <p className="text-xs font-medium text-slate-500">Replies</p>
+          {row.replies.map((r) => (
+            <div key={r.id} className="rounded-md bg-slate-50 px-2.5 py-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1 text-xs font-medium text-slate-700">
+                  <User className="size-3" />
+                  {r.from_name ?? r.from_email}
+                </span>
+                <span className="text-xs text-slate-400">{formatDateTime(r.received_at)}</span>
+              </div>
+              {/* Texto puro só — nunca renderiza HTML de e-mail externo cru. */}
+              <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{r.body_text}</p>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
