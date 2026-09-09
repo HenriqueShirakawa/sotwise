@@ -68,6 +68,33 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+/**
+ * Marcadores de citação do e-mail original que os clientes de e-mail mais
+ * usados prependem numa resposta top-posted (Gmail en/pt-BR, Outlook, Apple
+ * Mail) — cortamos tudo a partir do primeiro que aparecer, sobra só o que a
+ * pessoa escreveu de fato. É uma heurística (não um parser RFC completo),
+ * mas cobre o caso comum sem puxar uma dependência só pra isso.
+ */
+const QUOTE_MARKERS: RegExp[] = [
+  /^>.*$/m, // linha já citada (prefixo ">")
+  /^On\s.{0,200}?\bwrote:\s*$/m, // Gmail/Apple Mail (inglês)
+  /^Em\s.{0,200}?\bescreveu:\s*$/im, // Gmail (pt-BR)
+  /^-{2,}\s*(Original Message|Mensagem original)\s*-{2,}$/im,
+  /^_{5,}$/m, // separador do Outlook antes do bloco From:/Sent:/To:
+];
+
+function stripQuotedReply(text: string): string {
+  let cutAt = text.length;
+  for (const marker of QUOTE_MARKERS) {
+    const match = marker.exec(text);
+    if (match && match.index < cutAt) cutAt = match.index;
+  }
+  const stripped = text.slice(0, cutAt).trim();
+  // Se a heurística cortou tudo (falso positivo), preserva o texto original
+  // em vez de guardar uma resposta vazia.
+  return stripped || text.trim();
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) return json({ error: "RESEND_WEBHOOK_SECRET not configured." }, 503);
@@ -122,10 +149,11 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const rawFrom = received.email.headers["From"] ?? received.email.headers["from"] ?? from;
   const parsedFrom = parseFromHeader(rawFrom);
-  const bodyText =
+  const rawBodyText =
     received.email.text?.trim() ||
     (received.email.html ? htmlToText(received.email.html) : "") ||
     "(no content)";
+  const bodyText = stripQuotedReply(rawBodyText);
 
   const recipients = parent.recipients as StepEmailRecipient[];
   const matched = recipients.find((r) => r.email.toLowerCase() === parsedFrom.email.toLowerCase());
