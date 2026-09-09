@@ -8,6 +8,7 @@ import {
   Layers,
   Users,
   ShieldCheck,
+  Mail,
 } from "lucide-react";
 
 import type { FeatureKey } from "@/domain/access/features";
@@ -54,6 +55,7 @@ export const NAV: NavItem[] = [
   },
   { type: "link", title: "Shipments", href: "/shipments", icon: Ship, feature: "shipments" },
   { type: "link", title: "To do list", href: "/todo", icon: ListTodo, feature: "todo" },
+  { type: "link", title: "Emails", href: "/emails", icon: Mail, feature: "email_history" },
   {
     type: "group",
     title: "Registration",
