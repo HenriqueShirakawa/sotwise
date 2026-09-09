@@ -112,6 +112,24 @@ function buildColumns(timeZone: string): ColumnDef<EmailListRow>[] {
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
     },
     {
+      id: "replies",
+      header: "Replies",
+      cell: ({ row }) =>
+        row.original.replyCount > 0 ? (
+          <span
+            className={cn(
+              "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+              row.original.unreadReplyCount > 0 ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-600"
+            )}
+          >
+            {row.original.replyCount}
+            {row.original.unreadReplyCount > 0 ? ` (${row.original.unreadReplyCount} new)` : ""}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
       id: "created_at",
       header: "Sent at",
       cell: ({ row }) => (
@@ -130,6 +148,7 @@ const COLUMN_LABELS = labelsFromOptions([
   { id: "sender_name", label: "Sender" },
   { id: "recipients", label: "Recipients" },
   { id: "status", label: "Status" },
+  { id: "replies", label: "Replies" },
   { id: "created_at", label: "Sent at" },
 ]);
 

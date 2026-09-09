@@ -50,6 +50,17 @@ export type StepEmailRecipient = {
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
 export type StepEmailStatus = "success" | "partial" | "failed";
+/** Uma resposta do cliente (via Resend inbound) a um checklist_step_emails,
+ *  já hidratada para exibição no histórico da etapa. */
+export type StepEmailReply = {
+  id: UUID;
+  from_name: string | null;
+  from_email: string;
+  from_user_id: UUID | null;
+  body_text: string;
+  received_at: Timestamp;
+  read_by_me: boolean;
+};
 export type ChecklistPhase = "order" | "preloading" | "shipment";
 export type ChecklistStep =
   | "order"
@@ -1150,6 +1161,48 @@ export type Database = {
         Row: { country_id: UUID; language: EmailLanguage };
         Insert: { country_id: UUID; language: EmailLanguage };
         Update: Partial<{ country_id: UUID; language: EmailLanguage }>;
+        Relationships: [];
+      };
+      // Insert-only (revoke update/delete no banco) — resposta do cliente por
+      // e-mail a um checklist_step_emails. Ver migration 20260909130000.
+      checklist_step_email_replies: {
+        Row: {
+          id: UUID;
+          checklist_step_email_id: UUID;
+          from_email: string;
+          from_name: string | null;
+          from_user_id: UUID | null;
+          subject: string | null;
+          body_text: string;
+          body_html: string | null;
+          provider_message_id: string;
+          received_at: Timestamp;
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          checklist_step_email_id: UUID;
+          from_email: string;
+          from_name?: string | null;
+          from_user_id?: UUID | null;
+          subject?: string | null;
+          body_text: string;
+          body_html?: string | null;
+          provider_message_id: string;
+          received_at?: Timestamp;
+          created_at?: Timestamp;
+        };
+        Update: never; // revogado no banco — ver comentário da tabela
+        Relationships: [];
+      };
+      // Quem deve ser notificado de uma resposta — mesmo padrão de
+      // message_recipients (read_at nulo = não lida).
+      checklist_step_email_reply_recipients: {
+        Row: { reply_id: UUID; user_id: UUID; read_at: Timestamp | null };
+        Insert: { reply_id: UUID; user_id: UUID; read_at?: Timestamp | null };
+        Update: Partial<
+          Database["public"]["Tables"]["checklist_step_email_reply_recipients"]["Insert"]
+        >;
         Relationships: [];
       };
     };

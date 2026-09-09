@@ -2,6 +2,7 @@
 
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { loadEntityContexts, loadProfileNames, type EntityRef } from "@/lib/messages";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { EmailLanguage, MessageEntity, StepEmailRecipient, StepEmailStatus } from "@/types/database";
@@ -34,10 +35,12 @@ export type EmailListRow = {
   number: string;
   /** Nome(s) do(s) cliente(s), já juntados por vírgula — PL/Shipment podem ter vários. */
   clients: string | null;
+  replyCount: number;
+  unreadReplyCount: number;
 };
 
 export async function loadEmailRecords(): Promise<EmailListRow[]> {
-  await requireFeature("email_history");
+  const session = await requireFeature("email_history");
   const admin = createAdminClient();
 
   const rows = await fetchAll<{
@@ -94,12 +97,18 @@ export async function loadEmailRecords(): Promise<EmailListRow[]> {
   const contexts = await loadEntityContexts(refs);
   const senderIds = [...new Set(rows.map((r) => r.sender_id))];
   const nameById = await loadProfileNames(senderIds);
+  const repliesByEmailId = await loadRepliesByEmailIds(
+    admin,
+    rows.map((r) => r.id),
+    session.userId
+  );
 
   const out: EmailListRow[] = [];
   for (const r of rows) {
     const entity = entityByRowId.get(r.id);
     if (!entity) continue;
     const ctx = contexts.get(`${entity.type}:${entity.id}`);
+    const replies = repliesByEmailId.get(r.id) ?? [];
     out.push({
       id: r.id,
       subject: r.subject,
@@ -111,6 +120,8 @@ export async function loadEmailRecords(): Promise<EmailListRow[]> {
       group: groupOf(entity.type),
       number: ctx?.number ?? "—",
       clients: ctx?.clients.length ? ctx.clients.map((c) => c.name).join(", ") : null,
+      replyCount: replies.length,
+      unreadReplyCount: replies.filter((reply) => !reply.read_by_me).length,
     });
   }
   return out;
