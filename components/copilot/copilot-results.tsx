@@ -27,24 +27,32 @@ type Section = { rowsKey: string; title: string; href: (row: Row) => string | nu
  */
 const KINDS: Record<string, Section[]> = {
   search_orders: [
-    { rowsKey: "orders", title: "Orders", href: (r) => (r.id ? `/orders/${r.id}` : null) },
+    {
+      rowsKey: "orders",
+      title: "Orders",
+      href: (r) => (r.po_number ? `/orders/${r.po_number}` : r.id ? `/orders/${r.id}` : null),
+    },
   ],
   list_etd_entries: [
     {
       rowsKey: "entries",
       title: "ETD Factories",
-      href: (r) => (r.order_id ? `/orders/${r.order_id}` : null),
+      href: (r) => (r.po_number ? `/orders/${r.po_number}` : r.order_id ? `/orders/${r.order_id}` : null),
     },
   ],
   list_pre_loadings: [
     {
       rowsKey: "pre_loadings",
       title: "Pre-loading",
-      href: (r) => (r.id ? `/pre-loading/${r.id}` : null),
+      href: (r) => (r.pl_number ? `/pre-loading/${r.pl_number}` : r.id ? `/pre-loading/${r.id}` : null),
     },
   ],
   search_shipments: [
-    { rowsKey: "shipments", title: "Shipments", href: (r) => (r.id ? `/shipments/${r.id}` : null) },
+    {
+      rowsKey: "shipments",
+      title: "Shipments",
+      href: (r) => (r.pl_number ? `/shipments/${r.pl_number}` : r.id ? `/shipments/${r.id}` : null),
+    },
   ],
   trace_chain: [
     {
@@ -52,12 +60,12 @@ const KINDS: Record<string, Section[]> = {
       title: "Order → batch → PL → shipment",
       // A linha leva para a Order: é o começo da cadeia e de lá se navega para
       // o resto. O PL tem sua própria coluna, clicável pela tabela de baixo.
-      href: (r) => (r.order_id ? `/orders/${r.order_id}` : null),
+      href: (r) => (r.po_number ? `/orders/${r.po_number}` : r.order_id ? `/orders/${r.order_id}` : null),
     },
     {
       rowsKey: "entries",
       title: "Factory × Category",
-      href: (r) => (r.order_id ? `/orders/${r.order_id}` : null),
+      href: (r) => (r.po_number ? `/orders/${r.po_number}` : r.order_id ? `/orders/${r.order_id}` : null),
     },
   ],
   list_pending_steps: [
@@ -65,11 +73,15 @@ const KINDS: Record<string, Section[]> = {
       rowsKey: "steps",
       title: "Pending steps",
       href: (r) =>
-        r.order_id
-          ? `/orders/${r.order_id}`
-          : r.pre_loading_id
-            ? `/pre-loading/${r.pre_loading_id}`
-            : null,
+        r.po_number
+          ? `/orders/${r.po_number}`
+          : r.order_id
+            ? `/orders/${r.order_id}`
+            : r.pl_number
+              ? `/pre-loading/${r.pl_number}`
+              : r.pre_loading_id
+                ? `/pre-loading/${r.pre_loading_id}`
+                : null,
     },
   ],
 };

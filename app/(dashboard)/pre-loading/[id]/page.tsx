@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireFeature } from "@/lib/dal";
 import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
 import { fetchAll } from "@/lib/fetch-all";
+import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
@@ -80,14 +81,14 @@ export default async function PreLoadingChecklistPage({
   const { id } = await params;
   const admin = createAdminClient();
 
-  const { data: pl } = await admin
+  // URL aceita o pl_number (link novo) OU o UUID interno (link antigo).
+  const plQuery = admin
     .from("pre_loadings")
     .select(
       "id, pl_number, created_date, client_reference, pod_id, leader_id, responsible_signer_id, booking_status, seal_number, shipping_confirmed_at"
     )
-    .eq("id", id)
-    .is("deleted_at", null)
-    .single();
+    .is("deleted_at", null);
+  const { data: pl } = await (isUuid(id) ? plQuery.eq("id", id) : plQuery.eq("pl_number", id)).single();
 
   if (!pl) notFound();
 

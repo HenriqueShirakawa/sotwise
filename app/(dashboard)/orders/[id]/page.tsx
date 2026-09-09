@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { displayBu } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -40,14 +41,15 @@ export default async function OrderDetailPage({
   const { id } = await params;
   const admin = createAdminClient();
 
-  const { data: order } = await admin
+  // URL aceita o número do pedido (link novo, ex. "1601") OU o UUID interno
+  // (link antigo, já mandado por e-mail) — ver docs/regras_de_negocio.md.
+  const orderQuery = admin
     .from("orders")
     .select(
       "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, date_po"
     )
-    .eq("id", id)
-    .is("deleted_at", null)
-    .single();
+    .is("deleted_at", null);
+  const { data: order } = await (isUuid(id) ? orderQuery.eq("id", id) : orderQuery.eq("po_number", id)).single();
 
   if (!order) notFound();
 

@@ -29,6 +29,7 @@ export type OrderInput = z.infer<typeof orderSchema>;
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-/** Como o ActionResult, mas devolve o id do registro criado — o form usa esse
- * id pra mandar o usuário direto pro checklist do novo pedido. */
-export type CreateResult = { ok: true; id: string } | { ok: false; error: string };
+/** Como o ActionResult, mas devolve o id e o po_number do registro criado — o
+ * form usa o po_number pra mandar o usuário direto pro checklist do novo
+ * pedido com a URL bonita (`/orders/<po_number>`) em vez do UUID. */
+export type CreateResult = { ok: true; id: string; po_number: string } | { ok: false; error: string };

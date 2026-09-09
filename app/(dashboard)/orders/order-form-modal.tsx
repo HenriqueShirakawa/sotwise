@@ -140,7 +140,7 @@ export function OrderFormModal({
       onOpenChange(false);
       // Pedido novo abre direto no próprio checklist — a lista atrás do modal
       // é idêntica e voltar pra ela dava a impressão de que nada aconteceu.
-      router.push(`/orders/${res.id}`);
+      router.push(`/orders/${res.po_number}`);
     });
   }
 

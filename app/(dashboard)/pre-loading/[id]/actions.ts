@@ -88,7 +88,9 @@ export async function savePreLoadingStep(
         .insert({ pre_loading_id: preLoadingId, step, ...values });
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath(`/pre-loading/${preLoadingId}`);
+  // Pelo padrão da rota, não por valor: a página vive em duas URLs (pl_number
+  // bonito e UUID antigo) — isto invalida as duas de uma vez.
+  revalidatePath("/pre-loading/[id]", "page");
   revalidatePath("/pre-loading");
   // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
   revalidatePath("/todo");
@@ -159,7 +161,7 @@ export async function uploadPreLoadingStepAttachment(
     return { ok: false, error: insertError.message };
   }
 
-  revalidatePath(`/pre-loading/${preLoadingId}`);
+  revalidatePath("/pre-loading/[id]", "page");
   return { ok: true };
 }
 
@@ -193,7 +195,7 @@ export async function deletePreLoadingStepAttachment(
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
-  revalidatePath(`/pre-loading/${preLoadingId}`);
+  revalidatePath("/pre-loading/[id]", "page");
   return { ok: true };
 }
 
@@ -536,7 +538,7 @@ export async function confirmShipping(
     .eq("id", preLoadingId);
   if (plUpdErr) return { ok: false, error: plUpdErr.message };
 
-  revalidatePath(`/pre-loading/${preLoadingId}`);
+  revalidatePath("/pre-loading/[id]", "page");
   revalidatePath("/pre-loading");
   revalidatePath("/orders");
   // Confirmar o embarque CRIA o Shipment — a lista de Shipments precisa

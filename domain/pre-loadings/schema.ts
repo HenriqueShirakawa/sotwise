@@ -28,6 +28,7 @@ export type PreLoadingInput = z.infer<typeof preLoadingSchema>;
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-/** Como o ActionResult, mas devolve o id do registro criado — o form usa esse
- * id pra mandar o usuário direto pro checklist do novo PL. */
-export type CreateResult = { ok: true; id: string } | { ok: false; error: string };
+/** Como o ActionResult, mas devolve o id e o pl_number do registro criado — o
+ * form usa o pl_number pra mandar o usuário direto pro checklist do novo PL
+ * com a URL bonita (`/pre-loading/<pl_number>`) em vez do UUID. */
+export type CreateResult = { ok: true; id: string; pl_number: string } | { ok: false; error: string };

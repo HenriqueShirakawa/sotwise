@@ -15,10 +15,6 @@ const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production
 const DOCUMENTS_BUCKET = "order-documents";
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
-function path(orderId: string) {
-  return `/orders/${orderId}`;
-}
-
 /**
  * Revalida tudo que um lote alimenta: o detalhe/lista de Orders (rollup de
  * status) e, quando o lote está em in_production/preloading, a lista de seleção
@@ -26,7 +22,9 @@ function path(orderId: string) {
  * Sem isso, mover um lote pra Production só aparecia nessas telas após um F5.
  */
 function revalidateBatchViews(orderId: string) {
-  revalidatePath(path(orderId));
+  // Pelo padrão da rota, não por valor: a página vive em duas URLs (po_number
+  // e UUID antigo) — isto invalida as duas de uma vez.
+  revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/pre-loading");
   revalidatePath("/etd-factories");
@@ -324,7 +322,7 @@ export async function updateChecklistStep(
 
   // Atribuir/trocar responsável ou concluir/reabrir uma etapa muda a To do list
   // (pendências do responsável) — revalida pra ela refletir na hora, sem F5.
-  revalidatePath(path(orderId));
+  revalidatePath("/orders/[id]", "page");
   revalidatePath("/todo");
   return { ok: true };
 }
@@ -366,7 +364,7 @@ export async function uploadStepAttachment(
     return { ok: false, error: insertError.message };
   }
 
-  revalidatePath(path(orderId));
+  revalidatePath("/orders/[id]", "page");
   return { ok: true };
 }
 
@@ -400,7 +398,7 @@ export async function deleteStepAttachment(
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
-  revalidatePath(path(orderId));
+  revalidatePath("/orders/[id]", "page");
   return { ok: true };
 }
 
@@ -480,7 +478,7 @@ export async function upsertEtdInfo(
   // O ETD aparece na lista de Orders (coluna ETD) e é a própria tela ETD
   // Factories — revalida as duas, senão só o detalhe atualiza e as listas ficam
   // velhas até um F5.
-  revalidatePath(path(orderId));
+  revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
   return { ok: true };
@@ -649,7 +647,7 @@ export async function updateEtdInfoWithReason(
 
   // Mesma razão do upsertEtdInfo: a edição do ETD reflete na lista de Orders e
   // na tela ETD Factories, não só no detalhe.
-  revalidatePath(path(orderId));
+  revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
   return { ok: true };

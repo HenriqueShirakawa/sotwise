@@ -268,7 +268,7 @@ export function PreLoadingFormModal({
       onOpenChange(false);
       // PL novo abre direto no próprio checklist — a lista atrás do modal é
       // idêntica e voltar pra ela dava a impressão de que nada aconteceu.
-      router.push(`/pre-loading/${res.id}`);
+      router.push(`/pre-loading/${res.pl_number}`);
     });
   }
 
