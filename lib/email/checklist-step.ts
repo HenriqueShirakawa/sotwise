@@ -9,6 +9,56 @@ export type StepEmailFacts = {
   signedBy: string | null;
 };
 
+export type EmailLanguage = "pt-BR" | "en" | "zh";
+
+/**
+ * Só o CHROME fixo do e-mail troca de idioma (rótulos, botão, rodapé) —
+ * `subject`/`body` são texto livre digitado pelo usuário, sem tradução
+ * automática (não tem como traduzir texto livre com segurança). Fase 2.1 —
+ * User Story 1: idioma vem de `clients.language`/`country_language_defaults`,
+ * resolvido em `lib/checklist-email-actions.ts`.
+ */
+const DICT: Record<
+  EmailLanguage,
+  {
+    htmlLang: string;
+    estimatedDate: string;
+    responsible: string;
+    completedOn: string;
+    signedBy: string;
+    goTo: string;
+    sentVia: (name: string) => string;
+  }
+> = {
+  "pt-BR": {
+    htmlLang: "pt-BR",
+    estimatedDate: "Data estimada",
+    responsible: "Responsável",
+    completedOn: "Concluído em",
+    signedBy: "Assinado por",
+    goTo: "Acessar",
+    sentVia: (name) => `Enviado por ${name} via SOTWISE.`,
+  },
+  en: {
+    htmlLang: "en",
+    estimatedDate: "Estimated date",
+    responsible: "Responsible",
+    completedOn: "Completed on",
+    signedBy: "Signed by",
+    goTo: "Go to",
+    sentVia: (name) => `Sent by ${name} via SOTWISE.`,
+  },
+  zh: {
+    htmlLang: "zh",
+    estimatedDate: "预计日期",
+    responsible: "负责人",
+    completedOn: "完成日期",
+    signedBy: "签署人",
+    goTo: "前往",
+    sentVia: (name) => `由 ${name} 通过 SOTWISE 发送。`,
+  },
+};
+
 /**
  * HTML do e-mail manual disparado a partir de uma etapa do checklist. Mesma
  * casca visual do convite (`lib/email/invite.ts`) — cabeçalho roxo do design
@@ -28,15 +78,19 @@ export function checklistStepEmailHtml(params: {
   /** URL absoluta pro `public/logo-sotwise.svg` (precisa de origin — e-mail
    *  não resolve caminho relativo). Sem isto, cai pro texto "SOTWISE" antigo. */
   logoUrl?: string | null;
+  /** Idioma do cliente do pedido/PL, resolvido antes de chamar isto. Default
+   *  'en' — nunca deve faltar, mas o fallback evita template quebrado. */
+  language?: EmailLanguage;
 }): string {
-  const { subject, senderName, body, facts, actionUrl, logoUrl } = params;
+  const { subject, senderName, body, facts, actionUrl, logoUrl, language = "en" } = params;
+  const t = DICT[language];
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br>");
 
   const factRows: { label: string; value: string }[] = [];
-  if (facts?.estimatedDate) factRows.push({ label: "Estimated date", value: formatDateNumeric(facts.estimatedDate) });
-  if (facts?.responsible) factRows.push({ label: "Responsible", value: facts.responsible });
-  if (facts?.completedOn) factRows.push({ label: "Completed on", value: formatDateNumeric(facts.completedOn) });
-  if (facts?.signedBy) factRows.push({ label: "Signed by", value: facts.signedBy });
+  if (facts?.estimatedDate) factRows.push({ label: t.estimatedDate, value: formatDateNumeric(facts.estimatedDate) });
+  if (facts?.responsible) factRows.push({ label: t.responsible, value: facts.responsible });
+  if (facts?.completedOn) factRows.push({ label: t.completedOn, value: formatDateNumeric(facts.completedOn) });
+  if (facts?.signedBy) factRows.push({ label: t.signedBy, value: facts.signedBy });
 
   const factsHtml = factRows.length
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;border-top:1px solid #eceaf1;border-bottom:1px solid #eceaf1;">
@@ -56,7 +110,7 @@ export function checklistStepEmailHtml(params: {
         <tr>
           <td style="border-radius:8px;background:#640BB7;">
             <a href="${escapeHtml(actionUrl)}" style="display:inline-block;padding:10px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
-              Go to
+              ${t.goTo}
             </a>
           </td>
         </tr>
@@ -64,7 +118,7 @@ export function checklistStepEmailHtml(params: {
     : "";
 
   return `<!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="${t.htmlLang}">
   <body style="margin:0;padding:0;background:#f4f2f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2f8;padding:32px 0;">
       <tr>
@@ -90,7 +144,7 @@ export function checklistStepEmailHtml(params: {
                 ${factsHtml}
                 ${buttonHtml}
                 <p style="margin:0;font-size:13px;color:#8b8698;">
-                  Enviado por ${escapeHtml(senderName)} via SOTWISE.
+                  ${escapeHtml(t.sentVia(senderName))}
                 </p>
               </td>
             </tr>

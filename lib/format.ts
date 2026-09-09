@@ -30,19 +30,38 @@ export function formatDateNumeric(value: string | null | undefined): string {
   }).format(date);
 }
 
-/** Timestamp completo (dd/mm/yyyy hh:mm) — usado em logs/histórico. Fuso America/Sao_Paulo. */
-export function formatDateTime(value: string | null | undefined): string {
+/**
+ * Timestamp completo (dd/mm/yyyy hh:mm) — usado em logs/histórico. Fuso
+ * America/Sao_Paulo por padrão; `timeZone` é usado só onde a tela precisa de
+ * outro fuso (ex.: `/emails`, pela company do usuário — ver `companyTimeZone`).
+ * Todo o resto do app continua com o mesmo fuso fixo de sempre.
+ */
+export function formatDateTime(value: string | null | undefined, timeZone: string = TIME_ZONE): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  const datePart = dateFormatter.format(date);
+  const datePart =
+    timeZone === TIME_ZONE
+      ? dateFormatter.format(date)
+      : new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", timeZone }).format(
+          date
+        );
   const timePart = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: TIME_ZONE,
+    timeZone,
   }).format(date);
   return `${datePart} ${timePart}`;
+}
+
+/**
+ * Fuso da company do usuário logado — usado só pelo histórico de e-mails
+ * (`/emails`, Fase 2.1 US3 RN02). BR opera em São Paulo; China em Shanghai
+ * (UTC+8, sem horário de verão).
+ */
+export function companyTimeZone(company: "BR" | "China"): string {
+  return company === "China" ? "Asia/Shanghai" : TIME_ZONE;
 }
 
 /**

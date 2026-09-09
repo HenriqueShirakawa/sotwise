@@ -17,15 +17,21 @@ export function MultiSearchSelect({
   onChange,
   options,
   placeholder,
+  lockedIds,
 }: {
   value: string[];
   onChange: (value: string[]) => void;
   options: { id: string; name: string }[];
   placeholder: string;
+  /** Ids que não podem ser removidos daqui — chip sem `X`, e clique na linha
+   *  do popover não tira a marcação. Usado pelo destinatário "Responsible"
+   *  âncora do e-mail de checklist (Fase 2.1). */
+  lockedIds?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const wheelRef = useWheelScroll<HTMLDivElement>();
+  const locked = new Set(lockedIds ?? []);
 
   const nameById = new Map(options.map((o) => [o.id, o.name]));
   // Sem teto de resultados — mesma razão do `SearchSelect`: cadastro grande
@@ -34,8 +40,10 @@ export function MultiSearchSelect({
     o.name.toLowerCase().includes(query.toLowerCase())
   );
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    if (locked.has(id)) return;
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  };
 
   return (
     <Popover
@@ -61,13 +69,15 @@ export function MultiSearchSelect({
                   className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
                 >
                   {nameById.get(id) ?? id}
-                  <X
-                    className="size-3 cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onChange(value.filter((v) => v !== id));
-                    }}
-                  />
+                  {!locked.has(id) && (
+                    <X
+                      className="size-3 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onChange(value.filter((v) => v !== id));
+                      }}
+                    />
+                  )}
                 </span>
               ))}
             </span>
@@ -90,13 +100,16 @@ export function MultiSearchSelect({
           ) : (
             filtered.map((o) => {
               const checked = value.includes(o.id);
+              const isLocked = locked.has(o.id);
               return (
                 <button
                   key={o.id}
                   type="button"
                   role="checkbox"
                   aria-checked={checked}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-100"
+                  disabled={isLocked}
+                  title={isLocked ? "Required — can't be removed" : undefined}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-100 disabled:cursor-default disabled:opacity-70 disabled:hover:bg-transparent"
                   onClick={() => toggle(o.id)}
                 >
                   {/* Caixinha decorativa: o próprio botão da linha é o checkbox.

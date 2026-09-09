@@ -43,6 +43,7 @@ export function StepEmailSection({
   feature,
   defaultSubject,
   recordPath,
+  responsibleId,
 }: {
   owner: StepOwner;
   feature: "orders" | "pre_loading" | "shipments";
@@ -50,6 +51,10 @@ export function StepEmailSection({
   /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" no
    *  e-mail, só pra destinatário interno (nunca pra `client`). */
   recordPath: string;
+  /** `responsible_id` da própria etapa (campo "Responsible" já editável na
+   *  tela). Fase 2.1 — User Story 2: vira destinatário âncora obrigatório do
+   *  e-mail — sem ele, nem abre o compositor. */
+  responsibleId: string | null;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -75,17 +80,16 @@ export function StepEmailSection({
   function openCompose() {
     setSubject(defaultSubject);
     setBody("");
-    setRecipientIds([]);
+    setRecipientIds(responsibleId ? [responsibleId] : []);
     setComposeOpen(true);
   }
 
+  const canSend = !pending && recipientIds.length > 0 && !!subject.trim() && !!body.trim();
+
   function send() {
-    if (recipientIds.length === 0) {
-      toast.error("Select at least one recipient.");
-      return;
-    }
-    if (!subject.trim() || !body.trim()) {
-      toast.error("Write a subject and a message.");
+    if (!canSend) {
+      if (recipientIds.length === 0) toast.error("Select at least one recipient.");
+      else toast.error("Write a subject and a message.");
       return;
     }
     startTransition(async () => {
@@ -98,13 +102,17 @@ export function StepEmailSection({
       });
       if (!res.ok) {
         toast.error(res.error);
+        loadStepEmailHistory(owner).then(setHistory);
         return;
       }
-      toast.success(
-        res.failed > 0
-          ? `Sent to ${res.sent} of ${res.sent + res.failed} — check history for details.`
-          : "E-mail sent."
-      );
+      // Falha parcial NÃO fecha o modal — os dados (destinatários/assunto/
+      // corpo) continuam preenchidos pra tentar de novo sem redigitar tudo.
+      if (res.failed > 0) {
+        toast.error(`Sent to ${res.sent} of ${res.sent + res.failed} — check history for details.`);
+        loadStepEmailHistory(owner).then(setHistory);
+        return;
+      }
+      toast.success("E-mail sent.");
       setComposeOpen(false);
       setHistoryOpen(true);
       loadStepEmailHistory(owner).then(setHistory);
@@ -148,6 +156,8 @@ export function StepEmailSection({
           size="sm"
           className="ml-auto"
           onClick={openCompose}
+          disabled={!responsibleId}
+          title={responsibleId ? undefined : "Set a Responsible for this step first"}
         >
           <Send className="size-3.5" />
           Send email
@@ -175,6 +185,7 @@ export function StepEmailSection({
                 onChange={setRecipientIds}
                 options={recipientOptions}
                 placeholder="Choose recipients..."
+                lockedIds={responsibleId ? [responsibleId] : []}
               />
             </div>
             <div>
@@ -205,7 +216,7 @@ export function StepEmailSection({
             >
               Cancel
             </Button>
-            <Button type="button" onClick={send} disabled={pending}>
+            <Button type="button" onClick={send} disabled={!canSend}>
               <Send className="size-3.5" />
               Send
             </Button>

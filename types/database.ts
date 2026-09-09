@@ -47,6 +47,9 @@ export type StepEmailRecipient = {
   ok: boolean;
   error: string | null;
 };
+/** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
+export type EmailLanguage = "pt-BR" | "en" | "zh";
+export type StepEmailStatus = "success" | "partial" | "failed";
 export type ChecklistPhase = "order" | "preloading" | "shipment";
 export type ChecklistStep =
   | "order"
@@ -457,6 +460,10 @@ export type Database = {
           id: UUID;
           name: string;
           country_id: UUID | null;
+          /** Fase 2.1 — override manual/futuro campo do GSS; hoje sempre nulo
+           *  (o customer do GSS não manda idioma, confirmado 09/09/2026).
+           *  Fallback: `country_language_defaults` por `country_id`. */
+          language: EmailLanguage | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -468,6 +475,7 @@ export type Database = {
           id?: UUID;
           name: string;
           country_id?: UUID | null;
+          language?: EmailLanguage | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
@@ -1117,6 +1125,11 @@ export type Database = {
           body: string;
           recipients: StepEmailRecipient[];
           created_at: Timestamp;
+          // Aditivas (migration 20260909120000) — nulo em linhas anteriores,
+          // sempre preenchidas pela action daqui pra frente. UPDATE/DELETE
+          // revogados de anon/authenticated/service_role no banco.
+          status: StepEmailStatus | null;
+          language: EmailLanguage | null;
         };
         Insert: {
           id?: UUID;
@@ -1127,8 +1140,16 @@ export type Database = {
           body: string;
           recipients?: StepEmailRecipient[];
           created_at?: Timestamp;
+          status?: StepEmailStatus | null;
+          language?: EmailLanguage | null;
         };
-        Update: Partial<Database["public"]["Tables"]["checklist_step_emails"]["Insert"]>;
+        Update: never; // revogado no banco — ver comentário da tabela
+        Relationships: [];
+      };
+      country_language_defaults: {
+        Row: { country_id: UUID; language: EmailLanguage };
+        Insert: { country_id: UUID; language: EmailLanguage };
+        Update: Partial<{ country_id: UUID; language: EmailLanguage }>;
         Relationships: [];
       };
     };

@@ -1537,6 +1537,7 @@ export function OrderDetailClient({
                         feature="orders"
                         defaultSubject={`${order.po_number} - Order - ${STEP_LABELS[s.step]}`}
                         recordPath={`/orders/${orderId}`}
+                        responsibleId={s.responsible_id}
                       />
                       {s.step === "po" && (
                         <Button

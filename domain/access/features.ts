@@ -45,6 +45,12 @@ export const FEATURES = {
     routes: ["/todo"],
     actions: ["view", "edit"],
   },
+  email_history: {
+    // Lista derivada de checklist_step_emails — só leitura (Fase 2.1 US3).
+    label: "Email history",
+    routes: ["/emails"],
+    actions: ["view"],
+  },
   registration: {
     label: "Registration",
     routes: ["/registration"],

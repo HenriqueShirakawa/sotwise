@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { requireFeature, requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
-import { checklistStepEmailHtml, type StepEmailFacts } from "@/lib/email/checklist-step";
+import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, StepEmailRecipient } from "@/types/database";
@@ -30,6 +30,8 @@ export type StepEmailRow = {
   sender_name: string;
   recipients: StepEmailRecipient[];
   created_at: string;
+  /** Nulo só em linhas de antes da Fase 2.1 (coluna aditiva, sem backfill). */
+  status: "success" | "partial" | "failed" | null;
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -123,6 +125,60 @@ async function loadStepFacts(admin: Admin, owner: StepOwner, stepId: string): Pr
   };
 }
 
+/** Cliente(s) do pedido/PL por trás da etapa — Order tem 1 (`orders.client_id`),
+ *  Pre-loading/Shipment pode ter N (`pre_loading_clients`, consolidação). */
+async function loadOwnerClientIds(admin: Admin, owner: StepOwner, stepId: string): Promise<string[]> {
+  if (owner.kind === "order") {
+    const { data: step } = await admin
+      .from("order_checklist_steps")
+      .select("order_id")
+      .eq("id", stepId)
+      .maybeSingle();
+    if (!step?.order_id) return [];
+    const { data: order } = await admin
+      .from("orders")
+      .select("client_id")
+      .eq("id", step.order_id)
+      .maybeSingle();
+    return order?.client_id ? [order.client_id] : [];
+  }
+  const { data: rows } = await admin
+    .from("pre_loading_clients")
+    .select("client_id")
+    .eq("pre_loading_id", owner.preLoadingId);
+  return (rows ?? []).map((r) => r.client_id);
+}
+
+/**
+ * Idioma do template (Fase 2.1 — User Story 1). Fonte primária:
+ * `clients.language` (hoje sempre nulo — o GSS não manda idioma no customer,
+ * confirmado batendo no endpoint ao vivo em 09/09; fica como override manual
+ * ou gancho para um campo futuro do GSS). Fallback: `country_language_defaults`
+ * pelo país do cliente. Sem cliente/país mapeado → 'en', nunca bloqueia o envio
+ * (RN03). PL/Shipment com múltiplos clientes usa o primeiro que resolver.
+ */
+async function resolveLanguage(admin: Admin, owner: StepOwner, stepId: string): Promise<EmailLanguage> {
+  const clientIds = await loadOwnerClientIds(admin, owner, stepId);
+  if (clientIds.length === 0) return "en";
+
+  const { data: clients } = await admin
+    .from("clients")
+    .select("id, language, country_id")
+    .in("id", clientIds);
+
+  const withLanguage = (clients ?? []).find((c) => c.language);
+  if (withLanguage?.language) return withLanguage.language as EmailLanguage;
+
+  const countryIds = [...new Set((clients ?? []).map((c) => c.country_id).filter((id): id is string => Boolean(id)))];
+  if (countryIds.length === 0) return "en";
+
+  const { data: defaults } = await admin
+    .from("country_language_defaults")
+    .select("country_id, language")
+    .in("country_id", countryIds);
+  return (defaults?.[0]?.language as EmailLanguage | undefined) ?? "en";
+}
+
 /**
  * Quem é `client` entre os destinatários escolhidos — é o que decide se o
  * e-mail dele traz os campos internos e o botão "Go to" (ver `sendStepEmail`).
@@ -163,7 +219,7 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
 
   const { data } = await admin
     .from("checklist_step_emails")
-    .select("id, subject, body, sender_id, recipients, created_at")
+    .select("id, subject, body, sender_id, recipients, created_at, status")
     .eq(ownerColumn(owner), stepId)
     .order("created_at", { ascending: false });
 
@@ -184,6 +240,7 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     sender_name: nameById.get(r.sender_id) ?? "—",
     recipients: r.recipients,
     created_at: r.created_at,
+    status: r.status,
   }));
 }
 
@@ -229,10 +286,11 @@ export async function sendStepEmail(
     .in("id", recipientIds);
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
 
-  const [facts, isClientById, origin] = await Promise.all([
+  const [facts, isClientById, origin, language] = await Promise.all([
     loadStepFacts(admin, owner, stepRow.id),
     loadIsClientByUserId(admin, recipientIds),
     currentOrigin(),
+    resolveLanguage(admin, owner, stepRow.id),
   ]);
   const actionUrl = origin ? `${origin}${parsed.data.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
@@ -240,7 +298,7 @@ export async function sendStepEmail(
   // Destinatário `client` nunca recebe Estimated date/Responsible/Completed
   // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
   // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
-  // O logo é só marca — vai pros dois.
+  // O logo é só marca — vai pros dois. Idioma (Fase 2.1 US1) é o mesmo pros dois.
   const internalHtml = checklistStepEmailHtml({
     subject: parsed.data.subject,
     senderName: session.profile.full_name,
@@ -248,12 +306,14 @@ export async function sendStepEmail(
     facts,
     actionUrl,
     logoUrl,
+    language,
   });
   const clientHtml = checklistStepEmailHtml({
     subject: parsed.data.subject,
     senderName: session.profile.full_name,
     body: parsed.data.body,
     logoUrl,
+    language,
   });
 
   const recipients: StepEmailRecipient[] = [];
@@ -281,17 +341,24 @@ export async function sendStepEmail(
       ? { checklist_step_id: stepRow.id, pre_loading_step_id: null }
       : { checklist_step_id: null, pre_loading_step_id: stepRow.id };
 
+  // Status computado uma vez e congelado (Fase 2.1 US3) — nunca recalculado a
+  // partir de `recipients` na leitura.
+  const sent = recipients.filter((r) => r.ok).length;
+  const failed = recipients.length - sent;
+  const status: "success" | "partial" | "failed" =
+    sent === recipients.length ? "success" : sent === 0 ? "failed" : "partial";
+
   const { error: insertError } = await admin.from("checklist_step_emails").insert({
     ...ownerFields,
     sender_id: session.userId,
     subject: parsed.data.subject,
     body: parsed.data.body,
     recipients,
+    status,
+    language,
   });
   if (insertError) return { ok: false, error: insertError.message };
 
-  const sent = recipients.filter((r) => r.ok).length;
-  const failed = recipients.length - sent;
   if (sent === 0) return { ok: false, error: "Could not deliver to any recipient." };
   return { ok: true, sent, failed };
 }
