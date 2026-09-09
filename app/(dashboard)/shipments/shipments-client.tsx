@@ -372,7 +372,7 @@ export function ShipmentsClient({
         headerColumnIds={["status"]}
         emptyMessage="No shipments found."
         breakpoint="720"
-        onRowClick={(row) => router.push(`/shipments/${row.original.id}`)}
+        onRowClick={(row) => router.push(`/shipments/${row.original.pl_number}`)}
       />
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
@@ -399,7 +399,7 @@ export function ShipmentsClient({
                 <TableRow
                   key={row.id}
                   className="cursor-pointer hover:bg-slate-50/60"
-                  onClick={() => router.push(`/shipments/${row.original.id}`)}
+                  onClick={() => router.push(`/shipments/${row.original.pl_number}`)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">

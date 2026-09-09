@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { isUuid } from "@/lib/slugs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   broadcastMessagePing,
@@ -60,6 +61,37 @@ async function loadPeople(currentUserId: string): Promise<Option[]> {
  * Thread de UM registro (a view de dentro do checklist). Todo mundo que abre o
  * registro vê o histórico completo, tenha sido marcado ou não.
  */
+/**
+ * `message-fab.tsx` extrai o pedaço da URL depois de `/orders/`, `/pre-loading/`
+ * ou `/shipments/` pra saber qual thread abrir — hoje esse pedaço pode ser o
+ * po_number/pl_number (link novo) em vez do UUID (link antigo), mas
+ * `entity_id` no banco continua sendo sempre o UUID de verdade. Resolve o
+ * segmento pro UUID real antes de carregar a thread.
+ */
+export async function resolveEntityIdFromSlug(
+  entityType: MessageEntity,
+  slugOrId: string
+): Promise<string | null> {
+  await requireInternal();
+  if (isUuid(slugOrId)) return slugOrId;
+
+  const admin = createAdminClient();
+  if (entityType === "order") {
+    const { data } = await admin.from("orders").select("id").eq("po_number", slugOrId).maybeSingle();
+    return data?.id ?? null;
+  }
+  // pre_loading e shipment (1:1) resolvem os dois pelo pl_number do PL.
+  const { data: pl } = await admin.from("pre_loadings").select("id").eq("pl_number", slugOrId).maybeSingle();
+  if (!pl) return null;
+  if (entityType === "pre_loading") return pl.id;
+  const { data: shipment } = await admin
+    .from("shipments")
+    .select("id")
+    .eq("pre_loading_id", pl.id)
+    .maybeSingle();
+  return shipment?.id ?? null;
+}
+
 export async function loadThread(
   entityType: MessageEntity,
   entityId: string

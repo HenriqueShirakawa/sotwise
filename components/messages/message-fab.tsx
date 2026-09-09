@@ -9,9 +9,11 @@ import {
   loadThread,
   loadUnreadCount,
   markThreadRead,
+  resolveEntityIdFromSlug,
   sendMessage,
   type ThreadPayload,
 } from "@/lib/messages-actions";
+import { isUuid } from "@/lib/slugs";
 import type { MessageEntity } from "@/types/database";
 import { MESSAGES_POLL_LIVE_MS, MESSAGES_POLL_MS } from "@/lib/messages-channel";
 import { useMessagesRealtime } from "@/lib/use-messages-realtime";
@@ -56,7 +58,39 @@ function entityFromPath(pathname: string): { type: MessageEntity; id: string } |
 export function MessageFab({ initialUnread }: { initialUnread: number }) {
   const pathname = usePathname();
   /** Estável: é dependência do refresh — recriar recarregaria em loop. */
-  const entity = useMemo(() => entityFromPath(pathname), [pathname]);
+  const rawEntity = useMemo(() => entityFromPath(pathname), [pathname]);
+
+  // O pedaço da URL pode ser o po_number/pl_number (link novo) em vez do UUID
+  // — resolve pro id real antes de abrir a thread (que é sempre por UUID).
+  // UUID em si não precisa de round-trip nenhum, é usado direto. `rawEntity`
+  // muda de referência a cada navegação (useMemo acima), então comparar contra
+  // ele descarta sozinho uma resolução antiga sem precisar resetar o estado à
+  // mão dentro do efeito (o que a lint de "no setState síncrono em efeito"
+  // rejeitaria).
+  const [slugResolution, setSlugResolution] = useState<{
+    forRawEntity: { type: MessageEntity; id: string };
+    entity: { type: MessageEntity; id: string } | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!rawEntity || isUuid(rawEntity.id)) return;
+    let cancelled = false;
+    resolveEntityIdFromSlug(rawEntity.type, rawEntity.id).then((id) => {
+      if (!cancelled) {
+        setSlugResolution({ forRawEntity: rawEntity, entity: id ? { type: rawEntity.type, id } : null });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rawEntity]);
+
+  const entity =
+    rawEntity && isUuid(rawEntity.id)
+      ? rawEntity
+      : rawEntity && slugResolution?.forRawEntity === rawEntity
+        ? slugResolution.entity
+        : null;
 
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(initialUnread);

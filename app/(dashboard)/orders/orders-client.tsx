@@ -652,7 +652,7 @@ export function OrdersClient({
         headerColumnIds={["status", "actions"]}
         emptyMessage="No orders found."
         breakpoint="720"
-        onRowClick={(row) => router.push(`/orders/${row.original.id}`)}
+        onRowClick={(row) => router.push(`/orders/${row.original.po_number}`)}
       />
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
@@ -679,7 +679,7 @@ export function OrdersClient({
                 <TableRow
                   key={row.id}
                   className="cursor-pointer hover:bg-slate-50/60"
-                  onClick={() => router.push(`/orders/${row.original.id}`)}
+                  onClick={() => router.push(`/orders/${row.original.po_number}`)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">

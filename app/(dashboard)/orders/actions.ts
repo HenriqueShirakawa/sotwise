@@ -80,7 +80,7 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
     const { data, error } = await admin
       .from("orders")
       .insert({ ...fields, po_number: poNumber })
-      .select("id")
+      .select("id, po_number")
       .single();
     if (!error) {
       // As 10 etapas da fase Order nascem junto com o pedido pelo trigger
@@ -89,7 +89,7 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
       // GSS, SQL manual) ganhe o checklist. Sem ele a order abriria com
       // "No checklist steps for this order.".
       revalidatePath(PATH);
-      return { ok: true, id: data.id };
+      return { ok: true, id: data.id, po_number: data.po_number };
     }
     // Só a corrida de po_number (23505) justifica recalcular e tentar de novo;
     // qualquer outro erro sai na hora.

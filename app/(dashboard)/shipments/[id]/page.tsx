@@ -8,6 +8,7 @@ import {
   plStepFacts,
 } from "@/lib/checklist-completion";
 import { fetchAll } from "@/lib/fetch-all";
+import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep, LoadingStatus } from "@/types/database";
@@ -75,14 +76,32 @@ export default async function ShipmentDetailPage({
   const { id } = await params;
   const admin = createAdminClient();
 
-  const { data: shipment } = await admin
-    .from("shipments")
-    .select(
-      "id, pre_loading_id, shipment_model_id, carrier_id, container_number, leader_id, signer_id, status"
-    )
-    .eq("id", id)
-    .is("deleted_at", null)
-    .single();
+  // URL aceita o pl_number do PL dono (shipment é 1:1 com pre_loading, não tem
+  // número próprio) OU o UUID interno do shipment (link antigo).
+  const shipmentColumns =
+    "id, pre_loading_id, shipment_model_id, carrier_id, container_number, leader_id, signer_id, status";
+  const { data: shipment } = isUuid(id)
+    ? await admin
+        .from("shipments")
+        .select(shipmentColumns)
+        .eq("id", id)
+        .is("deleted_at", null)
+        .single()
+    : await (async () => {
+        const { data: plBySlug } = await admin
+          .from("pre_loadings")
+          .select("id")
+          .eq("pl_number", id)
+          .is("deleted_at", null)
+          .maybeSingle();
+        if (!plBySlug) return { data: null };
+        return admin
+          .from("shipments")
+          .select(shipmentColumns)
+          .eq("pre_loading_id", plBySlug.id)
+          .is("deleted_at", null)
+          .single();
+      })();
 
   if (!shipment) notFound();
 

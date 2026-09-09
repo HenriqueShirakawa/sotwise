@@ -146,7 +146,7 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
 
   // O número é calculado aqui (não no cliente) porque `pl_number` é unique.
   // Numa colisão por concorrência, recalcula e tenta de novo uma vez.
-  let created: { id: string } | null = null;
+  let created: { id: string; pl_number: string } | null = null;
   let lastError = "";
   for (let attempt = 0; attempt < 2 && !created; attempt++) {
     const { data, error } = await admin
@@ -159,7 +159,7 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
         leader_id: d.leader_id,
         created_by: session.userId,
       })
-      .select("id")
+      .select("id, pl_number")
       .single();
     if (error) {
       lastError = error.code === "23505" ? "PL number already taken, try again." : error.message;
@@ -193,7 +193,7 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
   revalidatePath(PATH);
   revalidatePath("/orders"); // os lotes selecionados mudaram de fase
   await broadcastPreLoadingPing(); // lista Pre-loading aberta reflete o PL novo
-  return { ok: true, id: preLoadingId };
+  return { ok: true, id: preLoadingId, pl_number: created.pl_number };
 }
 
 export async function updatePreLoading(

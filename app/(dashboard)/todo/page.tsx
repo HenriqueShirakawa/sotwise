@@ -165,7 +165,7 @@ export default async function TodoPage() {
         date_preview: s.estimated_date,
         client: clientName,
         client_ids: order.client_id ? [order.client_id] : [],
-        href: `/orders/${order.id}`,
+        href: `/orders/${order.po_number}`,
       },
     ];
   });
@@ -182,19 +182,22 @@ export default async function TodoPage() {
     const pos = posByPl.get(s.pre_loading_id);
     const cl = clientsByPl.get(s.pre_loading_id);
     const shipmentId = shipmentIdByPl.get(s.pre_loading_id);
+    const plNumber = plNumberById.get(s.pre_loading_id);
     return [
       {
         id: s.id,
         phase: isShipment ? ("shipment" as const) : ("preloading" as const),
         po_number: pos ? [...pos].sort().join(", ") : null,
-        pl_number: plNumberById.get(s.pre_loading_id) ?? null,
+        pl_number: plNumber ?? null,
         step: s.step,
         status: null,
         responsible: profile.full_name,
         date_preview: s.estimated_date,
         client: cl ? [...cl.names].sort().join(", ") || null : null,
         client_ids: cl ? [...cl.ids] : [],
-        href: shipmentId ? `/shipments/${shipmentId}` : `/pre-loading/${s.pre_loading_id}`,
+        href: shipmentId
+          ? `/shipments/${plNumber ?? shipmentId}`
+          : `/pre-loading/${plNumber ?? s.pre_loading_id}`,
       },
     ];
   });

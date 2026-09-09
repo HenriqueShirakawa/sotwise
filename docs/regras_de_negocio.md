@@ -1205,6 +1205,16 @@ Pedido do cliente: poder **responder** o e-mail manual de etapa direto da caixa 
 - **Sem bell/badge novo:** o indicador de "não lida" é local a `step-email-section.tsx` (etapa) e `/emails` — carregado ao abrir a tela, sem push em tempo real. O FAB/canal realtime de Mensagens não foi tocado (módulo propositalmente separado, ver §Módulo de mensagens).
 - **Fora de escopo desta rodada:** anexos na resposta (Resend entrega só metadados do anexo, exigiria mais uma chamada), push em tempo real do indicador de não lida, tela dedicada só de respostas, forward/CC automático da resposta pra fora do SOTWISE.
 
+##### URLs amigáveis para Order/Pre-loading/Shipment (decisão 2026-09-09)
+
+Pedido do cliente: trocar `/orders/<uuid>` por `/orders/<po_number>` (ex.: `/orders/1601`) — viu o UUID feio no botão "Acessar" de um e-mail. Aplicado nos três tipos de registro, sem quebrar link antigo:
+
+- **As duas URLs convivem, sem redirect.** As páginas `orders/[id]`, `pre-loading/[id]` e `shipments/[id]` detectam se o segmento é um UUID (`isUuid()` em `lib/slugs.ts`) e buscam por `id` OU por `po_number`/`pl_number` conforme o caso. Link antigo (já mandado por e-mail, ex. o botão "Acessar"/`recordPath` do checklist) continua abrindo normalmente — de propósito NÃO foi trocado pra usar o número bonito, porque precisa durar pra sempre em caixa de entrada já recebida.
+- **Shipment não tem número próprio — usa o `pl_number` do seu PL** (`shipments.pre_loading_id` é `unique`, 1:1 confirmado). A rota `/shipments/<pl_number>` primeiro acha o `pre_loading` pelo `pl_number`, depois o shipment por `pre_loading_id`.
+- **`message-fab.tsx` extrai o id do próprio pathname** (`entityFromPath`) pra saber qual thread abrir — como agora esse pedaço pode ser o número bonito em vez do UUID, uma nova action `resolveEntityIdFromSlug` (`lib/messages-actions.ts`) resolve pro UUID de verdade antes de chamar `loadThread`/`sendMessage` (que continuam exigindo UUID). Sem esse resolver o balão de mensagens ficaria mudo (sem erro visível) em toda página de Order/Pre-loading/Shipment.
+- **`revalidatePath` passou a usar o padrão da rota** (`revalidatePath("/orders/[id]", "page")`) em vez da URL literal com o UUID — a página existe em duas URLs, e só invalidar a literal deixaria a URL bonita com cache velho até um F5 manual.
+- Todos os links NOVOS (listas de Orders/Pre-loading/Shipments, To do, Copilot, criação de Order/Pre-loading) passaram a usar o número bonito.
+
 #### Camada 2 do RBAC — "Profile Filters for Steps" (rua 25), 🔴 escopo indefinido
 
 Depois de ler o card da rua 25 (**Users → Profile Step Permissions**), o desenho real desta funcionalidade ficou claro — e é diferente de uma matriz de permissão positiva:

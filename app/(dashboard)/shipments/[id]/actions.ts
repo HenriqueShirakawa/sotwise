@@ -28,8 +28,11 @@ export type ShipmentStepPatch = Partial<{
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-function paths(shipmentId: string) {
-  return [`/shipments/${shipmentId}`, "/shipments"];
+/** Pelo padrão da rota, não por valor: a página de Shipment vive em duas URLs
+ *  (pl_number bonito e UUID antigo) — isto invalida as duas de uma vez. */
+function revalidateShipmentViews() {
+  revalidatePath("/shipments/[id]", "page");
+  revalidatePath("/shipments");
 }
 
 /**
@@ -167,7 +170,7 @@ export async function saveShipmentStep(
     if (ruleError) return { ok: false, error: ruleError };
   }
 
-  for (const p of paths(shipmentId)) revalidatePath(p);
+  revalidateShipmentViews();
   // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
   revalidatePath("/todo");
   // Realtime: colunas da lista Shipments (datas/status) mudaram — atualiza quem
@@ -216,7 +219,7 @@ export async function uploadShipmentStepAttachment(
     return { ok: false, error: insertError.message };
   }
 
-  for (const p of paths(shipmentId)) revalidatePath(p);
+  revalidateShipmentViews();
   return { ok: true };
 }
 
@@ -263,7 +266,7 @@ export async function deleteShipmentStepAttachment(
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
-  for (const p of paths(shipmentId)) revalidatePath(p);
+  revalidateShipmentViews();
   return { ok: true };
 }
 
