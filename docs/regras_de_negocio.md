@@ -1224,6 +1224,25 @@ Pedido do cliente: trocar `/orders/<uuid>` por `/orders/<po_number>` (ex.: `/ord
 - **`revalidatePath` passou a usar o padrão da rota** (`revalidatePath("/orders/[id]", "page")`) em vez da URL literal com o UUID — a página existe em duas URLs, e só invalidar a literal deixaria a URL bonita com cache velho até um F5 manual.
 - Todos os links NOVOS (listas de Orders/Pre-loading/Shipments, To do, Copilot, criação de Order/Pre-loading) passaram a usar o número bonito.
 
+> 🐛 **Bug corrigido (10/09):** em `pre-loading/[id]/page.tsx`, a resolução do slug (linha ~91) já achava o PL certo por `pl_number`, mas as 3 queries seguintes (`pre_loading_clients`, `pre_loading_batches`, `pre_loading_checklist_steps`) continuaram filtrando pelo **parâmetro cru da URL** (`id`, ex. `"1422"`) em vez do UUID resolvido (`pl.id`) — como essas colunas são UUID, a comparação nunca batia, e todo PL aberto pelo link novo vinha sem lotes/clientes/checklist (a lista, que não passa pelo slug, mostrava os dados normalmente — foi o que revelou o bug). `orders/[id]` e `shipments/[id]` já usavam `order.id`/`pl.id` corretamente, só o Pre-loading tinha o descuido.
+
+##### Upload de anexo trava em arquivo grande (bug corrigido, 10/09/2026)
+
+Cliente reportou: anexar um PO em `.xlsm` de ~11MB quebra a tela ("This page couldn't load", erro de rede cru, não um toast); um `.xlsx` de 25KB funciona normal. **Não é o formato do arquivo** — as actions de upload (`uploadStepAttachment` em Order/Pre-loading/Shipment) já validam até 20MB (`MAX_FILE_BYTES`) sem checar extensão. São **dois limites do Next.js**, nenhum configurado em `next.config.ts`, cada um cortando o pedido ANTES do código da action rodar:
+
+- `experimental.serverActions.bodySizeLimit` — default **1MB** pro corpo de uma Server Action.
+- `experimental.proxyClientMaxBodySize` (ex-`middlewareClientMaxBodySize`, renomeado na migração `middleware.ts`→`proxy.ts` do Next 16 — ver `node_modules/next/dist/docs/.../codemods.md`) — default **10MB** pro corpo que o `proxy.ts` (roda em toda request) bufferiza. Passar disso trunca o multipart a meio, e o parser da Server Action quebra com `Error: Unexpected end of form` — é esse o erro por trás do "couldn't load" (confirmado no log do dev server; sem isso pareceria só "deu erro", sem pista).
+
+Os dois subiram pra `21mb` (20MB + folga pro overhead do multipart). Testado localmente com um arquivo sintético de 11MB via `File`/`DataTransfer` — sem isso, 500 com `Unexpected end of form`; com isso, upload completo (`uploadStepAttachment` rodou em ~3.1s, virou o 2° anexo de verdade). A etapa "não completar automaticamente" que o cliente notou era consequência do upload nunca ter sucedido, não um bug à parte.
+
+##### ETD: Current Date virava a data de hoje + Initial Date sem trava (bug corrigido, 10/09/2026)
+
+Cliente reportou dois problemas na tabela ETD de Orders (`etd-step.tsx`): (1) o usuário edita "Initial Date" livremente na linha, sem trava e sem passar pelo modal "ETD update" como os outros campos; (2) ao gravar o primeiro "Initial Date" de uma linha, o sistema grava em "Current Date" a data **de hoje** — o conceito de Current Date é a data ATUALIZADA que a fábrica prometeu, não a data em que alguém mexeu na tela.
+
+- **Bug do Current Date:** em `upsertEtdInfo` (`orders/[id]/actions.ts`), `update.current_date = new Date().toISOString().slice(0, 10)` virou `update.current_date = patch.initial_date` — Current Date nasce espelhando Initial Date (o "prometido" inicial), só diverge depois por uma correção OFICIAL via modal (que tem motivo obrigatório). Verificado direto no banco (bypassando cache/UI): setar Initial Date pra uma data futura específica gravou a MESMA data em Current Date, não a data do sistema.
+- **Initial Date entrou na mecânica de trava + correção do modal**, mesmo padrão de Ready/Inspection (ver nota ✅ acima): a `DatePicker` da linha trava (`disabled`) assim que a etapa tem um Initial Date gravado; corrigir depois de travado exige o modal "ETD update" (motivo obrigatório, vira linha em `etd_history`). Por consequência, `initial_date` entrou no snapshot de `etd_history` (`EtdHistorySnapshot`/`ETD_SAVED_COLUMNS`) e ganhou coluna própria no histórico do modal — antes só o campo "mudou" aparecia, sem o valor.
+- Testado ao vivo (não só tsc/eslint): linha nova (nunca tocada) → Initial Date setado pro dia 25 → Current Date acompanhou pro dia 25 (não hoje) → linha travou → reaberta no modal, "Initial Date" aparece como opção, pré-preenche com o valor atual, corrige com motivo e fica no histórico. Confirmado via query direta no Supabase (`etd_info`/`etd_history`), não só pela tela.
+
 #### Camada 2 do RBAC — "Profile Filters for Steps" (rua 25), 🔴 escopo indefinido
 
 Depois de ler o card da rua 25 (**Users → Profile Step Permissions**), o desenho real desta funcionalidade ficou claro — e é diferente de uma matriz de permissão positiva:

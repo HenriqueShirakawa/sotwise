@@ -457,8 +457,11 @@ export async function upsertEtdInfo(
     order_factory_category_id: ofcId,
     ...patch,
   };
+  // Current Date é a data ATUALIZADA que a fábrica prometeu — não a de hoje.
+  // Antes de qualquer correção oficial (via modal ETD update), espelha o
+  // Initial Date; nunca a data do sistema no momento do input.
   if (patch.initial_date && !existing?.current_date) {
-    update.current_date = new Date().toISOString().slice(0, 10);
+    update.current_date = patch.initial_date;
   }
   if (patch.ready === true && !existing?.ready_date) {
     update.ready_date = new Date().toISOString().slice(0, 10);
@@ -501,6 +504,7 @@ export type EtdHistorySnapshot = {
   inspection: boolean;
   ready: boolean;
   remarks: string | null;
+  initial_date: string | null;
   current_date: string | null;
   dispatch_location_name: string | null;
   dispatch_date: string | null;
@@ -517,13 +521,14 @@ type EtdSavedState = {
   inspection: boolean;
   ready: boolean;
   remarks: string | null;
+  initial_date: string | null;
   current_date: string | null;
   dispatch_location_id: string | null;
   dispatch_date: string | null;
 };
 
 const ETD_SAVED_COLUMNS =
-  "id, inspection, ready, remarks, current_date, dispatch_location_id, dispatch_date";
+  "id, inspection, ready, remarks, initial_date, current_date, dispatch_location_id, dispatch_date";
 
 /**
  * Grava uma linha de `etd_history` por campo alterado, com o snapshot completo
@@ -561,6 +566,7 @@ async function writeEtdHistory(
         inspection: saved.inspection,
         ready: saved.ready,
         remarks: saved.remarks,
+        initial_date: saved.initial_date,
         current_date: saved.current_date,
         dispatch_location_name: dispatchLocationName,
         dispatch_date: saved.dispatch_date,
