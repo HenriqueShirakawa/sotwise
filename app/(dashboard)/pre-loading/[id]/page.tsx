@@ -115,11 +115,11 @@ export default async function PreLoadingChecklistPage({
     fetchAll<{ id: string; full_name: string | null }>((from, to) =>
       admin.from("profiles").select("id, full_name").range(from, to)
     ),
-    admin.from("pre_loading_clients").select("client_id, clients(name)").eq("pre_loading_id", id),
+    admin.from("pre_loading_clients").select("client_id, clients(name)").eq("pre_loading_id", pl.id),
     admin
       .from("pre_loading_batches")
       .select("batch_id, batches(id, batch_number, status, orders(po_number, client_id))")
-      .eq("pre_loading_id", id),
+      .eq("pre_loading_id", pl.id),
     admin
       .from("pre_loading_checklist_steps")
       .select(
@@ -127,7 +127,7 @@ export default async function PreLoadingChecklistPage({
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
           "agent_china_id, contact_brazil_id, contact_china_id, booking_number"
       )
-      .eq("pre_loading_id", id)
+      .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),
     // Cadastros e vínculos dos seletores desta tela: paginados para nenhum ficar
     // cortado no teto de 1000 do PostgREST (ver lib/fetch-all).
