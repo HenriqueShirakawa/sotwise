@@ -71,6 +71,7 @@ export function StepEmailSection({
   const [stage, setStage] = useState<"compose" | "preview">("compose");
   const [preview, setPreview] = useState<StepEmailPreview | null>(null);
   const [previewVariant, setPreviewVariant] = useState<"client" | "internal">("client");
+  const [previewHeight, setPreviewHeight] = useState(240);
   const [history, setHistory] = useState<StepEmailRow[] | null>(null);
   const [recipientOptions, setRecipientOptions] = useState<Option[]>([]);
   const [recipientIds, setRecipientIds] = useState<string[]>([]);
@@ -126,6 +127,7 @@ export function StepEmailSection({
       }
       setPreview(res.preview);
       setPreviewVariant(res.preview.clientHtml ? "client" : "internal");
+      setPreviewHeight(240);
       setStage("preview");
     });
   }
@@ -288,14 +290,23 @@ export function StepEmailSection({
               )}
               <iframe
                 title="Email preview"
-                sandbox=""
+                sandbox="allow-same-origin"
                 srcDoc={
                   (previewVariant === "client" ? preview?.clientHtml : preview?.internalHtml) ??
                   preview?.clientHtml ??
                   preview?.internalHtml ??
                   ""
                 }
-                className="h-[420px] w-full rounded-md border bg-slate-50"
+                onLoad={(e) => {
+                  // Sem `allow-scripts` no sandbox — só lê o DOM (mesmo HTML
+                  // que a gente gerou) pra encaixar a altura no card de
+                  // verdade, sem sobra do fundo #f4f2f8 do template embaixo.
+                  const doc = e.currentTarget.contentWindow?.document;
+                  const contentHeight = doc?.body?.scrollHeight;
+                  if (contentHeight) setPreviewHeight(Math.min(Math.max(contentHeight, 200), 640));
+                }}
+                style={{ height: previewHeight }}
+                className="w-full rounded-md border"
               />
             </div>
           )}
