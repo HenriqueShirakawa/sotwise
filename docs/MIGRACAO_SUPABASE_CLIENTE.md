@@ -330,7 +330,7 @@ imediatamente antes da Fase B** — essa última é a que vale.
 2. Vercel → Settings → Environment Variables (**Production e Preview**):
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_URL`,
    `SUPABASE_SERVICE_ROLE_KEY`. As demais (`RESEND_*`, `GSS_*`, `CRON_SECRET`,
-   `ANTHROPIC_API_KEY`, `API_TOKEN`, `GSS_INBOUND_SECRET`) **não mudam**.
+   `ANTHROPIC_API_KEY`, `API_TOKEN`) **não mudam**.
 3. **Redeploy** (a Vercel não recarrega env var sem novo deploy).
 4. Rodar o roteiro de aceite do §9 de novo, agora em produção.
 5. Congelar a origem: pausar o projeto antigo só depois da validação — ele é o

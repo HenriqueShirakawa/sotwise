@@ -1,17 +1,17 @@
 # Postman — Orders GSS ↔ SOTWISE
 
-Coleção para testar os dois sentidos de **`/api/gss/orders`**: o **`POST`**, por onde o GSS agenda (schedule) orders no SOTWISE, e o **`GET`**, por onde o GSS lê de volta o status, o lote atribuído e o checklist.
+Coleção para testar os dois sentidos de **`/api/orders`**: o **`POST`**, por onde o GSS agenda (schedule) orders no SOTWISE, e o **`GET`**, por onde o GSS lê de volta o status, o lote atribuído e o checklist.
 
 ## Arquivos
 
 - `SOTWISE-GSS-Schedule-Orders.postman_collection.json` — a coleção com os cenários de teste
-- `SOTWISE-GSS.postman_environment.json` — variáveis de ambiente (base URL + segredo)
+- `SOTWISE-GSS.postman_environment.json` — variáveis de ambiente (base URL + token)
 
 ## Como usar
 
 1. No Postman: **Import** → arraste os dois arquivos.
 2. Selecione o environment **"SOTWISE — GSS (prod)"** no canto superior direito.
-3. Preencha a variável **`gss_inbound_secret`** com o valor de `GSS_INBOUND_SECRET` (o mesmo configurado na Vercel). É o segredo dedicado da integração — **não** é o `API_TOKEN` dos cadastros de `docs/API.md`.
+3. Preencha a variável **`api_token`** com o valor de `API_TOKEN` (o mesmo configurado na Vercel) — é o **mesmo token** usado pelos cadastros de `docs/API.md`, a API inteira compartilha um único mecanismo de auth.
 4. Rode requisição a requisição, ou use o **Collection Runner** para rodar tudo em sequência.
 
 ## O que cada requisição testa
@@ -49,4 +49,4 @@ Cada order criada **grava no banco de produção** e dispara o trigger `trg_orde
 
 > O `GET` é read-only: dá para rodar as requisições 9–12 contra produção à vontade, sem gravar nada.
 
-Referência do endpoint: `app/api/gss/orders/route.ts` · schema do POST: `domain/orders/gss-schema.ts` · leitura do GET: `domain/orders/gss-read.ts`.
+Referência do endpoint: `app/api/orders/route.ts` · schema do POST: `domain/orders/gss-schema.ts` · leitura do GET: `domain/orders/gss-read.ts`.

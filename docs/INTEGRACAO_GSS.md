@@ -23,21 +23,27 @@ Complementa [`docs/SCHEMA.md`](SCHEMA.md) (schema do nosso lado) e
 >
 > 📥 **Nova via _inbound_ (2026-08-24) — o GSS cria ORDERS.** Tudo neste
 > documento é _pull_ (SOTWISE puxa bibliotecas; GSS é dono delas). A partir de
-> agora o GSS também **empurra** pedidos: `POST /api/gss/orders` cria/atualiza
+> agora o GSS também **empurra** pedidos: `POST /api/orders` cria/atualiza
 > uma order no SOTWISE. É a **primeira via _push_ GSS → SOTWISE** e é de
 > **pedidos**, não de bibliotecas — direção oposta ao resto daqui. Contrato do
 > payload, idempotência (`orders.gss_id`) e a cascata do checklist (trigger
 > `trg_orders_seed_checklist`) estão em
 > [`docs/regras_de_negocio.md` §3.7.5](regras_de_negocio.md#375-order_checklist_steps--step_attachments).
-> Env: `GSS_INBOUND_SECRET`.
+> Env: `API_TOKEN`.
 >
-> 📤 **Volta da via (2026-09-01) — o GSS LÊ as orders.** `GET /api/gss/orders`,
-> mesmo path e mesmo secret do push. Fecha o ciclo: o GSS escrevia a order e não
+> 📤 **Volta da via (2026-09-01) — o GSS LÊ as orders.** `GET /api/orders`,
+> mesmo path e mesmo token do push. Fecha o ciclo: o GSS escrevia a order e não
 > tinha como saber o que virou dela (status, lote atribuído, checklist) — estado
 > que só existe no SOTWISE. Filtros (`gss_id`, `updated_since`, …), paginação e
 > os blocos opt-in `include=items,checklist` estão em
 > [`docs/SOTWISE-API-para-GSS.md` §1.5](SOTWISE-API-para-GSS.md). Só código
 > (`domain/orders/gss-read.ts`), sem migration.
+>
+> 🔧 **Auth unificada (2026-09-10).** `/api/gss/orders` virou `/api/orders` e
+> o secret dedicado `GSS_INBOUND_SECRET` foi aposentado em favor do `API_TOKEN`
+> que a API de Bibliotecas já usava (`requireApiSession()`, lib/api-auth.ts) —
+> mesmo header nas duas áreas. Seguro trocar direto (sem período de transição)
+> porque o GSS ainda não tinha implementado a chamada de Orders do lado deles.
 
 ---
 

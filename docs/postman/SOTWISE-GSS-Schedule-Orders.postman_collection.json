@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SOTWISE — GSS Orders (POST + GET)",
-    "description": "Teste da via inbound GSS → SOTWISE que agenda (schedule) orders.\n\nEndpoints: POST /api/gss/orders (o GSS cria/atualiza) e GET /api/gss/orders (o GSS lê status, lote e checklist)\nAuth: Authorization: Bearer {{gss_inbound_secret}} (server-to-server, NÃO é o API_TOKEN dos cadastros)\n\nO campo central do agendamento é `schedule_requested` (data YYYY-MM-DD). O POST é idempotente por `gss_id`: reenviar o mesmo gss_id ATUALIZA a order (não duplica). `po_number` é unique no banco — colisão devolve 409. O checklist das 10 etapas é semeado pelo trigger `trg_orders_seed_checklist` a cada INSERT.\n\nRode a collection inteira em ordem (Runner): as requisições geram um gss_id/po_number únicos por execução, então não colidem entre rodadas.",
+    "description": "Teste da via inbound GSS → SOTWISE que agenda (schedule) orders.\n\nEndpoints: POST /api/orders (o GSS cria/atualiza) e GET /api/orders (o GSS lê status, lote e checklist)\nAuth: Authorization: Bearer {{api_token}} (mesmo token usado pelos cadastros — API única, um só token)\n\nO campo central do agendamento é `schedule_requested` (data YYYY-MM-DD). O POST é idempotente por `gss_id`: reenviar o mesmo gss_id ATUALIZA a order (não duplica). `po_number` é unique no banco — colisão devolve 409. O checklist das 10 etapas é semeado pelo trigger `trg_orders_seed_checklist` a cada INSERT.\n\nRode a collection inteira em ordem (Runner): as requisições geram um gss_id/po_number únicos por execução, então não colidem entre rodadas.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -9,7 +9,7 @@
     "bearer": [
       {
         "key": "token",
-        "value": "{{gss_inbound_secret}}",
+        "value": "{{api_token}}",
         "type": "string"
       }
     ]
@@ -71,13 +71,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -122,13 +121,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -171,13 +169,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -221,13 +218,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -265,13 +261,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -312,13 +307,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -359,13 +353,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -406,13 +399,12 @@
           }
         ],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders",
+          "raw": "{{base_url}}/api/orders",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ]
         },
@@ -452,13 +444,12 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders?limit=5&order=desc",
+          "raw": "{{base_url}}/api/orders?limit=5&order=desc",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ],
           "query": [
@@ -500,13 +491,12 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders?gss_id={{run_gss_id}}&include=items,checklist",
+          "raw": "{{base_url}}/api/orders?gss_id={{run_gss_id}}&include=items,checklist",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ],
           "query": [
@@ -553,13 +543,12 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders?updated_since=2026-01-01T00:00:00Z&order=asc&limit=50",
+          "raw": "{{base_url}}/api/orders?updated_since=2026-01-01T00:00:00Z&order=asc&limit=50",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ],
           "query": [
@@ -605,13 +594,12 @@
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{base_url}}/api/gss/orders?status=nao_existe",
+          "raw": "{{base_url}}/api/orders?status=nao_existe",
           "host": [
             "{{base_url}}"
           ],
           "path": [
             "api",
-            "gss",
             "orders"
           ],
           "query": [

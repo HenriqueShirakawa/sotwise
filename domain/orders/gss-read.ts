@@ -52,7 +52,7 @@ const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
 
 /**
- * Query string do `GET /api/gss/orders`. Tudo opcional: sem filtro nenhum a
+ * Query string do `GET /api/orders`. Tudo opcional: sem filtro nenhum a
  * resposta é a página mais recente. `updated_since` é o gancho de sincronização
  * incremental do GSS (combina com `order=asc` para varrer em ordem cronológica).
  */

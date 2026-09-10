@@ -4,7 +4,7 @@
  * Decisão de 2026-09-01: o id da order no GSS é o mesmo número que aqui é o
  * `po_number`. Este script confere essa hipótese caso a caso e, com `--commit`,
  * grava `orders.gss_id = String(id do GSS)` — a chave natural que torna o
- * `POST /api/gss/orders` idempotente (ver 20260824120000_gss_orders_inbound.sql).
+ * `POST /api/orders` idempotente (ver 20260824120000_gss_orders_inbound.sql).
  *
  * NÃO grava nada sem `--commit`, e nunca sobrescreve um `gss_id` já preenchido
  * com valor diferente (isso vira conflito relatado, não update silencioso).
