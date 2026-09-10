@@ -19,10 +19,13 @@ const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
 
 /**
  * To do list (docs §3.12.2). VIEW read-only sobre as etapas de checklist
- * pendentes (`completed_on IS NULL`) do usuário logado, unindo Orders e
- * Pre-loading/Shipment. Montada no server component (padrão do repo, sem VIEW
- * no banco). O conjunto é sempre pequeno — só as tarefas do próprio usuário —,
- * então resolvemos os relacionamentos por id, sem paginação em bloco.
+ * pendentes (`completed_on IS NULL`), unindo Orders e Pre-loading/Shipment.
+ * Montada no server component (padrão do repo, sem VIEW no banco). Escopo por
+ * role: `admin` vê a pendência de TODOS os usuários (com filtro extra de
+ * Responsible na tela); qualquer outro papel só vê a própria — mesmo conjunto
+ * pequeno de sempre. Mesmo admin vendo tudo, o total do sistema inteiro fica
+ * na casa de ~1000 linhas (ver docs), então resolvemos os relacionamentos por
+ * id, sem paginação em bloco.
  *
  * Filtro extra ao esqueleto da doc: etapa pendente de um registro em status
  * terminal (Order/Shipment delivered ou canceled) NÃO é listada — a esteira
@@ -32,7 +35,7 @@ const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
 export const metadata = { title: "To do list" };
 
 export default async function TodoPage() {
-  const { userId, profile } = await requireFeature("todo");
+  const { userId, isAdmin, profile } = await requireFeature("todo");
   const admin = createAdminClient();
 
   const inIds = async <T,>(
@@ -44,33 +47,43 @@ export default async function TodoPage() {
     return data ?? [];
   };
 
-  // Etapas pendentes do usuário. Order tem `enabled` (etapa N/A não é tarefa);
-  // pre-loading não tem esse conceito.
-  const [orderStepsRes, plStepsRes] = await Promise.all([
-    admin
-      .from("order_checklist_steps")
-      .select("id, order_id, step, estimated_date")
-      .eq("responsible_id", userId)
-      .eq("enabled", true)
-      .is("completed_on", null),
-    admin
-      .from("pre_loading_checklist_steps")
-      .select("id, pre_loading_id, step, estimated_date")
-      .eq("responsible_id", userId)
-      .is("completed_on", null),
-  ]);
+  // Etapas pendentes — admin vê a união da lista de todo mundo, os demais só a
+  // própria (mesmo filtro de sempre). Mesmo pra admin, `responsible_id` nulo
+  // (resíduo de migração — etapa nunca teve alguém designado) fica de fora:
+  // não é o "to-do" de ninguém, é trabalho não atribuído, outra categoria.
+  // Order tem `enabled` (etapa N/A não é tarefa); pre-loading não tem esse conceito.
+  let orderStepsQuery = admin
+    .from("order_checklist_steps")
+    .select("id, order_id, step, estimated_date, responsible_id")
+    .eq("enabled", true)
+    .is("completed_on", null);
+  orderStepsQuery = isAdmin
+    ? orderStepsQuery.not("responsible_id", "is", null)
+    : orderStepsQuery.eq("responsible_id", userId);
+
+  let plStepsQuery = admin
+    .from("pre_loading_checklist_steps")
+    .select("id, pre_loading_id, step, estimated_date, responsible_id")
+    .is("completed_on", null);
+  plStepsQuery = isAdmin
+    ? plStepsQuery.not("responsible_id", "is", null)
+    : plStepsQuery.eq("responsible_id", userId);
+
+  const [orderStepsRes, plStepsRes] = await Promise.all([orderStepsQuery, plStepsQuery]);
 
   const orderSteps = (orderStepsRes.data ?? []) as {
     id: string;
     order_id: string;
     step: ChecklistStep;
     estimated_date: string | null;
+    responsible_id: string | null;
   }[];
   const plSteps = (plStepsRes.data ?? []) as {
     id: string;
     pre_loading_id: string;
     step: ChecklistStep;
     estimated_date: string | null;
+    responsible_id: string | null;
   }[];
 
   const plIds = new Set(plSteps.map((s) => s.pre_loading_id));
@@ -124,6 +137,17 @@ export default async function TodoPage() {
   );
   const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
 
+  // Responsible de cada etapa — sempre o próprio usuário logado quando não é
+  // admin (a query já veio filtrada), mas pode ser qualquer um na visão admin.
+  const responsibleIds = new Set<string>();
+  for (const s of orderSteps) if (s.responsible_id) responsibleIds.add(s.responsible_id);
+  for (const s of plSteps) if (s.responsible_id) responsibleIds.add(s.responsible_id);
+  const responsibleProfiles = await inIds<{ id: string; full_name: string }>(
+    responsibleIds,
+    (list) => admin.from("profiles").select("id, full_name").in("id", list)
+  );
+  const responsibleNameById = new Map(responsibleProfiles.map((p) => [p.id, p.full_name]));
+
   const plNumberById = new Map(preLoadings.map((p) => [p.id, p.pl_number]));
   const shipmentIdByPl = new Map(shipments.map((s) => [s.pre_loading_id, s.id]));
   const shipmentStatusByPl = new Map(shipments.map((s) => [s.pre_loading_id, s.status]));
@@ -161,7 +185,8 @@ export default async function TodoPage() {
         pl_number: null,
         step: s.step,
         status: order.status,
-        responsible: profile.full_name,
+        responsible: s.responsible_id ? (responsibleNameById.get(s.responsible_id) ?? null) : null,
+        responsible_id: s.responsible_id,
         date_preview: s.estimated_date,
         client: clientName,
         client_ids: order.client_id ? [order.client_id] : [],
@@ -191,7 +216,8 @@ export default async function TodoPage() {
         pl_number: plNumber ?? null,
         step: s.step,
         status: null,
-        responsible: profile.full_name,
+        responsible: s.responsible_id ? (responsibleNameById.get(s.responsible_id) ?? null) : null,
+        responsible_id: s.responsible_id,
         date_preview: s.estimated_date,
         client: cl ? [...cl.names].sort().join(", ") || null : null,
         client_ids: cl ? [...cl.ids] : [],
@@ -204,7 +230,7 @@ export default async function TodoPage() {
 
   const rows = [...orderRows, ...plRows];
 
-  // Opções do filtro Client = só os clientes presentes nas tarefas do usuário.
+  // Opções do filtro Client = só os clientes presentes nas tarefas carregadas.
   const clientOptions: Ref[] = [
     ...new Map(
       rows.flatMap((r) =>
@@ -215,10 +241,17 @@ export default async function TodoPage() {
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Filtro por Responsible só faz sentido pra quem vê tarefa de todo mundo —
+  // mesmo critério do Client acima: só quem aparece nas tarefas carregadas.
+  const userOptions: Ref[] = isAdmin
+    ? [...responsibleNameById].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
   return (
     <TodoClient
       rows={rows}
       clients={clientOptions}
+      users={userOptions}
       initialColumns={readColumnVisibility(profile.ui_preferences, "todo")}
     />
   );

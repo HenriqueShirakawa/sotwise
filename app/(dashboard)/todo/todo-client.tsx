@@ -59,6 +59,8 @@ export type TodoRow = {
   /** Só nas linhas de Order (etapas de PL não têm status de PO). */
   status: OrderStatus | null;
   responsible: string | null;
+  /** Usado só pelo filtro de Responsible (visão admin) — o nome já basta pra coluna. */
+  responsible_id: string | null;
   date_preview: string | null;
   client: string | null;
   /** Clientes da linha (Order: 1; PL: N) — usado pelo filtro por Client. */
@@ -129,10 +131,13 @@ function inDateRange(value: string | null, from: string, to: string): boolean {
 export function TodoClient({
   rows,
   clients,
+  users,
   initialColumns,
 }: {
   rows: TodoRow[];
   clients: Ref[];
+  /** Vazio pra quem não é admin — some o filtro de Responsible na tela. */
+  users: Ref[];
   initialColumns: VisibilityState;
 }) {
   const router = useRouter();
@@ -174,6 +179,7 @@ export function TodoClient({
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (tab !== "all" && r.phase !== tab) return false;
+      if (filters.user_id && r.responsible_id !== filters.user_id) return false;
       if (filters.client_id && !r.client_ids.includes(filters.client_id)) return false;
       if (filters.status && r.status !== filters.status) return false;
       if (filters.step && r.step !== filters.step) return false;
@@ -364,6 +370,7 @@ export function TodoClient({
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
         clients={clients}
+        users={users}
         phase={tab}
       />
 

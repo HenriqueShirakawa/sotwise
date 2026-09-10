@@ -1243,6 +1243,15 @@ Cliente reportou dois problemas na tabela ETD de Orders (`etd-step.tsx`): (1) o 
 - **Initial Date entrou na mecânica de trava + correção do modal**, mesmo padrão de Ready/Inspection (ver nota ✅ acima): a `DatePicker` da linha trava (`disabled`) assim que a etapa tem um Initial Date gravado; corrigir depois de travado exige o modal "ETD update" (motivo obrigatório, vira linha em `etd_history`). Por consequência, `initial_date` entrou no snapshot de `etd_history` (`EtdHistorySnapshot`/`ETD_SAVED_COLUMNS`) e ganhou coluna própria no histórico do modal — antes só o campo "mudou" aparecia, sem o valor.
 - Testado ao vivo (não só tsc/eslint): linha nova (nunca tocada) → Initial Date setado pro dia 25 → Current Date acompanhou pro dia 25 (não hoje) → linha travou → reaberta no modal, "Initial Date" aparece como opção, pré-preenche com o valor atual, corrige com motivo e fica no histórico. Confirmado via query direta no Supabase (`etd_info`/`etd_history`), não só pela tela.
 
+##### To do list — visão admin de todo mundo + filtro por Responsible (decisão 10/09/2026)
+
+Pedido do cliente: §3.12.2 só mostrava a pendência do próprio usuário logado, sem jeito de um admin ver (ou filtrar por) a pendência de outra pessoa — importante pra avaliar tarefa de usuário inativo, por exemplo.
+
+- **`todo/page.tsx` — escopo por role, não mais fixo no usuário logado.** `admin` vê a UNIÃO da lista de todo mundo (sem `.eq("responsible_id", userId)`); qualquer outro papel continua vendo só a própria (comportamento de sempre). **Mesmo pra admin, etapa com `responsible_id` nulo fica de fora** (`.not("responsible_id", "is", null)`) — descoberto ao testar: são ~10 mil linhas no banco todo (resíduo de migração, etapa que nunca teve alguém designado), e não é o "to-do" de ninguém — é trabalho não atribuído, categoria diferente do que foi pedido ("de todos os user").
+- **Coluna "Responsible" deixou de ser sempre `profile.full_name`** (o nome de quem está logado, correto por acidente porque toda linha sempre foi dele) — agora resolve o nome de cada `responsible_id` de verdade via um mapa (`responsibleNameById`), preparado desde já pra mostrar qualquer usuário.
+- **Filtro novo "Responsible"** em `filters-modal.tsx`, com as mesmas opções (`SearchSelect`) dos demais — só aparece quando `users` (a lista de opções, vinda do server) não vem vazia, e só vem populada pra quem é admin. Filtragem client-side em `todo-client.tsx`, mesmo padrão do filtro de Client (`TodoRow` ganhou `responsible_id` só pra isso).
+- Testado ao vivo com dois usuários reais: admin viu 637 tarefas (de 1017 antes de excluir as sem responsável) com nomes variados na coluna Responsible e o filtro funcionando (buscar "Julia" restringe a lista a ela); usuário `user` recém-criado, sem tarefa nenhuma, viu "0 pending tasks" e a tela de Filters **sem** o campo Responsible.
+
 #### Camada 2 do RBAC — "Profile Filters for Steps" (rua 25), 🔴 escopo indefinido
 
 Depois de ler o card da rua 25 (**Users → Profile Step Permissions**), o desenho real desta funcionalidade ficou claro — e é diferente de uma matriz de permissão positiva:
