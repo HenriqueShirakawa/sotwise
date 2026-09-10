@@ -1,18 +1,40 @@
 import type { ChecklistStep } from "@/types/database";
 
-type Lang = "pt-BR" | "en" | "zh";
-
 /**
  * Corpo padrão sugerido ao abrir o compositor de e-mail de uma etapa — só um
  * ponto de partida editável (nunca enviado sem revisão, ver `StepEmailSection`).
- * Hoje só "pi" (Proforma Invoice) tem texto padrão; as demais etapas caem no
- * corpo vazio de sempre. Sempre em inglês + no idioma do cliente (resolvido
- * do mesmo jeito que o chrome do e-mail, ver `resolveStepEmailLanguage`) —
- * pedido explícito do usuário: o cliente não deve depender só do inglês.
+ * Mapa exaustivo (`Record`, não `Partial`) — as 24 etapas do checklist têm
+ * texto próprio, redigido a partir do significado de cada uma em
+ * `docs/regras_de_negocio.md` §3.7.5. Só em inglês — a versão bilíngue
+ * (inglês + tradução automática) foi removida a pedido do usuário (tinha erro
+ * na tradução).
  */
-const TEMPLATES: Partial<Record<ChecklistStep, Record<Lang, string>>> = {
-  pi: {
-    en: `Dear [Customer Name],
+const TEMPLATES: Record<ChecklistStep, string> = {
+  order: `Dear [Customer Name],
+
+We are writing to confirm that your order has been received and successfully registered in our system.
+
+Our team will now begin processing the next steps, and we will keep you updated as the order progresses.
+
+Please let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  po: `Dear [Customer Name],
+
+Please find attached the Purchase Order (PO) corresponding to your order.
+
+Kindly review the items, quantities and factory allocations listed, and let us know if everything is correct or if any adjustment is needed.
+
+Once confirmed, we will proceed with the next steps of the process.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  pi: `Dear [Customer Name],
 
 Please find attached the Proforma Invoice for your confirmed order.
 
@@ -29,58 +51,247 @@ Thank you for your cooperation.
 Best regards,
 [Your Name]
 [Company Name]`,
-    "pt-BR": `Prezado(a) [Nome do Cliente],
 
-Segue em anexo a Proforma Invoice referente ao seu pedido confirmado.
+  deposit_payment: `Dear [Customer Name],
 
-Por gentileza, revise todas as informações e, caso esteja tudo correto, assine e nos devolva a Proforma Invoice como confirmação do pedido.
+We confirm that the deposit payment for your order has been received.
 
-Para darmos andamento ao pedido e iniciarmos a produção, solicitamos também que providencie o fechamento de câmbio referente ao pagamento antecipado, conforme as condições de pagamento indicadas na Proforma Invoice.
+With the advance payment settled, we will proceed accordingly with production.
 
-Assim que recebermos a Proforma Invoice assinada e a confirmação do fechamento de câmbio/pagamento do adiantamento, daremos seguimento ao pedido e o liberaremos para produção.
+Please let us know if you have any questions.
 
-Qualquer dúvida ou necessidade de ajuste em alguma informação, estamos à disposição.
+Best regards,
+[Your Name]
+[Company Name]`,
 
-Agradecemos a colaboração.
+  packing_confirm: `Dear [Customer Name],
 
-Atenciosamente,
-[Seu nome]
-[Nome da empresa]`,
-    zh: `尊敬的[客户姓名]:
+We would like to confirm the packing details for your order.
 
-随函附上贵司已确认订单的形式发票(Proforma Invoice),请查收。
+Please review the information provided and let us know if everything is in accordance with your requirements, or if any adjustment is needed.
 
-请核对发票中的所有信息,如确认无误,烦请签署形式发票并回传给我们,以确认订单。
+Best regards,
+[Your Name]
+[Company Name]`,
 
-为推进订单并安排生产,亦烦请贵司按照形式发票所载的付款条件,办理预付款所需的外汇结汇手续。
+  condition_confirm: `Dear [Customer Name],
 
-在收到签署后的形式发票以及结汇/预付款确认后,我们将正式推进订单并安排投入生产。
+We would like to confirm the condition of the goods for your order.
 
-如有任何疑问,或发票信息需要调整之处,请随时告知我们。
+Please review the details provided and let us know if everything is satisfactory, or if any adjustment is required before we proceed.
 
-感谢贵司的配合。
+Best regards,
+[Your Name]
+[Company Name]`,
 
-此致
-敬礼
+  place_the_order: `Dear [Customer Name],
 
-[您的姓名]
-[公司名称]`,
-  },
+This is to confirm that your order has been placed with the factory and released for production.
+
+We will keep you informed as production progresses.
+
+Please let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  etd: `Dear [Customer Name],
+
+Please find below the Estimated Time of Departure (ETD) information for your order.
+
+Let us know if you have any questions regarding the schedule.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  balance_payment: `Dear [Customer Name],
+
+This is to confirm receipt of the balance payment for your order.
+
+With the payment settled in full, we will proceed with the next steps toward shipment.
+
+Please let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  pre_loading: `Dear [Customer Name],
+
+Your order is now ready to proceed to the pre-loading stage.
+
+We will keep you informed as the consolidation and loading arrangements move forward.
+
+Please let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  consolidation_point: `Dear [Customer Name],
+
+Please find below the consolidation point confirmed for your shipment.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  city: `Dear [Customer Name],
+
+Please find below the city confirmed for your shipment.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  port_of_loading: `Dear [Customer Name],
+
+Please find below the Port of Loading confirmed for your shipment.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  shipping_docs: `Dear [Customer Name],
+
+Please find attached the shipping documents for your order.
+
+Kindly review them and let us know if everything is correct, or if any adjustment is needed.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  agents: `Dear [Customer Name],
+
+Please find below the agents assigned to your shipment in Brazil and China, along with their respective contacts.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  booking: `Dear [Customer Name],
+
+We confirm that the booking for your shipment has been completed.
+
+Please find below the booking details.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  loading_date: `Dear [Customer Name],
+
+Please find below the loading date confirmed for your shipment.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  shipping_date: `Dear [Customer Name],
+
+We are pleased to confirm that your shipment has departed.
+
+Please find below the shipping date details.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  bl: `Dear [Customer Name],
+
+Please find attached the Bill of Lading (BL) for your shipment.
+
+Kindly review it and let us know if everything is correct, or if any adjustment is needed.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  original_docs: `Dear [Customer Name],
+
+Please find attached the original shipping documents for your order.
+
+Kindly review them and let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  inspection_report: `Dear [Customer Name],
+
+Please find attached the inspection report for your order.
+
+Kindly review it and let us know if everything is in order, or if any adjustment is needed.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  eta_brazil: `Dear [Customer Name],
+
+Please find below the Estimated Time of Arrival (ETA) in Brazil for your shipment.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  ata_brazil: `Dear [Customer Name],
+
+We are pleased to confirm that your shipment has arrived in Brazil.
+
+Please find below the arrival details.
+
+Let us know if you have any questions.
+
+Best regards,
+[Your Name]
+[Company Name]`,
+
+  delivered: `Dear [Customer Name],
+
+We are pleased to confirm that your order has been delivered.
+
+Thank you for your business — please let us know if you have any questions or need any further assistance.
+
+Best regards,
+[Your Name]
+[Company Name]`,
 };
 
-/** Se a etapa tem texto padrão — evita round-trip de idioma pras outras 23. */
-export function stepHasTemplate(step: ChecklistStep): boolean {
-  return Boolean(TEMPLATES[step]);
-}
-
 /**
- * Inglês sempre presente; idioma do cliente entra embaixo, com um separador
- * simples, quando resolve pra algo diferente de 'en' (ver
- * `resolveStepEmailLanguage`). Corpo continua 100% editável depois de aberto.
+ * `[Customer Name]`/`[Your Name]` viram o nome de verdade quando resolvidos
+ * (ver `loadStepEmailDefaults`); sem resolver, fica o colchete original,
+ * editável à mão. `[Company Name]` também vira o cliente — pedido explícito
+ * do usuário, não é a empresa de quem envia. Corpo continua 100% editável
+ * depois de aberto.
  */
-export function buildDefaultStepBody(step: ChecklistStep, language: Lang): string {
-  const template = TEMPLATES[step];
-  if (!template) return "";
-  if (language === "en") return template.en;
-  return `${template.en}\n\n——————————\n\n${template[language]}`;
+export function buildDefaultStepBody(
+  step: ChecklistStep,
+  vars: { customerName?: string | null; senderName?: string | null }
+): string {
+  let body = TEMPLATES[step];
+  if (vars.customerName) {
+    body = body.replace("[Customer Name]", vars.customerName).replace("[Company Name]", vars.customerName);
+  }
+  if (vars.senderName) body = body.replace("[Your Name]", vars.senderName);
+  return body;
 }
