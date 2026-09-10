@@ -52,6 +52,7 @@ const EMPTY_ETD: EtdInfoRow = {
 };
 
 const EDITABLE_FIELDS = [
+  { value: "initial_date", label: "Initial Date" },
   { value: "current_date", label: "Current Date" },
   { value: "ready", label: "Ready" },
   { value: "inspection", label: "Inspection" },
@@ -61,10 +62,7 @@ const EDITABLE_FIELDS = [
 
 type FieldKey = (typeof EDITABLE_FIELDS)[number]["value"];
 
-/**
- * Rótulos de todo campo que pode aparecer no histórico. Vai além de
- * EDITABLE_FIELDS porque `initial_date` só é editável na linha, nunca no modal.
- */
+/** Rótulos de todo campo que pode aparecer no histórico. */
 const HISTORY_FIELD_LABELS: Record<string, string> = {
   current_date: "Current Date",
   ready: "Ready",
@@ -220,6 +218,7 @@ function EtdUpdateModal({
     setField(next);
     if (next === "ready") setBoolValue(etd.ready);
     else if (next === "inspection") setBoolValue(etd.inspection);
+    else if (next === "initial_date") setDateValue(etd.initial_date ?? "");
     else if (next === "current_date") setDateValue(etd.current_date ?? "");
     else if (next === "dispatch_date") setDateValue(etd.dispatch_date ?? "");
     else if (next === "dispatch_location_id") setLocationId(etd.dispatch_location_id ?? "");
@@ -291,10 +290,14 @@ function EtdUpdateModal({
               </div>
             </div>
 
-            {field === "current_date" || field === "dispatch_date" ? (
+            {field === "initial_date" || field === "current_date" || field === "dispatch_date" ? (
               <div>
                 <Label className="text-foreground">
-                  {field === "current_date" ? "Current date" : "Dispatch date"}
+                  {field === "initial_date"
+                    ? "Initial date"
+                    : field === "current_date"
+                      ? "Current date"
+                      : "Dispatch date"}
                 </Label>
                 <DatePicker
                   value={dateValue}
@@ -374,6 +377,9 @@ function EtdUpdateModal({
                       <HistoryField label="Ready?">
                         <Checkbox checked={h.ready} disabled className="disabled:opacity-100" />
                       </HistoryField>
+                      <HistoryField label="Initial date">
+                        {formatDateNumeric(h.initial_date)}
+                      </HistoryField>
                       <HistoryField label="Current date">
                         {formatDateNumeric(h.current_date)}
                       </HistoryField>
@@ -401,6 +407,7 @@ function EtdUpdateModal({
                   <TableHead>Remarks</TableHead>
                   <TableHead>Factory</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Initial date</TableHead>
                   <TableHead>Current date</TableHead>
                   <TableHead>Dispatch lo.</TableHead>
                   <TableHead>Dispatch da.</TableHead>
@@ -410,13 +417,13 @@ function EtdUpdateModal({
               <TableBody>
                 {historyLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : pageRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground">
                       No changes logged yet.
                     </TableCell>
                   </TableRow>
@@ -437,6 +444,7 @@ function EtdUpdateModal({
                       </TableCell>
                       <TableCell>{row?.factory_name}</TableCell>
                       <TableCell>{row?.category_name}</TableCell>
+                      <TableCell>{formatDateNumeric(h.initial_date)}</TableCell>
                       <TableCell>{formatDateNumeric(h.current_date)}</TableCell>
                       <TableCell>{h.dispatch_location_name ?? "—"}</TableCell>
                       <TableCell>{formatDateNumeric(h.dispatch_date)}</TableCell>
@@ -674,8 +682,12 @@ export function EtdStepTable({
                 <TableCell>{r.category_name}</TableCell>
                 <TableCell>{r.batch_id ? (batchNumberById.get(r.batch_id) ?? "—") : "—"}</TableCell>
                 <TableCell>
+                  {/* Trava depois de preenchido, mesmo espírito de Ready/
+                      Inspection — corrigir um Initial Date já setado passa
+                      pelo "ETD update" (motivo obrigatório, fica no histórico). */}
                   <DatePicker
                     value={etd.initial_date}
+                    disabled={!!etd.initial_date}
                     className="w-36"
                     onChange={(v) => {
                       if (v !== (etd.initial_date ?? null)) save(r.id, { initial_date: v });
