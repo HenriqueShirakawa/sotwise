@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchSelect } from "@/components/search-select";
+import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import {
   Dialog,
@@ -578,6 +578,19 @@ function ProfileSelect({
   onChange: (value: string) => void;
   options: Ref[];
 }) {
+  // Lista longa vira campo com busca: o Select do Radix só faz typeahead da
+  // primeira letra. Mesmo corte usado no form de Order e no checklist do PL.
+  if (options.length > SEARCHABLE_FROM) {
+    return (
+      <SearchSelect
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder="Select"
+      />
+    );
+  }
+
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full">
