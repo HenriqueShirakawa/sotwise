@@ -1,7 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-
 import type { NextRequest } from "next/server";
 
+import { requireApiFeature, requireApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import {
@@ -12,16 +11,23 @@ import {
 import { listGssOrders, parseGssOrderQuery } from "@/domain/orders/gss-read";
 
 /**
- * Via GSS ↔ SOTWISE de ORDERS. Mesmo path, mesmo segredo, dois sentidos:
+ * Via GSS ↔ SOTWISE de ORDERS. Mesmo path, mesmo token, dois sentidos:
  *
- *   POST /api/gss/orders   → o GSS cria/atualiza uma order (push)
- *   GET  /api/gss/orders   → o GSS lê as orders e o que virou delas (pull)
+ *   POST /api/orders   → o GSS cria/atualiza uma order (push)
+ *   GET  /api/orders   → o GSS lê as orders e o que virou delas (pull)
  *
- *   Authorization: Bearer $GSS_INBOUND_SECRET
+ *   Authorization: Bearer $API_TOKEN
+ *
+ * Mesma auth do resto da API (`requireApiSession()`, lib/api-auth.ts): aceita
+ * o token de serviço OU sessão de cookie de um usuário com permissão na
+ * feature `orders`. Até 2026-09-10 isso vivia num secret dedicado
+ * (`GSS_INBOUND_SECRET`), num path só do GSS (`/api/gss/orders`) — unificado
+ * porque o GSS ainda não tinha implementado a chamada de Orders do lado
+ * deles, então não havia tráfego de produção em risco na troca.
  *
  * O POST é a primeira via inbound da integração (o resto é pull: o SOTWISE puxa
  * as bibliotecas). Fluxo:
- *   1. Autoriza por secret dedicado (server-to-server, não sessão de usuário).
+ *   1. Autoriza (token de serviço ou sessão + permissão `orders`).
  *   2. Valida o payload (domain/orders/gss-schema.ts).
  *   3. Resolve cada `*_gss_id` para o UUID interno da biblioteca.
  *   4. Upsert por `orders.gss_id` (idempotente: retry do GSS não duplica).
@@ -46,32 +52,6 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 function json(body: unknown, status: number): Response {
   return Response.json(body, { status });
-}
-
-/** Compara em tempo constante, sem depender de os tamanhos baterem. */
-function secretMatches(provided: string, expected: string): boolean {
-  const a = createHash("sha256").update(provided).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
-/**
- * Porta de entrada dos dois métodos: server-to-server por secret dedicado (não
- * sessão de usuário). Devolve a resposta de erro quando barra, `null` quando
- * libera. 503 = o ambiente do SOTWISE está sem a env (problema nosso, não do
- * chamador); 401 = token ausente ou errado.
- */
-function denyUnauthorized(request: NextRequest): Response | null {
-  const expected = process.env.GSS_INBOUND_SECRET;
-  if (!expected) {
-    return json({ error: "GSS_INBOUND_SECRET not configured." }, 503);
-  }
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!token || !secretMatches(token, expected)) {
-    return json({ error: "Unauthorized." }, 401);
-  }
-  return null;
 }
 
 /** Bibliotecas cujo `gss_id` o payload referencia → coluna FK na order. */
@@ -240,14 +220,16 @@ async function applyOrderItems(
  * `?gss_id=` é o jeito de ler uma order específica, e a forma da resposta não
  * muda com o filtro (uma lista de 0 ou 1 item), o que simplifica o lado do GSS.
  *
- *   GET /api/gss/orders?gss_id=&po_number=&status=&updated_since=&order=&limit=&offset=&include=items,checklist
+ *   GET /api/orders?gss_id=&po_number=&status=&updated_since=&order=&limit=&offset=&include=items,checklist
  *
  * `updated_since` + `order=asc` é a varredura incremental: o GSS guarda o maior
  * `updated_at` que viu e pede só o que mudou desde então. Os blocos pesados
  * (`items`, `checklist`) só vêm se pedidos em `include`. Ver domain/orders/gss-read.ts.
  */
 export async function GET(request: NextRequest): Promise<Response> {
-  const denied = denyUnauthorized(request);
+  const auth = await requireApiSession();
+  if (!auth.ok) return auth.response;
+  const denied = requireApiFeature(auth.session, "orders", "view");
   if (denied) return denied;
 
   const parsed = parseGssOrderQuery(request.nextUrl.searchParams);
@@ -285,7 +267,9 @@ export async function GET(request: NextRequest): Promise<Response> {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const denied = denyUnauthorized(request);
+  const auth = await requireApiSession();
+  if (!auth.ok) return auth.response;
+  const denied = requireApiFeature(auth.session, "orders", "create");
   if (denied) return denied;
 
   const body = await request.json().catch(() => null);

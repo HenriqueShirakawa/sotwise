@@ -13,12 +13,11 @@ Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 
 ## 1. Autenticação
 
-Há **dois tokens distintos**, um para cada área. Ambos vão no header `Authorization`, no formato `Bearer <token>` (o prefixo `Bearer ` com espaço é obrigatório). Os valores são combinados fora de banda — peça ao responsável pelo ambiente.
+**Um único token para a API inteira** — Orders e Bibliotecas usam o mesmo header, no formato `Bearer <token>` (o prefixo `Bearer ` com espaço é obrigatório). O valor é combinado fora de banda — peça ao responsável pelo ambiente.
 
-| Área | Header | Token |
-|---|---|---|
-| Orders — POST e GET (`/api/gss/orders`) | `Authorization: Bearer <GSS_INBOUND_SECRET>` | `GSS_INBOUND_SECRET` |
-| Bibliotecas / cadastros (`/api/{recurso}`) | `Authorization: Bearer <API_TOKEN>` | `API_TOKEN` |
+```
+Authorization: Bearer <API_TOKEN>
+```
 
 Sem token válido a resposta é `401` com corpo JSON (a API nunca redireciona para tela de login).
 
@@ -33,12 +32,11 @@ Todo código usado nas duas áreas desta API (Orders e Bibliotecas), com o que e
 | **200** OK | Sucesso | Requisição processada sem criar nada novo — leitura (`GET`) ou atualização de um registro já existente (`PATCH`, ou `POST` de order cujo `gss_id` já existia). |
 | **201** Created | Criado | Um registro **novo** foi criado (`POST` que cria uma order ou um item de biblioteca). O corpo traz o registro com o `id` gerado. |
 | **400** Bad Request | Requisição inválida | O que foi enviado tem algum problema: campo obrigatório faltando, formato errado (data, e-mail, uuid), ou uma referência (`gss_id`, FK) que não existe do lado do SOTWISE. É sempre erro de quem chamou — corrigir o payload e reenviar. |
-| **401** Unauthorized | Não autenticado | Faltou o header `Authorization` ou o token está errado. Conferir se é o token certo para a área (`GSS_INBOUND_SECRET` vs `API_TOKEN`) e o prefixo `Bearer `. |
-| **403** Forbidden | Acesso negado | Autenticado, mas sem permissão — só se aplica a sessão de usuário (conta bloqueada). Não deve acontecer com os tokens de integração. |
+| **401** Unauthorized | Não autenticado | Faltou o header `Authorization`, o token está errado, ou faltou o prefixo `Bearer `. |
+| **403** Forbidden | Acesso negado | Autenticado, mas sem permissão — só se aplica a sessão de usuário (conta bloqueada). Não deve acontecer com o token de integração. |
 | **404** Not Found | Não encontrado | A URL não corresponde a nenhum recurso, ou o `{id}` de um `PATCH` não existe (ou já foi excluído). |
 | **409** Conflict | Conflito de dados | O que foi enviado colide com algo que já existe — hoje isso é só o `po_number` de uma order duplicado. |
 | **500** Internal Server Error | Erro interno | Falha inesperada do lado do SOTWISE (ex.: erro de banco). Não é problema do payload — se persistir, reportar ao time do SOTWISE com a mensagem recebida. |
-| **503** Service Unavailable | Indisponível | Configuração faltando no ambiente do SOTWISE (ex.: `GSS_INBOUND_SECRET` não definido). Também é um problema do lado do SOTWISE, não do payload. |
 
 > Regra geral: **4xx** = revise o que foi enviado; **5xx** = problema do lado do SOTWISE, não repita a chamada indefinidamente sem avisar o time.
 
@@ -49,8 +47,8 @@ Todo código usado nas duas áreas desta API (Orders e Bibliotecas), com o que e
 Dois sentidos no mesmo path e com o mesmo token: `POST` — o GSS **cria ou atualiza** uma order no SOTWISE (§1.1 a §1.4); `GET` — o GSS **lê** as orders e o estado delas (§1.5).
 
 ```
-POST https://sot.gssdatahub.com/api/gss/orders
-Authorization: Bearer <GSS_INBOUND_SECRET>
+POST https://sot.gssdatahub.com/api/orders
+Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 ```
 
@@ -159,7 +157,6 @@ Resumo:
 | `401` | Token ausente/incorreto |
 | `409` | `po_number` já usado por outra order |
 | `500` | Erro inesperado no servidor (ex.: falha ao gravar as linhas Factory×Category) |
-| `503` | `GSS_INBOUND_SECRET` não configurado no servidor — reportar ao time do SOTWISE, não é erro do payload |
 
 Erro sempre traz `{ "error": "mensagem" }`; erros de validação de schema também trazem `issues` (formato Zod).
 
@@ -244,23 +241,15 @@ Falha não prevista (ex.: erro do banco ao gravar `order_factory_category` depoi
 { "error": "<mensagem interna>" }
 ```
 
-### `503` — integração não configurada
-
-O `GSS_INBOUND_SECRET` não está definido no ambiente do SOTWISE. Indica um problema de configuração do lado do SOTWISE, não do payload enviado.
-
-```jsonc
-{ "error": "GSS_INBOUND_SECRET not configured." }
-```
-
 ---
 
-## 1.5. Ler orders — `GET /api/gss/orders`
+## 1.5. Ler orders — `GET /api/orders`
 
 O caminho de volta: o GSS **lê** as orders do SOTWISE e o que virou delas (status, lote atribuído, checklist). Mesmo path e **mesmo token** do POST.
 
 ```
-GET https://sot.gssdatahub.com/api/gss/orders
-Authorization: Bearer <GSS_INBOUND_SECRET>
+GET https://sot.gssdatahub.com/api/orders
+Authorization: Bearer <API_TOKEN>
 ```
 
 A resposta é **sempre uma lista**, mesmo filtrando por uma order só — assim o formato não muda conforme o filtro.
@@ -285,7 +274,7 @@ Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issue
 O GSS guarda o maior `updated_at` que já viu e pede só o que mudou:
 
 ```
-GET /api/gss/orders?updated_since=2026-09-01T12:00:00Z&order=asc&limit=200
+GET /api/orders?updated_since=2026-09-01T12:00:00Z&order=asc&limit=200
 ```
 
 Pagine com `offset` até `returned < limit`. A ordenação é `updated_at` + `id` (o `id` desempata, então nenhuma order pula ou repete entre páginas).
@@ -359,7 +348,6 @@ Vem na ordem canônica das telas: `order`, `po`, `pi`, `deposit_payment`, `packi
 | `400` | Query param inválido (status fora da lista, `include` desconhecido, `limit > 200`, data fora do ISO 8601) |
 | `401` | Token ausente ou errado |
 | `500` | Erro inesperado do lado do SOTWISE |
-| `503` | `GSS_INBOUND_SECRET` não configurado no ambiente |
 
 > Orders excluídas não aparecem. Custo: pedir `include` só quando precisar — cada bloco custa queries a mais, e `items` sobre 200 orders é bem mais pesado que a lista pura.
 
@@ -477,3 +465,4 @@ Content-Type: application/json
 - **Bibliotecas:** o GSS é a **fonte** delas; o SOTWISE normalmente **puxa** (pull). A API acima permite escrita, mas o pareamento SOTWISE↔GSS é por `gss_id` (não exposto nesta API de cadastros).
 - **Orders:** o `POST` (Parte 1) é a direção **push** (GSS → SOTWISE); o `GET` (§1.5) é o **pull** de volta, para o GSS ver status, lote e checklist.
 - **Factory × Category:** no GSS correspondem aos registros de **supplier-category**; o `supplier_category_gss_id` de cada `item` é o id desse registro.
+- **Auth unificada (2026-09-10):** Orders e Bibliotecas usam o mesmo `API_TOKEN` e o mesmo mecanismo de autenticação — antes Orders vivia num path (`/api/gss/orders`) e secret (`GSS_INBOUND_SECRET`) dedicados.

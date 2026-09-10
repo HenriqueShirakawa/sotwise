@@ -28,7 +28,7 @@ const gssOrderItemSchema = z.object({
 export type GssOrderItemInput = z.infer<typeof gssOrderItemSchema>;
 
 /**
- * Payload que o GSS manda em POST /api/gss/orders para criar/atualizar uma
+ * Payload que o GSS manda em POST /api/orders para criar/atualizar uma
  * order (via inbound push — oposta ao pull das bibliotecas).
  *
  * As FKs vêm pelo `gss_id` da biblioteca correspondente (não pelo UUID interno):

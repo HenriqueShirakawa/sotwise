@@ -1,6 +1,6 @@
 /**
  * Leitura rápida de factory_products (via service_role) — quantos existem com
- * gss_id e alguns exemplos, pra montar os items[] do POST /api/gss/orders.
+ * gss_id e alguns exemplos, pra montar os items[] do POST /api/orders.
  *
  *   npx tsx scripts/sync-gss/peek-factory-products.ts
  */
