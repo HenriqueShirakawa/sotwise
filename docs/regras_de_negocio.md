@@ -1193,6 +1193,15 @@ O cliente trouxe 3 User Stories formais (idioma automático, destinatários revi
 - **Nova rota `/emails`** (feature `email_history`, view-only): histórico agrupado **PO/PL**, não "por pedido" — um e-mail de Pre-loading/Shipment pode cobrir vários pedidos consolidados no mesmo PL (via `batches`). Reaproveita `loadEntityContexts`/`loadProfileNames` de `lib/messages.ts` e o mesmo agrupamento PO/PL do módulo de Mensagens (`lib/checklist-emails-list-actions.ts`). Hora exibida no **fuso da company do usuário logado** (`companyTimeZone` em `lib/format.ts`: BR→America/Sao_Paulo, China→Asia/Shanghai) — único ponto do app com fuso variável; todo o resto continua fixo em América/SP.
 - **Fora de escopo desta rodada:** sistema de variáveis de template, reenvio dirigido só a quem falhou numa falha parcial, tela de admin pro mapeamento País→Idioma, anexos.
 
+##### Preview antes de enviar + template padrão da etapa "PI" (decisão 2026-09-09)
+
+Pedido do cliente: poder **revisar o HTML de verdade** do e-mail antes de mandar (o compositor só tinha "Send" direto), e a etapa **"pi" (Proforma Invoice)** ganhar um corpo padrão pré-preenchido, sempre em inglês + no idioma do cliente.
+
+- **Compositor virou 2 estágios** (`stage: "compose" | "preview"` em `step-email-section.tsx`): "Send" trocou de nome pra **"Preview"**, que chama a nova action `previewStepEmail` (só leitura — usa `findStepId`, nunca `ensureStepId`, então nunca cria a linha da etapa por engano) e renderiza o HTML de verdade num `<iframe sandbox="">` (`srcDoc`). Só depois disso aparece **"Confirm & send"**, que chama o `sendStepEmail` de sempre.
+- **`internalHtml`/`clientHtml` compartilham a mesma renderização** entre envio e preview (`renderStepEmailHtmls` em `lib/checklist-email-actions.ts`) — evita as duas divergirem com o tempo. Quando os destinatários escolhidos misturam papéis (`client` + interno), o preview mostra um toggle "Client view"/"Internal view"; quando são todos do mesmo tipo, mostra só a variante que interessa.
+- **Corpo padrão só da etapa "pi"** por enquanto (`lib/email/step-templates.ts`, `STEP_EMAIL_TEMPLATES` — mapa por `ChecklistStep`, hoje só uma entrada preenchida). Nasce em inglês na abertura do compositor e sobe pro idioma do cliente assim que `resolveStepEmailLanguage` resolve (mesma cascata `clients.language` → `country_language_defaults` → `'en'` da Fase 2.1) — inglês e a tradução aparecem **os dois** no corpo, separados por uma linha, nunca só um. Texto continua 100% editável — é ponto de partida, não trava nada.
+- **Fora de escopo desta rodada:** corpo padrão pras outras 23 etapas, sistema de variáveis (`{{cliente}}` etc.) pra não depender de colchetes tipo `[Customer Name]`.
+
 ##### Resposta do cliente por e-mail (decisão 2026-09-09)
 
 Pedido do cliente: poder **responder** o e-mail manual de etapa direto da caixa de entrada, e a resposta aparecer encadeada no histórico da própria etapa, notificando todo o conjunto original de destinatários (quem mandou + quem recebeu).

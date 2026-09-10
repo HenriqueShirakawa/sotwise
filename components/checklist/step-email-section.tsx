@@ -9,11 +9,16 @@ import {
   loadStepEmailHistory,
   loadStepRecipientOptions,
   markEmailReplyRead,
+  previewStepEmail,
+  resolveStepEmailLanguage,
   sendStepEmail,
   type Option,
+  type StepEmailPreview,
   type StepEmailRow,
   type StepOwner,
 } from "@/lib/checklist-email-actions";
+import { buildDefaultStepBody, stepHasTemplate } from "@/lib/email/step-templates";
+import type { ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,12 +47,16 @@ import { MultiSearchSelect } from "@/components/multi-search-select";
 export function StepEmailSection({
   owner,
   feature,
+  step,
   defaultSubject,
   recordPath,
   responsibleId,
 }: {
   owner: StepOwner;
   feature: "orders" | "pre_loading" | "shipments";
+  /** Etapa do checklist (ex: "pi") — só pra escolher o template padrão do
+   *  corpo (ver `lib/email/step-templates.ts`); roteamento por `owner`. */
+  step: ChecklistStep;
   defaultSubject: string;
   /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" no
    *  e-mail, só pra destinatário interno (nunca pra `client`). */
@@ -59,6 +68,9 @@ export function StepEmailSection({
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [stage, setStage] = useState<"compose" | "preview">("compose");
+  const [preview, setPreview] = useState<StepEmailPreview | null>(null);
+  const [previewVariant, setPreviewVariant] = useState<"client" | "internal">("client");
   const [history, setHistory] = useState<StepEmailRow[] | null>(null);
   const [recipientOptions, setRecipientOptions] = useState<Option[]>([]);
   const [recipientIds, setRecipientIds] = useState<string[]>([]);
@@ -80,19 +92,45 @@ export function StepEmailSection({
 
   function openCompose() {
     setSubject(defaultSubject);
-    setBody("");
+    setBody(stepHasTemplate(step) ? buildDefaultStepBody(step, "en") : "");
     setRecipientIds(responsibleId ? [responsibleId] : []);
+    setStage("compose");
+    setPreview(null);
     setComposeOpen(true);
+    // Corpo padrão nasce em inglês (acima) e sobe pro idioma do cliente assim
+    // que resolver — evita segurar a abertura do modal numa ida ao banco.
+    if (stepHasTemplate(step)) {
+      resolveStepEmailLanguage(owner).then((language) => setBody(buildDefaultStepBody(step, language)));
+    }
   }
 
   const canSend = !pending && recipientIds.length > 0 && !!subject.trim() && !!body.trim();
 
-  function send() {
+  function showPreview() {
     if (!canSend) {
       if (recipientIds.length === 0) toast.error("Select at least one recipient.");
       else toast.error("Write a subject and a message.");
       return;
     }
+    startTransition(async () => {
+      const res = await previewStepEmail(owner, {
+        feature,
+        recipient_ids: recipientIds,
+        subject,
+        body,
+        recordPath,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      setPreview(res.preview);
+      setPreviewVariant(res.preview.clientHtml ? "client" : "internal");
+      setStage("preview");
+    });
+  }
+
+  function send() {
     startTransition(async () => {
       const res = await sendStepEmail(owner, {
         feature,
@@ -187,51 +225,107 @@ export function StepEmailSection({
       <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Send email</DialogTitle>
+            <DialogTitle>{stage === "compose" ? "Send email" : "Review before sending"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs text-muted-foreground">To</Label>
-              <MultiSearchSelect
-                value={recipientIds}
-                onChange={setRecipientIds}
-                options={recipientOptions}
-                placeholder="Choose recipients..."
-                lockedIds={responsibleId ? [responsibleId] : []}
+          {stage === "compose" ? (
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">To</Label>
+                <MultiSearchSelect
+                  value={recipientIds}
+                  onChange={setRecipientIds}
+                  options={recipientOptions}
+                  placeholder="Choose recipients..."
+                  lockedIds={responsibleId ? [responsibleId] : []}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Subject</Label>
+                <Input
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Message</Label>
+                <Textarea
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  rows={6}
+                  className="mt-1"
+                  placeholder="Write your message..."
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {preview?.clientHtml && preview?.internalHtml && (
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVariant("client")}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      previewVariant === "client"
+                        ? "border-[#640BB7] bg-[#640BB7] text-white"
+                        : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
+                    }`}
+                  >
+                    Client view
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewVariant("internal")}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      previewVariant === "internal"
+                        ? "border-[#640BB7] bg-[#640BB7] text-white"
+                        : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
+                    }`}
+                  >
+                    Internal view
+                  </button>
+                </div>
+              )}
+              <iframe
+                title="Email preview"
+                sandbox=""
+                srcDoc={
+                  (previewVariant === "client" ? preview?.clientHtml : preview?.internalHtml) ??
+                  preview?.clientHtml ??
+                  preview?.internalHtml ??
+                  ""
+                }
+                className="h-[420px] w-full rounded-md border bg-slate-50"
               />
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Subject</Label>
-              <Input
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Message</Label>
-              <Textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                rows={6}
-                className="mt-1"
-                placeholder="Write your message..."
-              />
-            </div>
-          </div>
+          )}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setComposeOpen(false)}
-              disabled={pending}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={send} disabled={!canSend}>
-              <Send className="size-3.5" />
-              Send
-            </Button>
+            {stage === "compose" ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setComposeOpen(false)}
+                  disabled={pending}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" onClick={showPreview} disabled={!canSend}>
+                  <Send className="size-3.5" />
+                  Preview
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={() => setStage("compose")} disabled={pending}>
+                  Back
+                </Button>
+                <Button type="button" onClick={send} disabled={pending}>
+                  <Send className="size-3.5" />
+                  Confirm & send
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
