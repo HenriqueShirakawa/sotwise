@@ -6,18 +6,18 @@ import { toast } from "sonner";
 
 import { formatDateTime } from "@/lib/format";
 import {
+  loadStepEmailDefaults,
   loadStepEmailHistory,
   loadStepRecipientOptions,
   markEmailReplyRead,
   previewStepEmail,
-  resolveStepEmailLanguage,
   sendStepEmail,
   type Option,
   type StepEmailPreview,
   type StepEmailRow,
   type StepOwner,
 } from "@/lib/checklist-email-actions";
-import { buildDefaultStepBody, stepHasTemplate } from "@/lib/email/step-templates";
+import { buildDefaultStepBody } from "@/lib/email/step-templates";
 import type { ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -93,16 +93,17 @@ export function StepEmailSection({
 
   function openCompose() {
     setSubject(defaultSubject);
-    setBody(stepHasTemplate(step) ? buildDefaultStepBody(step, "en") : "");
+    setBody(buildDefaultStepBody(step, {}));
     setRecipientIds(responsibleId ? [responsibleId] : []);
     setStage("compose");
     setPreview(null);
     setComposeOpen(true);
-    // Corpo padrão nasce em inglês (acima) e sobe pro idioma do cliente assim
-    // que resolver — evita segurar a abertura do modal numa ida ao banco.
-    if (stepHasTemplate(step)) {
-      resolveStepEmailLanguage(owner).then((language) => setBody(buildDefaultStepBody(step, language)));
-    }
+    // Corpo padrão nasce com os colchetes originais e troca pelo nome de
+    // verdade assim que resolver — evita segurar a abertura do modal numa ida
+    // ao banco. Roda de novo toda vez que abre (o cliente/usuário pode mudar).
+    loadStepEmailDefaults(owner).then(({ customerName, senderName }) =>
+      setBody(buildDefaultStepBody(step, { customerName, senderName }))
+    );
   }
 
   const canSend = !pending && recipientIds.length > 0 && !!subject.trim() && !!body.trim();

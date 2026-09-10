@@ -339,14 +339,27 @@ const sendSchema = z.object({
 
 export type SendStepEmailInput = z.infer<typeof sendSchema>;
 
-/** Idioma resolvido pro e-mail desta etapa — exposto só pro compositor
- *  prefiller o corpo com o template padrão (ver `lib/email/step-templates.ts`)
- *  no idioma certo antes mesmo de escolher destinatário. */
-export async function resolveStepEmailLanguage(owner: StepOwner): Promise<EmailLanguage> {
-  await requireInternal();
+export type StepEmailDefaults = { customerName: string | null; senderName: string };
+
+/**
+ * Nome do(s) cliente(s) da etapa + nome de quem está compondo agora — só pro
+ * compositor substituir `[Customer Name]`/`[Your Name]` do template padrão
+ * (`lib/email/step-templates.ts`) toda vez que abre, sem depender de digitação
+ * manual. Cliente vem `null` quando a etapa não resolve nenhum (fica o
+ * colchete original, editável à mão) — mesma resolução de `resolveLanguage`,
+ * mas devolvendo o nome em vez do idioma.
+ */
+export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmailDefaults> {
+  const session = await requireInternal();
   const admin = createAdminClient();
   const stepId = await findStepId(admin, owner);
-  return stepId ? resolveLanguage(admin, owner, stepId) : "en";
+  const clientIds = stepId ? await loadOwnerClientIds(admin, owner, stepId) : [];
+  let customerName: string | null = null;
+  if (clientIds.length > 0) {
+    const { data } = await admin.from("clients").select("name").in("id", clientIds);
+    customerName = (data ?? []).map((c) => c.name).join(", ") || null;
+  }
+  return { customerName, senderName: session.profile.full_name };
 }
 
 export type StepEmailPreview = { internalHtml: string | null; clientHtml: string | null };
