@@ -1535,6 +1535,7 @@ export function OrderDetailClient({
                       <StepEmailSection
                         owner={{ kind: "order", stepId: s.id }}
                         feature="orders"
+                        step={s.step}
                         defaultSubject={`${order.po_number} - Order - ${STEP_LABELS[s.step]}`}
                         recordPath={`/orders/${orderId}`}
                         responsibleId={s.responsible_id}

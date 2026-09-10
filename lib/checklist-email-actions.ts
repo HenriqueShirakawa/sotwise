@@ -121,6 +121,8 @@ const ownerColumn = (owner: StepOwner) =>
  * `checklistStepEmailHtml`). Etapa recém-criada (`ensureStepId`) não tem
  * nada preenchido ainda; devolve tudo `null`, que o template já sabe omitir.
  */
+const EMPTY_FACTS: StepEmailFacts = { estimatedDate: null, completedOn: null, responsible: null, signedBy: null };
+
 async function loadStepFacts(admin: Admin, owner: StepOwner, stepId: string): Promise<StepEmailFacts> {
   const table = owner.kind === "order" ? "order_checklist_steps" : "pre_loading_checklist_steps";
   const { data } = await admin
@@ -128,7 +130,7 @@ async function loadStepFacts(admin: Admin, owner: StepOwner, stepId: string): Pr
     .select("estimated_date, completed_on, responsible_id, signed_by_id")
     .eq("id", stepId)
     .maybeSingle();
-  if (!data) return { estimatedDate: null, completedOn: null, responsible: null, signedBy: null };
+  if (!data) return EMPTY_FACTS;
 
   const profileIds = [data.responsible_id, data.signed_by_id].filter(
     (id): id is string => Boolean(id)
@@ -233,6 +235,43 @@ async function currentOrigin(): Promise<string | undefined> {
   }
 }
 
+/**
+ * Renderiza as duas variantes (interna/cliente) do e-mail — mesma lógica pro
+ * envio de verdade (`sendStepEmail`) e pro preview (`previewStepEmail`), pra
+ * nunca divergirem. `stepId` nulo (Pre-loading/Shipment cuja etapa nunca foi
+ * tocada) cai em facts vazios + idioma 'en', igual ao que `sendStepEmail`
+ * produziria ao criar a linha na hora (`ensureStepId`).
+ */
+async function renderStepEmailHtmls(
+  admin: Admin,
+  owner: StepOwner,
+  stepId: string | null,
+  senderName: string,
+  input: { subject: string; body: string; recordPath: string }
+): Promise<{ internalHtml: string; clientHtml: string; language: EmailLanguage }> {
+  const [facts, language, origin] = await Promise.all([
+    stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
+    stepId ? resolveLanguage(admin, owner, stepId) : Promise.resolve<EmailLanguage>("en"),
+    currentOrigin(),
+  ]);
+  const actionUrl = origin ? `${origin}${input.recordPath}` : null;
+  const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
+
+  return {
+    internalHtml: checklistStepEmailHtml({
+      subject: input.subject,
+      senderName,
+      body: input.body,
+      facts,
+      actionUrl,
+      logoUrl,
+      language,
+    }),
+    clientHtml: checklistStepEmailHtml({ subject: input.subject, senderName, body: input.body, logoUrl, language }),
+    language,
+  };
+}
+
 export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailRow[]> {
   const session = await requireInternal();
   const admin = createAdminClient();
@@ -300,6 +339,58 @@ const sendSchema = z.object({
 
 export type SendStepEmailInput = z.infer<typeof sendSchema>;
 
+/** Idioma resolvido pro e-mail desta etapa — exposto só pro compositor
+ *  prefiller o corpo com o template padrão (ver `lib/email/step-templates.ts`)
+ *  no idioma certo antes mesmo de escolher destinatário. */
+export async function resolveStepEmailLanguage(owner: StepOwner): Promise<EmailLanguage> {
+  await requireInternal();
+  const admin = createAdminClient();
+  const stepId = await findStepId(admin, owner);
+  return stepId ? resolveLanguage(admin, owner, stepId) : "en";
+}
+
+export type StepEmailPreview = { internalHtml: string | null; clientHtml: string | null };
+
+/**
+ * Mesmo HTML que `sendStepEmail` mandaria, sem mandar nada — só leitura (usa
+ * `findStepId`, nunca `ensureStepId`). `internalHtml`/`clientHtml` vêm `null`
+ * quando nenhum destinatário escolhido é daquele tipo, pra o compositor não
+ * oferecer uma aba de preview que não corresponde a ninguém selecionado.
+ */
+export async function previewStepEmail(
+  owner: StepOwner,
+  input: SendStepEmailInput
+): Promise<{ ok: true; preview: StepEmailPreview } | { ok: false; error: string }> {
+  const parsed = sendSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const session = await requireFeature(parsed.data.feature, "edit");
+  const admin = createAdminClient();
+
+  const recipientIds = [...new Set(parsed.data.recipient_ids)];
+  const [stepId, isClientById] = await Promise.all([
+    findStepId(admin, owner),
+    loadIsClientByUserId(admin, recipientIds),
+  ]);
+  const { internalHtml, clientHtml } = await renderStepEmailHtmls(
+    admin,
+    owner,
+    stepId,
+    session.profile.full_name,
+    parsed.data
+  );
+
+  const hasInternal = recipientIds.some((id) => !isClientById.get(id));
+  const hasClient = recipientIds.some((id) => isClientById.get(id));
+
+  return {
+    ok: true,
+    preview: { internalHtml: hasInternal ? internalHtml : null, clientHtml: hasClient ? clientHtml : null },
+  };
+}
+
 /**
  * Envio síncrono, um `sendEmail` por destinatário (igual ao loop de
  * `domain/client/notifications.ts`): ninguém vê o e-mail dos colegas, e uma
@@ -330,14 +421,14 @@ export async function sendStepEmail(
     .in("id", recipientIds);
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
 
-  const [facts, isClientById, origin, language] = await Promise.all([
-    loadStepFacts(admin, owner, stepRow.id),
+  // Destinatário `client` nunca recebe Estimated date/Responsible/Completed
+  // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
+  // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
+  // O logo é só marca — vai pros dois. Idioma (Fase 2.1 US1) é o mesmo pros dois.
+  const [{ internalHtml, clientHtml, language }, isClientById] = await Promise.all([
+    renderStepEmailHtmls(admin, owner, stepRow.id, session.profile.full_name, parsed.data),
     loadIsClientByUserId(admin, recipientIds),
-    currentOrigin(),
-    resolveLanguage(admin, owner, stepRow.id),
   ]);
-  const actionUrl = origin ? `${origin}${parsed.data.recordPath}` : null;
-  const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
 
   // Gerado ANTES do envio: precisa estar no Reply-To de cada `sendEmail`, mas
   // a linha em `checklist_step_emails` só nasce DEPOIS (o insert final abaixo
@@ -345,27 +436,6 @@ export async function sendStepEmail(
   // isso, teria ovo-e-galinha (id só existiria depois do envio).
   const emailRowId = randomUUID();
   const replyTo = replyToAddress(emailRowId);
-
-  // Destinatário `client` nunca recebe Estimated date/Responsible/Completed
-  // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
-  // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
-  // O logo é só marca — vai pros dois. Idioma (Fase 2.1 US1) é o mesmo pros dois.
-  const internalHtml = checklistStepEmailHtml({
-    subject: parsed.data.subject,
-    senderName: session.profile.full_name,
-    body: parsed.data.body,
-    facts,
-    actionUrl,
-    logoUrl,
-    language,
-  });
-  const clientHtml = checklistStepEmailHtml({
-    subject: parsed.data.subject,
-    senderName: session.profile.full_name,
-    body: parsed.data.body,
-    logoUrl,
-    language,
-  });
 
   const recipients: StepEmailRecipient[] = [];
   for (const userId of recipientIds) {
