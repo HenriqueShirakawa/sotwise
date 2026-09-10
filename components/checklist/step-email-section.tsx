@@ -288,26 +288,35 @@ export function StepEmailSection({
                   </button>
                 </div>
               )}
-              <iframe
-                title="Email preview"
-                sandbox="allow-same-origin"
-                srcDoc={
-                  (previewVariant === "client" ? preview?.clientHtml : preview?.internalHtml) ??
-                  preview?.clientHtml ??
-                  preview?.internalHtml ??
-                  ""
-                }
-                onLoad={(e) => {
-                  // Sem `allow-scripts` no sandbox — só lê o DOM (mesmo HTML
-                  // que a gente gerou) pra encaixar a altura no card de
-                  // verdade, sem sobra do fundo #f4f2f8 do template embaixo.
-                  const doc = e.currentTarget.contentWindow?.document;
-                  const contentHeight = doc?.body?.scrollHeight;
-                  if (contentHeight) setPreviewHeight(Math.min(Math.max(contentHeight, 200), 640));
-                }}
-                style={{ height: previewHeight }}
-                className="w-full rounded-md border"
-              />
+              <div className="max-h-[640px] overflow-y-auto rounded-md border">
+                <iframe
+                  title="Email preview"
+                  sandbox="allow-same-origin"
+                  srcDoc={
+                    (previewVariant === "client" ? preview?.clientHtml : preview?.internalHtml) ??
+                    preview?.clientHtml ??
+                    preview?.internalHtml ??
+                    ""
+                  }
+                  onLoad={(e) => {
+                    // Sem `allow-scripts` no sandbox — só lê o DOM (mesmo
+                    // HTML que a gente gerou) pra encaixar a altura no card
+                    // de verdade, sem sobra do fundo #f4f2f8 do template
+                    // embaixo. O CORTE de e-mail muito longo (a etapa PI,
+                    // bilíngue, passa de 1700px) é do DIV pai (`overflow-y`) —
+                    // CSS do pai não controla overflow interno de um iframe,
+                    // só o próprio `scrolling`, por isso o iframe nunca tem
+                    // scroll dele mesmo (`scrolling="no"`, sempre do tamanho
+                    // exato do conteúdo).
+                    const doc = e.currentTarget.contentWindow?.document;
+                    const contentHeight = doc?.body?.scrollHeight;
+                    if (contentHeight) setPreviewHeight(Math.max(contentHeight + 2, 200));
+                  }}
+                  scrolling="no"
+                  style={{ height: previewHeight, display: "block" }}
+                  className="w-full border-0"
+                />
+              </div>
             </div>
           )}
           <DialogFooter>
