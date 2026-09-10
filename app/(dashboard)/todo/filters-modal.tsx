@@ -34,6 +34,8 @@ export type TodoFilters = {
   step: string;
   date_from: string;
   date_to: string;
+  /** Só chega preenchível quando `users` (visão admin) não vem vazio. */
+  user_id: string;
 };
 
 export const EMPTY_FILTERS: TodoFilters = {
@@ -42,6 +44,7 @@ export const EMPTY_FILTERS: TodoFilters = {
   step: "",
   date_from: "",
   date_to: "",
+  user_id: "",
 };
 
 export function activeFilterCount(filters: TodoFilters): number {
@@ -90,6 +93,7 @@ export function FiltersModal({
   onApply,
   onClear,
   clients,
+  users,
   phase,
 }: {
   open: boolean;
@@ -98,6 +102,8 @@ export function FiltersModal({
   onApply: (filters: TodoFilters) => void;
   onClear: () => void;
   clients: Ref[];
+  /** Vazio pra quem não é admin — a tela nem oferece o filtro nesse caso. */
+  users: Ref[];
   /** Aba ativa — restringe as opções do filtro de Step. */
   phase: StepPhase;
 }) {
@@ -133,6 +139,16 @@ export function FiltersModal({
 
         <div className="space-y-6">
           <Section title="Order Information">
+            {users.length > 0 && (
+              <Field label="Responsible">
+                <SearchSelect
+                  value={draft.user_id}
+                  onChange={(v) => set("user_id", v)}
+                  options={users}
+                  placeholder="Choose a user"
+                />
+              </Field>
+            )}
             <Field label="Client">
               <SearchSelect
                 value={draft.client_id}
