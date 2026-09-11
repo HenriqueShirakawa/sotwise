@@ -10,6 +10,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
+import { promoteAnchorIfMissing, recordThreadFanout, resolveThreadsForSend } from "@/lib/email/threads";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, StepEmailRecipient, StepEmailReply } from "@/types/database";
 
@@ -335,6 +336,36 @@ const sendSchema = z.object({
   /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" pro
    *  destinatário interno; cliente nunca recebe esse link. */
   recordPath: z.string().trim().min(1),
+  /** Etapa do checklist que está compondo — decide em qual `email_threads` da
+   *  Order (Fase 1 do threading) o envio entra (ver `lib/email/threads.ts`).
+   *  `previewStepEmail` recebe o mesmo input mas ignora este campo (preview
+   *  nunca cria/toca thread nenhuma). */
+  step: z.enum([
+    "order",
+    "po",
+    "pi",
+    "deposit_payment",
+    "packing_confirm",
+    "condition_confirm",
+    "place_the_order",
+    "etd",
+    "balance_payment",
+    "pre_loading",
+    "consolidation_point",
+    "city",
+    "port_of_loading",
+    "shipping_docs",
+    "agents",
+    "booking",
+    "loading_date",
+    "shipping_date",
+    "bl",
+    "original_docs",
+    "inspection_report",
+    "eta_brazil",
+    "ata_brazil",
+    "delivered",
+  ]),
 });
 
 export type SendStepEmailInput = z.infer<typeof sendSchema>;
@@ -438,10 +469,15 @@ export async function sendStepEmail(
   // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
   // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
   // O logo é só marca — vai pros dois. Idioma (Fase 2.1 US1) é o mesmo pros dois.
-  const [{ internalHtml, clientHtml, language }, isClientById] = await Promise.all([
+  const [{ internalHtml, clientHtml, language }, isClientById, threadsResult] = await Promise.all([
     renderStepEmailHtmls(admin, owner, stepRow.id, session.profile.full_name, parsed.data),
     loadIsClientByUserId(admin, recipientIds),
+    resolveThreadsForSend(admin, owner, parsed.data.step),
   ]);
+  // Sem thread resolvida, não manda e-mail nenhum ainda (Fase 1 do threading)
+  // — nunca cai num modo "sem thread" silencioso (ver lib/email/threads.ts).
+  if (!threadsResult.ok) return { ok: false, error: threadsResult.error };
+  const threads = threadsResult.threads;
 
   // Gerado ANTES do envio: precisa estar no Reply-To de cada `sendEmail`, mas
   // a linha em `checklist_step_emails` só nasce DEPOIS (o insert final abaixo
@@ -491,8 +527,19 @@ export async function sendStepEmail(
     recipients,
     status,
     language,
+    // threads[0] é sempre a PRIMÁRIA (ver resolveThreadsForSend). message_id/
+    // in_reply_to_message_id ficam null nesta fase — só a Fase 2 (Resend) popula.
+    thread_id: threads[0].id,
   });
   if (insertError) return { ok: false, error: insertError.message };
+
+  // Fan-out + âncora — bookkeeping da Fase 1, não afeta o e-mail já enviado
+  // acima. Roda mesmo se sent === 0: a linha existe de qualquer forma (igual
+  // ao status "failed" já gravado), então a thread também deve refletir isso.
+  await recordThreadFanout(admin, threads, emailRowId);
+  for (const t of threads) {
+    await promoteAnchorIfMissing(admin, t.id, emailRowId, null);
+  }
 
   if (sent === 0) return { ok: false, error: "Could not deliver to any recipient." };
   return { ok: true, sent, failed };

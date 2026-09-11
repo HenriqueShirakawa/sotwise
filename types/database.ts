@@ -50,6 +50,8 @@ export type StepEmailRecipient = {
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
 export type StepEmailStatus = "success" | "partial" | "failed";
+/** Fase 1 do threading (docs/regras_de_negocio.md) — as 2 conversas por Order. */
+export type EmailThreadKind = "internal" | "external";
 /** Uma resposta do cliente (via Resend inbound) a um checklist_step_emails,
  *  já hidratada para exibição no histórico da etapa. */
 export type StepEmailReply = {
@@ -1141,6 +1143,12 @@ export type Database = {
           // revogados de anon/authenticated/service_role no banco.
           status: StepEmailStatus | null;
           language: EmailLanguage | null;
+          // Aditivas (migration 20260910120000, Fase 1 do threading) — nulo em
+          // linhas anteriores (não migradas retroativamente) e nesta fase
+          // ainda nulo em linhas novas também (só a Fase 2 popula de verdade).
+          thread_id: UUID | null;
+          message_id: string | null;
+          in_reply_to_message_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -1153,6 +1161,9 @@ export type Database = {
           created_at?: Timestamp;
           status?: StepEmailStatus | null;
           language?: EmailLanguage | null;
+          thread_id?: UUID | null;
+          message_id?: string | null;
+          in_reply_to_message_id?: string | null;
         };
         Update: never; // revogado no banco — ver comentário da tabela
         Relationships: [];
@@ -1203,6 +1214,43 @@ export type Database = {
         Update: Partial<
           Database["public"]["Tables"]["checklist_step_email_reply_recipients"]["Insert"]
         >;
+        Relationships: [];
+      };
+      // Fase 1 do threading — conversa contínua por Order (ver migration
+      // 20260910120000). SEM revoke de update: anchor_* é promovido por um
+      // UPDATE condicional legítimo (ver lib/email/threads.ts).
+      email_threads: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          kind: EmailThreadKind;
+          anchor_email_id: UUID | null;
+          anchor_message_id: string | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          order_id: UUID;
+          kind: EmailThreadKind;
+          anchor_email_id?: UUID | null;
+          anchor_message_id?: string | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<{
+          anchor_email_id: UUID | null;
+          anchor_message_id: string | null;
+          updated_at: Timestamp;
+        }>;
+        Relationships: [];
+      };
+      // Fan-out: todas as threads que um envio atinge. Insert-only (revoke
+      // update/delete no banco), só para auditoria.
+      checklist_step_email_threads: {
+        Row: { checklist_step_email_id: UUID; thread_id: UUID };
+        Insert: { checklist_step_email_id: UUID; thread_id: UUID };
+        Update: never; // revogado no banco — ver comentário da tabela
         Relationships: [];
       };
     };
