@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ChevronDown, Mail, Send, User } from "lucide-react";
+import { ChevronDown, Mail, Send, User, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/lib/format";
@@ -75,6 +75,9 @@ export function StepEmailSection({
   const [history, setHistory] = useState<StepEmailRow[] | null>(null);
   const [recipientOptions, setRecipientOptions] = useState<Option[]>([]);
   const [recipientIds, setRecipientIds] = useState<string[]>([]);
+  /** E-mails digitados à mão (gente sem cadastro no SOTWISE). */
+  const [adHocEmails, setAdHocEmails] = useState<string[]>([]);
+  const [adHocDraft, setAdHocDraft] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState("");
   const [pending, startTransition] = useTransition();
@@ -95,6 +98,8 @@ export function StepEmailSection({
     setSubject(defaultSubject);
     setBody(buildDefaultStepBody(step, {}));
     setRecipientIds(responsibleId ? [responsibleId] : []);
+    setAdHocEmails([]);
+    setAdHocDraft("");
     setStage("compose");
     setPreview(null);
     setComposeOpen(true);
@@ -108,6 +113,19 @@ export function StepEmailSection({
 
   const canSend = !pending && recipientIds.length > 0 && !!subject.trim() && !!body.trim();
 
+  /** Valida e adiciona o e-mail digitado à lista de avulsos. Silencioso
+   *  quando o campo está vazio (Enter sem nada digitado não é erro). */
+  function addAdHocEmail() {
+    const email = adHocDraft.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error("Invalid e-mail address.");
+      return;
+    }
+    if (!adHocEmails.includes(email)) setAdHocEmails([...adHocEmails, email]);
+    setAdHocDraft("");
+  }
+
   function showPreview() {
     if (!canSend) {
       if (recipientIds.length === 0) toast.error("Select at least one recipient.");
@@ -118,6 +136,7 @@ export function StepEmailSection({
       const res = await previewStepEmail(owner, {
         feature,
         recipient_ids: recipientIds,
+        ad_hoc_emails: adHocEmails,
         subject,
         body,
         recordPath,
@@ -139,6 +158,7 @@ export function StepEmailSection({
       const res = await sendStepEmail(owner, {
         feature,
         recipient_ids: recipientIds,
+        ad_hoc_emails: adHocEmails,
         subject,
         body,
         recordPath,
@@ -243,6 +263,50 @@ export function StepEmailSection({
                   placeholder="Choose recipients..."
                   lockedIds={responsibleId ? [responsibleId] : []}
                 />
+                {/* Destinatário sem cadastro no SOTWISE. Controle próprio, de
+                    propósito: o MultiSearchSelect é compartilhado com outras 5
+                    telas que não têm nada a ver com e-mail. Quem entra por
+                    aqui recebe SEMPRE a versão de cliente (sem campos
+                    internos/botão "Acessar") — não há perfil pra checar papel. */}
+                <div className="mt-1.5 flex gap-1.5">
+                  <Input
+                    value={adHocDraft}
+                    onChange={(e) => setAdHocDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        addAdHocEmail();
+                      }
+                    }}
+                    onBlur={addAdHocEmail}
+                    type="email"
+                    placeholder="Add an e-mail not registered in the system..."
+                    className="h-8 text-xs"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={addAdHocEmail}>
+                    Add
+                  </Button>
+                </div>
+                {adHocEmails.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {adHocEmails.map((email) => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#640BB7]/10 px-2 py-0.5 text-xs text-[#640BB7]"
+                      >
+                        {email}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${email}`}
+                          onClick={() => setAdHocEmails(adHocEmails.filter((e) => e !== email))}
+                          className="text-[#640BB7]/60 hover:text-[#640BB7]"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Subject</Label>
@@ -397,7 +461,7 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
       <div className="mt-1 flex flex-wrap gap-1">
         {row.recipients.map((r) => (
           <span
-            key={r.user_id}
+            key={r.user_id ?? r.email}
             title={r.error ?? undefined}
             className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${
               r.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
