@@ -11,6 +11,7 @@ import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
+import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
   loadQuotedHistory,
   peekQuotedHistory,
@@ -455,8 +456,12 @@ export async function previewStepEmail(
     quoted
   );
 
-  const hasInternal = recipientIds.some((id) => !isClientById.get(id));
-  const hasClient = recipientIds.some((id) => isClientById.get(id));
+  // Etapa de conversa com o cliente (`external`): TODO MUNDO recebe a versão
+  // limpa — sem campos internos e sem botão "Go to", só ler e responder
+  // (decisão do usuário em 11/09/2026). Ver `sendStepEmail`.
+  const externalThread = threadKindForStep(parsed.data.step) === "external";
+  const hasInternal = !externalThread && recipientIds.some((id) => !isClientById.get(id));
+  const hasClient = externalThread || recipientIds.some((id) => isClientById.get(id));
 
   return {
     ok: true,
@@ -539,13 +544,12 @@ export async function sendStepEmail(
   // usado no fan-out/âncora logo depois.
   const emailRowId = randomUUID();
 
-  // Todos os destinatários do mesmo tipo vão numa ÚNICA mensagem, todos no
-  // "To" (decisão do usuário em 11/09/2026): assim eles se veem e um
-  // "Responder a todos" alcança o grupo inteiro + o SOTWISE, em vez de a
-  // resposta só voltar pro sistema. Continuam sendo DUAS mensagens quando o
-  // envio mistura equipe e cliente — o cliente nunca pode ver os campos
-  // internos/botão "Go to" (regra antiga, mais forte que a novidade do Cc),
-  // e de quebra um grupo não enxerga os endereços do outro.
+  // Todos os destinatários que recebem a MESMA variante vão numa única
+  // mensagem, todos no "To" (decisão do usuário em 11/09/2026): assim eles se
+  // veem e um "Responder a todos" alcança o grupo inteiro + o SOTWISE, em vez
+  // de a resposta só voltar pro sistema. Viram DUAS mensagens só quando o
+  // envio mistura as duas variantes — aí um grupo também não enxerga os
+  // endereços do outro.
   const people = await Promise.all(
     recipientIds.map(async (userId) => {
       const { data } = await admin.auth.admin.getUserById(userId);
@@ -562,8 +566,17 @@ export async function sendStepEmail(
     .filter((p) => !p.email)
     .map((p) => ({ user_id: p.userId, name: p.name, email: "", ok: false, error: "No e-mail on file." }));
 
+  // Quem recebe a versão LIMPA (sem campos internos, sem botão "Go to"):
+  //  - todo mundo, quando a etapa pertence à conversa do cliente
+  //    (`external`) — decisão do usuário em 11/09/2026: essa thread é só pra
+  //    ler e responder, ninguém ali recebe dado interno;
+  //  - e, em qualquer etapa, quem TEM papel `client` — piso de segurança
+  //    antigo, que continua valendo mesmo numa etapa interna.
+  const externalThread = primaryThread.kind === "external";
+  const plainFor = (p: { isClient: boolean }) => externalThread || p.isClient;
+
   for (const group of [false, true]) {
-    const members = people.filter((p) => p.email && p.isClient === group);
+    const members = people.filter((p) => p.email && plainFor(p) === group);
     if (members.length === 0) continue;
     const sent = await sendEmail({
       to: members.map((p) => p.email as string),
