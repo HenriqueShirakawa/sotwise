@@ -19,7 +19,9 @@ const RESEND_RECEIVING_ENDPOINT = "https://api.resend.com/emails/receiving";
 const DEFAULT_FROM = "SOTWISE <onboarding@resend.dev>";
 
 type SendEmailArgs = {
-  to: string;
+  /** Um endereço, ou vários numa ÚNICA mensagem (todos se veem no "To" e o
+   *  "Responder a todos" alcança o grupo inteiro — ver sendStepEmail). */
+  to: string | string[];
   subject: string;
   html: string;
   /** Endereço pra onde as respostas do destinatário voltam — usado pela

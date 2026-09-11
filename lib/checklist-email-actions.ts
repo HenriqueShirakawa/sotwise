@@ -465,12 +465,16 @@ export async function previewStepEmail(
 }
 
 /**
- * Envio síncrono, um `sendEmail` por destinatário (igual ao loop de
- * `domain/client/notifications.ts`): ninguém vê o e-mail dos colegas, e uma
- * falha individual não derruba os outros. Sem fila/outbox — é uma ação manual
- * e pontual, não um evento de sistema; o resultado de cada destinatário já
- * fica congelado na ÚNICA linha de histórico, independente de sucesso total,
- * parcial ou falha total.
+ * Envio síncrono, UMA mensagem por grupo de destinatários (equipe / cliente),
+ * com todos do grupo no "To" — decisão do usuário em 11/09/2026, pra que um
+ * "Responder a todos" alcance o grupo inteiro e não só o SOTWISE. Antes era
+ * uma mensagem por pessoa (ninguém via o endereço dos colegas); a separação
+ * equipe × cliente foi mantida porque cliente nunca pode ver os campos
+ * internos nem o botão "Go to" — e, de lambuja, um grupo não enxerga os
+ * endereços do outro. Sem fila/outbox — é uma ação manual e pontual, não um
+ * evento de sistema; o resultado de cada destinatário já fica congelado na
+ * ÚNICA linha de histórico, independente de sucesso total, parcial ou falha
+ * total.
  */
 export async function sendStepEmail(
   owner: StepOwner,
@@ -535,33 +539,51 @@ export async function sendStepEmail(
   // usado no fan-out/âncora logo depois.
   const emailRowId = randomUUID();
 
-  const recipients: StepEmailRecipient[] = [];
-  for (const userId of recipientIds) {
-    const { data } = await admin.auth.admin.getUserById(userId);
-    const email = data.user?.email ?? null;
-    const name = nameById.get(userId) ?? "—";
-    if (!email) {
-      recipients.push({ user_id: userId, name, email: "", ok: false, error: "No e-mail on file." });
-      continue;
-    }
-    const html = isClientById.get(userId) ? clientHtml : internalHtml;
+  // Todos os destinatários do mesmo tipo vão numa ÚNICA mensagem, todos no
+  // "To" (decisão do usuário em 11/09/2026): assim eles se veem e um
+  // "Responder a todos" alcança o grupo inteiro + o SOTWISE, em vez de a
+  // resposta só voltar pro sistema. Continuam sendo DUAS mensagens quando o
+  // envio mistura equipe e cliente — o cliente nunca pode ver os campos
+  // internos/botão "Go to" (regra antiga, mais forte que a novidade do Cc),
+  // e de quebra um grupo não enxerga os endereços do outro.
+  const people = await Promise.all(
+    recipientIds.map(async (userId) => {
+      const { data } = await admin.auth.admin.getUserById(userId);
+      return {
+        userId,
+        name: nameById.get(userId) ?? "—",
+        email: data.user?.email ?? null,
+        isClient: isClientById.get(userId) === true,
+      };
+    })
+  );
+
+  const recipients: StepEmailRecipient[] = people
+    .filter((p) => !p.email)
+    .map((p) => ({ user_id: p.userId, name: p.name, email: "", ok: false, error: "No e-mail on file." }));
+
+  for (const group of [false, true]) {
+    const members = people.filter((p) => p.email && p.isClient === group);
+    if (members.length === 0) continue;
     const sent = await sendEmail({
-      to: email,
+      to: members.map((p) => p.email as string),
       subject: smtpSubject,
-      html,
+      html: group ? clientHtml : internalHtml,
       replyTo,
       headers: threadHeaders,
     });
-    recipients.push({
-      user_id: userId,
-      name,
-      email,
-      ok: sent.ok,
-      error: sent.ok ? null : sent.error,
-      // Cada destinatário recebe uma mensagem própria (Message-ID próprio) —
-      // o webhook casa o In-Reply-To da resposta contra qualquer um deles.
-      message_id: sent.ok ? sent.messageId : null,
-    });
+    for (const p of members) {
+      recipients.push({
+        user_id: p.userId,
+        name: p.name,
+        email: p.email as string,
+        ok: sent.ok,
+        error: sent.ok ? null : sent.error,
+        // Message-ID da mensagem do GRUPO — o webhook casa o In-Reply-To da
+        // resposta contra ele (todos do grupo respondem a mesma mensagem).
+        message_id: sent.ok ? sent.messageId : null,
+      });
+    }
   }
 
   const ownerFields =
