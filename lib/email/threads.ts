@@ -230,23 +230,21 @@ export type QuotedMessage = {
   body: string;
 };
 
-const QUOTE_LIMIT = 10;
-
 /**
  * Mensagens anteriores da thread (mais recente primeiro), pra ir citadas no
  * rodapé do próximo envio — igual ao "Em <data>, <fulano> escreveu:" que o
  * Gmail/Outlook anexam num reply. Sem isto, cada reply chega mostrando só a
  * mensagem nova e, mesmo agrupado, "parece" e-mail avulso (feedback do
- * usuário em 11/09/2026). Limitado às últimas QUOTE_LIMIT pra o e-mail não
- * crescer sem fim numa Order com 24 etapas.
+ * usuário em 11/09/2026). Cita TODAS as mensagens da thread (pedido do
+ * usuário, mesma data) — o teto natural é o checklist (24 etapas × poucos
+ * envios), e o Gmail colapsa o bloco atrás do "..." de qualquer forma.
  */
 export async function loadQuotedHistory(admin: Admin, threadId: string): Promise<QuotedMessage[]> {
   const { data: rows } = await admin
     .from("checklist_step_emails")
     .select("body, sender_id, created_at, checklist_step_id, pre_loading_step_id")
     .eq("thread_id", threadId)
-    .order("created_at", { ascending: false })
-    .limit(QUOTE_LIMIT);
+    .order("created_at", { ascending: false });
   if (!rows?.length) return [];
 
   const senderIds = [...new Set(rows.map((r) => r.sender_id))];
