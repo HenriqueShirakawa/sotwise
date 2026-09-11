@@ -1,6 +1,7 @@
 import "server-only";
 
-import { formatDateNumeric } from "@/lib/format";
+import { formatDateNumeric, formatDateTime } from "@/lib/format";
+import type { QuotedMessage } from "@/lib/email/threads";
 
 export type StepEmailFacts = {
   estimatedDate: string | null;
@@ -29,6 +30,8 @@ const DICT: Record<
     goTo: string;
     sentVia: (name: string) => string;
     replyHint: string;
+    /** Cabeçalho de cada mensagem anterior citada no rodapé (formato do Gmail). */
+    wrote: (when: string, name: string) => string;
   }
 > = {
   "pt-BR": {
@@ -40,6 +43,7 @@ const DICT: Record<
     goTo: "Acessar",
     sentVia: (name) => `Enviado por ${name} via SOTWISE.`,
     replyHint: "Responda este e-mail para enviar uma mensagem ao time.",
+    wrote: (when, name) => `Em ${when}, ${name} escreveu:`,
   },
   en: {
     htmlLang: "en",
@@ -50,6 +54,7 @@ const DICT: Record<
     goTo: "Go to",
     sentVia: (name) => `Sent by ${name} via SOTWISE.`,
     replyHint: "Reply to this email to send a message to the team.",
+    wrote: (when, name) => `On ${when}, ${name} wrote:`,
   },
   zh: {
     htmlLang: "zh",
@@ -60,6 +65,7 @@ const DICT: Record<
     goTo: "前往",
     sentVia: (name) => `由 ${name} 通过 SOTWISE 发送。`,
     replyHint: "回复此邮件即可给团队发送消息。",
+    wrote: (when, name) => `${when}，${name} 写道：`,
   },
 };
 
@@ -89,8 +95,11 @@ export function checklistStepEmailHtml(params: {
   /** Idioma do cliente do pedido/PL, resolvido antes de chamar isto. Default
    *  'en' — nunca deve faltar, mas o fallback evita template quebrado. */
   language?: EmailLanguage;
+  /** Mensagens anteriores da conversa (mais recente primeiro), citadas no
+   *  rodapé como num reply de verdade — ver `loadQuotedHistory`. */
+  quoted?: QuotedMessage[];
 }): string {
-  const { subject, stepLabel, senderName, body, facts, actionUrl, logoUrl, language = "en" } = params;
+  const { subject, stepLabel, senderName, body, facts, actionUrl, logoUrl, language = "en", quoted = [] } = params;
   const t = DICT[language];
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br>");
 
@@ -124,6 +133,12 @@ export function checklistStepEmailHtml(params: {
         </tr>
       </table>`
     : "";
+
+  // Histórico ANINHADO, igual ao que o Gmail monta num reply humano: a
+  // mensagem anterior cita a anterior dela, e assim por diante. `gmail_quote`
+  // é a classe que o próprio Gmail usa no bloco citado — com ela a caixa de
+  // entrada colapsa o histórico atrás do "..." em vez de repetir tudo.
+  const quotedHtml = quoted.length ? `<div class="gmail_quote" style="margin:24px 0 0;">${nestedQuote(quoted, t)}</div>` : "";
 
   return `<!DOCTYPE html>
 <html lang="${t.htmlLang}">
@@ -162,6 +177,7 @@ export function checklistStepEmailHtml(params: {
                 <p style="margin:0;font-size:13px;color:#8b8698;">
                   ${escapeHtml(t.replyHint)}
                 </p>
+                ${quotedHtml}
               </td>
             </tr>
           </table>
@@ -170,6 +186,17 @@ export function checklistStepEmailHtml(params: {
     </table>
   </body>
 </html>`;
+}
+
+/** `quoted[0]` é a mais recente; cada nível cita o seguinte dentro de si. */
+function nestedQuote(quoted: QuotedMessage[], t: (typeof DICT)[EmailLanguage]): string {
+  if (quoted.length === 0) return "";
+  const [q, ...older] = quoted;
+  return `<p style="margin:0 0 6px;font-size:13px;color:#8b8698;">${escapeHtml(t.wrote(formatDateTime(q.sentAt), q.senderName))}</p>
+    <blockquote style="margin:0 0 12px;padding:0 0 0 12px;border-left:2px solid #d9d4e3;font-size:13px;line-height:1.5;color:#6b6479;">
+      ${q.stepLabel ? `<strong style="color:#4b4459;">${escapeHtml(q.stepLabel)}</strong><br>` : ""}${escapeHtml(q.body).replace(/\n/g, "<br>")}
+      ${older.length ? `<div style="margin:12px 0 0;">${nestedQuote(older, t)}</div>` : ""}
+    </blockquote>`;
 }
 
 function escapeHtml(value: string): string {
