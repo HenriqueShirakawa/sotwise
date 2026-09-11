@@ -12,10 +12,13 @@ import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
 import {
+  loadQuotedHistory,
+  peekQuotedHistory,
   promoteAnchorIfMissing,
   recordThreadFanout,
   resolveThreadsForSend,
   threadingHeaders,
+  type QuotedMessage,
 } from "@/lib/email/threads";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, StepEmailRecipient, StepEmailReply } from "@/types/database";
@@ -258,7 +261,8 @@ async function renderStepEmailHtmls(
   owner: StepOwner,
   stepId: string | null,
   senderName: string,
-  input: { subject: string; body: string; recordPath: string; step: ChecklistStep }
+  input: { subject: string; body: string; recordPath: string; step: ChecklistStep },
+  quoted: QuotedMessage[]
 ): Promise<{ internalHtml: string; clientHtml: string; language: EmailLanguage }> {
   const [facts, language, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
@@ -281,6 +285,7 @@ async function renderStepEmailHtmls(
       actionUrl,
       logoUrl,
       language,
+      quoted,
     }),
     clientHtml: checklistStepEmailHtml({
       subject: input.subject,
@@ -289,6 +294,7 @@ async function renderStepEmailHtmls(
       body: input.body,
       logoUrl,
       language,
+      quoted,
     }),
     language,
   };
@@ -435,16 +441,18 @@ export async function previewStepEmail(
   const admin = createAdminClient();
 
   const recipientIds = [...new Set(parsed.data.recipient_ids)];
-  const [stepId, isClientById] = await Promise.all([
+  const [stepId, isClientById, quoted] = await Promise.all([
     findStepId(admin, owner),
     loadIsClientByUserId(admin, recipientIds),
+    peekQuotedHistory(admin, owner, parsed.data.step),
   ]);
   const { internalHtml, clientHtml } = await renderStepEmailHtmls(
     admin,
     owner,
     stepId,
     session.profile.full_name,
-    parsed.data
+    parsed.data,
+    quoted
   );
 
   const hasInternal = recipientIds.some((id) => !isClientById.get(id));
@@ -490,8 +498,7 @@ export async function sendStepEmail(
   // on/Signed by nem o botão "Go to" — quem decide é o PAPEL do destinatário,
   // não o remetente, então o e-mail muda por pessoa mesmo sendo o mesmo envio.
   // O logo é só marca — vai pros dois. Idioma (Fase 2.1 US1) é o mesmo pros dois.
-  const [{ internalHtml, clientHtml, language }, isClientById, threadsResult] = await Promise.all([
-    renderStepEmailHtmls(admin, owner, stepRow.id, session.profile.full_name, parsed.data),
+  const [isClientById, threadsResult] = await Promise.all([
     loadIsClientByUserId(admin, recipientIds),
     resolveThreadsForSend(admin, owner, parsed.data.step),
   ]);
@@ -502,10 +509,27 @@ export async function sendStepEmail(
   const primaryThread = threads[0];
 
   // Cabeçalhos que fazem o e-mail chegar como Reply do primeiro da conversa
-  // (vazio se este é o primeiro). Resolvidos UMA vez, iguais pra todos os
-  // destinatários deste envio.
-  const threadHeaders = await threadingHeaders(admin, threads);
+  // (vazio se este é o primeiro) + histórico anterior citado no rodapé.
+  // Resolvidos UMA vez, iguais pra todos os destinatários deste envio.
+  const [threadHeaders, quoted] = await Promise.all([
+    threadingHeaders(admin, threads),
+    loadQuotedHistory(admin, primaryThread.id),
+  ]);
+  const { internalHtml, clientHtml, language } = await renderStepEmailHtmls(
+    admin,
+    owner,
+    stepRow.id,
+    session.profile.full_name,
+    parsed.data,
+    quoted
+  );
   const replyTo = replyToAddress(primaryThread.id);
+  // "Re:" só no que sai pelo SMTP, e só quando é de fato uma resposta — a
+  // linha do histórico guarda o assunto como o usuário digitou.
+  const smtpSubject =
+    threadHeaders["In-Reply-To"] && !/^re:/i.test(parsed.data.subject)
+      ? `Re: ${parsed.data.subject}`
+      : parsed.data.subject;
 
   // Id da linha gerado antes do insert: é gravado explícito no insert final e
   // usado no fan-out/âncora logo depois.
@@ -523,7 +547,7 @@ export async function sendStepEmail(
     const html = isClientById.get(userId) ? clientHtml : internalHtml;
     const sent = await sendEmail({
       to: email,
-      subject: parsed.data.subject,
+      subject: smtpSubject,
       html,
       replyTo,
       headers: threadHeaders,

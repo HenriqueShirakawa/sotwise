@@ -2,6 +2,7 @@ import "server-only";
 
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { StepOwner } from "@/lib/checklist-email-actions";
+import { STEP_LABELS } from "@/lib/checklist";
 import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
@@ -220,4 +221,79 @@ export async function threadingHeaders(admin: Admin, threads: ResolvedThread[]):
 
   const references = [...new Set([...anchors, latest?.message_id].filter((id): id is string => Boolean(id)))];
   return { "In-Reply-To": inReplyTo, References: references.join(" ") };
+}
+
+export type QuotedMessage = {
+  sentAt: string;
+  senderName: string;
+  stepLabel: string;
+  body: string;
+};
+
+const QUOTE_LIMIT = 10;
+
+/**
+ * Mensagens anteriores da thread (mais recente primeiro), pra ir citadas no
+ * rodapé do próximo envio — igual ao "Em <data>, <fulano> escreveu:" que o
+ * Gmail/Outlook anexam num reply. Sem isto, cada reply chega mostrando só a
+ * mensagem nova e, mesmo agrupado, "parece" e-mail avulso (feedback do
+ * usuário em 11/09/2026). Limitado às últimas QUOTE_LIMIT pra o e-mail não
+ * crescer sem fim numa Order com 24 etapas.
+ */
+export async function loadQuotedHistory(admin: Admin, threadId: string): Promise<QuotedMessage[]> {
+  const { data: rows } = await admin
+    .from("checklist_step_emails")
+    .select("body, sender_id, created_at, checklist_step_id, pre_loading_step_id")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+    .limit(QUOTE_LIMIT);
+  if (!rows?.length) return [];
+
+  const senderIds = [...new Set(rows.map((r) => r.sender_id))];
+  const orderStepIds = rows.map((r) => r.checklist_step_id).filter((id): id is string => Boolean(id));
+  const plStepIds = rows.map((r) => r.pre_loading_step_id).filter((id): id is string => Boolean(id));
+
+  const [{ data: senders }, { data: orderSteps }, { data: plSteps }] = await Promise.all([
+    admin.from("profiles").select("id, full_name").in("id", senderIds),
+    orderStepIds.length
+      ? admin.from("order_checklist_steps").select("id, step").in("id", orderStepIds)
+      : Promise.resolve({ data: [] as { id: string; step: ChecklistStep }[] }),
+    plStepIds.length
+      ? admin.from("pre_loading_checklist_steps").select("id, step").in("id", plStepIds)
+      : Promise.resolve({ data: [] as { id: string; step: ChecklistStep }[] }),
+  ]);
+  const nameById = new Map((senders ?? []).map((s) => [s.id, s.full_name]));
+  const stepById = new Map<string, ChecklistStep>([
+    ...(orderSteps ?? []).map((s) => [s.id, s.step] as const),
+    ...(plSteps ?? []).map((s) => [s.id, s.step] as const),
+  ]);
+
+  return rows.map((r) => {
+    const step = stepById.get(r.checklist_step_id ?? r.pre_loading_step_id ?? "");
+    return {
+      sentAt: r.created_at,
+      senderName: nameById.get(r.sender_id) ?? "—",
+      stepLabel: step ? STEP_LABELS[step] : "",
+      body: r.body,
+    };
+  });
+}
+
+/**
+ * Versão só-leitura de `resolveThreadsForSend` pro PREVIEW: acha a thread
+ * primária que o envio usaria, sem criar nada, e devolve o histórico citado
+ * que o e-mail de verdade levaria. Lista vazia = thread ainda não existe
+ * (o envio seria o primeiro da conversa).
+ */
+export async function peekQuotedHistory(admin: Admin, owner: StepOwner, step: ChecklistStep): Promise<QuotedMessage[]> {
+  const orders = await resolveOwnerOrderIds(admin, owner);
+  if (orders.length === 0) return [];
+  const primary = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number))[0];
+  const { data: thread } = await admin
+    .from("email_threads")
+    .select("id")
+    .eq("order_id", primary.id)
+    .eq("kind", threadKindForStep(step))
+    .maybeSingle();
+  return thread ? loadQuotedHistory(admin, thread.id) : [];
 }
