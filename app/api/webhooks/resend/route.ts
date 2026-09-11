@@ -83,8 +83,12 @@ function htmlToText(html: string): string {
  */
 const QUOTE_MARKERS: RegExp[] = [
   /^>.*$/m, // linha já citada (prefixo ">")
-  /^On\s.{0,200}?\bwrote:\s*$/m, // Gmail/Apple Mail (inglês)
-  /^Em\s.{0,200}?\bescreveu:\s*$/im, // Gmail (pt-BR)
+  // `[\s\S]` em vez de `.`: quando o cabeçalho da citação fica longo, o
+  // Gmail quebra a linha antes de "escreveu:"/"wrote:" — com `.` o padrão
+  // não casava e a citação inteira sobrava no corpo salvo (visto numa
+  // resposta de verdade em 11/09/2026).
+  /^On\s[\s\S]{0,300}?\bwrote:\s*$/m, // Gmail/Apple Mail (inglês)
+  /^Em\s[\s\S]{0,300}?\bescreveu:\s*$/im, // Gmail (pt-BR)
   /^-{2,}\s*(Original Message|Mensagem original)\s*-{2,}$/im,
   /^_{5,}$/m, // separador do Outlook antes do bloco From:/Sent:/To:
 ];
