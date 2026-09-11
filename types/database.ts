@@ -46,12 +46,20 @@ export type StepEmailRecipient = {
   email: string;
   ok: boolean;
   error: string | null;
+  /** Message-ID da mensagem entregue a ESTE destinatário (Fase 2 do
+   *  threading) — ausente/nulo em envios antigos ou que falharam. */
+  message_id?: string | null;
 };
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
 export type StepEmailStatus = "success" | "partial" | "failed";
-/** Fase 1 do threading (docs/regras_de_negocio.md) — as 2 conversas por Order. */
+/** Threading por Order (docs/regras_de_negocio.md) — as 2 conversas por Order. */
 export type EmailThreadKind = "internal" | "external";
+/** Como o webhook decidiu a qual envio uma resposta pertence (Fase 2):
+ *  'message_id' = casou o In-Reply-To (certeza); 'fallback' = sem cabeçalho
+ *  utilizável, caiu na linha mais recente da thread (chute marcado);
+ *  'direct' = token antigo, da própria linha. Nulo em respostas de antes. */
+export type EmailReplyAttribution = "message_id" | "fallback" | "direct";
 /** Uma resposta do cliente (via Resend inbound) a um checklist_step_emails,
  *  já hidratada para exibição no histórico da etapa. */
 export type StepEmailReply = {
@@ -62,6 +70,7 @@ export type StepEmailReply = {
   body_text: string;
   received_at: Timestamp;
   read_by_me: boolean;
+  attribution: EmailReplyAttribution | null;
 };
 export type ChecklistPhase = "order" | "preloading" | "shipment";
 export type ChecklistStep =
@@ -1187,6 +1196,7 @@ export type Database = {
           body_text: string;
           body_html: string | null;
           provider_message_id: string;
+          attribution: EmailReplyAttribution | null;
           received_at: Timestamp;
           created_at: Timestamp;
         };
@@ -1200,6 +1210,7 @@ export type Database = {
           body_text: string;
           body_html?: string | null;
           provider_message_id: string;
+          attribution?: EmailReplyAttribution | null;
           received_at?: Timestamp;
           created_at?: Timestamp;
         };

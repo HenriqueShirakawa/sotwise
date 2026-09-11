@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { fetchReceivedEmail } from "@/lib/email/resend";
 import { verifyResendWebhook } from "@/lib/email/verify-resend-webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { StepEmailRecipient } from "@/types/database";
+import type { EmailReplyAttribution, StepEmailRecipient } from "@/types/database";
 
 /**
  * Webhook do Resend — evento `email.received` (recebimento de e-mail no
@@ -15,10 +15,16 @@ import type { StepEmailRecipient } from "@/types/database";
  * corpo em vez de comparar um token estático.
  *
  * Hoje o único uso é resposta do cliente ao "e-mail manual por etapa"
- * (`checklist_step_emails` / `lib/checklist-email-actions.ts`): o Reply-To de
- * todo envio é `reply+<checklist_step_emails.id>@<domínio>` — o id da linha É
- * o token que este handler usa pra achar de volta a linha original e gravar a
- * resposta encadeada (`checklist_step_email_replies`).
+ * (`checklist_step_emails` / `lib/checklist-email-actions.ts`). O token do
+ * Reply-To (`reply+<uuid>@<domínio>`) tem dois formatos, resolvidos nesta ordem:
+ *  1. id de `email_threads` (Fase 2 do threading, todo envio novo): a
+ *     resposta pertence à CONVERSA do pedido; a etapa exata sai do
+ *     `In-Reply-To`/`References` do e-mail recebido, casado contra o
+ *     `message_id` de cada linha da thread (`attribution = 'message_id'`).
+ *     Sem cabeçalho que bata (forward, cliente que descarta), cai na linha
+ *     mais recente da thread, marcada `'fallback'` — a tela avisa.
+ *  2. id de `checklist_step_emails` (envios de antes da Fase 2): a própria
+ *     linha, sem ambiguidade (`'direct'`).
  *
  * Payload do evento só traz METADADOS (from/to/subject/message_id) — o corpo
  * exige uma segunda chamada (`fetchReceivedEmail`, `GET /emails/receiving/:id`).
@@ -95,6 +101,65 @@ function stripQuotedReply(text: string): string {
   return stripped || text.trim();
 }
 
+type ParentEmail = { id: string; sender_id: string; recipients: StepEmailRecipient[] };
+
+/** Todos os Message-IDs citados nos cabeçalhos de threading do e-mail
+ *  recebido — `In-Reply-To` primeiro (o que a pessoa respondeu de fato),
+ *  depois `References` (a cadeia inteira, do mais recente pro mais antigo),
+ *  pra cobrir cliente de e-mail que preenche um mas não o outro. */
+function referencedMessageIds(headers: Record<string, string>): string[] {
+  const get = (name: string) =>
+    headers[name] ?? headers[name.toLowerCase()] ?? headers[name.toUpperCase()] ?? "";
+  const inReplyTo = get("In-Reply-To").match(/<[^>]+>/g) ?? [];
+  const references = (get("References").match(/<[^>]+>/g) ?? []).reverse();
+  return [...new Set([...inReplyTo, ...references])];
+}
+
+/**
+ * Resolve o token do Reply-To pra linha de `checklist_step_emails` que a
+ * resposta pertence (ver comentário do módulo). Thread primeiro: é o formato
+ * de todo envio novo. `null` = token não é nem thread nem linha — ignorar.
+ */
+async function resolveParentEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  token: string,
+  headers: Record<string, string>
+): Promise<{ parent: ParentEmail; attribution: EmailReplyAttribution } | null> {
+  const { data: thread } = await admin.from("email_threads").select("id").eq("id", token).maybeSingle();
+
+  if (!thread) {
+    const { data: direct } = await admin
+      .from("checklist_step_emails")
+      .select("id, sender_id, recipients")
+      .eq("id", token)
+      .maybeSingle();
+    return direct ? { parent: direct as ParentEmail, attribution: "direct" } : null;
+  }
+
+  const { data: rows } = await admin
+    .from("checklist_step_emails")
+    .select("id, sender_id, recipients, message_id, created_at")
+    .eq("thread_id", thread.id)
+    .order("created_at", { ascending: false });
+  if (!rows?.length) return null;
+
+  // Cada destinatário recebeu uma mensagem com Message-ID próprio; a linha
+  // guarda o primeiro em `message_id` e todos em `recipients[].message_id`.
+  const cited = referencedMessageIds(headers);
+  for (const messageId of cited) {
+    const hit = rows.find(
+      (r) =>
+        r.message_id === messageId ||
+        (r.recipients as StepEmailRecipient[]).some((rc) => rc.message_id === messageId)
+    );
+    if (hit) return { parent: hit as ParentEmail, attribution: "message_id" };
+  }
+
+  // Sem cabeçalho que bata: a linha mais recente da thread é o melhor chute —
+  // marcado como tal, nunca apresentado como certeza.
+  return { parent: rows[0] as ParentEmail, attribution: "fallback" };
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) return json({ error: "RESEND_WEBHOOK_SECRET not configured." }, 503);
@@ -125,13 +190,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
 
-  const { data: parent } = await admin
-    .from("checklist_step_emails")
-    .select("id, sender_id, recipients")
-    .eq("id", token)
-    .maybeSingle();
-  if (!parent) return json({ ignored: true }, 200);
-
   // Idempotência: retry do Resend pro mesmo email_id não duplica a resposta
   // nem o fan-out de notificação.
   const { data: existingReply } = await admin
@@ -146,6 +204,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     // 500 -> o Resend tenta de novo; não gravamos nada pela metade.
     return json({ error: received.error }, 500);
   }
+
+  const resolved = await resolveParentEmail(admin, token, received.email.headers);
+  if (!resolved) return json({ ignored: true }, 200);
+  const { parent, attribution } = resolved;
 
   const rawFrom = received.email.headers["From"] ?? received.email.headers["from"] ?? from;
   const parsedFrom = parseFromHeader(rawFrom);
@@ -169,6 +231,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       body_text: bodyText,
       body_html: received.email.html ?? null,
       provider_message_id: emailId,
+      attribution,
     })
     .select("id")
     .single();

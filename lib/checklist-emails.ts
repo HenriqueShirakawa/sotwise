@@ -26,7 +26,7 @@ export async function loadRepliesByEmailIds(
 
   const { data: replies } = await admin
     .from("checklist_step_email_replies")
-    .select("id, checklist_step_email_id, from_email, from_name, from_user_id, body_text, received_at")
+    .select("id, checklist_step_email_id, from_email, from_name, from_user_id, body_text, received_at, attribution")
     .in("checklist_step_email_id", emailIds)
     .order("received_at", { ascending: true });
   if (!replies?.length) return out;
@@ -54,6 +54,7 @@ export async function loadRepliesByEmailIds(
       body_text: r.body_text,
       received_at: r.received_at,
       read_by_me: readAtByReplyId.get(r.id) != null,
+      attribution: r.attribution,
     };
     const list = out.get(r.checklist_step_email_id) ?? [];
     list.push(hydrated);
