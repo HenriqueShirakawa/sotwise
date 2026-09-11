@@ -121,6 +121,7 @@ export function StepEmailSection({
         subject,
         body,
         recordPath,
+        step,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -141,6 +142,7 @@ export function StepEmailSection({
         subject,
         body,
         recordPath,
+        step,
       });
       if (!res.ok) {
         toast.error(res.error);
