@@ -62,14 +62,14 @@ async function findOrCreateThread(
   admin: Admin,
   orderId: string,
   kind: EmailThreadKind
-): Promise<{ id: string } | { error: string }> {
+): Promise<{ id: string; anchorMessageId: string | null } | { error: string }> {
   const { data: existing } = await admin
     .from("email_threads")
-    .select("id")
+    .select("id, anchor_message_id")
     .eq("order_id", orderId)
     .eq("kind", kind)
     .maybeSingle();
-  if (existing) return { id: existing.id };
+  if (existing) return { id: existing.id, anchorMessageId: existing.anchor_message_id };
 
   const { data: inserted, error } = await admin
     .from("email_threads")
@@ -80,19 +80,27 @@ async function findOrCreateThread(
     if (error.code === "23505") {
       const { data: retry } = await admin
         .from("email_threads")
-        .select("id")
+        .select("id, anchor_message_id")
         .eq("order_id", orderId)
         .eq("kind", kind)
         .maybeSingle();
-      if (retry) return { id: retry.id };
+      if (retry) return { id: retry.id, anchorMessageId: retry.anchor_message_id };
     }
     return { error: error.message };
   }
   if (!inserted) return { error: "Could not create the e-mail thread." };
-  return { id: inserted.id };
+  return { id: inserted.id, anchorMessageId: null };
 }
 
-export type ResolvedThread = { id: string; orderId: string; kind: EmailThreadKind };
+export type ResolvedThread = {
+  id: string;
+  orderId: string;
+  kind: EmailThreadKind;
+  /** Message-ID do e-mail-âncora — `null` enquanto a thread ainda não teve
+   *  nenhum envio com Message-ID capturado (thread nova, ou só envios de antes
+   *  da Fase 2). */
+  anchorMessageId: string | null;
+};
 
 /**
  * Threads que um envio desta etapa deve atingir — a primeira da lista é
@@ -125,7 +133,7 @@ export async function resolveThreadsForSend(
   for (const order of ordered) {
     const found = await findOrCreateThread(admin, order.id, kind);
     if ("error" in found) return { ok: false, error: found.error };
-    threads.push({ id: found.id, orderId: order.id, kind });
+    threads.push({ id: found.id, orderId: order.id, kind, anchorMessageId: found.anchorMessageId });
   }
   return { ok: true, threads };
 }
@@ -146,12 +154,18 @@ export async function recordThreadFanout(
 }
 
 /**
- * Promove o e-mail recém-inserido a âncora da thread, só se ela ainda não
- * tinha uma — UPDATE condicional (`where anchor_email_id is null`), seguro
- * contra corrida (a atualização perdedora afeta 0 linhas). `messageId` vem
- * `null` nesta fase (o Resend real só é consultado na Fase 2); o guard usa
- * `anchor_email_id`, não `anchor_message_id`, porque é o campo que já existe
- * de verdade agora — e continua sendo o guard certo depois da Fase 2 também.
+ * Promove o e-mail recém-inserido a âncora da thread — só se ela ainda não
+ * tinha uma. UPDATE condicional, seguro contra corrida (a atualização
+ * perdedora afeta 0 linhas).
+ *
+ * A âncora "de verdade" é a primeira linha da thread COM Message-ID (é ela
+ * que os próximos `In-Reply-To` apontam). Por isso o guard é
+ * `anchor_message_id is null`: uma thread que só tinha envios da Fase 1 (sem
+ * Message-ID capturado) ganha como âncora o primeiro envio da Fase 2 — os
+ * e-mails anteriores ficam de fora da conversa no Gmail (decisão do plano:
+ * nada migrado retroativamente). Sem `messageId` (todos os destinatários
+ * falharam, ou o GET do Resend não devolveu), só preenche `anchor_email_id`
+ * se estava vazio — mantém o bookkeeping da Fase 1, sem fingir uma âncora.
  */
 export async function promoteAnchorIfMissing(
   admin: Admin,
@@ -159,9 +173,51 @@ export async function promoteAnchorIfMissing(
   emailId: string,
   messageId: string | null
 ): Promise<void> {
+  if (messageId) {
+    await admin
+      .from("email_threads")
+      .update({ anchor_email_id: emailId, anchor_message_id: messageId })
+      .eq("id", threadId)
+      .is("anchor_message_id", null);
+    return;
+  }
   await admin
     .from("email_threads")
-    .update({ anchor_email_id: emailId, ...(messageId ? { anchor_message_id: messageId } : {}) })
+    .update({ anchor_email_id: emailId })
     .eq("id", threadId)
     .is("anchor_email_id", null);
+}
+
+export type ThreadingHeaders = { "In-Reply-To"?: string; References?: string };
+
+/**
+ * Cabeçalhos RFC 5322 que fazem o e-mail chegar como RESPOSTA na caixa de
+ * entrada (Gmail/Outlook/Apple Mail agrupam por eles — confirmado no spike de
+ * 11/09/2026 com o Resend): `In-Reply-To` = âncora da thread primária;
+ * `References` = âncoras de todas as threads atingidas (fan-out de PL/
+ * Shipment) + o Message-ID mais recente da thread primária, pra quem entrou
+ * na conversa depois da âncora (ex.: cliente adicionado num envio posterior)
+ * ainda ter um elo com a mensagem anterior.
+ *
+ * Objeto vazio quando nenhuma thread tem âncora ainda — este envio é o
+ * primeiro da conversa e vira ele mesmo a âncora (`promoteAnchorIfMissing`).
+ */
+export async function threadingHeaders(admin: Admin, threads: ResolvedThread[]): Promise<ThreadingHeaders> {
+  if (threads.length === 0) return {};
+  const primary = threads[0];
+  const anchors = threads.map((t) => t.anchorMessageId).filter((id): id is string => Boolean(id));
+  const inReplyTo = primary.anchorMessageId ?? anchors[0];
+  if (!inReplyTo) return {};
+
+  const { data: latest } = await admin
+    .from("checklist_step_emails")
+    .select("message_id")
+    .eq("thread_id", primary.id)
+    .not("message_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const references = [...new Set([...anchors, latest?.message_id].filter((id): id is string => Boolean(id)))];
+  return { "In-Reply-To": inReplyTo, References: references.join(" ") };
 }

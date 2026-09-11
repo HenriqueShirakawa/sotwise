@@ -74,7 +74,11 @@ const DICT: Record<
  * "Go to", mesmo que o usuário interno tenha esses dados na tela.
  */
 export function checklistStepEmailHtml(params: {
-  subject: string; // já traz o contexto (ex: "PO - 1000 — Booking"), digitado/editado pelo usuário
+  subject: string; // fixo por pedido (ex: "Order #1637"), editável pelo usuário
+  /** Rótulo da etapa (ex: "PO") — título em destaque no corpo, já que o
+   *  assunto deixou de carregá-lo (Fase 2 do threading: assunto igual em toda
+   *  a conversa pra caixa de entrada agrupar). */
+  stepLabel?: string | null;
   senderName: string;
   body: string; // texto simples digitado pelo usuário; quebras de linha viram <br>
   facts?: StepEmailFacts | null;
@@ -86,7 +90,7 @@ export function checklistStepEmailHtml(params: {
    *  'en' — nunca deve faltar, mas o fallback evita template quebrado. */
   language?: EmailLanguage;
 }): string {
-  const { subject, senderName, body, facts, actionUrl, logoUrl, language = "en" } = params;
+  const { subject, stepLabel, senderName, body, facts, actionUrl, logoUrl, language = "en" } = params;
   const t = DICT[language];
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br>");
 
@@ -139,9 +143,14 @@ export function checklistStepEmailHtml(params: {
             </tr>
             <tr>
               <td style="padding:32px;">
-                <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:#640BB7;text-transform:uppercase;letter-spacing:0.4px;">
+                <p style="margin:0 0 ${stepLabel ? "4px" : "12px"};font-size:13px;font-weight:600;color:#640BB7;text-transform:uppercase;letter-spacing:0.4px;">
                   ${escapeHtml(subject)}
                 </p>
+                ${
+                  stepLabel
+                    ? `<p style="margin:0 0 16px;font-size:20px;font-weight:700;line-height:1.3;color:#1a1523;">${escapeHtml(stepLabel)}</p>`
+                    : ""
+                }
                 <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#1a1523;">
                   ${bodyHtml}
                 </p>

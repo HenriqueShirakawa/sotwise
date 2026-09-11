@@ -752,7 +752,7 @@ export function PlChecklistClient({
                       owner={{ kind: "pre_loading", preLoadingId: preLoading.id, step: s.step }}
                       feature="pre_loading"
                       step={s.step}
-                      defaultSubject={`PL - ${preLoading.pl_number} - Preloading - ${STEP_LABELS[s.step]}`}
+                      defaultSubject={`PL #${preLoading.pl_number}`}
                       recordPath={`/pre-loading/${preLoading.id}`}
                       responsibleId={s.responsible_id}
                     />

@@ -26,11 +26,23 @@ type SendEmailArgs = {
    *  resposta do cliente ao e-mail de etapa do checklist (ver
    *  lib/checklist-email-actions.ts + app/api/webhooks/resend/route.ts). */
   replyTo?: string;
+  /** Cabeçalhos extras repassados ao Resend — hoje só `In-Reply-To`/
+   *  `References` do threading por Order (ver lib/email/threads.ts). */
+  headers?: Record<string, string>;
 };
 
-type SendEmailResult = { ok: true; id: string } | { ok: false; error: string };
+type SendEmailResult =
+  | {
+      ok: true;
+      id: string;
+      /** Message-ID de verdade (RFC 5322) que o Resend/SES atribuiu ao e-mail
+       *  entregue — alvo do `In-Reply-To` dos próximos envios da mesma thread.
+       *  Best-effort: `null` se o GET pós-envio falhar (o envio em si já foi). */
+      messageId: string | null;
+    }
+  | { ok: false; error: string };
 
-export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): Promise<SendEmailResult> {
+export async function sendEmail({ to, subject, html, replyTo, headers }: SendEmailArgs): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     return { ok: false, error: "RESEND_API_KEY não configurada (ver .env.example)." };
@@ -45,7 +57,14 @@ export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): 
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        html,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(headers && Object.keys(headers).length ? { headers } : {}),
+      }),
     });
   } catch (cause) {
     return { ok: false, error: `Falha de rede ao contatar o Resend: ${String(cause)}` };
@@ -61,7 +80,30 @@ export async function sendEmail({ to, subject, html, replyTo }: SendEmailArgs): 
   }
 
   const body: { id?: string } = await res.json().catch(() => ({}));
-  return { ok: true, id: body.id ?? "" };
+  const id = body.id ?? "";
+  return { ok: true, id, messageId: id ? await fetchMessageId(apiKey, id) : null };
+}
+
+/**
+ * `GET /emails/:id` — o POST de envio devolve só o id interno do Resend; o
+ * Message-ID real só existe depois que o SES aceita a mensagem, o que leva
+ * frações de segundo. Poucas tentativas curtas: confirmado no spike de
+ * 11/09/2026 que normalmente já vem na primeira. Nunca derruba o envio —
+ * sem Message-ID o e-mail só não vira âncora de thread (ver threads.ts).
+ */
+async function fetchMessageId(apiKey: string, id: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 700));
+    try {
+      const res = await fetch(`${RESEND_ENDPOINT}/${id}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+      if (!res.ok) continue;
+      const data: { message_id?: string | null } = await res.json().catch(() => ({}));
+      if (data.message_id) return data.message_id;
+    } catch {
+      // rede — tenta de novo
+    }
+  }
+  return null;
 }
 
 type ReceivedEmail = { html: string | null; text: string | null; headers: Record<string, string> };

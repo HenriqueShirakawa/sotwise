@@ -428,6 +428,14 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
               </div>
               {/* Texto puro só — nunca renderiza HTML de e-mail externo cru. */}
               <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{r.body_text}</p>
+              {/* Resposta que chegou sem cabeçalho de thread utilizável: o
+                  webhook a prendeu à etapa mais recente da conversa por
+                  falta de opção melhor — a tela avisa em vez de fingir. */}
+              {r.attribution === "fallback" && (
+                <p className="mt-1 text-[11px] italic text-amber-700">
+                  Exact step not confirmed — this reply was attached to the latest e-mail in the order&apos;s conversation.
+                </p>
+              )}
             </div>
           ))}
         </div>

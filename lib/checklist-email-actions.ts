@@ -7,10 +7,16 @@ import { z } from "zod";
 
 import { requireFeature, requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
-import { promoteAnchorIfMissing, recordThreadFanout, resolveThreadsForSend } from "@/lib/email/threads";
+import {
+  promoteAnchorIfMissing,
+  recordThreadFanout,
+  resolveThreadsForSend,
+  threadingHeaders,
+} from "@/lib/email/threads";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, StepEmailRecipient, StepEmailReply } from "@/types/database";
 
@@ -53,10 +59,14 @@ function replyDomain(): string {
   return match?.[1] ?? "resend.dev";
 }
 
-/** Endereço de resposta único desta linha — o próprio id É o token que o
- *  webhook usa pra achar a linha de volta (ver app/api/webhooks/resend). */
-function replyToAddress(emailRowId: string): string {
-  return `reply+${emailRowId}@${replyDomain()}`;
+/** Endereço de resposta da THREAD (Fase 2 do threading) — o id de
+ *  `email_threads` é o token que o webhook usa pra achar a conversa de
+ *  volta; a etapa exata respondida ele descobre pelo `In-Reply-To` do e-mail
+ *  recebido contra o `message_id` gravado em cada linha (ver
+ *  app/api/webhooks/resend). E-mails de antes da Fase 2 continuam com o token
+ *  = id da própria linha, e o webhook ainda entende os dois formatos. */
+function replyToAddress(threadId: string): string {
+  return `reply+${threadId}@${replyDomain()}`;
 }
 
 /**
@@ -248,7 +258,7 @@ async function renderStepEmailHtmls(
   owner: StepOwner,
   stepId: string | null,
   senderName: string,
-  input: { subject: string; body: string; recordPath: string }
+  input: { subject: string; body: string; recordPath: string; step: ChecklistStep }
 ): Promise<{ internalHtml: string; clientHtml: string; language: EmailLanguage }> {
   const [facts, language, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
@@ -257,10 +267,14 @@ async function renderStepEmailHtmls(
   ]);
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
+  // Assunto é fixo por pedido ("Order #1637") pra a caixa de entrada agrupar
+  // a conversa — a etapa, que antes ia no assunto, vai em destaque no corpo.
+  const stepLabel = STEP_LABELS[input.step];
 
   return {
     internalHtml: checklistStepEmailHtml({
       subject: input.subject,
+      stepLabel,
       senderName,
       body: input.body,
       facts,
@@ -268,7 +282,14 @@ async function renderStepEmailHtmls(
       logoUrl,
       language,
     }),
-    clientHtml: checklistStepEmailHtml({ subject: input.subject, senderName, body: input.body, logoUrl, language }),
+    clientHtml: checklistStepEmailHtml({
+      subject: input.subject,
+      stepLabel,
+      senderName,
+      body: input.body,
+      logoUrl,
+      language,
+    }),
     language,
   };
 }
@@ -337,9 +358,9 @@ const sendSchema = z.object({
    *  destinatário interno; cliente nunca recebe esse link. */
   recordPath: z.string().trim().min(1),
   /** Etapa do checklist que está compondo — decide em qual `email_threads` da
-   *  Order (Fase 1 do threading) o envio entra (ver `lib/email/threads.ts`).
-   *  `previewStepEmail` recebe o mesmo input mas ignora este campo (preview
-   *  nunca cria/toca thread nenhuma). */
+   *  Order o envio entra (ver `lib/email/threads.ts`) e vira o título em
+   *  destaque no corpo do e-mail. `previewStepEmail` só usa pro título
+   *  (preview nunca cria/toca thread nenhuma). */
   step: z.enum([
     "order",
     "po",
@@ -474,17 +495,21 @@ export async function sendStepEmail(
     loadIsClientByUserId(admin, recipientIds),
     resolveThreadsForSend(admin, owner, parsed.data.step),
   ]);
-  // Sem thread resolvida, não manda e-mail nenhum ainda (Fase 1 do threading)
-  // — nunca cai num modo "sem thread" silencioso (ver lib/email/threads.ts).
+  // Sem thread resolvida, não manda e-mail nenhum — nunca cai num modo "sem
+  // thread" silencioso (ver lib/email/threads.ts).
   if (!threadsResult.ok) return { ok: false, error: threadsResult.error };
   const threads = threadsResult.threads;
+  const primaryThread = threads[0];
 
-  // Gerado ANTES do envio: precisa estar no Reply-To de cada `sendEmail`, mas
-  // a linha em `checklist_step_emails` só nasce DEPOIS (o insert final abaixo
-  // usa este mesmo id explícito). O token da resposta É o id da linha — sem
-  // isso, teria ovo-e-galinha (id só existiria depois do envio).
+  // Cabeçalhos que fazem o e-mail chegar como Reply do primeiro da conversa
+  // (vazio se este é o primeiro). Resolvidos UMA vez, iguais pra todos os
+  // destinatários deste envio.
+  const threadHeaders = await threadingHeaders(admin, threads);
+  const replyTo = replyToAddress(primaryThread.id);
+
+  // Id da linha gerado antes do insert: é gravado explícito no insert final e
+  // usado no fan-out/âncora logo depois.
   const emailRowId = randomUUID();
-  const replyTo = replyToAddress(emailRowId);
 
   const recipients: StepEmailRecipient[] = [];
   for (const userId of recipientIds) {
@@ -496,13 +521,22 @@ export async function sendStepEmail(
       continue;
     }
     const html = isClientById.get(userId) ? clientHtml : internalHtml;
-    const sent = await sendEmail({ to: email, subject: parsed.data.subject, html, replyTo });
+    const sent = await sendEmail({
+      to: email,
+      subject: parsed.data.subject,
+      html,
+      replyTo,
+      headers: threadHeaders,
+    });
     recipients.push({
       user_id: userId,
       name,
       email,
       ok: sent.ok,
       error: sent.ok ? null : sent.error,
+      // Cada destinatário recebe uma mensagem própria (Message-ID próprio) —
+      // o webhook casa o In-Reply-To da resposta contra qualquer um deles.
+      message_id: sent.ok ? sent.messageId : null,
     });
   }
 
@@ -515,6 +549,7 @@ export async function sendStepEmail(
   // partir de `recipients` na leitura.
   const sent = recipients.filter((r) => r.ok).length;
   const failed = recipients.length - sent;
+  const rowMessageId = recipients.find((r) => r.ok && r.message_id)?.message_id ?? null;
   const status: "success" | "partial" | "failed" =
     sent === recipients.length ? "success" : sent === 0 ? "failed" : "partial";
 
@@ -527,18 +562,21 @@ export async function sendStepEmail(
     recipients,
     status,
     language,
-    // threads[0] é sempre a PRIMÁRIA (ver resolveThreadsForSend). message_id/
-    // in_reply_to_message_id ficam null nesta fase — só a Fase 2 (Resend) popula.
-    thread_id: threads[0].id,
+    // threads[0] é sempre a PRIMÁRIA (ver resolveThreadsForSend). message_id
+    // da linha = o do primeiro destinatário entregue (os demais ficam em
+    // recipients[].message_id); in_reply_to = a âncora que este envio respondeu.
+    thread_id: primaryThread.id,
+    message_id: rowMessageId,
+    in_reply_to_message_id: threadHeaders["In-Reply-To"] ?? null,
   });
   if (insertError) return { ok: false, error: insertError.message };
 
-  // Fan-out + âncora — bookkeeping da Fase 1, não afeta o e-mail já enviado
-  // acima. Roda mesmo se sent === 0: a linha existe de qualquer forma (igual
-  // ao status "failed" já gravado), então a thread também deve refletir isso.
+  // Fan-out + âncora. Roda mesmo se sent === 0: a linha existe de qualquer
+  // forma (igual ao status "failed" já gravado), então a thread também deve
+  // refletir isso — sem Message-ID ela só não vira âncora de cabeçalho.
   await recordThreadFanout(admin, threads, emailRowId);
   for (const t of threads) {
-    await promoteAnchorIfMissing(admin, t.id, emailRowId, null);
+    await promoteAnchorIfMissing(admin, t.id, emailRowId, rowMessageId);
   }
 
   if (sent === 0) return { ok: false, error: "Could not deliver to any recipient." };
