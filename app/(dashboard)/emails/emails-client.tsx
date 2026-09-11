@@ -58,7 +58,7 @@ function RecipientChips({ recipients }: { recipients: StepEmailRecipient[] }) {
     <div className="flex flex-wrap gap-1">
       {recipients.map((r) => (
         <span
-          key={r.user_id}
+          key={r.user_id ?? r.email}
           title={r.error ?? undefined}
           className={cn(
             "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap",

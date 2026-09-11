@@ -359,6 +359,13 @@ export async function markEmailReplyRead(replyId: string): Promise<{ ok: true } 
 const sendSchema = z.object({
   feature: z.enum(["orders", "pre_loading", "shipments"]),
   recipient_ids: z.array(z.uuid()).min(1, "Select at least one recipient."),
+  /** E-mails digitados à mão, de gente sem cadastro no SOTWISE (Fase 3).
+   *  Sempre recebem a versão LIMPA do e-mail: sem perfil pra checar papel, o
+   *  seguro é tratar como externo. */
+  ad_hoc_emails: z
+    .array(z.email("Invalid e-mail address.").transform((e) => e.trim().toLowerCase()))
+    .max(20, "Too many extra e-mails.")
+    .default([]),
   subject: z.string().trim().min(1, "Write a subject.").max(200, "Subject is too long."),
   body: z.string().trim().min(1, "Write a message.").max(5000, "Message is too long."),
   /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" pro
@@ -442,6 +449,7 @@ export async function previewStepEmail(
   const admin = createAdminClient();
 
   const recipientIds = [...new Set(parsed.data.recipient_ids)];
+  const adHocEmails = [...new Set(parsed.data.ad_hoc_emails)];
   const [stepId, isClientById, quoted] = await Promise.all([
     findStepId(admin, owner),
     loadIsClientByUserId(admin, recipientIds),
@@ -461,7 +469,8 @@ export async function previewStepEmail(
   // (decisão do usuário em 11/09/2026). Ver `sendStepEmail`.
   const externalThread = threadKindForStep(parsed.data.step) === "external";
   const hasInternal = !externalThread && recipientIds.some((id) => !isClientById.get(id));
-  const hasClient = externalThread || recipientIds.some((id) => isClientById.get(id));
+  const hasClient =
+    externalThread || adHocEmails.length > 0 || recipientIds.some((id) => isClientById.get(id));
 
   return {
     ok: true,
@@ -550,7 +559,12 @@ export async function sendStepEmail(
   // de a resposta só voltar pro sistema. Viram DUAS mensagens só quando o
   // envio mistura as duas variantes — aí um grupo também não enxerga os
   // endereços do outro.
-  const people = await Promise.all(
+  const people: {
+    userId: string | null;
+    name: string;
+    email: string | null;
+    isClient: boolean;
+  }[] = await Promise.all(
     recipientIds.map(async (userId) => {
       const { data } = await admin.auth.admin.getUserById(userId);
       return {
@@ -561,6 +575,13 @@ export async function sendStepEmail(
       };
     })
   );
+  // Avulso entra como qualquer outro destinatário, só sem `user_id` — e
+  // sempre na variante limpa (ver `ad_hoc_emails` no schema).
+  const knownEmails = new Set(people.map((p) => p.email?.toLowerCase()).filter(Boolean));
+  for (const email of [...new Set(parsed.data.ad_hoc_emails)]) {
+    if (knownEmails.has(email)) continue; // já está na lista como usuário
+    people.push({ userId: null, name: email, email, isClient: true });
+  }
 
   const recipients: StepEmailRecipient[] = people
     .filter((p) => !p.email)
@@ -576,10 +597,12 @@ export async function sendStepEmail(
   const plainFor = (p: { isClient: boolean }) => externalThread || p.isClient;
 
   for (const group of [false, true]) {
-    const members = people.filter((p) => p.email && plainFor(p) === group);
+    const members = people.filter(
+      (p): p is (typeof people)[number] & { email: string } => Boolean(p.email) && plainFor(p) === group
+    );
     if (members.length === 0) continue;
     const sent = await sendEmail({
-      to: members.map((p) => p.email as string),
+      to: members.map((p) => p.email),
       subject: smtpSubject,
       html: group ? clientHtml : internalHtml,
       replyTo,
@@ -589,7 +612,7 @@ export async function sendStepEmail(
       recipients.push({
         user_id: p.userId,
         name: p.name,
-        email: p.email as string,
+        email: p.email,
         ok: sent.ok,
         error: sent.ok ? null : sent.error,
         // Message-ID da mensagem do GRUPO — o webhook casa o In-Reply-To da

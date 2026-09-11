@@ -41,7 +41,9 @@ export type LoadingStatus = "total" | "partial" | "none";
 export type MessageEntity = "order" | "pre_loading" | "shipment";
 /** Resultado de UM destinatário, congelado em `checklist_step_emails.recipients`. */
 export type StepEmailRecipient = {
-  user_id: UUID;
+  /** `null` em destinatário avulso (e-mail digitado à mão, sem cadastro no
+   *  SOTWISE — Fase 3 do threading). */
+  user_id: UUID | null;
   name: string;
   email: string;
   ok: boolean;

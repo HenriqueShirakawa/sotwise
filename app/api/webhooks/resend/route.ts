@@ -245,7 +245,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     return json({ error: insertError.message }, 500);
   }
 
-  const notifyIds = new Set(recipients.map((r) => r.user_id));
+  // Destinatário avulso não tem `user_id` (Fase 3) — não há quem notificar
+  // dentro do app por ele; a resposta aparece no histórico da etapa do mesmo
+  // jeito, pra todo mundo que abrir a tela.
+  const notifyIds = new Set(
+    recipients.map((r) => r.user_id).filter((id): id is string => Boolean(id))
+  );
   notifyIds.add(parent.sender_id);
   if (matched?.user_id) notifyIds.delete(matched.user_id);
 
