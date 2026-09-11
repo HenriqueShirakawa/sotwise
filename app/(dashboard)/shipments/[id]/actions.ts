@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
+import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
+import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
@@ -12,8 +14,6 @@ import type { ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
-const DOCUMENTS_BUCKET = "order-documents";
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 /**
  * Campos editáveis nas etapas da fase Shipment. Nenhuma delas tem campo
@@ -179,39 +179,51 @@ export async function saveShipmentStep(
   return { ok: true };
 }
 
-export async function uploadShipmentStepAttachment(
-  shipmentId: string,
+/**
+ * Upload de anexo em 2 actions (ticket + registro) — o arquivo vai direto do
+ * browser pro Storage, nunca por aqui (limite de 4,5MB da Vercel; ver
+ * lib/attachments.ts). Mesmo prefixo do Pre-loading: o anexo é da etapa do PL.
+ */
+function attachmentDir(preLoadingId: string, stepRowId: string) {
+  return `pre-loading/${preLoadingId}/${stepRowId}`;
+}
+
+export async function createShipmentAttachmentTicket(
   preLoadingId: string,
   step: ChecklistStep,
-  formData: FormData
+  fileName: string,
+  fileSize: number
+): Promise<UploadTicket> {
+  const session = await requireFeature("shipments", "edit");
+  if (!canEditInheritedStep(step, session)) return { ok: false, error: INHERITED_DENIED };
+  const admin = createAdminClient();
+
+  const stepRow = await ensureStepId(admin, preLoadingId, step);
+  if ("error" in stepRow) return { ok: false, error: stepRow.error };
+
+  return issueUploadTicket(admin, attachmentDir(preLoadingId, stepRow.id), fileName, fileSize);
+}
+
+export async function registerShipmentAttachment(
+  preLoadingId: string,
+  step: ChecklistStep,
+  filePath: string,
+  fileName: string
 ): Promise<ActionResult> {
   const session = await requireFeature("shipments", "edit");
   if (!canEditInheritedStep(step, session)) return { ok: false, error: INHERITED_DENIED };
   const admin = createAdminClient();
 
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: "No file selected." };
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return { ok: false, error: "File is larger than 20MB." };
-  }
-
   const stepRow = await ensureStepId(admin, preLoadingId, step);
   if ("error" in stepRow) return { ok: false, error: stepRow.error };
-
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const filePath = `pre-loading/${preLoadingId}/${stepRow.id}/${Date.now()}-${safeName}`;
-
-  const { error: uploadError } = await admin.storage
-    .from(DOCUMENTS_BUCKET)
-    .upload(filePath, file, { contentType: file.type || undefined });
-  if (uploadError) return { ok: false, error: uploadError.message };
+  if (!isPathInDir(filePath, attachmentDir(preLoadingId, stepRow.id))) {
+    return { ok: false, error: "Invalid file path." };
+  }
 
   const { error: insertError } = await admin.from("step_attachments").insert({
     pre_loading_step_id: stepRow.id,
     file_path: filePath,
-    file_name: file.name,
+    file_name: fileName,
     uploaded_by: session.userId,
   });
   if (insertError) {

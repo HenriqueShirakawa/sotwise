@@ -7,19 +7,15 @@ const nextConfig: NextConfig = {
     root: import.meta.dirname,
   },
   experimental: {
+    // ⚠️ Estes dois limites NÃO governam o upload de anexo: o arquivo vai
+    // direto do browser pro Supabase Storage (lib/attachments.ts), porque a
+    // Vercel corta o corpo de qualquer Serverless Function em 4,5MB
+    // (FUNCTION_PAYLOAD_TOO_LARGE) — limite que nenhum config do Next altera.
+    // Ficam com folga só pra Server Actions comuns não esbarrarem no default
+    // (1MB / 10MB) por acidente.
     serverActions: {
-      // Default do Next é 1MB — os uploads de anexo (Order/Pre-loading/
-      // Shipment, `MAX_FILE_BYTES`) já validam até 20MB no código, mas sem
-      // isto o pedido nem chega na action pra essa validação rodar: falha
-      // antes, como erro de rede cru (não um toast). Folga sobre os 20MB
-      // cobre o overhead do multipart (boundaries/headers dos campos).
       bodySizeLimit: "21mb",
     },
-    // Limite SEPARADO do de cima: o `proxy.ts` (ex-middleware) roda em toda
-    // request e o Next bufferiza o corpo pra ele poder lê-lo — default 10MB.
-    // Passar disso trunca o multipart ANTES da Server Action, virando "Error:
-    // Unexpected end of form" em vez do toast de "File is larger than 20MB".
-    // Descoberto testando upload de 11MB (só o bodySizeLimit acima não bastou).
     proxyClientMaxBodySize: "21mb",
   },
 };

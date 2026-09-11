@@ -6,12 +6,14 @@ import { ChevronDown, Paperclip, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 
 import {
   deleteStepAttachment,
   getAttachmentDownloadUrl,
-  uploadStepAttachment,
+  createStepAttachmentTicket,
+  registerStepAttachment,
 } from "./actions";
 import type { BatchRow, ChecklistStepRow, OfcRow } from "./order-detail-client";
 
@@ -154,10 +156,12 @@ export function PlaceOrderFactoryGroups({
     e.target.value = "";
     const factoryId = uploadFactoryId;
     if (!file || !factoryId) return;
-    const formData = new FormData();
-    formData.append("file", file);
     startTransition(async () => {
-      const res = await uploadStepAttachment(orderId, stepId, formData, factoryId);
+      const res = await uploadDirect(
+        file,
+        (name, size) => createStepAttachmentTicket(orderId, stepId, name, size),
+        (path) => registerStepAttachment(orderId, stepId, path, file.name, factoryId)
+      );
       if (res.ok) {
         setExpanded((prev) => new Set(prev).add(factoryId));
         router.refresh();

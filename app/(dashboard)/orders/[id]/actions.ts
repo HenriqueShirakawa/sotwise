@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
+import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
@@ -12,8 +14,6 @@ import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
 import type { BatchRow, EtdInfoRow, OfcRow } from "./order-detail-client";
 
 const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
-const DOCUMENTS_BUCKET = "order-documents";
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 /**
  * Revalida tudo que um lote alimenta: o detalhe/lista de Orders (rollup de
@@ -327,36 +327,43 @@ export async function updateChecklistStep(
   return { ok: true };
 }
 
-export async function uploadStepAttachment(
+/**
+ * Upload de anexo em 2 actions (ticket + registro) — o arquivo vai direto do
+ * browser pro Storage, nunca por aqui (limite de 4,5MB da Vercel; ver
+ * lib/attachments.ts).
+ */
+function attachmentDir(orderId: string, stepId: string) {
+  return `${orderId}/${stepId}`;
+}
+
+export async function createStepAttachmentTicket(
   orderId: string,
   stepId: string,
-  formData: FormData,
+  fileName: string,
+  fileSize: number
+): Promise<UploadTicket> {
+  await requireFeature("orders", "edit");
+  return issueUploadTicket(createAdminClient(), attachmentDir(orderId, stepId), fileName, fileSize);
+}
+
+export async function registerStepAttachment(
+  orderId: string,
+  stepId: string,
+  filePath: string,
+  fileName: string,
   factoryId?: string | null
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
+  if (!isPathInDir(filePath, attachmentDir(orderId, stepId))) {
+    return { ok: false, error: "Invalid file path." };
+  }
   const admin = createAdminClient();
-
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: "No file selected." };
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return { ok: false, error: "File is larger than 20MB." };
-  }
-
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const filePath = `${orderId}/${stepId}/${Date.now()}-${safeName}`;
-
-  const { error: uploadError } = await admin.storage
-    .from(DOCUMENTS_BUCKET)
-    .upload(filePath, file, { contentType: file.type || undefined });
-  if (uploadError) return { ok: false, error: uploadError.message };
 
   const { error: insertError } = await admin.from("step_attachments").insert({
     checklist_step_id: stepId,
     factory_id: factoryId ?? null,
     file_path: filePath,
-    file_name: file.name,
+    file_name: fileName,
     uploaded_by: session.userId,
   });
   if (insertError) {

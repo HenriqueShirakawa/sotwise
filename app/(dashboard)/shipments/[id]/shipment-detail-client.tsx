@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric, todayIso } from "@/lib/format";
+import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
@@ -44,7 +45,8 @@ import {
   deleteShipmentStepAttachment,
   getShipmentAttachmentUrl,
   saveShipmentStep,
-  uploadShipmentStepAttachment,
+  createShipmentAttachmentTicket,
+  registerShipmentAttachment,
   type ShipmentStepPatch,
 } from "./actions";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
@@ -248,10 +250,12 @@ function AttachmentsSection({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
     startTransition(async () => {
-      const res = await uploadShipmentStepAttachment(shipmentId, preLoadingId, step, formData);
+      const res = await uploadDirect(
+        file,
+        (name, size) => createShipmentAttachmentTicket(preLoadingId, step, name, size),
+        (path) => registerShipmentAttachment(preLoadingId, step, path, file.name)
+      );
       if (res.ok) {
         setOpen(true);
         router.refresh();
