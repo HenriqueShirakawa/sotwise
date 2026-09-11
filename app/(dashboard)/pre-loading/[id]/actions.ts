@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { STEP_LABELS } from "@/lib/checklist";
 import { isStepChecked, plStepFacts, validateStepDates } from "@/lib/checklist-completion";
+import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
+import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatus } from "@/lib/order-status";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
@@ -13,8 +15,6 @@ import type { BatchStatus, ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
-const DOCUMENTS_BUCKET = "order-documents";
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 /** Campos editáveis de uma etapa — padrão + específicos (ver docs §3.9.5). */
 export type StepPatch = Partial<{
@@ -123,37 +123,49 @@ async function ensureStepId(
   return { id: data.id };
 }
 
-export async function uploadPreLoadingStepAttachment(
+/**
+ * Upload de anexo em 2 actions (ticket + registro) — o arquivo vai direto do
+ * browser pro Storage, nunca por aqui (limite de 4,5MB da Vercel; ver
+ * lib/attachments.ts). O ticket já cria a linha da etapa se ela não existir.
+ */
+function attachmentDir(preLoadingId: string, stepRowId: string) {
+  return `pre-loading/${preLoadingId}/${stepRowId}`;
+}
+
+export async function createPreLoadingAttachmentTicket(
   preLoadingId: string,
   step: ChecklistStep,
-  formData: FormData
-): Promise<ActionResult> {
-  const session = await requireFeature("pre_loading", "edit");
+  fileName: string,
+  fileSize: number
+): Promise<UploadTicket> {
+  await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
-
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: "No file selected." };
-  }
-  if (file.size > MAX_FILE_BYTES) {
-    return { ok: false, error: "File is larger than 20MB." };
-  }
 
   const stepRow = await ensureStepId(admin, preLoadingId, step);
   if ("error" in stepRow) return { ok: false, error: stepRow.error };
 
-  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const filePath = `pre-loading/${preLoadingId}/${stepRow.id}/${Date.now()}-${safeName}`;
+  return issueUploadTicket(admin, attachmentDir(preLoadingId, stepRow.id), fileName, fileSize);
+}
 
-  const { error: uploadError } = await admin.storage
-    .from(DOCUMENTS_BUCKET)
-    .upload(filePath, file, { contentType: file.type || undefined });
-  if (uploadError) return { ok: false, error: uploadError.message };
+export async function registerPreLoadingAttachment(
+  preLoadingId: string,
+  step: ChecklistStep,
+  filePath: string,
+  fileName: string
+): Promise<ActionResult> {
+  const session = await requireFeature("pre_loading", "edit");
+  const admin = createAdminClient();
+
+  const stepRow = await ensureStepId(admin, preLoadingId, step);
+  if ("error" in stepRow) return { ok: false, error: stepRow.error };
+  if (!isPathInDir(filePath, attachmentDir(preLoadingId, stepRow.id))) {
+    return { ok: false, error: "Invalid file path." };
+  }
 
   const { error: insertError } = await admin.from("step_attachments").insert({
     pre_loading_step_id: stepRow.id,
     file_path: filePath,
-    file_name: file.name,
+    file_name: fileName,
     uploaded_by: session.userId,
   });
   if (insertError) {

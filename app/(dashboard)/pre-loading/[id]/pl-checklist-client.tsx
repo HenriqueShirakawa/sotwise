@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric, todayIso } from "@/lib/format";
+import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import { hasExtraRequirements, missingLabel, plStepFacts } from "@/lib/checklist-completion";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
@@ -41,7 +42,8 @@ import {
   deletePreLoadingStepAttachment,
   getPreLoadingAttachmentUrl,
   savePreLoadingStep,
-  uploadPreLoadingStepAttachment,
+  createPreLoadingAttachmentTicket,
+  registerPreLoadingAttachment,
   type StepPatch,
 } from "./actions";
 import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
@@ -198,10 +200,12 @@ function AttachmentsSection({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
     startTransition(async () => {
-      const res = await uploadPreLoadingStepAttachment(preLoadingId, step, formData);
+      const res = await uploadDirect(
+        file,
+        (name, size) => createPreLoadingAttachmentTicket(preLoadingId, step, name, size),
+        (path) => registerPreLoadingAttachment(preLoadingId, step, path, file.name)
+      );
       if (res.ok) {
         setOpen(true);
         router.refresh();
