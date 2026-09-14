@@ -10,6 +10,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
+import { languageLabel, translateEmailBody } from "@/lib/email/translate";
 import { sendEmail } from "@/lib/email/resend";
 import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
@@ -250,12 +251,20 @@ async function currentOrigin(): Promise<string | undefined> {
   }
 }
 
+/** Aviso pro compositor quando a tradução do corpo não aconteceu. */
+export type StepEmailTranslationWarning = { language: EmailLanguage; label: string; error: string };
+
 /**
  * Renderiza as duas variantes (interna/cliente) do e-mail — mesma lógica pro
  * envio de verdade (`sendStepEmail`) e pro preview (`previewStepEmail`), pra
  * nunca divergirem. `stepId` nulo (Pre-loading/Shipment cuja etapa nunca foi
  * tocada) cai em facts vazios + idioma 'en', igual ao que `sendStepEmail`
  * produziria ao criar a linha na hora (`ensureStepId`).
+ *
+ * Só a variante do CLIENTE tem o corpo traduzido pro idioma do país dele
+ * (`lib/email/translate.ts`) — a equipe recebe o texto como foi escrito. Se
+ * a tradução falhar, o cliente recebe o inglês e `translationWarning` conta
+ * o motivo (nunca bloqueia o envio, mesma regra RN03 do idioma do chrome).
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -264,12 +273,21 @@ async function renderStepEmailHtmls(
   senderName: string,
   input: { subject: string; body: string; recordPath: string; step: ChecklistStep },
   quoted: QuotedMessage[]
-): Promise<{ internalHtml: string; clientHtml: string; language: EmailLanguage }> {
+): Promise<{
+  internalHtml: string;
+  clientHtml: string;
+  language: EmailLanguage;
+  translationWarning: StepEmailTranslationWarning | null;
+}> {
   const [facts, language, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
     stepId ? resolveLanguage(admin, owner, stepId) : Promise.resolve<EmailLanguage>("en"),
     currentOrigin(),
   ]);
+  const translation = await translateEmailBody(input.body, language);
+  const translationWarning: StepEmailTranslationWarning | null = translation.error
+    ? { language, label: languageLabel(language), error: translation.error }
+    : null;
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
   // Assunto é fixo por pedido ("Order #1637") pra a caixa de entrada agrupar
@@ -292,12 +310,13 @@ async function renderStepEmailHtmls(
       subject: input.subject,
       stepLabel,
       senderName,
-      body: input.body,
+      body: translation.text,
       logoUrl,
       language,
       quoted,
     }),
     language,
+    translationWarning,
   };
 }
 
@@ -428,7 +447,13 @@ export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmail
   return { customerName, senderName: session.profile.full_name };
 }
 
-export type StepEmailPreview = { internalHtml: string | null; clientHtml: string | null };
+export type StepEmailPreview = {
+  internalHtml: string | null;
+  clientHtml: string | null;
+  /** Idioma do cliente resolvido pelo país — 'en' quando não há tradução a fazer. */
+  clientLanguage: EmailLanguage;
+  translationWarning: StepEmailTranslationWarning | null;
+};
 
 /**
  * Mesmo HTML que `sendStepEmail` mandaria, sem mandar nada — só leitura (usa
@@ -455,7 +480,7 @@ export async function previewStepEmail(
     loadIsClientByUserId(admin, recipientIds),
     peekQuotedHistory(admin, owner, parsed.data.step),
   ]);
-  const { internalHtml, clientHtml } = await renderStepEmailHtmls(
+  const { internalHtml, clientHtml, language, translationWarning } = await renderStepEmailHtmls(
     admin,
     owner,
     stepId,
@@ -474,7 +499,12 @@ export async function previewStepEmail(
 
   return {
     ok: true,
-    preview: { internalHtml: hasInternal ? internalHtml : null, clientHtml: hasClient ? clientHtml : null },
+    preview: {
+      internalHtml: hasInternal ? internalHtml : null,
+      clientHtml: hasClient ? clientHtml : null,
+      clientLanguage: language,
+      translationWarning: hasClient ? translationWarning : null,
+    },
   };
 }
 
