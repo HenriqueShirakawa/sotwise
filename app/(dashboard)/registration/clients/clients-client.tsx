@@ -23,16 +23,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { EmailLanguage } from "@/lib/email/checklist-step";
 
 import { createClientRecord, updateClientRecord, deleteClientRecord } from "./actions";
 
 type Option = { id: string; name: string };
+
+const LANGUAGE_LABELS: Record<EmailLanguage, string> = {
+  "pt-BR": "Portuguese (BR)",
+  en: "English",
+  zh: "Chinese",
+};
+const USE_COUNTRY_DEFAULT = "__country_default__";
 
 export type ClientRow = {
   id: string;
   name: string;
   country_id: string | null;
   country_name: string | null;
+  /** Override manual do idioma do e-mail de checklist (Fase 2.1, RN01) —
+   *  `null` segue o fallback por país (ver /registration/country-languages). */
+  language: EmailLanguage | null;
   /** Usuários externos do cliente (papel `client`, ligados por client_id). */
   users: { name: string; blocked: boolean }[];
   counts: {
@@ -101,6 +119,19 @@ export function ClientsClient({
           row.original.country_name ?? <span className="text-muted-foreground">—</span>,
       },
       {
+        id: "language",
+        accessorFn: (row) => row.language ?? "",
+        header: sortableHeader<ClientRow>("Language"),
+        cell: ({ row }) =>
+          row.original.language ? (
+            LANGUAGE_LABELS[row.original.language]
+          ) : (
+            <span className="text-muted-foreground" title="Follows the country default">
+              — (country default)
+            </span>
+          ),
+      },
+      {
         id: "users",
         header: "Portal users",
         enableSorting: false,
@@ -151,7 +182,7 @@ export function ClientsClient({
     []
   );
 
-  function handleSubmit(values: { name: string; country_id: string }) {
+  function handleSubmit(values: { name: string; country_id: string; language: EmailLanguage | null }) {
     startTransition(async () => {
       const res = editing
         ? await updateClientRecord(editing.id, values)
@@ -255,10 +286,11 @@ function ClientForm({
   countries: Option[];
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (values: { name: string; country_id: string }) => void;
+  onSubmit: (values: { name: string; country_id: string; language: EmailLanguage | null }) => void;
 }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [countryId, setCountryId] = useState(editing?.country_id ?? "");
+  const [language, setLanguage] = useState(editing?.language ?? null);
 
   const valid = !!name.trim() && !!countryId;
 
@@ -267,7 +299,7 @@ function ClientForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (valid) onSubmit({ name: name.trim(), country_id: countryId });
+        if (valid) onSubmit({ name: name.trim(), country_id: countryId, language });
       }}
     >
       <p className="border-b pb-2 text-sm text-muted-foreground">Main information</p>
@@ -291,6 +323,27 @@ function ClientForm({
           options={countries}
           placeholder="Select a country"
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Checklist e-mail language</Label>
+        <Select
+          value={language ?? USE_COUNTRY_DEFAULT}
+          onValueChange={(v) => setLanguage(v === USE_COUNTRY_DEFAULT ? null : (v as EmailLanguage))}
+        >
+          <SelectTrigger className="!h-10 w-full bg-white">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={USE_COUNTRY_DEFAULT}>Use country default</SelectItem>
+            <SelectItem value="pt-BR">{LANGUAGE_LABELS["pt-BR"]}</SelectItem>
+            <SelectItem value="en">{LANGUAGE_LABELS.en}</SelectItem>
+            <SelectItem value="zh">{LANGUAGE_LABELS.zh}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Overrides the country&apos;s default language for this client&apos;s checklist e-mails.
+        </p>
       </div>
 
       <DialogFooter>
