@@ -1,6 +1,7 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAll } from "@/lib/fetch-all";
+import type { EmailLanguage } from "@/lib/email/checklist-step";
 import type { OrderStatus } from "@/types/database";
 
 import { ClientsClient, type ClientRow } from "./clients-client";
@@ -70,10 +71,15 @@ export default async function ClientsPage() {
   const admin = createAdminClient();
   // Paginados: a lista inteira vai pro cliente, que pagina (ver lib/fetch-all).
   const [clientsRes, countriesRes, clientUsersRes, counts] = await Promise.all([
-    fetchAll<{ id: string; name: string; country_id: string | null }>((from, to) =>
+    fetchAll<{
+      id: string;
+      name: string;
+      country_id: string | null;
+      language: EmailLanguage | null;
+    }>((from, to) =>
       admin
         .from("clients")
-        .select("id, name, country_id")
+        .select("id, name, country_id, language")
         .is("deleted_at", null)
         .order("name")
         .range(from, to)
@@ -124,6 +130,7 @@ export default async function ClientsPage() {
     name: c.name,
     country_id: c.country_id,
     country_name: c.country_id ? countryName.get(c.country_id) ?? null : null,
+    language: c.language,
     users: usersByClient.get(c.id) ?? [],
     counts: counts.get(c.id) ?? emptyCounts(),
   }));

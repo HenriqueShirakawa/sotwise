@@ -26,6 +26,7 @@ export async function createClientRecord(
   const { error } = await admin.from("clients").insert({
     name: parsed.data.name,
     country_id: parsed.data.country_id,
+    language: parsed.data.language ?? null,
     created_by: session.userId,
   });
   if (error) return { ok: false, error: error.message };
@@ -48,7 +49,11 @@ export async function updateClientRecord(
   const admin = createAdminClient();
   const { error } = await admin
     .from("clients")
-    .update({ name: parsed.data.name, country_id: parsed.data.country_id })
+    .update({
+      name: parsed.data.name,
+      country_id: parsed.data.country_id,
+      language: parsed.data.language ?? null,
+    })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 

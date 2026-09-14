@@ -11,9 +11,18 @@ export const bulkNamesSchema = z.object({
   names: z.array(nameSchema).min(1, "Add at least one name."),
 });
 
+/** Override manual do idioma do e-mail de checklist (Fase 2.1, RN01) — sem
+ *  ele, cai no fallback por país (`country_language_defaults`) e depois no
+ *  default global 'en'. `null` = "sem override", segue o fallback normal. */
+export const clientLanguageSchema = z.enum(["pt-BR", "en", "zh"]).nullable();
+
 export const clientSchema = z.object({
   name: nameSchema,
   country_id: z.string().uuid("Select a country."),
+  // Opcional: a API externa do GSS (`domain/api/registry.ts`) usa este mesmo
+  // schema para o POST /api/clients e nunca manda este campo — só a tela de
+  // cadastro o envia (sempre, mesmo que `null`).
+  language: clientLanguageSchema.optional(),
 });
 
 export type ClientInput = z.infer<typeof clientSchema>;
