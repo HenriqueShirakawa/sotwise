@@ -18,7 +18,7 @@ import {
   type StepOwner,
 } from "@/lib/checklist-email-actions";
 import { buildDefaultStepBody } from "@/lib/email/step-templates";
-import type { ChecklistStep } from "@/types/database";
+import type { ChecklistStep, EmailLanguage } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,12 @@ import { MultiSearchSelect } from "@/components/multi-search-select";
  * sim, só carrega ao abrir o compositor (é maior e só serve pra quem vai
  * mandar um e-mail agora).
  */
+const LANGUAGE_LABELS: Record<EmailLanguage, string> = {
+  en: "English",
+  "pt-BR": "Brazilian Portuguese",
+  zh: "Simplified Chinese",
+};
+
 export function StepEmailSection({
   owner,
   feature,
@@ -354,6 +360,25 @@ export function StepEmailSection({
                     Internal view
                   </button>
                 </div>
+              )}
+              {/* Corpo do cliente sai traduzido pro idioma do país dele na hora
+                  do envio (lib/email/translate.ts); a equipe recebe o texto
+                  como foi escrito. O aviso âmbar aparece quando a tradução
+                  não rolou — o cliente vai receber o inglês. */}
+              {preview?.clientHtml && preview.clientLanguage !== "en" && (
+                preview.translationWarning ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Could not translate the message to {preview.translationWarning.label} — the client will
+                    receive it in English. ({preview.translationWarning.error})
+                  </p>
+                ) : (
+                  (previewVariant === "client" || !preview.internalHtml) && (
+                    <p className="text-xs text-muted-foreground">
+                      Client view translated to {LANGUAGE_LABELS[preview.clientLanguage]} (from the client&apos;s
+                      country). The internal view keeps your original text.
+                    </p>
+                  )
+                )
               )}
               <div className="max-h-[640px] overflow-y-auto rounded-md border">
                 <iframe
