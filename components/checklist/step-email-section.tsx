@@ -86,6 +86,7 @@ export function StepEmailSection({
   const [adHocDraft, setAdHocDraft] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
   const [body, setBody] = useState("");
+  const [clientLanguage, setClientLanguage] = useState<EmailLanguage>("en");
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -108,13 +109,15 @@ export function StepEmailSection({
     setAdHocDraft("");
     setStage("compose");
     setPreview(null);
+    setClientLanguage("en");
     setComposeOpen(true);
     // Corpo padrão nasce com os colchetes originais e troca pelo nome de
     // verdade assim que resolver — evita segurar a abertura do modal numa ida
     // ao banco. Roda de novo toda vez que abre (o cliente/usuário pode mudar).
-    loadStepEmailDefaults(owner).then(({ customerName, senderName }) =>
-      setBody(buildDefaultStepBody(step, { customerName, senderName }))
-    );
+    loadStepEmailDefaults(owner).then(({ customerName, senderName, language }) => {
+      setBody(buildDefaultStepBody(step, { customerName, senderName }));
+      setClientLanguage(language);
+    });
   }
 
   const canSend = !pending && recipientIds.length > 0 && !!subject.trim() && !!body.trim();
@@ -260,6 +263,13 @@ export function StepEmailSection({
           </DialogHeader>
           {stage === "compose" ? (
             <div className="space-y-3">
+              {clientLanguage !== "en" && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  This client&apos;s default language is {LANGUAGE_LABELS[clientLanguage]}. They will receive
+                  the standard template for this step, not the text below — your edits here only reach the
+                  internal view.
+                </p>
+              )}
               <div>
                 <Label className="text-xs text-muted-foreground">To</Label>
                 <MultiSearchSelect
@@ -361,25 +371,17 @@ export function StepEmailSection({
                   </button>
                 </div>
               )}
-              {/* Corpo do cliente sai traduzido pro idioma do país dele na hora
-                  do envio (lib/email/translate.ts); a equipe recebe o texto
-                  como foi escrito. O aviso âmbar aparece quando a tradução
-                  não rolou — o cliente vai receber o inglês. */}
-              {preview?.clientHtml && preview.clientLanguage !== "en" && (
-                preview.translationWarning ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    Could not translate the message to {preview.translationWarning.label} — the client will
-                    receive it in English. ({preview.translationWarning.error})
+              {/* Cliente com idioma diferente de 'en' recebe o template padrão
+                  da etapa, não o texto editado — a equipe interna sempre vê o
+                  que foi escrito (ver `renderStepEmailHtmls`). */}
+              {preview?.clientHtml &&
+                preview.clientLanguage !== "en" &&
+                (previewVariant === "client" || !preview.internalHtml) && (
+                  <p className="text-xs text-muted-foreground">
+                    Client view uses the standard template for {LANGUAGE_LABELS[preview.clientLanguage]}{" "}
+                    clients (from the client&apos;s country). The internal view keeps your original text.
                   </p>
-                ) : (
-                  (previewVariant === "client" || !preview.internalHtml) && (
-                    <p className="text-xs text-muted-foreground">
-                      Client view translated to {LANGUAGE_LABELS[preview.clientLanguage]} (from the client&apos;s
-                      country). The internal view keeps your original text.
-                    </p>
-                  )
-                )
-              )}
+                )}
               <div className="max-h-[640px] overflow-y-auto rounded-md border">
                 <iframe
                   title="Email preview"

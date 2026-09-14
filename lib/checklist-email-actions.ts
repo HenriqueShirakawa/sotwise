@@ -10,7 +10,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
-import { languageLabel, translateEmailBody } from "@/lib/email/translate";
+import { buildDefaultStepBody } from "@/lib/email/step-templates";
 import { sendEmail } from "@/lib/email/resend";
 import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
@@ -190,33 +190,44 @@ async function loadOwnerClientIds(admin: Admin, owner: StepOwner, stepId: string
 }
 
 /**
- * Idioma do template (Fase 2.1 — User Story 1). Fonte primária:
- * `clients.language` (hoje sempre nulo — o GSS não manda idioma no customer,
- * confirmado batendo no endpoint ao vivo em 09/09; fica como override manual
- * ou gancho para um campo futuro do GSS). Fallback: `country_language_defaults`
- * pelo país do cliente. Sem cliente/país mapeado → 'en', nunca bloqueia o envio
- * (RN03). PL/Shipment com múltiplos clientes usa o primeiro que resolver.
+ * Idioma do template (Fase 2.1 — User Story 1) + nome do cliente, resolvidos
+ * juntos (mesma query) — o segundo só serve para popular `buildDefaultStepBody`
+ * quando o idioma não é inglês (ver `renderStepEmailHtmls`). Fonte primária do
+ * idioma: `clients.language` — override manual editável em
+ * `/registration/clients` (o GSS não manda idioma no customer, confirmado
+ * batendo no endpoint ao vivo em 09/09, então continua nulo até o cliente ser
+ * editado à mão ou o GSS ganhar esse campo). Fallback:
+ * `country_language_defaults` pelo país do cliente. Sem cliente/país mapeado →
+ * 'en', nunca bloqueia o envio (RN03). PL/Shipment com múltiplos clientes usa
+ * o primeiro que resolver de cada.
  */
-async function resolveLanguage(admin: Admin, owner: StepOwner, stepId: string): Promise<EmailLanguage> {
+async function resolveLanguageAndCustomerName(
+  admin: Admin,
+  owner: StepOwner,
+  stepId: string
+): Promise<{ language: EmailLanguage; customerName: string | null }> {
   const clientIds = await loadOwnerClientIds(admin, owner, stepId);
-  if (clientIds.length === 0) return "en";
+  if (clientIds.length === 0) return { language: "en", customerName: null };
 
   const { data: clients } = await admin
     .from("clients")
-    .select("id, language, country_id")
+    .select("id, name, language, country_id")
     .in("id", clientIds);
 
+  const customerName = (clients ?? []).map((c) => c.name).join(", ") || null;
+
   const withLanguage = (clients ?? []).find((c) => c.language);
-  if (withLanguage?.language) return withLanguage.language as EmailLanguage;
+  if (withLanguage?.language) return { language: withLanguage.language as EmailLanguage, customerName };
 
   const countryIds = [...new Set((clients ?? []).map((c) => c.country_id).filter((id): id is string => Boolean(id)))];
-  if (countryIds.length === 0) return "en";
+  if (countryIds.length === 0) return { language: "en", customerName };
 
   const { data: defaults } = await admin
     .from("country_language_defaults")
     .select("country_id, language")
     .in("country_id", countryIds);
-  return (defaults?.[0]?.language as EmailLanguage | undefined) ?? "en";
+  const language = (defaults?.[0]?.language as EmailLanguage | undefined) ?? "en";
+  return { language, customerName };
 }
 
 /**
@@ -251,9 +262,6 @@ async function currentOrigin(): Promise<string | undefined> {
   }
 }
 
-/** Aviso pro compositor quando a tradução do corpo não aconteceu. */
-export type StepEmailTranslationWarning = { language: EmailLanguage; label: string; error: string };
-
 /**
  * Renderiza as duas variantes (interna/cliente) do e-mail — mesma lógica pro
  * envio de verdade (`sendStepEmail`) e pro preview (`previewStepEmail`), pra
@@ -261,10 +269,13 @@ export type StepEmailTranslationWarning = { language: EmailLanguage; label: stri
  * tocada) cai em facts vazios + idioma 'en', igual ao que `sendStepEmail`
  * produziria ao criar a linha na hora (`ensureStepId`).
  *
- * Só a variante do CLIENTE tem o corpo traduzido pro idioma do país dele
- * (`lib/email/translate.ts`) — a equipe recebe o texto como foi escrito. Se
- * a tradução falhar, o cliente recebe o inglês e `translationWarning` conta
- * o motivo (nunca bloqueia o envio, mesma regra RN03 do idioma do chrome).
+ * Só a variante do CLIENTE muda com o idioma: quando o país dele resolve pra
+ * 'en', é o texto que o usuário escreveu; para qualquer outro idioma, é o
+ * template padrão da etapa (`buildDefaultStepBody`), IGNORANDO o que foi
+ * editado no compositor — decisão do usuário em 14/09/2026, no lugar da
+ * tradução automática (dependia de crédito na API da Anthropic, que não é
+ * garantido). A equipe interna sempre recebe o texto como foi escrito, nos
+ * dois casos.
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -277,17 +288,16 @@ async function renderStepEmailHtmls(
   internalHtml: string;
   clientHtml: string;
   language: EmailLanguage;
-  translationWarning: StepEmailTranslationWarning | null;
 }> {
-  const [facts, language, origin] = await Promise.all([
+  const [facts, { language, customerName }, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
-    stepId ? resolveLanguage(admin, owner, stepId) : Promise.resolve<EmailLanguage>("en"),
+    stepId
+      ? resolveLanguageAndCustomerName(admin, owner, stepId)
+      : Promise.resolve({ language: "en" as EmailLanguage, customerName: null }),
     currentOrigin(),
   ]);
-  const translation = await translateEmailBody(input.body, language);
-  const translationWarning: StepEmailTranslationWarning | null = translation.error
-    ? { language, label: languageLabel(language), error: translation.error }
-    : null;
+  const clientBody =
+    language === "en" ? input.body : buildDefaultStepBody(input.step, { customerName, senderName });
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
   // Assunto é fixo por pedido ("Order #1637") pra a caixa de entrada agrupar
@@ -310,13 +320,12 @@ async function renderStepEmailHtmls(
       subject: input.subject,
       stepLabel,
       senderName,
-      body: translation.text,
+      body: clientBody,
       logoUrl,
       language,
       quoted,
     }),
     language,
-    translationWarning,
   };
 }
 
@@ -424,35 +433,33 @@ const sendSchema = z.object({
 
 export type SendStepEmailInput = z.infer<typeof sendSchema>;
 
-export type StepEmailDefaults = { customerName: string | null; senderName: string };
+export type StepEmailDefaults = { customerName: string | null; senderName: string; language: EmailLanguage };
 
 /**
- * Nome do(s) cliente(s) da etapa + nome de quem está compondo agora — só pro
- * compositor substituir `[Customer Name]`/`[Your Name]` do template padrão
- * (`lib/email/step-templates.ts`) toda vez que abre, sem depender de digitação
- * manual. Cliente vem `null` quando a etapa não resolve nenhum (fica o
- * colchete original, editável à mão) — mesma resolução de `resolveLanguage`,
- * mas devolvendo o nome em vez do idioma.
+ * Nome do(s) cliente(s) da etapa + nome de quem está compondo agora + idioma
+ * resolvido — pro compositor (a) substituir `[Customer Name]`/`[Your Name]` do
+ * template padrão (`lib/email/step-templates.ts`) toda vez que abre, sem
+ * depender de digitação manual, e (b) avisar cedo, ainda na composição, que um
+ * idioma diferente de 'en' vai ignorar o texto editado (ver `renderStepEmailHtmls`).
+ * Cliente vem `null` quando a etapa não resolve nenhum (fica o colchete
+ * original, editável à mão).
  */
 export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmailDefaults> {
   const session = await requireInternal();
   const admin = createAdminClient();
   const stepId = await findStepId(admin, owner);
-  const clientIds = stepId ? await loadOwnerClientIds(admin, owner, stepId) : [];
-  let customerName: string | null = null;
-  if (clientIds.length > 0) {
-    const { data } = await admin.from("clients").select("name").in("id", clientIds);
-    customerName = (data ?? []).map((c) => c.name).join(", ") || null;
-  }
-  return { customerName, senderName: session.profile.full_name };
+  const { language, customerName } = stepId
+    ? await resolveLanguageAndCustomerName(admin, owner, stepId)
+    : { language: "en" as EmailLanguage, customerName: null };
+  return { customerName, senderName: session.profile.full_name, language };
 }
 
 export type StepEmailPreview = {
   internalHtml: string | null;
   clientHtml: string | null;
-  /** Idioma do cliente resolvido pelo país — 'en' quando não há tradução a fazer. */
+  /** Idioma do cliente resolvido pelo país — 'en' usa o texto editado; qualquer
+   *  outro usa o template padrão da etapa (ver `renderStepEmailHtmls`). */
   clientLanguage: EmailLanguage;
-  translationWarning: StepEmailTranslationWarning | null;
 };
 
 /**
@@ -480,7 +487,7 @@ export async function previewStepEmail(
     loadIsClientByUserId(admin, recipientIds),
     peekQuotedHistory(admin, owner, parsed.data.step),
   ]);
-  const { internalHtml, clientHtml, language, translationWarning } = await renderStepEmailHtmls(
+  const { internalHtml, clientHtml, language } = await renderStepEmailHtmls(
     admin,
     owner,
     stepId,
@@ -503,7 +510,6 @@ export async function previewStepEmail(
       internalHtml: hasInternal ? internalHtml : null,
       clientHtml: hasClient ? clientHtml : null,
       clientLanguage: language,
-      translationWarning: hasClient ? translationWarning : null,
     },
   };
 }
