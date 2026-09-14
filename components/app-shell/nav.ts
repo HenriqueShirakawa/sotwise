@@ -73,6 +73,7 @@ export const NAV: NavItem[] = [
       { title: "Clients", href: "/registration/clients" },
       { title: "Contacts", href: "/registration/contacts" },
       { title: "Countries", href: "/registration/countries" },
+      { title: "Country Languages", href: "/registration/country-languages" },
       { title: "Exporters", href: "/registration/exporters" },
       { title: "Factories", href: "/registration/factories" },
       { title: "Order Type", href: "/registration/order-types" },
