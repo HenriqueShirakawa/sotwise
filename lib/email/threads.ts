@@ -21,11 +21,18 @@ import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-type OwnerOrder = { id: string; po_number: string };
+export type OwnerOrder = { id: string; po_number: string; client_id: string | null };
 
-/** Order(s) por trás da etapa que está enviando e-mail — 1 para Order, N
- *  (uma por pedido consolidado) para Pre-loading/Shipment (fan-out). */
-async function resolveOwnerOrderIds(admin: Admin, owner: StepOwner): Promise<OwnerOrder[]> {
+/**
+ * Order(s) por trás da etapa que está enviando e-mail — 1 para Order, N
+ * (uma por pedido consolidado) para Pre-loading/Shipment (fan-out).
+ * `client_id` (Fase multi-idioma, 15/09/2026) é o que permite rotear cada
+ * grupo de idioma pras threads certas em `lib/checklist-email-actions.ts` —
+ * antes disso a função só devolvia `id`/`po_number`, exportada aqui pra dar
+ * essa reusabilidade sem duplicar as 3 queries encadeadas
+ * (`pre_loading_batches` → `batches` → `orders`).
+ */
+export async function resolveOwnerOrders(admin: Admin, owner: StepOwner): Promise<OwnerOrder[]> {
   if (owner.kind === "order") {
     const { data: step } = await admin
       .from("order_checklist_steps")
@@ -35,7 +42,7 @@ async function resolveOwnerOrderIds(admin: Admin, owner: StepOwner): Promise<Own
     if (!step?.order_id) return [];
     const { data: order } = await admin
       .from("orders")
-      .select("id, po_number")
+      .select("id, po_number, client_id")
       .eq("id", step.order_id)
       .maybeSingle();
     return order ? [order] : [];
@@ -52,7 +59,7 @@ async function resolveOwnerOrderIds(admin: Admin, owner: StepOwner): Promise<Own
   const orderIds = [...new Set((batchRows ?? []).map((r) => r.order_id))];
   if (orderIds.length === 0) return [];
 
-  const { data: orders } = await admin.from("orders").select("id, po_number").in("id", orderIds);
+  const { data: orders } = await admin.from("orders").select("id, po_number, client_id").in("id", orderIds);
   return orders ?? [];
 }
 
@@ -104,29 +111,23 @@ export type ResolvedThread = {
 };
 
 /**
- * Threads que um envio desta etapa deve atingir — a primeira da lista é
- * sempre a PRIMÁRIA (menor po_number; critério determinístico mesmo quando só
- * há 1 pedido). Sem nenhum pedido resolvido (ex.: Pre-loading sem lote
- * vinculado ainda), devolve erro em vez de um modo "sem thread" silencioso —
- * decisão do plano, para nunca quebrar a promessa de "todo envio pertence a
- * uma thread". Quem chama deve tratar isso ANTES de mandar qualquer e-mail.
+ * Threads que um conjunto de Orders já resolvido deve atingir — a primeira
+ * da lista é sempre a PRIMÁRIA (menor po_number; critério determinístico
+ * mesmo quando só há 1 pedido). Recebe os Orders JÁ RESOLVIDOS (com
+ * `po_number`), não ids soltos — quem chama (`sendStepEmail`) reusa o mesmo
+ * array pra classificar destinatários por cliente, sem round-trip repetido.
+ *
+ * Fase multi-idioma (15/09/2026): antes disto vivia dentro de
+ * `resolveThreadsForSend` (removida — só `sendStepEmail` a chamava, e agora
+ * ele precisa do array de Orders intermediário de qualquer forma pra rotear
+ * cada grupo de idioma pras suas próprias threads, então resolve tudo com
+ * `resolveOwnerOrders` + esta função diretamente).
  */
-export async function resolveThreadsForSend(
+export async function resolveThreadsForOrderIds(
   admin: Admin,
-  owner: StepOwner,
+  orders: Pick<OwnerOrder, "id" | "po_number">[],
   step: ChecklistStep
 ): Promise<{ ok: true; threads: ResolvedThread[] } | { ok: false; error: string }> {
-  const orders = await resolveOwnerOrderIds(admin, owner);
-  if (orders.length === 0) {
-    return {
-      ok: false,
-      error:
-        owner.kind === "order"
-          ? "Could not find the order behind this step."
-          : "This pre-loading has no order linked yet — cannot start an e-mail thread.",
-    };
-  }
-
   const kind = threadKindForStep(step);
   const ordered = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number));
 
@@ -278,13 +279,15 @@ export async function loadQuotedHistory(admin: Admin, threadId: string): Promise
 }
 
 /**
- * Versão só-leitura de `resolveThreadsForSend` pro PREVIEW: acha a thread
- * primária que o envio usaria, sem criar nada, e devolve o histórico citado
- * que o e-mail de verdade levaria. Lista vazia = thread ainda não existe
- * (o envio seria o primeiro da conversa).
+ * Versão só-leitura de `resolveThreadsForOrderIds` pro PREVIEW: acha a
+ * thread primária GERAL que o envio usaria, sem criar nada, e devolve o
+ * histórico citado que o e-mail de verdade levaria (mesma simplificação de
+ * sempre — 1 thread só, mesmo em envio multi-idioma, ver
+ * `docs/regras_de_negocio.md`). Lista vazia = thread ainda não existe (o
+ * envio seria o primeiro da conversa).
  */
 export async function peekQuotedHistory(admin: Admin, owner: StepOwner, step: ChecklistStep): Promise<QuotedMessage[]> {
-  const orders = await resolveOwnerOrderIds(admin, owner);
+  const orders = await resolveOwnerOrders(admin, owner);
   if (orders.length === 0) return [];
   const primary = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number))[0];
   const { data: thread } = await admin
