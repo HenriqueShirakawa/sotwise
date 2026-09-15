@@ -43,12 +43,23 @@ import { MultiSearchSelect } from "@/components/multi-search-select";
  * de "Attached documents" nunca mostra "…". A lista de destinatários, essa
  * sim, só carrega ao abrir o compositor (é maior e só serve pra quem vai
  * mandar um e-mail agora).
+ *
+ * Multi-idioma (Fase 15/09/2026): um Pre-loading/Shipment pode consolidar
+ * clientes de idiomas diferentes — o compositor abre uma ABA por idioma só
+ * quando isso acontece de verdade (`languages.length > 1`); pra Order e pra
+ * PL de idioma único (o caso comum) não existe aba nenhuma, é a mesma caixa
+ * única de sempre. Cada aba é 100% independente e WYSIWYG — o que estiver
+ * escrita nela é o que sai pra quem é daquele idioma (ver `sendStepEmail`).
  */
 const LANGUAGE_LABELS: Record<EmailLanguage, string> = {
   en: "English",
   "pt-BR": "Brazilian Portuguese",
   zh: "Simplified Chinese",
 };
+
+/** Qual variante a tela de preview está mostrando — "internal" ou o idioma
+ *  de uma das variantes de cliente presentes. */
+type PreviewTab = "internal" | EmailLanguage;
 
 export function StepEmailSection({
   owner,
@@ -76,7 +87,7 @@ export function StepEmailSection({
   const [composeOpen, setComposeOpen] = useState(false);
   const [stage, setStage] = useState<"compose" | "preview">("compose");
   const [preview, setPreview] = useState<StepEmailPreview | null>(null);
-  const [previewVariant, setPreviewVariant] = useState<"client" | "internal">("client");
+  const [previewVariant, setPreviewVariant] = useState<PreviewTab>("internal");
   const [previewHeight, setPreviewHeight] = useState(240);
   const [history, setHistory] = useState<StepEmailRow[] | null>(null);
   const [recipientOptions, setRecipientOptions] = useState<Option[]>([]);
@@ -85,8 +96,14 @@ export function StepEmailSection({
   const [adHocEmails, setAdHocEmails] = useState<string[]>([]);
   const [adHocDraft, setAdHocDraft] = useState("");
   const [subject, setSubject] = useState(defaultSubject);
-  const [body, setBody] = useState("");
-  const [clientLanguage, setClientLanguage] = useState<EmailLanguage>("en");
+  /** Uma entrada por idioma relevante pra esta etapa — a maioria das vezes
+   *  só 1 (`languages.length === 1`). */
+  const [bodies, setBodies] = useState<Partial<Record<EmailLanguage, string>>>({});
+  const [languages, setLanguages] = useState<EmailLanguage[]>(["en"]);
+  const [activeLanguage, setActiveLanguage] = useState<EmailLanguage>("en");
+  /** Idioma que a equipe interna e os avulsos sempre recebem — sempre
+   *  `languages[0]` (ver `resolveClientLanguageGroups`). */
+  const [primaryLanguage, setPrimaryLanguage] = useState<EmailLanguage>("en");
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -103,27 +120,42 @@ export function StepEmailSection({
 
   function openCompose() {
     setSubject(defaultSubject);
-    setBody(buildDefaultStepBody(step, {}));
+    setBodies({ en: buildDefaultStepBody(step, {}) });
+    setLanguages(["en"]);
+    setActiveLanguage("en");
+    setPrimaryLanguage("en");
     setRecipientIds(responsibleId ? [responsibleId] : []);
     setAdHocEmails([]);
     setAdHocDraft("");
     setStage("compose");
     setPreview(null);
-    setClientLanguage("en");
     setComposeOpen(true);
     // Corpo padrão nasce em inglês com os colchetes originais e troca pro
     // texto/idioma de verdade assim que resolver — evita segurar a abertura
     // do modal numa ida ao banco. Roda de novo toda vez que abre (o
-    // cliente/usuário pode mudar). Desde 15/09: já nasce no idioma do
-    // cliente (WYSIWYG — ver `renderStepEmailHtmls`), não mais sempre em
-    // inglês com um template escondido substituindo no envio.
-    loadStepEmailDefaults(owner).then(({ customerName, senderName, language }) => {
-      setBody(buildDefaultStepBody(step, { customerName, senderName }, language));
-      setClientLanguage(language);
+    // cliente/usuário pode mudar). Uma aba por idioma que a etapa resolve —
+    // só vira abas visíveis de verdade quando há mais de 1 (ver JSX abaixo).
+    loadStepEmailDefaults(owner).then(({ senderName, groups }) => {
+      const nextBodies: Partial<Record<EmailLanguage, string>> = {};
+      for (const group of groups) {
+        nextBodies[group.language] = buildDefaultStepBody(
+          step,
+          { customerName: group.customerName, senderName },
+          group.language
+        );
+      }
+      setBodies(nextBodies);
+      setLanguages(groups.map((g) => g.language));
+      setPrimaryLanguage(groups[0].language);
+      setActiveLanguage(groups[0].language);
     });
   }
 
-  const canSend = !pending && recipientIds.length > 0 && !!subject.trim() && !!body.trim();
+  const canSend =
+    !pending &&
+    recipientIds.length > 0 &&
+    !!subject.trim() &&
+    languages.every((lang) => !!bodies[lang]?.trim());
 
   /** Valida e adiciona o e-mail digitado à lista de avulsos. Silencioso
    *  quando o campo está vazio (Enter sem nada digitado não é erro). */
@@ -141,7 +173,7 @@ export function StepEmailSection({
   function showPreview() {
     if (!canSend) {
       if (recipientIds.length === 0) toast.error("Select at least one recipient.");
-      else toast.error("Write a subject and a message.");
+      else toast.error("Write a subject and a message for every language tab.");
       return;
     }
     startTransition(async () => {
@@ -150,7 +182,7 @@ export function StepEmailSection({
         recipient_ids: recipientIds,
         ad_hoc_emails: adHocEmails,
         subject,
-        body,
+        bodies,
         recordPath,
         step,
       });
@@ -159,7 +191,7 @@ export function StepEmailSection({
         return;
       }
       setPreview(res.preview);
-      setPreviewVariant(res.preview.clientHtml ? "client" : "internal");
+      setPreviewVariant(res.preview.clientVariants[0]?.language ?? "internal");
       setPreviewHeight(240);
       setStage("preview");
     });
@@ -172,7 +204,7 @@ export function StepEmailSection({
         recipient_ids: recipientIds,
         ad_hoc_emails: adHocEmails,
         subject,
-        body,
+        bodies,
         recordPath,
         step,
       });
@@ -197,6 +229,12 @@ export function StepEmailSection({
 
   const count = history?.length ?? null;
   const unreadReplies = history?.reduce((n, row) => n + row.replies.filter((r) => !r.read_by_me).length, 0) ?? 0;
+
+  const previewVariantCount = (preview?.internalHtml ? 1 : 0) + (preview?.clientVariants.length ?? 0);
+  const activePreviewHtml =
+    previewVariant === "internal"
+      ? preview?.internalHtml
+      : preview?.clientVariants.find((v) => v.language === previewVariant)?.html;
 
   return (
     <div>
@@ -266,11 +304,19 @@ export function StepEmailSection({
           </DialogHeader>
           {stage === "compose" ? (
             <div className="space-y-3">
-              {clientLanguage !== "en" && (
+              {languages.length === 1 && primaryLanguage !== "en" && (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  This client&apos;s default language is {LANGUAGE_LABELS[clientLanguage]}. The message below
-                  was pre-filled in {LANGUAGE_LABELS[clientLanguage]} and is exactly what gets sent — to the
+                  This client&apos;s default language is {LANGUAGE_LABELS[primaryLanguage]}. The message below
+                  was pre-filled in {LANGUAGE_LABELS[primaryLanguage]} and is exactly what gets sent — to the
                   client and the internal team — so edit it like any other message.
+                </p>
+              )}
+              {languages.length > 1 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  There are clients in {languages.length} different languages here. Each tab below becomes its
+                  own e-mail — only that language&apos;s clients (and their order&apos;s conversation) receive
+                  it. Ad-hoc recipients and the internal team always get the {LANGUAGE_LABELS[primaryLanguage]}{" "}
+                  tab.
                 </p>
               )}
               <div>
@@ -337,53 +383,73 @@ export function StepEmailSection({
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">Message</Label>
+                {languages.length > 1 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {languages.map((lang) => (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => setActiveLanguage(lang)}
+                        className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                          activeLanguage === lang
+                            ? "border-[#640BB7] bg-[#640BB7] text-white"
+                            : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
+                        }`}
+                      >
+                        {LANGUAGE_LABELS[lang]}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Textarea
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
+                  value={bodies[activeLanguage] ?? ""}
+                  onChange={(e) => setBodies((prev) => ({ ...prev, [activeLanguage]: e.target.value }))}
                   rows={6}
-                  className="mt-1"
+                  className="mt-1.5"
                   placeholder="Write your message..."
                 />
               </div>
             </div>
           ) : (
             <div className="space-y-2">
-              {preview?.clientHtml && preview?.internalHtml && (
-                <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewVariant("client")}
-                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      previewVariant === "client"
-                        ? "border-[#640BB7] bg-[#640BB7] text-white"
-                        : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
-                    }`}
-                  >
-                    Client view
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewVariant("internal")}
-                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      previewVariant === "internal"
-                        ? "border-[#640BB7] bg-[#640BB7] text-white"
-                        : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
-                    }`}
-                  >
-                    Internal view
-                  </button>
+              {previewVariantCount > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {preview?.internalHtml && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewVariant("internal")}
+                      className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                        previewVariant === "internal"
+                          ? "border-[#640BB7] bg-[#640BB7] text-white"
+                          : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
+                      }`}
+                    >
+                      Internal view
+                    </button>
+                  )}
+                  {preview?.clientVariants.map((variant) => (
+                    <button
+                      key={variant.language}
+                      type="button"
+                      onClick={() => setPreviewVariant(variant.language)}
+                      className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                        previewVariant === variant.language
+                          ? "border-[#640BB7] bg-[#640BB7] text-white"
+                          : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
+                      }`}
+                    >
+                      {(preview?.clientVariants.length ?? 0) > 1
+                        ? `Client view (${LANGUAGE_LABELS[variant.language]})`
+                        : "Client view"}
+                    </button>
+                  ))}
                 </div>
               )}
               <div className="max-h-[640px] overflow-y-auto rounded-md border">
                 <iframe
                   title="Email preview"
                   sandbox="allow-same-origin"
-                  srcDoc={
-                    (previewVariant === "client" ? preview?.clientHtml : preview?.internalHtml) ??
-                    preview?.clientHtml ??
-                    preview?.internalHtml ??
-                    ""
-                  }
+                  srcDoc={activePreviewHtml ?? preview?.internalHtml ?? preview?.clientVariants[0]?.html ?? ""}
                   onLoad={(e) => {
                     // Sem `allow-scripts` no sandbox — só lê o DOM (mesmo
                     // HTML que a gente gerou) pra encaixar a altura no card
