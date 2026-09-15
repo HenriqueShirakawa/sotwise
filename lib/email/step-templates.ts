@@ -837,10 +837,13 @@ const TEMPLATES: Record<EmailLanguage, Record<ChecklistStep, string>> = {
  * do usuário, não é a empresa de quem envia. Corpo continua 100% editável
  * depois de aberto.
  *
- * `language` (default `'en'`) escolhe QUAL corpo — usado por
- * `renderStepEmailHtmls` para montar o e-mail do cliente no idioma resolvido
- * dele; o compositor (`StepEmailSection`) nunca passa esse argumento, então o
- * rascunho que a pessoa edita continua sempre nascendo em inglês.
+ * `language` (default `'en'`) escolhe QUAL corpo — desde 15/09/2026, só quem
+ * chama isto é o COMPOSITOR (`StepEmailSection.openCompose`, com o idioma
+ * resolvido do cliente): a caixa já nasce no idioma certo, e dali pra frente
+ * é WYSIWYG — o que estiver escrito é o que sai pro cliente E pra equipe
+ * interna (`renderStepEmailHtmls` em `lib/checklist-email-actions.ts` usa
+ * `input.body` direto, sem chamar isto de novo nem sobrescrever o que foi
+ * editado).
  */
 export function buildDefaultStepBody(
   step: ChecklistStep,

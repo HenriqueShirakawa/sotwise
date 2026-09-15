@@ -111,11 +111,14 @@ export function StepEmailSection({
     setPreview(null);
     setClientLanguage("en");
     setComposeOpen(true);
-    // Corpo padrão nasce com os colchetes originais e troca pelo nome de
-    // verdade assim que resolver — evita segurar a abertura do modal numa ida
-    // ao banco. Roda de novo toda vez que abre (o cliente/usuário pode mudar).
+    // Corpo padrão nasce em inglês com os colchetes originais e troca pro
+    // texto/idioma de verdade assim que resolver — evita segurar a abertura
+    // do modal numa ida ao banco. Roda de novo toda vez que abre (o
+    // cliente/usuário pode mudar). Desde 15/09: já nasce no idioma do
+    // cliente (WYSIWYG — ver `renderStepEmailHtmls`), não mais sempre em
+    // inglês com um template escondido substituindo no envio.
     loadStepEmailDefaults(owner).then(({ customerName, senderName, language }) => {
-      setBody(buildDefaultStepBody(step, { customerName, senderName }));
+      setBody(buildDefaultStepBody(step, { customerName, senderName }, language));
       setClientLanguage(language);
     });
   }
@@ -265,9 +268,9 @@ export function StepEmailSection({
             <div className="space-y-3">
               {clientLanguage !== "en" && (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  This client&apos;s default language is {LANGUAGE_LABELS[clientLanguage]}. They will receive
-                  the standard template for this step, not the text below — your edits here only reach the
-                  internal view.
+                  This client&apos;s default language is {LANGUAGE_LABELS[clientLanguage]}. The message below
+                  was pre-filled in {LANGUAGE_LABELS[clientLanguage]} and is exactly what gets sent — to the
+                  client and the internal team — so edit it like any other message.
                 </p>
               )}
               <div>
@@ -371,17 +374,6 @@ export function StepEmailSection({
                   </button>
                 </div>
               )}
-              {/* Cliente com idioma diferente de 'en' recebe o template padrão
-                  da etapa, não o texto editado — a equipe interna sempre vê o
-                  que foi escrito (ver `renderStepEmailHtmls`). */}
-              {preview?.clientHtml &&
-                preview.clientLanguage !== "en" &&
-                (previewVariant === "client" || !preview.internalHtml) && (
-                  <p className="text-xs text-muted-foreground">
-                    Client view uses the standard template for {LANGUAGE_LABELS[preview.clientLanguage]}{" "}
-                    clients (from the client&apos;s country). The internal view keeps your original text.
-                  </p>
-                )}
               <div className="max-h-[640px] overflow-y-auto rounded-md border">
                 <iframe
                   title="Email preview"
