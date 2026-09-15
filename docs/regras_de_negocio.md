@@ -1267,6 +1267,16 @@ A v2 (seção acima) nunca chegou a rodar em produção com crédito de verdade.
 - ⚠️ **Textos em pt-BR e zh são rascunho do Claude**, ainda sem revisão humana linha a linha — zh em particular não foi revisado por falante nativo. Mesma cautela que já derrubou a v1 uma vez: revisar antes de confiar de olhos fechados em produção.
 - Idioma continua resolvido em `resolveLanguageAndCustomerName` (`lib/checklist-email-actions.ts`): `clients.language` (override manual) → `country_language_defaults` pelo país → `en`.
 
+##### v4 — corpo vira WYSIWYG, sem swap escondido no envio (decisão 2026-09-15)
+
+O fix da v3 (templates estáticos em pt-BR/zh) resolveu a FALTA de conteúdo, mas não a arquitetura em si: o compositor continuava sempre pré-preenchendo em inglês (nunca chamava `buildDefaultStepBody` com o idioma), e só na hora de montar o HTML de envio/preview é que o corpo do cliente era trocado pelo template padrão — escondido, sem o usuário ver isso acontecer. Reportado de novo pelo usuário no mesmo dia ("coloquei português, o corpo continua em inglês"), agora contra a v3 já no ar: a divergência entre o que a tela mostra e o que é enviado era o problema de verdade, não só a falta de texto em pt-BR/zh.
+
+- **`renderStepEmailHtmls` não sobrescreve mais nada.** `internalHtml` e `clientHtml` usam o mesmo `input.body` — a única diferença entre as duas variantes volta a ser só `facts`/`actionUrl` (que o cliente nunca vê), não mais o idioma do corpo.
+- **Quem garante o idioma certo é o COMPOSITOR.** `StepEmailSection.openCompose` passou a chamar `buildDefaultStepBody(step, vars, language)` com o idioma resolvido do cliente (antes: sempre `'en'`, sem o parâmetro) — a caixa "Message" já abre em português/chinês quando é o caso, e dali em diante é 100% editável e 100% respeitado: o que estiver escrito é o que sai, pro cliente E pra equipe interna.
+- **Efeito colateral aceito:** a cópia que a equipe interna recebe também passa a ir no idioma do cliente (antes ficava sempre em inglês, mesmo pra cliente brasileiro) — coerente com o produto ser 100% PT-BR (ver §9) e com quem está operando a tela também ler o idioma que acabou de ver no compositor.
+- Aviso amarelo do compositor e a nota da tela de preview foram reescritos/removidos de acordo — não prometem mais um "template padrão" separado do que está na tela.
+- `buildDefaultStepBody` nunca mais é chamado dentro de `renderStepEmailHtmls` — só pelo compositor, ao abrir/reabrir o modal.
+
 Pedido do cliente: trocar `/orders/<uuid>` por `/orders/<po_number>` (ex.: `/orders/1601`) — viu o UUID feio no botão "Acessar" de um e-mail. Aplicado nos três tipos de registro, sem quebrar link antigo:
 
 - **As duas URLs convivem, sem redirect.** As páginas `orders/[id]`, `pre-loading/[id]` e `shipments/[id]` detectam se o segmento é um UUID (`isUuid()` em `lib/slugs.ts`) e buscam por `id` OU por `po_number`/`pl_number` conforme o caso. Link antigo (já mandado por e-mail, ex. o botão "Acessar"/`recordPath` do checklist) continua abrindo normalmente — de propósito NÃO foi trocado pra usar o número bonito, porque precisa durar pra sempre em caixa de entrada já recebida.

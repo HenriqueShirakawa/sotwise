@@ -10,7 +10,6 @@ import { fetchAll } from "@/lib/fetch-all";
 import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
-import { buildDefaultStepBody } from "@/lib/email/step-templates";
 import { sendEmail } from "@/lib/email/resend";
 import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
@@ -269,13 +268,17 @@ async function currentOrigin(): Promise<string | undefined> {
  * tocada) cai em facts vazios + idioma 'en', igual ao que `sendStepEmail`
  * produziria ao criar a linha na hora (`ensureStepId`).
  *
- * Só a variante do CLIENTE muda com o idioma: quando o país dele resolve pra
- * 'en', é o texto que o usuário escreveu; para qualquer outro idioma, é o
- * template padrão da etapa NAQUELE IDIOMA (`buildDefaultStepBody`, textos
- * estáticos em `lib/email/step-templates.ts`), IGNORANDO o que foi editado no
- * compositor — decisão do usuário em 14/09/2026, no lugar da tradução
- * automática (dependia de crédito na API da Anthropic, que não é garantido).
- * A equipe interna sempre recebe o texto como foi escrito, nos dois casos.
+ * WYSIWYG desde 15/09/2026: as duas variantes usam `input.body` — o que
+ * estiver na caixa do compositor é o que sai, pro cliente E pra equipe, sem
+ * swap escondido. Supera a decisão de 14/09 de sempre reescrever o corpo do
+ * CLIENTE com o template padrão da etapa NAQUELE IDIOMA, ignorando o que
+ * tinha sido editado: o usuário viu, no ar, o compositor sempre mostrando
+ * inglês pra cliente pt-BR (a caixa nunca chamava `buildDefaultStepBody` com
+ * `language`) e reportou como bug — a divergência escondida era exatamente o
+ * problema, não só a falta de conteúdo em pt-BR/zh. Agora quem garante o
+ * idioma certo é o COMPOSITOR (`StepEmailSection.openCompose`, que pré-popula
+ * com `buildDefaultStepBody(step, vars, language)`), não mais um override
+ * silencioso aqui no envio.
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -289,17 +292,13 @@ async function renderStepEmailHtmls(
   clientHtml: string;
   language: EmailLanguage;
 }> {
-  const [facts, { language, customerName }, origin] = await Promise.all([
+  const [facts, { language }, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
     stepId
       ? resolveLanguageAndCustomerName(admin, owner, stepId)
       : Promise.resolve({ language: "en" as EmailLanguage, customerName: null }),
     currentOrigin(),
   ]);
-  const clientBody =
-    language === "en"
-      ? input.body
-      : buildDefaultStepBody(input.step, { customerName, senderName }, language);
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
   // Assunto é fixo por pedido ("Order #1637") pra a caixa de entrada agrupar
@@ -322,7 +321,7 @@ async function renderStepEmailHtmls(
       subject: input.subject,
       stepLabel,
       senderName,
-      body: clientBody,
+      body: input.body,
       logoUrl,
       language,
       quoted,
