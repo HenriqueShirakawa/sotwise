@@ -271,11 +271,11 @@ async function currentOrigin(): Promise<string | undefined> {
  *
  * Só a variante do CLIENTE muda com o idioma: quando o país dele resolve pra
  * 'en', é o texto que o usuário escreveu; para qualquer outro idioma, é o
- * template padrão da etapa (`buildDefaultStepBody`), IGNORANDO o que foi
- * editado no compositor — decisão do usuário em 14/09/2026, no lugar da
- * tradução automática (dependia de crédito na API da Anthropic, que não é
- * garantido). A equipe interna sempre recebe o texto como foi escrito, nos
- * dois casos.
+ * template padrão da etapa NAQUELE IDIOMA (`buildDefaultStepBody`, textos
+ * estáticos em `lib/email/step-templates.ts`), IGNORANDO o que foi editado no
+ * compositor — decisão do usuário em 14/09/2026, no lugar da tradução
+ * automática (dependia de crédito na API da Anthropic, que não é garantido).
+ * A equipe interna sempre recebe o texto como foi escrito, nos dois casos.
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -297,7 +297,9 @@ async function renderStepEmailHtmls(
     currentOrigin(),
   ]);
   const clientBody =
-    language === "en" ? input.body : buildDefaultStepBody(input.step, { customerName, senderName });
+    language === "en"
+      ? input.body
+      : buildDefaultStepBody(input.step, { customerName, senderName }, language);
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
   const logoUrl = origin ? `${origin}/logo-sotwise.svg` : null;
   // Assunto é fixo por pedido ("Order #1637") pra a caixa de entrada agrupar
