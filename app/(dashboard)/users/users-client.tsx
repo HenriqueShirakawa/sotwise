@@ -16,6 +16,7 @@ import {
   sortableHeader,
 } from "@/components/registration/registration-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/date-picker";
@@ -466,18 +467,29 @@ function UserForm({
       {isClientRole ? (
         <div className="space-y-1.5">
           <Label>Client</Label>
-          <Select value={clientId} onValueChange={setClientId}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select a client" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Lista longa vira campo com busca — o Select do Radix só faz
+              typeahead da primeira letra. Mesmo padrão do form de Order/PL. */}
+          {clients.length > SEARCHABLE_FROM ? (
+            <SearchSelect
+              value={clientId}
+              onChange={setClientId}
+              options={clients}
+              placeholder="Select a client"
+            />
+          ) : (
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a client" />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <p className="text-xs text-muted-foreground">
             External user — signs in to the client portal and sees this client&apos;s orders
             only, never the internal screens.
