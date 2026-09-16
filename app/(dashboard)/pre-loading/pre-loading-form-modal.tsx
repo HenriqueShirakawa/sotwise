@@ -195,12 +195,14 @@ export function PreLoadingFormModal({
 
   // Os clientes escolhidos lá em cima também filtram a lista de lotes. Um lote
   // já marcado nunca some do filtro — senão ele iria junto no submit sem estar
-  // visível pra ser desmarcado.
+  // visível pra ser desmarcado. Lote sem nenhuma entrada Factory×Category (0
+  // registers) não é selecionável de verdade — some da lista, mesma exceção.
   const filtered = useMemo(() => {
     const q = orderQuery.trim().toLowerCase();
     const clientSet = new Set(form.client_ids);
     return available.filter((b) => {
       if (selected.includes(b.id)) return true;
+      if (b.entries.length === 0) return false;
       if (clientSet.size && !(b.client_id && clientSet.has(b.client_id))) return false;
       return !q || b.po_number.toLowerCase().includes(q);
     });
