@@ -21,16 +21,7 @@ import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-export type OwnerOrder = {
-  id: string;
-  po_number: string;
-  client_id: string | null;
-  /** Lote(s) DESTE owner que pertencem a este Order (sufixo ".NN" de
-   *  `batches.batch_number`, ordenados) — vazio pra owner Order (a etapa não
-   *  é de nenhum lote específico). Normalmente 1 elemento; mais de 1 quando
-   *  o mesmo Pre-loading/Shipment consolida 2 lotes do mesmo Order. */
-  batch_numbers: string[];
-};
+export type OwnerOrder = { id: string; po_number: string; client_id: string | null };
 
 /**
  * Order(s) por trás da etapa que está enviando e-mail — 1 para Order, N
@@ -54,7 +45,7 @@ export async function resolveOwnerOrders(admin: Admin, owner: StepOwner): Promis
       .select("id, po_number, client_id")
       .eq("id", step.order_id)
       .maybeSingle();
-    return order ? [{ ...order, batch_numbers: [] }] : [];
+    return order ? [order] : [];
   }
 
   const { data: pbRows } = await admin
@@ -64,19 +55,12 @@ export async function resolveOwnerOrders(admin: Admin, owner: StepOwner): Promis
   const batchIds = [...new Set((pbRows ?? []).map((r) => r.batch_id))];
   if (batchIds.length === 0) return [];
 
-  const { data: batchRows } = await admin.from("batches").select("order_id, batch_number").in("id", batchIds);
+  const { data: batchRows } = await admin.from("batches").select("order_id").in("id", batchIds);
   const orderIds = [...new Set((batchRows ?? []).map((r) => r.order_id))];
   if (orderIds.length === 0) return [];
 
-  const batchNumbersByOrder = new Map<string, string[]>();
-  for (const b of batchRows ?? []) {
-    const list = batchNumbersByOrder.get(b.order_id) ?? [];
-    list.push(b.batch_number);
-    batchNumbersByOrder.set(b.order_id, list);
-  }
-
   const { data: orders } = await admin.from("orders").select("id, po_number, client_id").in("id", orderIds);
-  return (orders ?? []).map((o) => ({ ...o, batch_numbers: (batchNumbersByOrder.get(o.id) ?? []).sort() }));
+  return orders ?? [];
 }
 
 /** Busca a thread `(order_id, kind)`; cria se ainda não existir. Corrida

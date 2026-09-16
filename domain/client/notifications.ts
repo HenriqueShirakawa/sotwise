@@ -175,10 +175,11 @@ export async function dispatchClientNotifications(
       clientNameCache.set(row.client_id, clientName);
     }
 
-    const [{ data: order }, { data: batch }] = await Promise.all([
-      admin.from("orders").select("po_number").eq("id", row.order_id).single(),
-      admin.from("batches").select("batch_number").eq("id", row.batch_id).maybeSingle(),
-    ]);
+    const { data: order } = await admin
+      .from("orders")
+      .select("po_number")
+      .eq("id", row.order_id)
+      .single();
     const poNumber = order?.po_number ?? "—";
 
     const payload: BatchAdvanceEmail = {
@@ -205,11 +206,7 @@ export async function dispatchClientNotifications(
         : { id: threadResult.id, orderId: row.order_id, kind: "internal", anchorMessageId: threadResult.anchorMessageId };
     const threadHeaders: ThreadingHeaders = thread ? await threadingHeaders(admin, [thread]) : {};
     const replyTo = thread ? replyToAddress(thread.id) : undefined;
-    // Sufixo ".NN" igual ao rótulo que as telas já mostram (`batchLabel` em
-    // domain/copilot/tools.ts) — a partir de Pre-loading/Shipment o mesmo
-    // Order pode ter lotes em estágios diferentes, então só "Order #N"
-    // deixaria de dizer QUAL lote avançou (decisão do usuário, 16/09/2026).
-    const baseSubject = thread ? `Order #${poNumber}${batch?.batch_number ?? ""}` : batchAdvanceSubject(payload);
+    const baseSubject = thread ? `Order #${poNumber}` : batchAdvanceSubject(payload);
     const subject = threadHeaders["In-Reply-To"] ? `Re: ${baseSubject}` : baseSubject;
 
     // Um envio por destinatário, não um `to` coletivo: cliente não precisa ver
