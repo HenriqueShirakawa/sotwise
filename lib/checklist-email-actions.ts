@@ -17,6 +17,7 @@ import {
   peekQuotedHistory,
   promoteAnchorIfMissing,
   recordThreadFanout,
+  replyToAddress,
   resolveOwnerOrders,
   resolveThreadsForOrderIds,
   threadingHeaders,
@@ -59,27 +60,6 @@ export type StepEmailRow = {
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
-
-/**
- * Domínio pro qual a resposta do cliente volta — derivado de `EMAIL_FROM`
- * ("SOTWISE <no-reply@mail.gssdatahub.com>" → "mail.gssdatahub.com"), não
- * hardcoded: o mesmo domínio já verificado no Resend pra ENVIO é o que
- * precisa ter "Receiving" ativado (ver docs/regras_de_negocio.md).
- */
-function replyDomain(): string {
-  const match = (process.env.EMAIL_FROM ?? "").match(/@([^>\s]+)/);
-  return match?.[1] ?? "resend.dev";
-}
-
-/** Endereço de resposta da THREAD (Fase 2 do threading) — o id de
- *  `email_threads` é o token que o webhook usa pra achar a conversa de
- *  volta; a etapa exata respondida ele descobre pelo `In-Reply-To` do e-mail
- *  recebido contra o `message_id` gravado em cada linha (ver
- *  app/api/webhooks/resend). E-mails de antes da Fase 2 continuam com o token
- *  = id da própria linha, e o webhook ainda entende os dois formatos. */
-function replyToAddress(threadId: string): string {
-  return `reply+${threadId}@${replyDomain()}`;
-}
 
 /**
  * Destinatários selecionáveis — ativos, não ocultos. Mesmo critério do
@@ -794,6 +774,11 @@ export async function sendStepEmail(
   const overallPrimaryThread = allThreads[0];
   const threadByOrderId = new Map(allThreads.map((t) => [t.orderId, t]));
   const poNumberByOrderId = new Map(orders.map((o) => [o.id, o.po_number]));
+  // Sufixo ".NN" (ou ".01, .02" quando o mesmo Order tem 2 lotes NESTE PL/
+  // Shipment) — a partir de Pre-loading/Shipment um Order pode ter lotes em
+  // estágios diferentes, então só "Order #N" deixaria de dizer QUAL lote esta
+  // conversa é sobre (decisão do usuário, 16/09/2026).
+  const batchSuffixByOrderId = new Map(orders.map((o) => [o.id, o.batch_numbers.join(", ")]));
 
   // Cada thread tem seu PRÓPRIO histórico citado — cada Order recebe sua
   // própria cópia do e-mail, respondendo de verdade dentro da conversa
@@ -882,7 +867,7 @@ export async function sendStepEmail(
     if (owner.kind === "order") {
       return h["In-Reply-To"] && !/^re:/i.test(parsed.data.subject) ? `Re: ${parsed.data.subject}` : parsed.data.subject;
     }
-    const base = `Order #${poNumberByOrderId.get(thread.orderId) ?? ""}`;
+    const base = `Order #${poNumberByOrderId.get(thread.orderId) ?? ""}${batchSuffixByOrderId.get(thread.orderId) ?? ""}`;
     return h["In-Reply-To"] ? `Re: ${base}` : base;
   };
 
