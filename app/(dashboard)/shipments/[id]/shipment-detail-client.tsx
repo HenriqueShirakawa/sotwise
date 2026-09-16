@@ -742,6 +742,7 @@ export function ShipmentDetailClient({
                       defaultSubject={`PL #${shipment.pl_number}`}
                       recordPath={`/shipments/${shipment.id}`}
                       responsibleId={s.responsible_id}
+                      done={s.done}
                     />
                   </div>
                 )}

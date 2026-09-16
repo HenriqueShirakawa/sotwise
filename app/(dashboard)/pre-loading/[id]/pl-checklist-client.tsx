@@ -759,6 +759,7 @@ export function PlChecklistClient({
                       defaultSubject={`PL #${preLoading.pl_number}`}
                       recordPath={`/pre-loading/${preLoading.id}`}
                       responsibleId={s.responsible_id}
+                      done={s.done}
                     />
                   </div>
                 )}

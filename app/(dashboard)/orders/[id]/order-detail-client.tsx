@@ -1543,6 +1543,7 @@ export function OrderDetailClient({
                         defaultSubject={`Order #${order.po_number}`}
                         recordPath={`/orders/${orderId}`}
                         responsibleId={s.responsible_id}
+                        done={s.done}
                       />
                       {s.step === "po" && (
                         <Button
