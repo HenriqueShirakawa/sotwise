@@ -9,6 +9,14 @@ import {
   type BatchAdvanceEmail,
 } from "@/lib/email/batch-advance";
 import { sendEmail } from "@/lib/email/resend";
+import {
+  findOrCreateThread,
+  promoteAnchorIfMissing,
+  replyToAddress,
+  threadingHeaders,
+  type ResolvedThread,
+  type ThreadingHeaders,
+} from "@/lib/email/threads";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus } from "@/types/database";
 
@@ -167,32 +175,61 @@ export async function dispatchClientNotifications(
       clientNameCache.set(row.client_id, clientName);
     }
 
-    const { data: order } = await admin
-      .from("orders")
-      .select("po_number")
-      .eq("id", row.order_id)
-      .single();
+    const [{ data: order }, { data: batch }] = await Promise.all([
+      admin.from("orders").select("po_number").eq("id", row.order_id).single(),
+      admin.from("batches").select("batch_number").eq("id", row.batch_id).maybeSingle(),
+    ]);
+    const poNumber = order?.po_number ?? "—";
 
     const payload: BatchAdvanceEmail = {
       clientName,
-      poNumber: order?.po_number ?? "—",
+      poNumber,
       products: await productsForBatch(admin, row.batch_id),
       status: row.to_status,
       portalUrl: origin ? `${origin}/portal` : undefined,
     };
 
     const html = batchAdvanceEmailHtml(payload);
-    const subject = batchAdvanceSubject(payload);
+
+    // Mesma thread "internal" que qualquer etapa do checklist usa (ver
+    // lib/email/step-thread-kind.ts) — este aviso automático precisa cair na
+    // MESMA conversa da Order no inbox do cliente, não chegar como e-mail
+    // solto sem relação com o resto (feedback do usuário, 16/09/2026: essa
+    // notificação é anterior ao redesenho de threading, 11/09, e nunca tinha
+    // sido integrada a ele). Falha ao achar/criar a thread não pode derrubar
+    // o aviso em si — cai pro assunto antigo, sem cabeçalho de thread.
+    const threadResult = await findOrCreateThread(admin, row.order_id, "internal");
+    const thread: ResolvedThread | null =
+      "error" in threadResult
+        ? null
+        : { id: threadResult.id, orderId: row.order_id, kind: "internal", anchorMessageId: threadResult.anchorMessageId };
+    const threadHeaders: ThreadingHeaders = thread ? await threadingHeaders(admin, [thread]) : {};
+    const replyTo = thread ? replyToAddress(thread.id) : undefined;
+    // Sufixo ".NN" igual ao rótulo que as telas já mostram (`batchLabel` em
+    // domain/copilot/tools.ts) — a partir de Pre-loading/Shipment o mesmo
+    // Order pode ter lotes em estágios diferentes, então só "Order #N"
+    // deixaria de dizer QUAL lote avançou (decisão do usuário, 16/09/2026).
+    const baseSubject = thread ? `Order #${poNumber}${batch?.batch_number ?? ""}` : batchAdvanceSubject(payload);
+    const subject = threadHeaders["In-Reply-To"] ? `Re: ${baseSubject}` : baseSubject;
 
     // Um envio por destinatário, não um `to` coletivo: cliente não precisa ver
     // o endereço dos colegas, e uma falha individual não derruba o resto.
     const failures: string[] = [];
     const delivered: string[] = [];
+    let anchorMessageId: string | null = null;
     for (const to of recipients) {
-      const sent = await sendEmail({ to, subject, html });
-      if (sent.ok) delivered.push(to);
-      else failures.push(`${to}: ${sent.error}`);
+      const sent = await sendEmail({ to, subject, html, replyTo, headers: threadHeaders });
+      if (sent.ok) {
+        delivered.push(to);
+        anchorMessageId ??= sent.messageId;
+      } else {
+        failures.push(`${to}: ${sent.error}`);
+      }
     }
+
+    // Sem linha em `checklist_step_emails` pra este aviso (não é etapa
+    // nenhuma) — só grava `anchor_message_id`, nunca `anchor_email_id`.
+    if (thread) await promoteAnchorIfMissing(admin, thread.id, null, anchorMessageId);
 
     if (delivered.length > 0 && failures.length === 0) {
       await admin

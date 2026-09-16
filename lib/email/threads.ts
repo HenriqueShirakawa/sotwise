@@ -21,7 +21,16 @@ import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
-export type OwnerOrder = { id: string; po_number: string; client_id: string | null };
+export type OwnerOrder = {
+  id: string;
+  po_number: string;
+  client_id: string | null;
+  /** Lote(s) DESTE owner que pertencem a este Order (sufixo ".NN" de
+   *  `batches.batch_number`, ordenados) — vazio pra owner Order (a etapa não
+   *  é de nenhum lote específico). Normalmente 1 elemento; mais de 1 quando
+   *  o mesmo Pre-loading/Shipment consolida 2 lotes do mesmo Order. */
+  batch_numbers: string[];
+};
 
 /**
  * Order(s) por trás da etapa que está enviando e-mail — 1 para Order, N
@@ -45,7 +54,7 @@ export async function resolveOwnerOrders(admin: Admin, owner: StepOwner): Promis
       .select("id, po_number, client_id")
       .eq("id", step.order_id)
       .maybeSingle();
-    return order ? [order] : [];
+    return order ? [{ ...order, batch_numbers: [] }] : [];
   }
 
   const { data: pbRows } = await admin
@@ -55,18 +64,27 @@ export async function resolveOwnerOrders(admin: Admin, owner: StepOwner): Promis
   const batchIds = [...new Set((pbRows ?? []).map((r) => r.batch_id))];
   if (batchIds.length === 0) return [];
 
-  const { data: batchRows } = await admin.from("batches").select("order_id").in("id", batchIds);
+  const { data: batchRows } = await admin.from("batches").select("order_id, batch_number").in("id", batchIds);
   const orderIds = [...new Set((batchRows ?? []).map((r) => r.order_id))];
   if (orderIds.length === 0) return [];
 
+  const batchNumbersByOrder = new Map<string, string[]>();
+  for (const b of batchRows ?? []) {
+    const list = batchNumbersByOrder.get(b.order_id) ?? [];
+    list.push(b.batch_number);
+    batchNumbersByOrder.set(b.order_id, list);
+  }
+
   const { data: orders } = await admin.from("orders").select("id, po_number, client_id").in("id", orderIds);
-  return orders ?? [];
+  return (orders ?? []).map((o) => ({ ...o, batch_numbers: (batchNumbersByOrder.get(o.id) ?? []).sort() }));
 }
 
 /** Busca a thread `(order_id, kind)`; cria se ainda não existir. Corrida
  *  (dois envios concorrentes criando a mesma thread nova) tratada
- *  reconsultando pela unique (order_id, kind) em vez de estourar erro. */
-async function findOrCreateThread(
+ *  reconsultando pela unique (order_id, kind) em vez de estourar erro.
+ *  Exportada: também usada por `domain/client/notifications.ts` (aviso
+ *  automático de avanço de lote), pra cair na mesma conversa da Order. */
+export async function findOrCreateThread(
   admin: Admin,
   orderId: string,
   kind: EmailThreadKind
@@ -172,26 +190,49 @@ export async function recordThreadFanout(
  * nada migrado retroativamente). Sem `messageId` (todos os destinatários
  * falharam, ou o GET do Resend não devolveu), só preenche `anchor_email_id`
  * se estava vazio — mantém o bookkeeping da Fase 1, sem fingir uma âncora.
+ *
+ * `emailId` nulo (aviso automático de `client_notifications` — 16/09/2026,
+ * sem linha própria em `checklist_step_emails`, porque não é etapa nenhuma):
+ * grava só `anchor_message_id`, nunca aponta `anchor_email_id` pra um id que
+ * não existe naquela tabela.
  */
 export async function promoteAnchorIfMissing(
   admin: Admin,
   threadId: string,
-  emailId: string,
+  emailId: string | null,
   messageId: string | null
 ): Promise<void> {
   if (messageId) {
     await admin
       .from("email_threads")
-      .update({ anchor_email_id: emailId, anchor_message_id: messageId })
+      .update(emailId ? { anchor_email_id: emailId, anchor_message_id: messageId } : { anchor_message_id: messageId })
       .eq("id", threadId)
       .is("anchor_message_id", null);
     return;
   }
+  if (!emailId) return;
   await admin
     .from("email_threads")
     .update({ anchor_email_id: emailId })
     .eq("id", threadId)
     .is("anchor_email_id", null);
+}
+
+/**
+ * Domínio pro qual a resposta do cliente volta — derivado de `EMAIL_FROM`
+ * ("SOTWISE <no-reply@mail.gssdatahub.com>" → "mail.gssdatahub.com"), não
+ * hardcoded: o mesmo domínio já verificado no Resend pra ENVIO é o que
+ * precisa ter "Receiving" ativado (ver docs/regras_de_negocio.md).
+ */
+function replyDomain(): string {
+  const match = (process.env.EMAIL_FROM ?? "").match(/@([^>\s]+)/);
+  return match?.[1] ?? "resend.dev";
+}
+
+/** Endereço de resposta da THREAD — o id de `email_threads` é o token que o
+ *  webhook usa pra achar a conversa de volta (ver app/api/webhooks/resend). */
+export function replyToAddress(threadId: string): string {
+  return `reply+${threadId}@${replyDomain()}`;
 }
 
 export type ThreadingHeaders = { "In-Reply-To"?: string; References?: string };
