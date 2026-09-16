@@ -57,6 +57,15 @@ const LANGUAGE_LABELS: Record<EmailLanguage, string> = {
   zh: "Simplified Chinese",
 };
 
+/** Rótulo curto pras abas de idioma do compositor (pill acima do textarea) —
+ *  o nome por extenso (`LANGUAGE_LABELS`) fica só pras frases corridas do
+ *  aviso âmbar, onde "Brazilian Portuguese tab" lê melhor que "pt-br tab". */
+const LANGUAGE_TAB_LABELS: Record<EmailLanguage, string> = {
+  en: "View en",
+  "pt-BR": "View pt-br",
+  zh: "View zh",
+};
+
 /** Qual variante a tela de preview está mostrando — "internal" ou o idioma
  *  de uma das variantes de cliente presentes. */
 type PreviewTab = "internal" | EmailLanguage;
@@ -313,10 +322,9 @@ export function StepEmailSection({
               )}
               {languages.length > 1 && (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  There are clients in {languages.length} different languages here. Each tab below becomes its
-                  own e-mail — only that language&apos;s clients (and their order&apos;s conversation) receive
-                  it. Ad-hoc recipients and the internal team always get the {LANGUAGE_LABELS[primaryLanguage]}{" "}
-                  tab.
+                  {languages.length} languages here — each tab sends a separate e-mail to only
+                  that language&apos;s clients (with their order&apos;s thread). Ad-hoc recipients
+                  and the internal team always go in the {LANGUAGE_LABELS[primaryLanguage]} tab.
                 </p>
               )}
               <div>
@@ -396,7 +404,7 @@ export function StepEmailSection({
                             : "border-input bg-transparent text-muted-foreground hover:bg-slate-50"
                         }`}
                       >
-                        {LANGUAGE_LABELS[lang]}
+                        {LANGUAGE_TAB_LABELS[lang]}
                       </button>
                     ))}
                   </div>
