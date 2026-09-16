@@ -62,20 +62,25 @@ export type StepEmailRow = {
 type Admin = ReturnType<typeof createAdminClient>;
 
 /**
- * Destinatários selecionáveis — ativos, não ocultos. Mesmo critério do
- * "Forward to" do módulo de mensagens (`loadPeople` em `lib/messages-actions.ts`),
- * duplicado aqui de propósito: são módulos independentes, sem razão pra
- * acoplar um ao outro por uma query de 6 linhas.
+ * Destinatários selecionáveis — só papel `client`, ativos, não ocultos.
+ * Este e-mail (qualquer etapa, Order/Pre-loading/Shipment) é comunicação
+ * COM O CLIENTE; equipe interna nunca deve aparecer aqui como destinatário
+ * (decisão do usuário, 16/09/2026). Quem precisa ser avisado internamente
+ * usa o módulo de mensagens (`loadPeople` em `lib/messages-actions.ts`),
+ * critério independente de propósito — não há razão pra acoplar os dois.
  */
 export async function loadStepRecipientOptions(): Promise<Option[]> {
   await requireInternal();
   const admin = createAdminClient();
+  const { data: clientRole } = await admin.from("roles").select("id").eq("name", "client").maybeSingle();
+  if (!clientRole) return [];
   const data = await fetchAll<{ id: string; full_name: string }>((from, to) =>
     admin
       .from("profiles")
       .select("id, full_name")
       .eq("status", "active")
       .eq("hidden", false)
+      .eq("role_id", clientRole.id)
       .order("full_name")
       .range(from, to)
   );
@@ -310,6 +315,20 @@ type RenderedClientVariant = {
  * partir da thread primária GERAL — simplificação já existente (o rodapé
  * citado de um PL multi-Order já só olhava pra 1 thread), mantida de
  * propósito: não é o bug reportado.
+ *
+ * `orderClientName` (16/09/2026): quando o owner consolida clientes
+ * diferentes no MESMO idioma (ex.: AGK + Amacom, ambos pt-BR), o rascunho
+ * fica com "[Customer Name]"/"[Company Name]" literal (`loadStepEmailDefaults`
+ * deixa de resolver de propósito) — aqui, chamada 1x POR ORDER
+ * (`sendStepEmail`), o token é trocado pelo nome do cliente DAQUELA Order
+ * específica. Decisão explícita do usuário: não precisa aparecer certo na
+ * caixa de composição (a UI pode continuar mostrando o colchete/nome
+ * combinado), só o e-mail que cada Order recebe precisa ser certo — é o
+ * único ponto aceito de "tela mostra X, envia Y" neste arquivo, então NÃO
+ * generalizar pra mais nada sem perguntar de novo (ver
+ * [[feedback-wysiwyg-no-hidden-swaps]]). Se o usuário já apagou/reescreveu o
+ * colchete à mão, não sobra nada a trocar — continua WYSIWYG pro resto do
+ * texto.
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -317,7 +336,8 @@ async function renderStepEmailHtmls(
   stepId: string | null,
   senderName: string,
   input: { subject: string; bodies: Partial<Record<EmailLanguage, string>>; recordPath: string; step: ChecklistStep },
-  quoted: QuotedMessage[]
+  quoted: QuotedMessage[],
+  orderClientName: string | null = null
 ): Promise<{
   internalHtml: string;
   internalBody: string;
@@ -338,8 +358,14 @@ async function renderStepEmailHtmls(
   // a conversa — a etapa, que antes ia no assunto, vai em destaque no corpo.
   const stepLabel = STEP_LABELS[input.step];
 
+  const applyOrderClientName = (text: string): string =>
+    orderClientName
+      ? text.replace("[Customer Name]", orderClientName).replace("[Company Name]", orderClientName)
+      : text;
+
   const fallbackBody = Object.values(input.bodies).find((b): b is string => Boolean(b?.trim())) ?? "";
-  const internalBody = input.bodies[primaryLanguage]?.trim() ? input.bodies[primaryLanguage]! : fallbackBody;
+  const rawInternalBody = input.bodies[primaryLanguage]?.trim() ? input.bodies[primaryLanguage]! : fallbackBody;
+  const internalBody = applyOrderClientName(rawInternalBody);
 
   const internalHtml = checklistStepEmailHtml({
     subject: input.subject,
@@ -354,7 +380,9 @@ async function renderStepEmailHtmls(
   });
 
   const clientVariants: RenderedClientVariant[] = groups.map((group) => {
-    const body = input.bodies[group.language]?.trim() ? input.bodies[group.language]! : internalBody;
+    const body = applyOrderClientName(
+      input.bodies[group.language]?.trim() ? input.bodies[group.language]! : rawInternalBody
+    );
     return {
       language: group.language,
       clientIds: group.clientIds,
@@ -532,7 +560,18 @@ export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmail
     : [{ language: "en" as EmailLanguage, clientIds: [], customerName: null }];
   return {
     senderName: session.profile.full_name,
-    groups: groups.map((g) => ({ language: g.language, customerName: g.customerName })),
+    groups: groups.map((g) => ({
+      language: g.language,
+      // 2+ clientes no MESMO grupo de idioma (ex.: AGK + Amacom, ambos pt-BR)
+      // não têm UM nome — deixa "[Customer Name]"/"[Company Name]" literal no
+      // rascunho (mesmo fallback de "nenhum cliente resolvido" que já existia
+      // em `buildDefaultStepBody`) em vez de mandar "AGK, Amacom" pra toda
+      // Order do PL. Cada Order recebe o nome do SEU PRÓPRIO cliente na hora
+      // do envio — decisão do usuário em 16/09/2026: não precisa aparecer
+      // certo na caixa de composição, só no e-mail que cada Order recebe (ver
+      // `orderClientName` em `renderStepEmailHtmls`/`sendStepEmail`).
+      customerName: g.clientIds.length > 1 ? null : g.customerName,
+    })),
   };
 }
 
@@ -776,6 +815,18 @@ export async function sendStepEmail(
   const overallPrimaryThread = allThreads[0];
   const threadByOrderId = new Map(allThreads.map((t) => [t.orderId, t]));
   const poNumberByOrderId = new Map(orders.map((o) => [o.id, o.po_number]));
+  // Nome do cliente de CADA Order (não o grupo de idioma combinado) — pra
+  // etapa consolidar clientes diferentes no mesmo idioma, cada Order recebe
+  // o e-mail com o nome do SEU PRÓPRIO cliente (ver `orderClientName` em
+  // `renderStepEmailHtmls`). Uma query só, fora do loop de threads.
+  const orderClientIds = [...new Set(orders.map((o) => o.client_id).filter((id): id is string => Boolean(id)))];
+  const { data: orderClientsData } = orderClientIds.length
+    ? await admin.from("clients").select("id, name").in("id", orderClientIds)
+    : { data: [] as { id: string; name: string }[] };
+  const nameByClientId = new Map((orderClientsData ?? []).map((c) => [c.id, c.name]));
+  const clientNameByOrderId = new Map(
+    orders.map((o) => [o.id, o.client_id ? (nameByClientId.get(o.client_id) ?? null) : null] as const)
+  );
   // Assunto que aparece no CORPO do e-mail (destaque no topo) e fica gravado
   // em `checklist_step_emails.subject` (o que o histórico mostra) — pra
   // Pre-loading/Shipment, cada Order ganha o seu, com o número do lote,
@@ -800,7 +851,15 @@ export async function sendStepEmail(
     const threadInput = { ...parsed.data, subject: bodySubjectByOrderId.get(thread.orderId) ?? parsed.data.subject };
     contentByThreadId.set(
       thread.id,
-      await renderStepEmailHtmls(admin, owner, stepRow.id, session.profile.full_name, threadInput, quoted)
+      await renderStepEmailHtmls(
+        admin,
+        owner,
+        stepRow.id,
+        session.profile.full_name,
+        threadInput,
+        quoted,
+        clientNameByOrderId.get(thread.orderId) ?? null
+      )
     );
   }
   // `clientVariants`/`primaryLanguage` não dependem de `quoted` — idênticos
