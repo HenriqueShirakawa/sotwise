@@ -140,10 +140,14 @@ export async function resolveThreadsForOrderIds(
   return { ok: true, threads };
 }
 
-/** Grava o fan-out — uma linha por thread atingida, inclusive a primária (ver
- *  comentário da migration 20260910120000: é só auditoria, ninguém lê esta
- *  tabela para decidir nada ainda). Chamado DEPOIS do insert em
- *  `checklist_step_emails` (a FK exige que a linha já exista). */
+/** Grava o fan-out — uma linha por thread atingida (ver comentário da
+ *  migration 20260910120000: é só auditoria, ninguém lê esta tabela para
+ *  decidir nada ainda). Desde 16/09/2026 (fan-out por Order em
+ *  `sendStepEmail`), normalmente 1 elemento só — cada e-mail físico agora
+ *  toca exatamente a thread do Order pro qual foi de fato entregue; a versão
+ *  N:N desta tabela segue existindo pra não quebrar o schema/histórico
+ *  antigo. Chamado DEPOIS do insert em `checklist_step_emails` (a FK exige
+ *  que a linha já exista). */
 export async function recordThreadFanout(
   admin: Admin,
   threads: ResolvedThread[],

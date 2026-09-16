@@ -420,6 +420,12 @@ export function StepEmailSection({
             </div>
           ) : (
             <div className="space-y-2">
+              {feature !== "orders" && (
+                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+                  Showing as it will appear in one order&apos;s own thread — each order this record
+                  consolidates gets its own separate reply.
+                </p>
+              )}
               {previewVariantCount > 1 && (
                 <div className="flex flex-wrap gap-1.5">
                   {preview?.internalHtml && (
@@ -536,6 +542,11 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
       >
         <span>
           <span className="font-medium text-slate-800">{row.subject}</span>
+          {row.order_po_number && (
+            <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
+              Order #{row.order_po_number}
+            </span>
+          )}
           <span className="ml-2 text-xs text-muted-foreground">
             {row.sender_name} · {formatDateTime(row.created_at)}
           </span>
