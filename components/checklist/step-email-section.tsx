@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ChevronDown, Mail, Send, User, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,6 +77,7 @@ export function StepEmailSection({
   defaultSubject,
   recordPath,
   responsibleId,
+  done,
 }: {
   owner: StepOwner;
   feature: "orders" | "pre_loading" | "shipments";
@@ -91,6 +92,11 @@ export function StepEmailSection({
    *  tela). Fase 2.1 — User Story 2: vira destinatário âncora obrigatório do
    *  e-mail — sem ele, nem abre o compositor. */
   responsibleId: string | null;
+  /** A etapa está "Checked" (bolinha verde, `isStepChecked` de
+   *  `lib/checklist-completion.ts`) agora? Pra detectar a TRANSIÇÃO pra
+   *  concluída e abrir o compositor sozinho (ver `useEffect` abaixo) — não é
+   *  usado pra mais nada aqui. */
+  done: boolean;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -159,6 +165,21 @@ export function StepEmailSection({
       setActiveLanguage(groups[0].language);
     });
   }
+
+  /** Etapa que acabou de virar "Checked" (verde) abre o compositor sozinha —
+   *  só isso, nunca manda nada por conta própria (decisão do usuário em
+   *  16/09/2026). Dispara numa transição de verdade DEPOIS do mount (o `ref`
+   *  nasce com o `done` de agora, então a 1ª rodada do efeito nunca vê
+   *  mudança) — nunca na carga inicial da tela, mesmo se a etapa já chegar
+   *  concluída. Mesma trava do botão manual: sem Responsible, não abre. */
+  const wasDoneRef = useRef(done);
+  useEffect(() => {
+    if (!wasDoneRef.current && done && responsibleId) {
+      openCompose();
+    }
+    wasDoneRef.current = done;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done]);
 
   const canSend =
     !pending &&
