@@ -405,20 +405,22 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
 
   // Qual Order cada linha respondeu de verdade — só vale a query pra owner
   // que consolida mais de 1 Order (Pre-loading/Shipment); pra Order já é 1:1.
-  const poNumberByThreadId = new Map<string, string>();
+  // Rótulo inclui o lote (".NN") — um PL/Shipment pode consolidar lotes
+  // diferentes do mesmo Order, então só o po_number não diz qual (pedido do
+  // usuário, 16/09/2026).
+  const orderLabelByThreadId = new Map<string, string>();
   if (owner.kind !== "order") {
     const threadIds = [...new Set(rows.map((r) => r.thread_id).filter((id): id is string => Boolean(id)))];
     if (threadIds.length > 0) {
-      const { data: threadRows } = await admin.from("email_threads").select("id, order_id").in("id", threadIds);
+      const [{ data: threadRows }, orders] = await Promise.all([
+        admin.from("email_threads").select("id, order_id").in("id", threadIds),
+        resolveOwnerOrders(admin, owner),
+      ]);
       const orderIdByThreadId = new Map((threadRows ?? []).map((t) => [t.id, t.order_id]));
-      const orderIds = [...new Set([...orderIdByThreadId.values()])];
-      const { data: orderRows } = orderIds.length
-        ? await admin.from("orders").select("id, po_number").in("id", orderIds)
-        : { data: [] as { id: string; po_number: string }[] };
-      const poNumberByOrderId = new Map((orderRows ?? []).map((o) => [o.id, o.po_number]));
+      const labelByOrderId = new Map(orders.map((o) => [o.id, `${o.po_number}${o.batch_numbers.join(", ")}`]));
       for (const [threadId, orderId] of orderIdByThreadId) {
-        const po = poNumberByOrderId.get(orderId);
-        if (po) poNumberByThreadId.set(threadId, po);
+        const label = labelByOrderId.get(orderId);
+        if (label) orderLabelByThreadId.set(threadId, label);
       }
     }
   }
@@ -432,7 +434,7 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     created_at: r.created_at,
     status: r.status,
     replies: repliesByEmailId.get(r.id) ?? [],
-    order_po_number: r.thread_id ? (poNumberByThreadId.get(r.thread_id) ?? null) : null,
+    order_po_number: r.thread_id ? (orderLabelByThreadId.get(r.thread_id) ?? null) : null,
   }));
 }
 
@@ -774,6 +776,19 @@ export async function sendStepEmail(
   const overallPrimaryThread = allThreads[0];
   const threadByOrderId = new Map(allThreads.map((t) => [t.orderId, t]));
   const poNumberByOrderId = new Map(orders.map((o) => [o.id, o.po_number]));
+  // Assunto que aparece no CORPO do e-mail (destaque no topo) e fica gravado
+  // em `checklist_step_emails.subject` (o que o histórico mostra) — pra
+  // Pre-loading/Shipment, cada Order ganha o seu, com o número do lote,
+  // porque uma etapa consolidada pode atingir lotes diferentes ao mesmo
+  // tempo e o texto digitado sozinho não diz qual (pedido do usuário,
+  // 16/09/2026). O ENVELOPE SMTP não usa isto — fica igual em todo Order,
+  // de propósito (ver `smtpSubjectForThread`), senão o Gmail para de agrupar.
+  const bodySubjectByOrderId = new Map(
+    orders.map((o) => [
+      o.id,
+      owner.kind === "order" ? parsed.data.subject : `${parsed.data.subject} — Order #${o.po_number}${o.batch_numbers.join(", ")}`,
+    ])
+  );
 
   // Cada thread tem seu PRÓPRIO histórico citado — cada Order recebe sua
   // própria cópia do e-mail, respondendo de verdade dentro da conversa
@@ -782,9 +797,10 @@ export async function sendStepEmail(
   const contentByThreadId = new Map<string, Awaited<ReturnType<typeof renderStepEmailHtmls>>>();
   for (const thread of allThreads) {
     const quoted = await loadQuotedHistory(admin, thread.id);
+    const threadInput = { ...parsed.data, subject: bodySubjectByOrderId.get(thread.orderId) ?? parsed.data.subject };
     contentByThreadId.set(
       thread.id,
-      await renderStepEmailHtmls(admin, owner, stepRow.id, session.profile.full_name, parsed.data, quoted)
+      await renderStepEmailHtmls(admin, owner, stepRow.id, session.profile.full_name, threadInput, quoted)
     );
   }
   // `clientVariants`/`primaryLanguage` não dependem de `quoted` — idênticos
@@ -910,7 +926,7 @@ export async function sendStepEmail(
       owner,
       stepId: stepRow.id,
       senderId: session.userId,
-      subject: parsed.data.subject,
+      subject: bodySubjectByOrderId.get(thread.orderId) ?? parsed.data.subject,
       body,
       language: rowLanguage,
       recipients,
