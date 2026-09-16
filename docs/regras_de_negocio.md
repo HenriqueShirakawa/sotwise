@@ -230,6 +230,15 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   bloqueado riscado. A busca de Clients passou a casar com nome de usuário também
   ("de que cliente é a Fernanda?"). Não existe campo "contato do cliente" em `clients`:
   o contato **é** o usuário.
+- **Amarrar pelo modal de Clients (2026-09-16):** o Create/Edit client ganhou um campo
+  "Portal users" (`MultiSearchSelect` sobre `setClientUsers`, em
+  `app/(dashboard)/registration/clients/actions.ts`) que edita `profiles.client_id`
+  direto de lá — antes só dava para mudar o vínculo pela tela Users. A guarda é
+  `requireFeature("users", "edit")`, não `registration`: quem não pode reatribuir
+  cliente em Users continua sem poder fazer isso por aqui. Marcar um usuário que já
+  pertence a outro cliente **move** o vínculo (mesmo efeito de trocar o Client no
+  formulário de Users); o picker sinaliza isso com "currently: <cliente>" na opção.
+  Só profile de papel `client` pode ser marcado (checado no servidor, não só na UI).
 - **O que o portal mostra:** número do pedido, referência do cliente, tipo, status,
   **número do lote** (`.01/.02`), **data de schedule** (`schedule_requested`) e a quebra
   do pedido **por lote** — cada lote com status, barra de progresso (In Production →

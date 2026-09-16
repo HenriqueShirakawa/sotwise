@@ -13,6 +13,7 @@ import {
 } from "@/components/registration/registration-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { SearchSelect } from "@/components/search-select";
+import { MultiSearchSelect } from "@/components/multi-search-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,7 +33,12 @@ import {
 } from "@/components/ui/select";
 import type { EmailLanguage } from "@/lib/email/checklist-step";
 
-import { createClientRecord, updateClientRecord, deleteClientRecord } from "./actions";
+import {
+  createClientRecord,
+  updateClientRecord,
+  deleteClientRecord,
+  setClientUsers,
+} from "./actions";
 
 type Option = { id: string; name: string };
 
@@ -63,6 +69,16 @@ export type ClientRow = {
   };
 };
 
+/** Opção do picker "Portal users" do modal — universo inteiro de usuários
+ *  externos (papel `client`), não só os já ligados ao cliente em edição. */
+export type PortalUserOption = {
+  id: string;
+  full_name: string;
+  client_id: string | null;
+  client_name: string | null;
+  blocked: boolean;
+};
+
 /** Colunas de contagem, na ordem da tela do Bubble. */
 const COUNT_COLUMNS: { key: keyof ClientRow["counts"]; label: string }[] = [
   { key: "total", label: "Total PO's" },
@@ -76,9 +92,11 @@ const COUNT_COLUMNS: { key: keyof ClientRow["counts"]; label: string }[] = [
 export function ClientsClient({
   data,
   countries,
+  portalUsers,
 }: {
   data: ClientRow[];
   countries: Option[];
+  portalUsers: PortalUserOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -182,17 +200,41 @@ export function ClientsClient({
     []
   );
 
-  function handleSubmit(values: { name: string; country_id: string; language: EmailLanguage | null }) {
+  function handleSubmit(values: {
+    name: string;
+    country_id: string;
+    language: EmailLanguage | null;
+    user_ids: string[];
+  }) {
+    const { user_ids, ...clientValues } = values;
     startTransition(async () => {
-      const res = editing
-        ? await updateClientRecord(editing.id, values)
-        : await createClientRecord(values);
-      if (res.ok) {
-        toast.success(editing ? "Client updated." : "Client created.");
-        setFormOpen(false);
-        router.refresh();
+      let clientId: string;
+      if (editing) {
+        const res = await updateClientRecord(editing.id, clientValues);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        clientId = editing.id;
       } else {
-        toast.error(res.error);
+        const res = await createClientRecord(clientValues);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        clientId = res.id;
+      }
+
+      // Cliente já está salvo neste ponto — mesmo se a amarração de usuários
+      // falhar, fechar e atualizar a lista é o estado real (nada de esconder
+      // que metade da operação deu certo).
+      const usersRes = await setClientUsers(clientId, user_ids);
+      setFormOpen(false);
+      router.refresh();
+      if (usersRes.ok) {
+        toast.success(editing ? "Client updated." : "Client created.");
+      } else {
+        toast.error(`Client saved, but linking users failed: ${usersRes.error}`);
       }
     });
   }
@@ -252,6 +294,7 @@ export function ClientsClient({
             key={editing?.id ?? "new"}
             editing={editing}
             countries={countries}
+            portalUsers={portalUsers}
             pending={pending}
             onCancel={() => setFormOpen(false)}
             onSubmit={handleSubmit}
@@ -278,19 +321,44 @@ export function ClientsClient({
 function ClientForm({
   editing,
   countries,
+  portalUsers,
   pending,
   onCancel,
   onSubmit,
 }: {
   editing: ClientRow | null;
   countries: Option[];
+  portalUsers: PortalUserOption[];
   pending: boolean;
   onCancel: () => void;
-  onSubmit: (values: { name: string; country_id: string; language: EmailLanguage | null }) => void;
+  onSubmit: (values: {
+    name: string;
+    country_id: string;
+    language: EmailLanguage | null;
+    user_ids: string[];
+  }) => void;
 }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [countryId, setCountryId] = useState(editing?.country_id ?? "");
   const [language, setLanguage] = useState(editing?.language ?? null);
+  const [userIds, setUserIds] = useState<string[]>(() =>
+    editing ? portalUsers.filter((u) => u.client_id === editing.id).map((u) => u.id) : []
+  );
+
+  // Rótulo avisa quando marcar alguém move-o de outro cliente para este — sem
+  // isso a troca acontece "escondida" ao salvar (ver feedback sobre WYSIWYG).
+  const userOptions = useMemo(
+    () =>
+      portalUsers.map((u) => {
+        const elsewhere =
+          u.client_id && u.client_id !== editing?.id ? (u.client_name ?? undefined) : undefined;
+        const tags = [u.blocked ? "blocked" : null, elsewhere ? `currently: ${elsewhere}` : null]
+          .filter(Boolean)
+          .join(" · ");
+        return { id: u.id, name: tags ? `${u.full_name} (${tags})` : u.full_name };
+      }),
+    [portalUsers, editing]
+  );
 
   const valid = !!name.trim() && !!countryId;
 
@@ -299,7 +367,8 @@ function ClientForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (valid) onSubmit({ name: name.trim(), country_id: countryId, language });
+        if (valid)
+          onSubmit({ name: name.trim(), country_id: countryId, language, user_ids: userIds });
       }}
     >
       <p className="border-b pb-2 text-sm text-muted-foreground">Main information</p>
@@ -343,6 +412,21 @@ function ClientForm({
         </Select>
         <p className="text-xs text-muted-foreground">
           Overrides the country&apos;s default language for this client&apos;s checklist e-mails.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Portal users</Label>
+        <MultiSearchSelect
+          value={userIds}
+          onChange={setUserIds}
+          options={userOptions}
+          placeholder="Choose some users..."
+        />
+        <p className="text-xs text-muted-foreground">
+          External users (role Client) who sign in to the portal and track this client&apos;s
+          orders. Picking a user tied to another client moves them here — same effect as
+          changing their Client on the Users screen.
         </p>
       </div>
 

@@ -4,7 +4,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import type { EmailLanguage } from "@/lib/email/checklist-step";
 import type { OrderStatus } from "@/types/database";
 
-import { ClientsClient, type ClientRow } from "./clients-client";
+import { ClientsClient, type ClientRow, type PortalUserOption } from "./clients-client";
 
 /** Status que viram coluna na lista (§3.5.5 / tela do Bubble). Os demais
  * (partially_shipped, partially_delivered) entram só no Total — como no Bubble. */
@@ -99,21 +99,25 @@ export default async function ClientsPage() {
      *
      * O filtro é `client_id not null`, sem consultar `roles`: a coluna só é
      * preenchida no papel externo (a action de Users força null nos internos),
-     * então a query extra não mudaria o resultado.
+     * então a query extra não mudaria o resultado. `id` entra aqui porque o
+     * modal de Clients passou a amarrar/desamarrar por aqui também — antes só
+     * o nome bastava para a coluna somente-leitura.
      */
-    fetchAll<{ full_name: string; client_id: string | null; status: string }>((from, to) =>
-      admin
-        .from("profiles")
-        .select("full_name, client_id, status")
-        .not("client_id", "is", null)
-        .order("full_name")
-        .range(from, to)
+    fetchAll<{ id: string; full_name: string; client_id: string | null; status: string }>(
+      (from, to) =>
+        admin
+          .from("profiles")
+          .select("id, full_name, client_id, status")
+          .not("client_id", "is", null)
+          .order("full_name")
+          .range(from, to)
     ),
     loadOrderCounts(admin),
   ]);
 
   const countries = countriesRes;
   const countryName = new Map(countries.map((c) => [c.id, c.name]));
+  const clientName = new Map(clientsRes.map((c) => [c.id, c.name]));
 
   const usersByClient = new Map<string, ClientRow["users"]>();
   for (const user of clientUsersRes) {
@@ -135,5 +139,18 @@ export default async function ClientsPage() {
     counts: counts.get(c.id) ?? emptyCounts(),
   }));
 
-  return <ClientsClient data={rows} countries={countries} />;
+  // Universo de usuários que o picker do modal pode amarrar — mesma fonte da
+  // coluna somente-leitura, só que sem agrupar por cliente (o form filtra pelo
+  // `client_id` de cada opção para saber quem já está marcado).
+  const portalUsers: PortalUserOption[] = clientUsersRes
+    .filter((u) => u.full_name.trim())
+    .map((u) => ({
+      id: u.id,
+      full_name: u.full_name,
+      client_id: u.client_id,
+      client_name: u.client_id ? clientName.get(u.client_id) ?? null : null,
+      blocked: u.status === "blocked",
+    }));
+
+  return <ClientsClient data={rows} countries={countries} portalUsers={portalUsers} />;
 }
