@@ -289,9 +289,14 @@ function StepIcon({
 function BatchStatusSelect({
   value,
   onChange,
+  hasFactoryCategory,
 }: {
   value: BatchStatus;
   onChange: (value: BatchStatus) => void;
+  /** Lote sem nenhuma linha de Factory x Category ainda não pode ir pra
+   *  Production — desabilita a opção aqui pra não depender só do erro do
+   *  servidor (`updateBatchStatus`, que continua sendo a fonte de verdade). */
+  hasFactoryCategory: boolean;
 }) {
   const label = BATCH_STATUS_LABELS[value];
   const hex = STATUS_COLORS[label] ?? "#475569";
@@ -301,9 +306,10 @@ function BatchStatusSelect({
       onChange={(e) => onChange(e.target.value as BatchStatus)}
       style={{ borderColor: `${hex}59`, color: hex }}
       className="h-7 max-w-[220px] rounded-[4px] border bg-white px-1.5 text-xs font-medium"
+      title={hasFactoryCategory ? undefined : "Add a Factory x Category entry before moving this batch to Production"}
     >
       {EDITABLE_BATCH_STATUSES.map((s) => (
-        <option key={s} value={s}>
+        <option key={s} value={s} disabled={s === "in_production" && !hasFactoryCategory}>
           {BATCH_STATUS_LABELS[s]}
         </option>
       ))}
@@ -1300,6 +1306,7 @@ export function OrderDetailClient({
                     <BatchStatusSelect
                       value={b.status}
                       onChange={(status) => saveBatchStatus(b, status)}
+                      hasFactoryCategory={ownRows.length > 0}
                     />
                   ) : (
                     <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
