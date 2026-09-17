@@ -157,28 +157,21 @@ async function loadStepFacts(admin: Admin, owner: StepOwner, stepId: string): Pr
   };
 }
 
-/** Cliente(s) do pedido/PL por trás da etapa — Order tem 1 (`orders.client_id`),
- *  Pre-loading/Shipment pode ter N (`pre_loading_clients`, consolidação). */
-async function loadOwnerClientIds(admin: Admin, owner: StepOwner, stepId: string): Promise<string[]> {
-  if (owner.kind === "order") {
-    const { data: step } = await admin
-      .from("order_checklist_steps")
-      .select("order_id")
-      .eq("id", stepId)
-      .maybeSingle();
-    if (!step?.order_id) return [];
-    const { data: order } = await admin
-      .from("orders")
-      .select("client_id")
-      .eq("id", step.order_id)
-      .maybeSingle();
-    return order?.client_id ? [order.client_id] : [];
-  }
-  const { data: rows } = await admin
-    .from("pre_loading_clients")
-    .select("client_id")
-    .eq("pre_loading_id", owner.preLoadingId);
-  return (rows ?? []).map((r) => r.client_id);
+/** Cliente(s) por trás do owner — pelas Order(s) DE VERDADE que ele consolida
+ *  (`resolveOwnerOrders`, mesma fonte de `clientNameByOrderId` em
+ *  `sendStepEmail` e da coluna "Client" da tabela de lotes do PL), não mais
+ *  `pre_loading_clients`. Aquela tabela é editada à mão no modal Create/Edit
+ *  Pre-loading e podia divergir de quais Orders o PL realmente tem hoje —
+ *  esse drift fazia esta função enxergar só 1 cliente quando havia 2+ de
+ *  verdade, o que travava `resolveClientLanguageGroups` em modo "nome único":
+ *  o rascunho já saía com o nome ERRADO gravado por igual pras duas Orders
+ *  (sem sobrar um colchete `[Customer Name]` pra `applyOrderClientName` trocar
+ *  depois), em vez de ficar em branco pra cada Order corrigir na hora do
+ *  envio. Bug reportado pelo usuário em 17/09/2026 (PL consolidando AGK +
+ *  Nacional - MG mandou "AGK" pras duas). */
+async function loadOwnerClientIds(admin: Admin, owner: StepOwner): Promise<string[]> {
+  const orders = await resolveOwnerOrders(admin, owner);
+  return [...new Set(orders.map((o) => o.client_id).filter((id): id is string => Boolean(id)))];
 }
 
 /** Um idioma + os clientes (do owner) que resolvem pra ele + o(s) nome(s)
@@ -198,22 +191,19 @@ type ClientLanguageGroup = { language: EmailLanguage; clientIds: string[]; custo
  * devolve ≥1 grupo (sem cliente nenhum → `[{language:'en', clientIds:[],
  * customerName:null}]`).
  *
- * `groups[0]` é sempre o grupo PRIMÁRIO: absorve Orders órfãos (cujo
- * `client_id` não bate com nenhum grupo — drift do `pre_loading_clients`,
- * editado à mão e independente dos Orders reais, ver
- * `app/(dashboard)/pre-loading/actions.ts`) e é o idioma que a equipe
- * interna sempre recebe (efeito já aceito desde o fix WYSIWYG, `284f20a`).
- * Desempate determinístico por nome do cliente — antes disto dependia da
- * ordem arbitrária que o Postgres devolvesse pro `.in(id, clientIds)`,
- * inofensivo enquanto só decidia 1 idioma pra tudo; agora decide também quem
- * absorve órfãos, então ganhou um critério explícito.
+ * `groups[0]` é sempre o grupo PRIMÁRIO: absorve Orders órfãs (cujo
+ * `client_id` não tem `clients` correspondente — cadastro removido/soft-
+ * deleted; `loadOwnerClientIds` já garante que o `client_id` de toda Order do
+ * owner entra aqui, então não sobra mais drift de `pre_loading_clients` pra
+ * causar isso) e é o idioma que a equipe interna sempre recebe (efeito já
+ * aceito desde o fix WYSIWYG, `284f20a`). Desempate determinístico por nome
+ * do cliente — antes disto dependia da ordem arbitrária que o Postgres
+ * devolvesse pro `.in(id, clientIds)`, inofensivo enquanto só decidia 1
+ * idioma pra tudo; agora decide também quem absorve órfãs, então ganhou um
+ * critério explícito.
  */
-async function resolveClientLanguageGroups(
-  admin: Admin,
-  owner: StepOwner,
-  stepId: string
-): Promise<ClientLanguageGroup[]> {
-  const clientIds = await loadOwnerClientIds(admin, owner, stepId);
+async function resolveClientLanguageGroups(admin: Admin, owner: StepOwner): Promise<ClientLanguageGroup[]> {
+  const clientIds = await loadOwnerClientIds(admin, owner);
   if (clientIds.length === 0) return [{ language: "en", clientIds: [], customerName: null }];
 
   const { data: clientsData } = await admin
@@ -302,10 +292,12 @@ type RenderedClientVariant = {
 /**
  * Renderiza a variante INTERNA + uma variante de e-mail por GRUPO DE IDIOMA
  * do owner — mesma lógica pro envio de verdade (`sendStepEmail`) e pro
- * preview (`previewStepEmail`), pra nunca divergirem. `stepId` nulo
- * (Pre-loading/Shipment cuja etapa nunca foi tocada) cai em facts vazios +
- * grupo único `'en'`, igual ao que `sendStepEmail` produziria ao criar a
- * linha na hora (`ensureStepId`).
+ * preview (`previewStepEmail`), pra nunca divergirem. `groups` vem sempre das
+ * Order(s) DE VERDADE do owner (`loadOwnerClientIds`), não depende da etapa
+ * já ter linha própria; só `facts` (campos DESTA etapa) cai vazio com
+ * `stepId` nulo (Pre-loading/Shipment cuja etapa nunca foi tocada) — mesmo
+ * estado que `sendStepEmail` produziria ao criar a linha na hora
+ * (`ensureStepId`), antes de gravar nada nela.
  *
  * WYSIWYG desde 15/09/2026 (`284f20a`): cada variante usa o texto que está
  * na sua ABA do compositor (`input.bodies[group.language]`) — sem swap
@@ -316,19 +308,28 @@ type RenderedClientVariant = {
  * citado de um PL multi-Order já só olhava pra 1 thread), mantida de
  * propósito: não é o bug reportado.
  *
- * `orderClientName` (16/09/2026): quando o owner consolida clientes
- * diferentes no MESMO idioma (ex.: AGK + Amacom, ambos pt-BR), o rascunho
- * fica com "[Customer Name]"/"[Company Name]" literal (`loadStepEmailDefaults`
- * deixa de resolver de propósito) — aqui, chamada 1x POR ORDER
- * (`sendStepEmail`), o token é trocado pelo nome do cliente DAQUELA Order
- * específica. Decisão explícita do usuário: não precisa aparecer certo na
- * caixa de composição (a UI pode continuar mostrando o colchete/nome
- * combinado), só o e-mail que cada Order recebe precisa ser certo — é o
- * único ponto aceito de "tela mostra X, envia Y" neste arquivo, então NÃO
- * generalizar pra mais nada sem perguntar de novo (ver
- * [[feedback-wysiwyg-no-hidden-swaps]]). Se o usuário já apagou/reescreveu o
- * colchete à mão, não sobra nada a trocar — continua WYSIWYG pro resto do
- * texto.
+ * `orderClientName` (16/09/2026, gatilho corrigido em 17/09/2026): quando o
+ * owner consolida 2+ clientes DE VERDADE no total — mesmo em grupos de
+ * idioma DIFERENTES, não só quando colidem no mesmo idioma — o rascunho de
+ * TODA aba fica com "[Customer Name]" literal na saudação
+ * (`loadStepEmailDefaults` deixa de resolver de propósito) — aqui, chamada 1x
+ * POR ORDER (`sendStepEmail`), o token é trocado pelo nome do cliente DAQUELA
+ * Order específica. Precisa valer pro owner INTEIRO (não só por grupo)
+ * porque a variante INTERNA acima reusa a aba do idioma PRIMÁRIO pra toda
+ * Order, inclusive as de outro grupo/cliente — um grupo com 1 cliente só
+ * (sem ambiguidade DENTRO dele) já teria o nome resolvido de verdade, e essa
+ * mesma aba, reusada pra Order de outro cliente, não sobraria colchete
+ * nenhum pra trocar (bug reportado pelo usuário em 17/09/2026: PL com AGK
+ * pt-BR + Nacional - MG zh mandou "AGK" pras duas Orders na cópia interna).
+ * Decisão explícita do usuário: não precisa aparecer certo na caixa de
+ * composição (a UI pode continuar mostrando o colchete/nome combinado), só o
+ * e-mail que cada Order recebe precisa ser certo — é o único ponto aceito de
+ * "tela mostra X, envia Y" neste arquivo, então NÃO generalizar pra mais nada
+ * sem perguntar de novo (ver [[feedback-wysiwyg-no-hidden-swaps]]). Se o
+ * usuário já apagou/reescreveu o colchete à mão, não sobra nada a trocar —
+ * continua WYSIWYG pro resto do texto (mesmo risco de antes, agora só possível
+ * se a pessoa editar à mão, não mais um efeito colateral automático da conta
+ * por grupo).
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -346,9 +347,7 @@ async function renderStepEmailHtmls(
 }> {
   const [facts, groups, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
-    stepId
-      ? resolveClientLanguageGroups(admin, owner, stepId)
-      : Promise.resolve([{ language: "en" as EmailLanguage, clientIds: [], customerName: null }]),
+    resolveClientLanguageGroups(admin, owner),
     currentOrigin(),
   ]);
   const primaryLanguage = groups[0].language;
@@ -359,9 +358,7 @@ async function renderStepEmailHtmls(
   const stepLabel = STEP_LABELS[input.step];
 
   const applyOrderClientName = (text: string): string =>
-    orderClientName
-      ? text.replace("[Customer Name]", orderClientName).replace("[Company Name]", orderClientName)
-      : text;
+    orderClientName ? text.replace("[Customer Name]", orderClientName) : text;
 
   const fallbackBody = Object.values(input.bodies).find((b): b is string => Boolean(b?.trim())) ?? "";
   const rawInternalBody = input.bodies[primaryLanguage]?.trim() ? input.bodies[primaryLanguage]! : fallbackBody;
@@ -554,23 +551,29 @@ export type StepEmailDefaults = { senderName: string; groups: StepEmailLanguageG
 export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmailDefaults> {
   const session = await requireInternal();
   const admin = createAdminClient();
-  const stepId = await findStepId(admin, owner);
-  const groups = stepId
-    ? await resolveClientLanguageGroups(admin, owner, stepId)
-    : [{ language: "en" as EmailLanguage, clientIds: [], customerName: null }];
+  const groups = await resolveClientLanguageGroups(admin, owner);
+  // Owner com 2+ clientes DE VERDADE no total (somando TODOS os grupos, não só
+  // o de cada aba) — não só "2+ clientes NO MESMO grupo de idioma". Bug
+  // reportado pelo usuário em 17/09/2026: um PL com AGK (pt-BR) + Nacional -
+  // MG (zh) tem 1 cliente por aba (sem ambiguidade DENTRO de cada uma), então
+  // a versão antiga desta conta (por grupo) resolvia e gravava "AGK" de
+  // verdade na aba pt-BR — só que a variante INTERNA (`renderStepEmailHtmls`)
+  // reusa a aba do idioma PRIMÁRIO pra TODA Order do owner, inclusive as de
+  // outro grupo/cliente, contando com `applyOrderClientName` pra corrigir o
+  // nome na hora do envio — o que só funciona se sobrar um colchete
+  // `[Customer Name]` pra trocar. Com o nome já resolvido pra "AGK" (sem
+  // colchete nenhum), a Order da Nacional - MG recebia "AGK" tanto faz.
+  // Contar o owner inteiro faz a aba pt-BR também ficar com o colchete
+  // literal quando existe QUALQUER outro cliente em QUALQUER outro grupo —
+  // preserva o comportamento de hoje (nome já preenchido) só quando o owner
+  // é de fato 1 cliente só (a esmagadora maioria: toda Order, e todo PL/
+  // Shipment de 1 cliente).
+  const totalClientCount = groups.reduce((n, g) => n + g.clientIds.length, 0);
   return {
     senderName: session.profile.full_name,
     groups: groups.map((g) => ({
       language: g.language,
-      // 2+ clientes no MESMO grupo de idioma (ex.: AGK + Amacom, ambos pt-BR)
-      // não têm UM nome — deixa "[Customer Name]"/"[Company Name]" literal no
-      // rascunho (mesmo fallback de "nenhum cliente resolvido" que já existia
-      // em `buildDefaultStepBody`) em vez de mandar "AGK, Amacom" pra toda
-      // Order do PL. Cada Order recebe o nome do SEU PRÓPRIO cliente na hora
-      // do envio — decisão do usuário em 16/09/2026: não precisa aparecer
-      // certo na caixa de composição, só no e-mail que cada Order recebe (ver
-      // `orderClientName` em `renderStepEmailHtmls`/`sendStepEmail`).
-      customerName: g.clientIds.length > 1 ? null : g.customerName,
+      customerName: totalClientCount > 1 ? null : g.customerName,
     })),
   };
 }

@@ -10,9 +10,9 @@ import type { ChecklistStep, EmailLanguage } from "@/types/database";
  *
  * Textos estáticos, não tradução automática — decisão do usuário em 14/09/2026
  * (`5615a4f`): a tradução dinâmica via Claude dependia de crédito de API, que
- * não é garantido. `[Customer Name]`/`[Your Name]`/`[Company Name]` permanecem
- * em inglês mesmo nos outros idiomas — são tokens que `buildDefaultStepBody`
- * substitui por igualdade de string exata, não texto a traduzir.
+ * não é garantido. `[Customer Name]`/`[Your Name]` permanecem em inglês mesmo
+ * nos outros idiomas — são tokens que `buildDefaultStepBody` substitui por
+ * igualdade de string exata, não texto a traduzir.
  */
 const EN_TEMPLATES: Record<ChecklistStep, string> = {
   order: `Dear [Customer Name],
@@ -24,8 +24,7 @@ Our team will now begin processing the next steps, and we will keep you updated 
 Please let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   po: `Dear [Customer Name],
 
@@ -36,8 +35,7 @@ Kindly review the items, quantities and factory allocations listed, and let us k
 Once confirmed, we will proceed with the next steps of the process.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   pi: `Dear [Customer Name],
 
@@ -54,8 +52,7 @@ Please let us know if you have any questions or if any information needs to be a
 Thank you for your cooperation.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   deposit_payment: `Dear [Customer Name],
 
@@ -66,8 +63,7 @@ With the advance payment settled, we will proceed accordingly with production.
 Please let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   packing_confirm: `Dear [Customer Name],
 
@@ -76,8 +72,7 @@ We would like to confirm the packing details for your order.
 Please review the information provided and let us know if everything is in accordance with your requirements, or if any adjustment is needed.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   condition_confirm: `Dear [Customer Name],
 
@@ -86,8 +81,7 @@ We would like to confirm the condition of the goods for your order.
 Please review the details provided and let us know if everything is satisfactory, or if any adjustment is required before we proceed.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   place_the_order: `Dear [Customer Name],
 
@@ -98,8 +92,7 @@ We will keep you informed as production progresses.
 Please let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   etd: `Dear [Customer Name],
 
@@ -108,8 +101,7 @@ Please find below the Estimated Time of Departure (ETD) information for your ord
 Let us know if you have any questions regarding the schedule.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   balance_payment: `Dear [Customer Name],
 
@@ -120,8 +112,7 @@ With the payment settled in full, we will proceed with the next steps toward shi
 Please let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   pre_loading: `Dear [Customer Name],
 
@@ -132,8 +123,7 @@ We will keep you informed as the consolidation and loading arrangements move for
 Please let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   consolidation_point: `Dear [Customer Name],
 
@@ -142,8 +132,7 @@ Please find below the consolidation point confirmed for your shipment.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   city: `Dear [Customer Name],
 
@@ -152,8 +141,7 @@ Please find below the city confirmed for your shipment.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   port_of_loading: `Dear [Customer Name],
 
@@ -162,8 +150,7 @@ Please find below the Port of Loading confirmed for your shipment.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   shipping_docs: `Dear [Customer Name],
 
@@ -172,8 +159,7 @@ Please find attached the shipping documents for your order.
 Kindly review them and let us know if everything is correct, or if any adjustment is needed.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   agents: `Dear [Customer Name],
 
@@ -182,8 +168,7 @@ Please find below the agents assigned to your shipment in Brazil and China, alon
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   booking: `Dear [Customer Name],
 
@@ -194,8 +179,7 @@ Please find below the booking details.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   loading_date: `Dear [Customer Name],
 
@@ -204,8 +188,7 @@ Please find below the loading date confirmed for your shipment.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   shipping_date: `Dear [Customer Name],
 
@@ -216,8 +199,7 @@ Please find below the shipping date details.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   bl: `Dear [Customer Name],
 
@@ -226,8 +208,7 @@ Please find attached the Bill of Lading (BL) for your shipment.
 Kindly review it and let us know if everything is correct, or if any adjustment is needed.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   original_docs: `Dear [Customer Name],
 
@@ -236,8 +217,7 @@ Please find attached the original shipping documents for your order.
 Kindly review them and let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   inspection_report: `Dear [Customer Name],
 
@@ -246,8 +226,7 @@ Please find attached the inspection report for your order.
 Kindly review it and let us know if everything is in order, or if any adjustment is needed.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   eta_brazil: `Dear [Customer Name],
 
@@ -256,8 +235,7 @@ Please find below the Estimated Time of Arrival (ETA) in Brazil for your shipmen
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   ata_brazil: `Dear [Customer Name],
 
@@ -268,8 +246,7 @@ Please find below the arrival details.
 Let us know if you have any questions.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   delivered: `Dear [Customer Name],
 
@@ -278,8 +255,7 @@ We are pleased to confirm that your order has been delivered.
 Thank you for your business — please let us know if you have any questions or need any further assistance.
 
 Best regards,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 };
 
 /** ⚠️ Rascunho meu (Claude), escrito em 15/09/2026 a pedido do usuário —
@@ -295,8 +271,7 @@ Nossa equipe iniciará agora o processamento das próximas etapas, e manteremos 
 Por favor, nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   po: `Prezado(a) [Customer Name],
 
@@ -307,8 +282,7 @@ Pedimos a gentileza de revisar os itens, quantidades e fábricas alocadas listad
 Após a confirmação, seguiremos com as próximas etapas do processo.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   pi: `Prezado(a) [Customer Name],
 
@@ -325,8 +299,7 @@ Por favor, nos avise caso tenha alguma dúvida ou se alguma informação precisa
 Agradecemos pela colaboração.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   deposit_payment: `Prezado(a) [Customer Name],
 
@@ -337,8 +310,7 @@ Com o pagamento antecipado quitado, daremos seguimento à produção.
 Por favor, nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   packing_confirm: `Prezado(a) [Customer Name],
 
@@ -347,8 +319,7 @@ Gostaríamos de confirmar os detalhes de embalagem (packing) do seu pedido.
 Pedimos a gentileza de revisar as informações fornecidas e nos informar se está tudo de acordo com suas exigências, ou se algum ajuste é necessário.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   condition_confirm: `Prezado(a) [Customer Name],
 
@@ -357,8 +328,7 @@ Gostaríamos de confirmar a condição das mercadorias do seu pedido.
 Pedimos a gentileza de revisar os detalhes fornecidos e nos informar se está tudo satisfatório, ou se algum ajuste é necessário antes de prosseguirmos.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   place_the_order: `Prezado(a) [Customer Name],
 
@@ -369,8 +339,7 @@ Manteremos você informado(a) conforme a produção avançar.
 Por favor, nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   etd: `Prezado(a) [Customer Name],
 
@@ -379,8 +348,7 @@ Seguem abaixo as informações de Estimated Time of Departure (ETD) do seu pedid
 Nos avise caso tenha alguma dúvida sobre o cronograma.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   balance_payment: `Prezado(a) [Customer Name],
 
@@ -391,8 +359,7 @@ Com o pagamento quitado integralmente, seguiremos com as próximas etapas rumo a
 Por favor, nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   pre_loading: `Prezado(a) [Customer Name],
 
@@ -403,8 +370,7 @@ Manteremos você informado(a) conforme a consolidação e os preparativos de car
 Por favor, nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   consolidation_point: `Prezado(a) [Customer Name],
 
@@ -413,8 +379,7 @@ Segue abaixo o ponto de consolidação (consolidation point) confirmado para o s
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   city: `Prezado(a) [Customer Name],
 
@@ -423,8 +388,7 @@ Segue abaixo a cidade confirmada para o seu embarque.
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   port_of_loading: `Prezado(a) [Customer Name],
 
@@ -433,8 +397,7 @@ Segue abaixo o Port of Loading confirmado para o seu embarque.
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   shipping_docs: `Prezado(a) [Customer Name],
 
@@ -443,8 +406,7 @@ Seguem em anexo os documentos de embarque (shipping documents) do seu pedido.
 Pedimos a gentileza de revisá-los e nos informar se está tudo correto, ou se algum ajuste é necessário.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   agents: `Prezado(a) [Customer Name],
 
@@ -453,8 +415,7 @@ Seguem abaixo os agentes designados para o seu embarque no Brasil e na China, co
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   booking: `Prezado(a) [Customer Name],
 
@@ -465,8 +426,7 @@ Seguem abaixo os detalhes do booking.
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   loading_date: `Prezado(a) [Customer Name],
 
@@ -475,8 +435,7 @@ Segue abaixo a data de carregamento (loading date) confirmada para o seu embarqu
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   shipping_date: `Prezado(a) [Customer Name],
 
@@ -487,8 +446,7 @@ Seguem abaixo os detalhes da data de embarque (shipping date).
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   bl: `Prezado(a) [Customer Name],
 
@@ -497,8 +455,7 @@ Segue em anexo o Bill of Lading (BL) do seu embarque.
 Pedimos a gentileza de revisá-lo e nos informar se está tudo correto, ou se algum ajuste é necessário.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   original_docs: `Prezado(a) [Customer Name],
 
@@ -507,8 +464,7 @@ Seguem em anexo os documentos originais de embarque do seu pedido.
 Pedimos a gentileza de revisá-los e nos informar caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   inspection_report: `Prezado(a) [Customer Name],
 
@@ -517,8 +473,7 @@ Segue em anexo o relatório de inspeção (inspection report) do seu pedido.
 Pedimos a gentileza de revisá-lo e nos informar se está tudo em ordem, ou se algum ajuste é necessário.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   eta_brazil: `Prezado(a) [Customer Name],
 
@@ -527,8 +482,7 @@ Seguem abaixo as informações de Estimated Time of Arrival (ETA) no Brasil para
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   ata_brazil: `Prezado(a) [Customer Name],
 
@@ -539,8 +493,7 @@ Seguem abaixo os detalhes da chegada.
 Nos avise caso tenha alguma dúvida.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   delivered: `Prezado(a) [Customer Name],
 
@@ -549,8 +502,7 @@ Temos o prazer de confirmar que o seu pedido foi entregue.
 Agradecemos pela parceria — por favor, nos avise caso tenha alguma dúvida ou precise de qualquer assistência adicional.
 
 Atenciosamente,
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 };
 
 /** ⚠️ Rascunho meu (Claude), escrito em 15/09/2026 — NÃO revisado por falante
@@ -566,8 +518,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请随时告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   po: `尊敬的 [Customer Name]：
 
@@ -578,8 +529,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 确认后，我们将继续推进后续流程。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   pi: `尊敬的 [Customer Name]：
 
@@ -596,8 +546,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 感谢您的配合。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   deposit_payment: `尊敬的 [Customer Name]：
 
@@ -608,8 +557,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   packing_confirm: `尊敬的 [Customer Name]：
 
@@ -618,8 +566,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 请审核所提供的信息，并告知我们是否符合您的要求，或是否需要调整。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   condition_confirm: `尊敬的 [Customer Name]：
 
@@ -628,8 +575,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 请审核所提供的详情，并告知我们是否一切满意，或在我们继续推进前是否需要任何调整。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   place_the_order: `尊敬的 [Customer Name]：
 
@@ -640,8 +586,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   etd: `尊敬的 [Customer Name]：
 
@@ -650,8 +595,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如对时间安排有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   balance_payment: `尊敬的 [Customer Name]：
 
@@ -662,8 +606,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   pre_loading: `尊敬的 [Customer Name]：
 
@@ -674,8 +617,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   consolidation_point: `尊敬的 [Customer Name]：
 
@@ -684,8 +626,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   city: `尊敬的 [Customer Name]：
 
@@ -694,8 +635,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   port_of_loading: `尊敬的 [Customer Name]：
 
@@ -704,8 +644,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   shipping_docs: `尊敬的 [Customer Name]：
 
@@ -714,8 +653,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 请审核相关单据，并告知我们是否一切无误，或是否需要调整。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   agents: `尊敬的 [Customer Name]：
 
@@ -724,8 +662,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   booking: `尊敬的 [Customer Name]：
 
@@ -736,8 +673,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   loading_date: `尊敬的 [Customer Name]：
 
@@ -746,8 +682,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   shipping_date: `尊敬的 [Customer Name]：
 
@@ -758,8 +693,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   bl: `尊敬的 [Customer Name]：
 
@@ -768,8 +702,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 请审核该提单，并告知我们是否一切无误，或是否需要调整。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   original_docs: `尊敬的 [Customer Name]：
 
@@ -778,8 +711,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 请审核相关单据，如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   inspection_report: `尊敬的 [Customer Name]：
 
@@ -788,8 +720,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 请审核该报告，并告知我们是否一切正常，或是否需要调整。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   eta_brazil: `尊敬的 [Customer Name]：
 
@@ -798,8 +729,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   ata_brazil: `尊敬的 [Customer Name]：
 
@@ -810,8 +740,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 如有任何疑问，请告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 
   delivered: `尊敬的 [Customer Name]：
 
@@ -820,8 +749,7 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 感谢您的支持与信任——如有任何疑问，或需要进一步协助，请随时告知我们。
 
 顺祝商祺，
-[Your Name]
-[Company Name]`,
+[Your Name]`,
 };
 
 const TEMPLATES: Record<EmailLanguage, Record<ChecklistStep, string>> = {
@@ -833,9 +761,7 @@ const TEMPLATES: Record<EmailLanguage, Record<ChecklistStep, string>> = {
 /**
  * `[Customer Name]`/`[Your Name]` viram o nome de verdade quando resolvidos
  * (ver `loadStepEmailDefaults`); sem resolver, fica o colchete original,
- * editável à mão. `[Company Name]` também vira o cliente — pedido explícito
- * do usuário, não é a empresa de quem envia. Corpo continua 100% editável
- * depois de aberto.
+ * editável à mão. Corpo continua 100% editável depois de aberto.
  *
  * `language` (default `'en'`) escolhe QUAL corpo — desde 15/09/2026, só quem
  * chama isto é o COMPOSITOR (`StepEmailSection.openCompose`, com o idioma
@@ -844,6 +770,12 @@ const TEMPLATES: Record<EmailLanguage, Record<ChecklistStep, string>> = {
  * interna (`renderStepEmailHtmls` em `lib/checklist-email-actions.ts` usa
  * `input.body` direto, sem chamar isto de novo nem sobrescrever o que foi
  * editado).
+ *
+ * Assinatura termina só em `[Your Name]` (removido `[Company Name]` em
+ * 17/09/2026, pedido do usuário: a linha com o nome do cliente no fechamento
+ * — "Atenciosamente, Fulano, Cliente X" — foi removida de propósito; agora
+ * termina só "Atenciosamente, Fulano"). `[Customer Name]` continua só na
+ * saudação de abertura ("Prezado(a) [Customer Name],").
  */
 export function buildDefaultStepBody(
   step: ChecklistStep,
@@ -851,9 +783,7 @@ export function buildDefaultStepBody(
   language: EmailLanguage = "en"
 ): string {
   let body = TEMPLATES[language][step];
-  if (vars.customerName) {
-    body = body.replace("[Customer Name]", vars.customerName).replace("[Company Name]", vars.customerName);
-  }
+  if (vars.customerName) body = body.replace("[Customer Name]", vars.customerName);
   if (vars.senderName) body = body.replace("[Your Name]", vars.senderName);
   return body;
 }
