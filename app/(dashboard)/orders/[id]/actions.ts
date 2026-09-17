@@ -55,6 +55,22 @@ export async function updateBatchStatus(
 
   await assertBatchEditable(batchId);
 
+  // Lote sem nenhuma linha de Factory x Category não pode ir pra produção —
+  // não há o que produzir ainda. Pedido do usuário, 17/09/2026.
+  if (status === "in_production") {
+    const { count, error: countError } = await admin
+      .from("order_factory_category")
+      .select("id", { count: "exact", head: true })
+      .eq("batch_id", batchId);
+    if (countError) return { ok: false, error: countError.message };
+    if (!count) {
+      return {
+        ok: false,
+        error: "Add at least one Factory x Category entry before moving this batch to Production.",
+      };
+    }
+  }
+
   const { error } = await admin.from("batches").update({ status }).eq("id", batchId);
   if (error) return { ok: false, error: error.message };
 
