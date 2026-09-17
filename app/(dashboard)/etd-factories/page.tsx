@@ -17,6 +17,9 @@ type EtdEmbed = {
   ready: boolean;
   ready_date: string | null;
   updated_at: string;
+  inspection: boolean;
+  dispatch_location_id: string | null;
+  dispatch_date: string | null;
 };
 
 /**
@@ -73,6 +76,11 @@ function buildRows(
       batch_status: batch.status,
       ready_parts: etd?.ready ?? false,
       gap_of_ready: gapOfReady(etd?.ready, etd?.ready_date, todayMs),
+      inspection: etd?.inspection ?? false,
+      dispatch_location: etd?.dispatch_location_id
+        ? (factoryNameById.get(etd.dispatch_location_id) ?? null)
+        : null,
+      dispatch_date: etd?.dispatch_date ?? null,
     });
   }
   return rows;
@@ -95,7 +103,8 @@ export default async function EtdFactoriesPage() {
           "id, order_id, category_id, factory_id, ship_requirement, " +
             "batches!inner(batch_number, status), " +
             "orders!inner(po_number, client_id, date_po), " +
-            "etd_info(initial_date, current_date, ready, ready_date, updated_at)"
+            "etd_info(initial_date, current_date, ready, ready_date, updated_at, " +
+            "inspection, dispatch_location_id, dispatch_date)"
         )
         .in("batches.status", ACTIVE_BATCH_STATUSES)
         .is("orders.deleted_at", null)
