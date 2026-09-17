@@ -148,7 +148,7 @@ export function TodoClient({
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<TodoFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "date_preview", desc: false }]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "po_number", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("todo", initialColumns);
 
   // Realtime: a lista reflete etapa concluída/reatribuída (Order, Pre-loading
@@ -212,7 +212,10 @@ export function TodoClient({
     () => [
       {
         id: "po_number",
-        accessorFn: (r) => r.po_number ?? "",
+        // Number, não string — mesmo motivo do pl_number logo abaixo: PO vem
+        // como texto puro do Bubble, e comparação de string ordenaria "999"
+        // depois de "1650" (dígito a dígito, '9' > '1').
+        accessorFn: (r) => Number(r.po_number) || 0,
         header: ({ column }) => <SortableHeader label="PO Number" column={column} />,
         cell: ({ row }) =>
           row.original.po_number ? (
