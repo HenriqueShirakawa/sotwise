@@ -15,13 +15,14 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, ArrowUpDown, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ColumnsMenu,
   useColumnVisibility,
@@ -71,6 +72,10 @@ export type ShipmentRow = {
   ata_date: string | null;
   delivered_date: string | null;
   sum_of_orders: number;
+  /** Uma entrada por Order deste PL — PO number + quantas linhas Factory x
+   *  Category ela contribui (só as dos lotes DESTE PL, não o total da Order
+   *  em outros PLs/shipments). Alimenta o popover da coluna "Sum of Orders". */
+  orders_summary: { po_number: string; ofc_count: number }[];
   /** Label exibido; `status_value` é o valor cru, que o filtro compara. */
   status: string;
   status_value: string;
@@ -108,6 +113,47 @@ function SortableHeader({
 const dash = <span className="text-slate-300">—</span>;
 const date = (v: string | null) => (v ? formatDateNumeric(v) : dash);
 const text = (v: string | null) => v || dash;
+
+/** Mesma mecânica do "olho" de Batches na lista de Orders: clicar no número
+ *  abre um popover com o que ele soma — aqui, cada Order do PL (PO number +
+ *  quantas linhas Factory x Category ela tem neste PL). */
+function OrdersSummaryCell({
+  orders,
+}: {
+  orders: { po_number: string; ofc_count: number }[];
+}) {
+  if (orders.length === 0) return <span className="text-slate-400">0</span>;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(event) => event.stopPropagation()}
+          className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 whitespace-nowrap transition-colors hover:bg-slate-100 data-[state=open]:bg-primary/10 data-[state=open]:text-primary data-[state=open]:ring-1 data-[state=open]:ring-primary/30"
+        >
+          <Eye className="size-4 shrink-0 text-slate-400" aria-hidden />
+          <span className="text-primary underline underline-offset-2">{orders.length}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        onClick={(event) => event.stopPropagation()}
+        className="w-auto min-w-52 overflow-hidden py-1"
+      >
+        {orders.map((o) => (
+          <div
+            key={o.po_number}
+            className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
+          >
+            <span className="text-slate-600">PO {o.po_number}</span>
+            <span className="text-xs text-muted-foreground">
+              {o.ofc_count} {o.ofc_count === 1 ? "Factory x Category" : "Factories x Categories"}
+            </span>
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "pl_number", label: "PL Number" },
@@ -286,7 +332,7 @@ export function ShipmentsClient({
         id: "sum_of_orders",
         accessorFn: (r) => r.sum_of_orders,
         header: ({ column }) => <SortableHeader label="Sum of Orders" column={column} />,
-        cell: ({ row }) => row.original.sum_of_orders,
+        cell: ({ row }) => <OrdersSummaryCell orders={row.original.orders_summary} />,
       },
       {
         id: "status",
