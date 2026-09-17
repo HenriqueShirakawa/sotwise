@@ -8,6 +8,7 @@ import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { syncOrderStatus } from "@/lib/order-status";
+import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
 import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
@@ -324,6 +325,10 @@ export async function updateChecklistStep(
   // (pendências do responsável) — revalida pra ela refletir na hora, sem F5.
   revalidatePath("/orders/[id]", "page");
   revalidatePath("/todo");
+  // Realtime: a To do list (e a lista de Orders) ficam abertas em outra aba
+  // ou tela — reaproveita o canal de Orders, não existe canal próprio de
+  // checklist step.
+  await broadcastOrderStatusPing({ order_ids: [orderId] });
   return { ok: true };
 }
 
