@@ -89,8 +89,12 @@ export function StepEmailSection({
    *  e-mail, só pra destinatário interno (nunca pra `client`). */
   recordPath: string;
   /** `responsible_id` da própria etapa (campo "Responsible" já editável na
-   *  tela). Fase 2.1 — User Story 2: vira destinatário âncora obrigatório do
-   *  e-mail — sem ele, nem abre o compositor. */
+   *  tela) — só gate pra abrir o compositor (precisa haver alguém
+   *  responsável antes de notificar sobre a etapa). NÃO é mais destinatário
+   *  automático: e-mail de etapa é comunicação com o CLIENTE, a equipe
+   *  interna nunca deve aparecer aqui (decisão do usuário, 16/09/2026 —
+   *  revoga a User Story 2 da Fase 2.1, que forçava o Responsible como
+   *  âncora travada no "To"). */
   responsibleId: string | null;
   /** A etapa está "Checked" (bolinha verde, `isStepChecked` de
    *  `lib/checklist-completion.ts`) agora? Pra detectar a TRANSIÇÃO pra
@@ -139,7 +143,7 @@ export function StepEmailSection({
     setLanguages(["en"]);
     setActiveLanguage("en");
     setPrimaryLanguage("en");
-    setRecipientIds(responsibleId ? [responsibleId] : []);
+    setRecipientIds([]);
     setAdHocEmails([]);
     setAdHocDraft("");
     setStage("compose");
@@ -337,15 +341,15 @@ export function StepEmailSection({
               {languages.length === 1 && primaryLanguage !== "en" && (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   This client&apos;s default language is {LANGUAGE_LABELS[primaryLanguage]}. The message below
-                  was pre-filled in {LANGUAGE_LABELS[primaryLanguage]} and is exactly what gets sent — to the
-                  client and the internal team — so edit it like any other message.
+                  was pre-filled in {LANGUAGE_LABELS[primaryLanguage]} and is exactly what gets sent to the
+                  client — so edit it like any other message.
                 </p>
               )}
               {languages.length > 1 && (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {languages.length} languages here — each tab sends a separate e-mail to only
                   that language&apos;s clients (with their order&apos;s thread). Ad-hoc recipients
-                  and the internal team always go in the {LANGUAGE_LABELS[primaryLanguage]} tab.
+                  always go in the {LANGUAGE_LABELS[primaryLanguage]} tab.
                 </p>
               )}
               <div>
@@ -355,7 +359,6 @@ export function StepEmailSection({
                   onChange={setRecipientIds}
                   options={recipientOptions}
                   placeholder="Choose recipients..."
-                  lockedIds={responsibleId ? [responsibleId] : []}
                 />
                 {/* Destinatário sem cadastro no SOTWISE. Controle próprio, de
                     propósito: o MultiSearchSelect é compartilhado com outras 5

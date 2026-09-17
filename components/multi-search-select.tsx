@@ -24,8 +24,9 @@ export function MultiSearchSelect({
   options: { id: string; name: string }[];
   placeholder: string;
   /** Ids que não podem ser removidos daqui — chip sem `X`, e clique na linha
-   *  do popover não tira a marcação. Usado pelo destinatário "Responsible"
-   *  âncora do e-mail de checklist (Fase 2.1). */
+   *  do popover não tira a marcação. Sem uso hoje (o e-mail de checklist
+   *  removeu seu destinatário travado em 16/09/2026) — mantido pra quem
+   *  precisar de um destinatário fixo em outra tela. */
   lockedIds?: string[];
 }) {
   const [open, setOpen] = useState(false);
