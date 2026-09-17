@@ -66,6 +66,9 @@ export type EtdFactoryRow = {
   batch_status: BatchStatus;
   ready_parts: boolean;
   gap_of_ready: number | null;
+  inspection: boolean;
+  dispatch_location: string | null;
+  dispatch_date: string | null;
 };
 
 function SortableHeader({
@@ -119,6 +122,9 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "batch_status", label: "Status Batches" },
   { id: "ready_parts", label: "Ready Parts" },
   { id: "gap_of_ready", label: "Gap of Ready" },
+  { id: "inspection", label: "Insp." },
+  { id: "dispatch_location", label: "Dispatch loc." },
+  { id: "dispatch_date", label: "Dispatch date" },
 ];
 
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
@@ -286,6 +292,25 @@ export function EtdFactoriesClient({
         sortingFn: (a, b) =>
           numOrMin(a.original.gap_of_ready) - numOrMin(b.original.gap_of_ready),
         cell: ({ row }) => row.original.gap_of_ready ?? dash,
+      },
+      {
+        accessorKey: "inspection",
+        header: ({ column }) => <SortableHeader label="Insp." column={column} />,
+        cell: ({ row }) => (row.original.inspection ? "Yes" : "No"),
+      },
+      {
+        accessorKey: "dispatch_location",
+        header: ({ column }) => <SortableHeader label="Dispatch loc." column={column} />,
+        cell: ({ row }) => row.original.dispatch_location ?? dash,
+      },
+      {
+        accessorKey: "dispatch_date",
+        header: ({ column }) => <SortableHeader label="Dispatch date" column={column} />,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-slate-600">
+            {formatDateNumeric(row.original.dispatch_date)}
+          </span>
+        ),
       },
     ],
     []
