@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
   ArrowLeft,
@@ -1042,13 +1042,30 @@ export function OrderDetailClient({
   currentUserId: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
+  // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
+  // depois de montado mesmo que a URL mude).
+  const [deepLinkStep] = useState<ChecklistStep | null>(
+    () => (searchParams.get("step") as ChecklistStep | null) ?? null
+  );
   const [infoOpen, setInfoOpen] = useState(true);
-  const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
+  const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(
+    () => new Set(deepLinkStep ? [deepLinkStep] : [])
+  );
   const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
   const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [createBatchOpen, setCreateBatchOpen] = useState(false);
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
+
+  useEffect(() => {
+    if (!deepLinkStep) return;
+    document
+      .getElementById(`step-${deepLinkStep}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // No Confirm Shipping a entrada Partial/None sai do lote embarcado e migra
   // para um lote-filho (split, docs §3.7.2). O lote que embarcou continua sendo
@@ -1379,7 +1396,7 @@ export function OrderDetailClient({
               const open = s.enabled && isStepOpen(s.step);
               const facts = s.facts;
               return (
-                <div key={s.step} className="border-b last:border-b-0">
+                <div key={s.step} id={`step-${s.step}`} className="border-b last:border-b-0">
                   <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                     <StepIcon
                       enabled={s.enabled}

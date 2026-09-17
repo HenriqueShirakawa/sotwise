@@ -189,7 +189,8 @@ export default async function TodoPage() {
         date_preview: s.estimated_date,
         client: clientName,
         client_ids: order.client_id ? [order.client_id] : [],
-        href: `/orders/${order.po_number}`,
+        // `?step=` leva a tela de destino a abrir só esta etapa e rolar até ela.
+        href: `/orders/${order.po_number}?step=${s.step}`,
       },
     ];
   });
@@ -220,9 +221,10 @@ export default async function TodoPage() {
         date_preview: s.estimated_date,
         client: cl ? [...cl.names].sort().join(", ") || null : null,
         client_ids: cl ? [...cl.ids] : [],
+        // `?step=` leva a tela de destino a abrir só esta etapa e rolar até ela.
         href: shipmentId
-          ? `/shipments/${plNumber ?? shipmentId}`
-          : `/pre-loading/${plNumber ?? s.pre_loading_id}`,
+          ? `/shipments/${plNumber ?? shipmentId}?step=${s.step}`
+          : `/pre-loading/${plNumber ?? s.pre_loading_id}?step=${s.step}`,
       },
     ];
   });
