@@ -226,7 +226,9 @@ const PL_STEPS: ChecklistStep[] = [
 export type ConfirmShippingInput = {
   container_number: string;
   seal_number: string;
-  estimated_date: string; // yyyy-mm-dd
+  estimated_date: string; // yyyy-mm-dd — espelha loading_date.estimated_date do checklist
+  /** Completed on da etapa "loading_date" do checklist — revisável neste popup. */
+  loading_date_completed_on: string; // yyyy-mm-dd
   shipment_leader_id: string;
   preloading_leader_id: string;
   carrier_id: string;
@@ -264,6 +266,7 @@ export async function confirmShipping(
     input.container_number,
     input.seal_number,
     input.estimated_date,
+    input.loading_date_completed_on,
     input.shipment_leader_id,
     input.preloading_leader_id,
     input.carrier_id,
@@ -363,15 +366,18 @@ export async function confirmShipping(
     return { ok: false, error: "Set the loading status for every line." };
   }
 
-  // Shipment + loading_status + snapshot + split + confirma o PL — tudo numa
-  // função de banco (RPC), rodando como uma única transação: uma falha no
-  // meio desfaz tudo, em vez de deixar o shipment órfão que o comentário
-  // antigo desta função alertava. Ver supabase/migrations/20260917120000_shipping_atomic.sql.
+  // Shipment + loading_status + snapshot + split + completed_on do checklist +
+  // confirma o PL — tudo numa função de banco (RPC), rodando como uma única
+  // transação: uma falha no meio desfaz tudo, em vez de deixar o shipment
+  // órfão que o comentário antigo desta função alertava. Ver
+  // supabase/migrations/20260917120000_shipping_atomic.sql e
+  // 20260917130000_confirm_shipping_loading_date.sql.
   const { data: rpcResult, error: rpcError } = await admin.rpc("confirm_shipping", {
     p_pre_loading_id: preLoadingId,
     p_container_number: input.container_number.trim(),
     p_seal_number: input.seal_number.trim(),
     p_estimated_date: input.estimated_date,
+    p_loading_date_completed_on: input.loading_date_completed_on,
     p_shipment_leader_id: input.shipment_leader_id,
     p_preloading_leader_id: input.preloading_leader_id,
     p_carrier_id: input.carrier_id,

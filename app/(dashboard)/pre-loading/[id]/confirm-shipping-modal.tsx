@@ -116,7 +116,8 @@ export function ConfirmShippingModal({
   plNumber,
   clientReference,
   sealNumber,
-  loadingDate,
+  loadingDateEstimated,
+  loadingDateCompletedOn,
   preloadingLeaderId,
   currentUserId,
   profiles,
@@ -129,7 +130,11 @@ export function ConfirmShippingModal({
   plNumber: string;
   clientReference: string | null;
   sealNumber: string | null;
-  loadingDate: string | null;
+  /** Estimated date da etapa "loading_date" do checklist — só espelha aqui,
+   *  quem edita é o checklist (ver confirm-shipping-modal em regras_de_negocio). */
+  loadingDateEstimated: string | null;
+  /** Completed on da mesma etapa — este popup passa a poder revisar/ajustar. */
+  loadingDateCompletedOn: string | null;
   preloadingLeaderId: string | null;
   currentUserId: string;
   profiles: Ref[];
@@ -142,7 +147,7 @@ export function ConfirmShippingModal({
 
   const [containerNumber, setContainerNumber] = useState("");
   const [seal, setSeal] = useState(sealNumber ?? "");
-  const [estimated, setEstimated] = useState("");
+  const [loadingDate, setLoadingDate] = useState(loadingDateCompletedOn ?? "");
   const [shipmentLeaderId, setShipmentLeaderId] = useState("");
   const [preLoadingLeaderId, setPreLoadingLeaderId] = useState(preloadingLeaderId ?? "");
   const [carrierId, setCarrierId] = useState("");
@@ -165,7 +170,8 @@ export function ConfirmShippingModal({
   const headerFilled =
     containerNumber.trim() &&
     seal.trim() &&
-    estimated &&
+    loadingDateEstimated &&
+    loadingDate &&
     shipmentLeaderId &&
     preLoadingLeaderId &&
     carrierId &&
@@ -178,7 +184,8 @@ export function ConfirmShippingModal({
       const res = await confirmShipping(preLoadingId, {
         container_number: containerNumber,
         seal_number: seal,
-        estimated_date: estimated,
+        estimated_date: loadingDateEstimated ?? "",
+        loading_date_completed_on: loadingDate,
         shipment_leader_id: shipmentLeaderId,
         preloading_leader_id: preLoadingLeaderId,
         carrier_id: carrierId,
@@ -231,16 +238,10 @@ export function ConfirmShippingModal({
           <ReadOnlyField label="Client Reference" value={clientReference ?? "—"} />
 
           <ReadOnlyField label="Status" value="In Transit" />
-          <div>
-            <Label className="text-xs text-muted-foreground">
-              Estimated <span className="text-rose-500">*</span>
-            </Label>
-            <DatePicker
-              value={estimated}
-              onChange={(v) => setEstimated(v ?? "")}
-              className="mt-1 bg-white"
-            />
-          </div>
+          <ReadOnlyField
+            label="Estimated"
+            value={loadingDateEstimated ? formatDateNumeric(loadingDateEstimated) : "—"}
+          />
 
           <SelectField
             label="Leader's Shipment *"
@@ -279,10 +280,16 @@ export function ConfirmShippingModal({
             onChange={setSignerId}
             placeholder="Select signer"
           />
-          <ReadOnlyField
-            label="Loading Date"
-            value={loadingDate ? formatDateNumeric(loadingDate) : "—"}
-          />
+          <div>
+            <Label className="text-xs text-muted-foreground">
+              Loading Date <span className="text-rose-500">*</span>
+            </Label>
+            <DatePicker
+              value={loadingDate}
+              onChange={(v) => setLoadingDate(v ?? "")}
+              className="mt-1 bg-white"
+            />
+          </div>
         </div>
 
         {/* Abaixo de sm cada linha vira card — a tabela tem 5 colunas + select. */}
