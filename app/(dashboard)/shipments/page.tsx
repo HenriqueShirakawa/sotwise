@@ -58,6 +58,7 @@ export default async function ShipmentsPage() {
     plBatches,
     batches,
     orders,
+    ofc,
     steps,
     polRes,
     modelRes,
@@ -99,6 +100,9 @@ export default async function ShipmentsPage() {
     ),
     fetchAll<{ id: string; order_type_id: string | null }>((from, to) =>
       admin.from("orders").select("id, order_type_id").range(from, to)
+    ),
+    fetchAll<{ id: string; batch_id: string | null }>((from, to) =>
+      admin.from("order_factory_category").select("id, batch_id").range(from, to)
     ),
     fetchAll<StepRow>((from, to) =>
       admin
@@ -153,6 +157,12 @@ export default async function ShipmentsPage() {
   const typeNameById = new Map(typeRes.map((t) => [t.id, t.name]));
   const orderTypeIdByOrder = new Map(orders.map((o) => [o.id, o.order_type_id]));
   const orderIdByBatch = new Map(batches.map((b) => [b.id, b.order_id]));
+  const poNumberByOrderId = new Map(orderNumbers.map((o) => [o.id, o.po_number]));
+  const ofcCountByBatch = new Map<string, number>();
+  for (const o of ofc) {
+    if (!o.batch_id) continue;
+    ofcCountByBatch.set(o.batch_id, (ofcCountByBatch.get(o.batch_id) ?? 0) + 1);
+  }
 
   const clientNamesByPl = new Map<string, Set<string>>();
   const clientIdsByPl = new Map<string, Set<string>>();
@@ -168,17 +178,24 @@ export default async function ShipmentsPage() {
     clientNamesByPl.set(pc.pre_loading_id, set);
   }
 
-  const batchCountByPl = new Map<string, number>();
   const typeNamesByPl = new Map<string, Set<string>>();
   const typeIdsByPl = new Map<string, Set<string>>();
   const orderIdsByPl = new Map<string, Set<string>>();
+  // Factory x Category das Order(s) do PL — só as linhas que pertencem a lotes
+  // DESTE PL (não o total da Order em outros PLs/shipments), pra bater com o
+  // "View parts" e a tabela de lotes do PL (mesmo critério de escopo).
+  const ofcCountByOrderInPl = new Map<string, Map<string, number>>();
   for (const pb of plBatches) {
-    batchCountByPl.set(pb.pre_loading_id, (batchCountByPl.get(pb.pre_loading_id) ?? 0) + 1);
     const orderId = orderIdByBatch.get(pb.batch_id);
     if (orderId) {
       const orderSet = orderIdsByPl.get(pb.pre_loading_id) ?? new Set<string>();
       orderSet.add(orderId);
       orderIdsByPl.set(pb.pre_loading_id, orderSet);
+
+      const byOrder = ofcCountByOrderInPl.get(pb.pre_loading_id) ?? new Map<string, number>();
+      const ofcCount = ofcCountByBatch.get(pb.batch_id) ?? 0;
+      byOrder.set(orderId, (byOrder.get(orderId) ?? 0) + ofcCount);
+      ofcCountByOrderInPl.set(pb.pre_loading_id, byOrder);
     }
     const typeId = orderId ? orderTypeIdByOrder.get(orderId) : null;
     if (typeId) {
@@ -206,6 +223,12 @@ export default async function ShipmentsPage() {
     const pl = plById.get(s.pre_loading_id);
     const polId = st.port_of_loading?.pol_id ?? null;
     const agentsStep = st.agents;
+    const ordersSummary = [...(ofcCountByOrderInPl.get(s.pre_loading_id) ?? [])]
+      .map(([orderId, ofcCount]) => ({
+        po_number: poNumberByOrderId.get(orderId) ?? "—",
+        ofc_count: ofcCount,
+      }))
+      .sort((a, b) => (Number(a.po_number) || 0) - (Number(b.po_number) || 0));
     return {
       id: s.id,
       pl_number: plNumberById.get(s.pre_loading_id) ?? "—",
@@ -232,7 +255,8 @@ export default async function ShipmentsPage() {
       bl_date: stepDate(st.bl),
       ata_date: stepDate(st.ata_brazil),
       delivered_date: stepDate(st.delivered),
-      sum_of_orders: batchCountByPl.get(s.pre_loading_id) ?? 0,
+      sum_of_orders: ordersSummary.length,
+      orders_summary: ordersSummary,
       status: STATUS_LABELS[s.status] ?? s.status,
       status_value: s.status,
     };
