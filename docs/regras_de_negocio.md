@@ -1310,6 +1310,17 @@ A v4 (acima) corrigiu o CONTEÚDO (templates reais em pt-BR/zh), mas um Pre-load
 - **Aceito conscientemente, não resolvido nesta rodada:** histórico citado no rodapé continua vindo só da thread primária GERAL pra toda variante (simplificação já existente); reply sem cabeçalho reconhecível (`attribution: 'fallback'` em `app/api/webhooks/resend/route.ts`) pode cair na linha errada entre "interno" e o grupo primário quando os dois compartilham a mesma thread — já é best-effort e já rotulado na tela, não construí desambiguação nova.
 - Textos em pt-BR/zh continuam os mesmos da v4 (rascunho, ainda sem revisão nativa em zh).
 
+##### v6 — nome do cliente por Order, não só por grupo de idioma (decisão 2026-09-16, gatilho corrigido 2026-09-17)
+
+A v5 resolvia o idioma por cliente, mas não o NOME: um Pre-loading/Shipment podia consolidar 2 clientes diferentes no MESMO grupo de idioma (ex.: AGK + Amacom, ambos pt-BR), e o compositor só sabia dar 1 nome por grupo.
+
+- **`orderClientName`:** quando um grupo de idioma tem 2+ clientes, `loadStepEmailDefaults` deixa o rascunho daquele grupo com `[Customer Name]` literal (em vez de "AGK, Amacom"). `renderStepEmailHtmls`, chamada 1x POR ORDER dentro de `sendStepEmail`, troca o colchete pelo nome do cliente DAQUELA Order de verdade. Único ponto aceito de "tela mostra X, envia Y" neste arquivo (ver [[feedback-wysiwyg-no-hidden-swaps]] na memória) — não generalizar sem perguntar de novo.
+- 🐛 **Bug corrigido em 17/09/2026** (reportado contra um PL real, #1302, consolidando AGK em pt-BR + Nacional - MG em **zh** — idiomas DIFERENTES, não colidindo no mesmo grupo): a cópia INTERNA do e-mail sempre reusa a aba do idioma PRIMÁRIO pra TODA Order do owner, inclusive as de outro grupo/cliente. Como cada grupo aqui tinha 1 cliente só (sem ambiguidade dentro dele), a aba pt-BR já vinha com "AGK" resolvido de verdade — e essa mesma aba, reusada pra gerar a cópia interna da Order da Nacional - MG, não tinha mais colchete nenhum sobrando pra `applyOrderClientName` trocar. Resultado: as duas Orders mandavam "AGK" na cópia interna. Fix: o gatilho de "deixar o colchete em branco" em `loadStepEmailDefaults` passou a contar o OWNER INTEIRO (soma de clientes de TODOS os grupos), não só o de cada grupo isoladamente — `lib/checklist-email-actions.ts`. Owner de 1 cliente só (a maioria) não muda em nada.
+
+##### v7 — assinatura sem o nome do cliente (decisão 2026-09-17)
+
+O fechamento de todo template ("Best regards, [Your Name], [Company Name]") tinha uma 3ª linha com `[Company Name]`, resolvida pra o nome do CLIENTE (não de quem envia — decisão explícita da v4/10-09, ver acima). O usuário pediu pra remover essa linha: a assinatura agora termina só em `[Your Name]` (nome de quem está compondo, sempre dinâmico via `senderName`), sem repetir o nome do cliente no fechamento. `[Customer Name]` continua existindo, só na saudação de abertura ("Prezado(a) [Customer Name],") — `[Company Name]` foi removido dos 72 templates (`lib/email/step-templates.ts`) e do `.replace()` correspondente em `buildDefaultStepBody`/`applyOrderClientName` (`lib/checklist-email-actions.ts`).
+
 Pedido do cliente: trocar `/orders/<uuid>` por `/orders/<po_number>` (ex.: `/orders/1601`) — viu o UUID feio no botão "Acessar" de um e-mail. Aplicado nos três tipos de registro, sem quebrar link antigo:
 
 - **As duas URLs convivem, sem redirect.** As páginas `orders/[id]`, `pre-loading/[id]` e `shipments/[id]` detectam se o segmento é um UUID (`isUuid()` em `lib/slugs.ts`) e buscam por `id` OU por `po_number`/`pl_number` conforme o caso. Link antigo (já mandado por e-mail, ex. o botão "Acessar"/`recordPath` do checklist) continua abrindo normalmente — de propósito NÃO foi trocado pra usar o número bonito, porque precisa durar pra sempre em caixa de entrada já recebida.
@@ -1359,6 +1370,14 @@ Pedido do cliente: §3.12.2 só mostrava a pendência do próprio usuário logad
 - **Coluna "Responsible" deixou de ser sempre `profile.full_name`** (o nome de quem está logado, correto por acidente porque toda linha sempre foi dele) — agora resolve o nome de cada `responsible_id` de verdade via um mapa (`responsibleNameById`), preparado desde já pra mostrar qualquer usuário.
 - **Filtro novo "Responsible"** em `filters-modal.tsx`, com as mesmas opções (`SearchSelect`) dos demais — só aparece quando `users` (a lista de opções, vinda do server) não vem vazia, e só vem populada pra quem é admin. Filtragem client-side em `todo-client.tsx`, mesmo padrão do filtro de Client (`TodoRow` ganhou `responsible_id` só pra isso).
 - Testado ao vivo com dois usuários reais: admin viu 637 tarefas (de 1017 antes de excluir as sem responsável) com nomes variados na coluna Responsible e o filtro funcionando (buscar "Julia" restringe a lista a ela); usuário `user` recém-criado, sem tarefa nenhuma, viu "0 pending tasks" e a tela de Filters **sem** o campo Responsible.
+
+##### To do list — remove a distinção por role (decisão 17/09/2026, supera a de cima)
+
+Pedido do usuário: a divisão admin-vê-tudo / demais-vê-só-a-própria deixou de existir — **todo mundo** vê a pendência de todo mundo, sem exceção de papel. O que continua discriminando o que entra na lista é a **qualidade do dado**, não quem está logado:
+
+- **`todo/page.tsx` — as duas queries (`order_checklist_steps`, `pre_loading_checklist_steps`) perderam o branch por `isAdmin`.** Ambas ficam fixas em `.not("responsible_id", "is", null)` — igual antes só pra admin — **mais** `.not("estimated_date", "is", null)`, filtro novo: etapa sem data prevista também não é uma tarefa acionável.
+- **Filtro "Responsible" (`filters-modal.tsx`) deixou de ser exclusivo de admin** — `userOptions` agora é sempre populado (antes só quando `isAdmin`), então o campo aparece pra qualquer usuário.
+- `userId`/`isAdmin` saíram da assinatura da página (não sobrou nenhum uso depois de tirar o branch).
 
 #### Camada 2 do RBAC — "Profile Filters for Steps" (rua 25), 🔴 escopo indefinido
 
@@ -1810,7 +1829,7 @@ pre_loadings ──1:1── shipments ──N:1── shipment_models, carriers
 ── VIEWS ──
 ETD Factories = VIEW read-only sobre order_factory_category + etd_info + batches
 To do list    = VIEW read-only sobre order_checklist_steps + pre_loading_checklist_steps
-                (filtro: responsible = usuário logado E completed_on IS NULL)
+                (sem role; filtro: responsible_id + estimated_date preenchidos E completed_on IS NULL)
 ```
 
 ---
@@ -1850,11 +1869,11 @@ To do list    = VIEW read-only sobre order_checklist_steps + pre_loading_checkli
 
 #### 3.12.2 To do list
 
-**Descrição:** lista das **tarefas pendentes do usuário logado** — etapas de checklist (de Orders, Pre-loading e Shipment) que ainda não foram concluídas e são de responsabilidade dele. É uma **VIEW read-only**, não tabela nova.
+**Descrição:** lista das **tarefas pendentes de todo mundo** — etapas de checklist (de Orders, Pre-loading e Shipment) que ainda não foram concluídas e têm responsável + data prevista atribuídos. É uma **VIEW read-only**, não tabela nova.
 
-**Regras confirmadas:**
-- ✅ **Escopo:** apenas tarefas do **usuário logado** (`responsible_id = current user`), não do time inteiro.
-- ✅ **Critério:** apenas etapas **não concluídas** (`completed_on IS NULL`).
+**Regras confirmadas (⚠️ ver decisão 17/09/2026 abaixo — supera o escopo por role de 10/09):**
+- ✅ **Escopo:** sem restrição de role — todo mundo com acesso à feature vê a mesma lista, de todos os usuários, com o filtro de Responsible disponível pra qualquer um (não só admin).
+- ✅ **Critério:** apenas etapas **não concluídas** (`completed_on IS NULL`) **com `responsible_id` E `estimated_date` preenchidos** — sem os dois não é tarefa de ninguém, é resíduo de migração (etapa que nunca teve responsável ou nunca teve data prevista).
 - ✅ **View (por linha):** é **somente leitura e navega** — leva o usuário à página do checklist correspondente (Order / PL / Shipment), onde a conclusão de fato acontece. Não edita nada na própria To do list.
 - ✅ **Download XLS:** **cortado** (segue a decisão global; não é uma das 3 exceções).
 - Colunas: PO number, PL number, Step, Status PO, Responsible, Date preview, Client.
@@ -1881,7 +1900,8 @@ To do list    = VIEW read-only sobre order_checklist_steps + pre_loading_checkli
 --   join public.pre_loadings pl on pl.id = s.pre_loading_id
 --   -- ... joins conforme necessidade
 --   where s.completed_on is null;
--- Filtro de aplicação: responsible_id = auth.uid()
+-- Filtro de aplicação (17/09/2026, sem role): responsible_id is not null
+--   and estimated_date is not null
 ```
 
 > ⚠️ A VIEW acima é um esqueleto — a forma exata (colunas de PL/Order, como resolver client e status em cada ramo) se define na implementação. O que está **confirmado** é a regra: pendentes (`completed_on IS NULL`) do usuário logado, read-only, com navegação para o checklist.

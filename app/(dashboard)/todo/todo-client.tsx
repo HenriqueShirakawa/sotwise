@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   flexRender,
@@ -17,6 +17,9 @@ import { Filter, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
+import { useOrdersRealtime } from "@/lib/use-orders-realtime";
+import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
+import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { STEP_LABELS } from "@/lib/checklist";
 import type { ChecklistStep, OrderStatus } from "@/types/database";
@@ -59,7 +62,7 @@ export type TodoRow = {
   /** Só nas linhas de Order (etapas de PL não têm status de PO). */
   status: OrderStatus | null;
   responsible: string | null;
-  /** Usado só pelo filtro de Responsible (visão admin) — o nome já basta pra coluna. */
+  /** Usado só pelo filtro de Responsible — o nome já basta pra coluna. */
   responsible_id: string | null;
   date_preview: string | null;
   client: string | null;
@@ -136,7 +139,7 @@ export function TodoClient({
 }: {
   rows: TodoRow[];
   clients: Ref[];
-  /** Vazio pra quem não é admin — some o filtro de Responsible na tela. */
+  /** Responsáveis presentes nas tarefas carregadas — alimenta o filtro de Responsible. */
   users: Ref[];
   initialColumns: VisibilityState;
 }) {
@@ -147,6 +150,19 @@ export function TodoClient({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "date_preview", desc: false }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("todo", initialColumns);
+
+  // Realtime: a lista reflete etapa concluída/reatribuída (Order, Pre-loading
+  // ou Shipment) e status de Order/Shipment mudando, mesmo com a tela parada e
+  // aberta. Reaproveita os três canais que já existem — não tem canal próprio
+  // de checklist step. Debounce curto coalesce rajadas de pings num só refresh.
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 300);
+  };
+  useOrdersRealtime(scheduleRefresh);
+  usePreLoadingRealtime(scheduleRefresh);
+  useShipmentsRealtime(scheduleRefresh);
 
   const filterCount = activeFilterCount(filters);
 

@@ -20,10 +20,12 @@ const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
 /**
  * To do list (docs §3.12.2). VIEW read-only sobre as etapas de checklist
  * pendentes (`completed_on IS NULL`), unindo Orders e Pre-loading/Shipment.
- * Montada no server component (padrão do repo, sem VIEW no banco). Escopo por
- * role: `admin` vê a pendência de TODOS os usuários (com filtro extra de
- * Responsible na tela); qualquer outro papel só vê a própria — mesmo conjunto
- * pequeno de sempre. Mesmo admin vendo tudo, o total do sistema inteiro fica
+ * Montada no server component (padrão do repo, sem VIEW no banco). Sem
+ * restrição de role: todo mundo com acesso à feature vê o mesmo conjunto —
+ * a pendência de todos os usuários, não só a própria. O que filtra é a
+ * qualidade do dado, não quem está logado: só entra etapa com `responsible_id`
+ * E `estimated_date` preenchidos (sem isso não é uma tarefa de verdade, é
+ * resíduo de migração). Mesmo listando tudo, o total do sistema inteiro fica
  * na casa de ~1000 linhas (ver docs), então resolvemos os relacionamentos por
  * id, sem paginação em bloco.
  *
@@ -35,7 +37,7 @@ const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
 export const metadata = { title: "To do list" };
 
 export default async function TodoPage() {
-  const { userId, isAdmin, profile } = await requireFeature("todo");
+  const { profile } = await requireFeature("todo");
   const admin = createAdminClient();
 
   const inIds = async <T,>(
@@ -47,27 +49,25 @@ export default async function TodoPage() {
     return data ?? [];
   };
 
-  // Etapas pendentes — admin vê a união da lista de todo mundo, os demais só a
-  // própria (mesmo filtro de sempre). Mesmo pra admin, `responsible_id` nulo
-  // (resíduo de migração — etapa nunca teve alguém designado) fica de fora:
-  // não é o "to-do" de ninguém, é trabalho não atribuído, outra categoria.
+  // Etapas pendentes de todo mundo — sem filtro de role. `responsible_id` e
+  // `estimated_date` nulos (resíduo de migração — etapa nunca teve alguém
+  // designado ou nunca teve uma data prevista) ficam de fora: sem os dois não
+  // é o "to-do" de ninguém, é trabalho não atribuído, outra categoria.
   // Order tem `enabled` (etapa N/A não é tarefa); pre-loading não tem esse conceito.
-  let orderStepsQuery = admin
+  const orderStepsQuery = admin
     .from("order_checklist_steps")
     .select("id, order_id, step, estimated_date, responsible_id")
     .eq("enabled", true)
-    .is("completed_on", null);
-  orderStepsQuery = isAdmin
-    ? orderStepsQuery.not("responsible_id", "is", null)
-    : orderStepsQuery.eq("responsible_id", userId);
+    .is("completed_on", null)
+    .not("responsible_id", "is", null)
+    .not("estimated_date", "is", null);
 
-  let plStepsQuery = admin
+  const plStepsQuery = admin
     .from("pre_loading_checklist_steps")
     .select("id, pre_loading_id, step, estimated_date, responsible_id")
-    .is("completed_on", null);
-  plStepsQuery = isAdmin
-    ? plStepsQuery.not("responsible_id", "is", null)
-    : plStepsQuery.eq("responsible_id", userId);
+    .is("completed_on", null)
+    .not("responsible_id", "is", null)
+    .not("estimated_date", "is", null);
 
   const [orderStepsRes, plStepsRes] = await Promise.all([orderStepsQuery, plStepsQuery]);
 
@@ -137,8 +137,7 @@ export default async function TodoPage() {
   );
   const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
 
-  // Responsible de cada etapa — sempre o próprio usuário logado quando não é
-  // admin (a query já veio filtrada), mas pode ser qualquer um na visão admin.
+  // Responsible de cada etapa — qualquer usuário, sem distinção de quem está logado.
   const responsibleIds = new Set<string>();
   for (const s of orderSteps) if (s.responsible_id) responsibleIds.add(s.responsible_id);
   for (const s of plSteps) if (s.responsible_id) responsibleIds.add(s.responsible_id);
@@ -241,11 +240,11 @@ export default async function TodoPage() {
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Filtro por Responsible só faz sentido pra quem vê tarefa de todo mundo —
-  // mesmo critério do Client acima: só quem aparece nas tarefas carregadas.
-  const userOptions: Ref[] = isAdmin
-    ? [...responsibleNameById].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
-    : [];
+  // Filtro por Responsible: mesmo critério do Client acima — só quem aparece
+  // nas tarefas carregadas. Sem restrição de role, é útil pra todo mundo.
+  const userOptions: Ref[] = [...responsibleNameById]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <TodoClient
