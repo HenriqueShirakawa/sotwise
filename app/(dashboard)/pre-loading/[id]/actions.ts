@@ -6,12 +6,13 @@ import { STEP_LABELS } from "@/lib/checklist";
 import { isStepChecked, plStepFacts, validateStepDates } from "@/lib/checklist-completion";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
+import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { requireFeature } from "@/lib/dal";
-import { syncOrderStatus } from "@/lib/order-status";
+import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { BatchStatus, ChecklistStep } from "@/types/database";
+import type { ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -222,26 +223,6 @@ const PL_STEPS: ChecklistStep[] = [
   "loading_date",
 ];
 
-/** Lote do pedido, no mínimo que o split consulta. */
-type OrderBatchRow = {
-  id: string;
-  batch_number: string;
-  status: BatchStatus;
-  split_from_batch_id: string | null;
-};
-
-/** ".03" → 3. Sufixo não numérico conta como 0 (dado migrado do Bubble). */
-function batchNum(batchNumber: string): number {
-  const n = Number(String(batchNumber).replace(/^\./, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-/**
- * Status de lote que ainda aceita receber a produção que não carregou. Lote
- * embarcado/entregue não entra: a produção dele já foi.
- */
-const MERGEABLE_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
-
 export type ConfirmShippingInput = {
   container_number: string;
   seal_number: string;
@@ -266,9 +247,11 @@ export type ConfirmShippingInput = {
  *     novo (nasce `in_production`).
  * Por fim marca o PL como confirmado (sai da lista de Pre-loading).
  *
- * ⚠️ Sem transação (PostgREST não expõe uma pelo client): a criação do shipment
- * é primeiro e trava re-execução pelo unique em pre_loading_id. Uma falha no meio
- * do split exige limpeza manual — candidato a virar RPC/função no banco depois.
+ * A validação (campos, checklist, cobertura de status) roda aqui; a escrita em
+ * si (shipment -> split -> confirma o PL) é uma chamada RPC atômica —
+ * `confirm_shipping`, ver supabase/migrations/20260917120000_shipping_atomic.sql.
+ * Uma falha no meio desfaz tudo (era o ponto fraco desta função antes: shipment
+ * criado mas split/PL pela metade — precisou de limpeza manual em 17/09/2026).
  */
 export async function confirmShipping(
   preLoadingId: string,
@@ -370,11 +353,6 @@ export async function confirmShipping(
   const batchIds = (plBatches ?? []).map((b) => b.batch_id);
   if (batchIds.length === 0) return { ok: false, error: "This Pre-loading has no batches." };
 
-  const { data: batches } = await admin
-    .from("batches")
-    .select("id, order_id, batch_number")
-    .in("id", batchIds);
-
   const { data: ofcRows } = await admin
     .from("order_factory_category")
     .select("id, batch_id, order_id")
@@ -385,170 +363,24 @@ export async function confirmShipping(
     return { ok: false, error: "Set the loading status for every line." };
   }
 
-  // 1. Shipment (1:1). O unique em pre_loading_id também barra confirmação dupla.
-  const { data: shipment, error: shipErr } = await admin
-    .from("shipments")
-    .insert({
-      pre_loading_id: preLoadingId,
-      container_number: input.container_number.trim(),
-      carrier_id: input.carrier_id,
-      shipment_model_id: input.shipment_model_id,
-      leader_id: input.shipment_leader_id,
-      signer_id: input.signer_id,
-      estimated_date: input.estimated_date,
-      status: "in_transit",
-      created_by: session.userId,
-    })
-    .select("id")
-    .single();
-  if (shipErr || !shipment) {
-    return { ok: false, error: shipErr?.message ?? "Failed to create the shipment." };
-  }
-
-  // 2. loading_status por entrada.
-  for (const value of ["total", "partial", "none"] as const) {
-    const ids = (ofcRows ?? []).filter((o) => statusByOfc.get(o.id) === value).map((o) => o.id);
-    if (ids.length) {
-      const { error } = await admin
-        .from("order_factory_category")
-        .update({ loading_status: value })
-        .in("id", ids);
-      if (error) return { ok: false, error: error.message };
-    }
-  }
-
-  // 2b. Snapshot do que ESTE embarque carregou, por lote × entrada. O passo 3
-  // move as entradas não-Total para outro lote e zera o loading_status delas —
-  // sem este registro o lote que embarcou perde o próprio histórico (a linha
-  // aparecia no lote de destino e sem status). Ver docs §3.7.2.
-  const loadedLines = (ofcRows ?? [])
-    .filter((o) => !!o.batch_id)
-    .map((o) => ({
-      shipment_id: shipment.id,
-      batch_id: o.batch_id as string,
-      order_factory_category_id: o.id,
-      loading_status: statusByOfc.get(o.id)!,
-    }));
-  if (loadedLines.length) {
-    const { error } = await admin.from("shipment_loaded_lines").insert(loadedLines);
-    if (error) return { ok: false, error: error.message };
-  }
-
-  // 3. Split: agrupa as entradas não-Total por lote de origem.
-  const nonTotalByBatch = new Map<string, string[]>();
-  for (const o of ofcRows ?? []) {
-    if (!o.batch_id || statusByOfc.get(o.id) === "total") continue;
-    const arr = nonTotalByBatch.get(o.batch_id) ?? [];
-    arr.push(o.id);
-    nonTotalByBatch.set(o.batch_id, arr);
-  }
-
-  // Lotes existentes de cada pedido: servem para numerar o lote novo e para
-  // achar um lote seguinte que já esteja aberto.
-  const batchesByOrder = new Map<string, OrderBatchRow[]>();
-  const nextNumByOrder = new Map<string, number>();
-  for (const orderId of new Set((batches ?? []).map((b) => b.order_id))) {
-    const { data: all } = await admin
-      .from("batches")
-      .select("id, batch_number, status, split_from_batch_id")
-      .eq("order_id", orderId)
-      .returns<OrderBatchRow[]>();
-    batchesByOrder.set(orderId, all ?? []);
-    nextNumByOrder.set(
-      orderId,
-      (all ?? []).reduce((m, b) => (batchNum(b.batch_number) > m ? batchNum(b.batch_number) : m), 0)
-    );
-  }
-
-  const plBatchIdSet = new Set(batchIds);
-
-  for (const batch of batches ?? []) {
-    const toMove = nonTotalByBatch.get(batch.id) ?? [];
-    if (toMove.length) {
-      // Destino das linhas que não carregaram: o PRÓXIMO lote do pedido que já
-      // exista e ainda esteja aberto (in negotiation / in production). Só quando
-      // não há nenhum é que nasce um lote novo — antes criava sempre, e um
-      // pedido com o lote seguinte já planejado terminava com dois lotes
-      // concorrentes para a mesma produção.
-      const target = (batchesByOrder.get(batch.order_id) ?? [])
-        .filter(
-          (b) =>
-            !plBatchIdSet.has(b.id) &&
-            MERGEABLE_STATUSES.includes(b.status) &&
-            batchNum(b.batch_number) > batchNum(batch.batch_number)
-        )
-        .sort((a, b) => batchNum(a.batch_number) - batchNum(b.batch_number))[0];
-
-      let targetId: string;
-      if (target) {
-        targetId = target.id;
-        // Sem isso o "View parts" do embarque perde as linhas que saíram: ele
-        // acha o destino subindo por `split_from_batch_id`. Só preenche quando
-        // está vazio — a origem já registrada de um lote não se sobrescreve.
-        if (!target.split_from_batch_id) {
-          const { error: lnErr } = await admin
-            .from("batches")
-            .update({ split_from_batch_id: batch.id })
-            .eq("id", target.id);
-          if (lnErr) return { ok: false, error: lnErr.message };
-          target.split_from_batch_id = batch.id;
-        }
-      } else {
-        const next = (nextNumByOrder.get(batch.order_id) ?? 0) + 1;
-        nextNumByOrder.set(batch.order_id, next);
-        const { data: newBatch, error: nbErr } = await admin
-          .from("batches")
-          .insert({
-            order_id: batch.order_id,
-            batch_number: "." + String(next).padStart(2, "0"),
-            status: "in_production",
-            split_from_batch_id: batch.id,
-          })
-          .select("id")
-          .single();
-        if (nbErr || !newBatch)
-          return { ok: false, error: nbErr?.message ?? "Failed to split batch." };
-        targetId = newBatch.id;
-        batchesByOrder.get(batch.order_id)?.push({
-          id: newBatch.id,
-          batch_number: "." + String(next).padStart(2, "0"),
-          status: "in_production",
-          split_from_batch_id: batch.id,
-        });
-      }
-
-      // O None/Partial gravado no passo 2 pertence ao embarque que acabou de
-      // sair; o lote de destino ainda não passou por PL→Shipment, então o
-      // status volta a "—" até esse lote embarcar por conta própria.
-      const { error: mvErr } = await admin
-        .from("order_factory_category")
-        .update({ batch_id: targetId, loading_status: null })
-        .in("id", toMove);
-      if (mvErr) return { ok: false, error: mvErr.message };
-    }
-    // 4. O lote que carregou vai para in_transit.
-    const { error: stErr } = await admin.from("batches").update({ status: "in_transit" }).eq("id", batch.id);
-    if (stErr) return { ok: false, error: stErr.message };
-  }
-
-  // Embarque muda a fase dos lotes (e o split pode ter criado outros): as
-  // Orders viram Shipped / Partially Shipped conforme o rollup (§3.7.1).
-  const statusError = await syncOrderStatus(
-    admin,
-    (batches ?? []).map((b) => b.order_id)
-  );
-  if (statusError) return { ok: false, error: statusError };
-
-  // 5. Marca o PL como confirmado + grava seal/leader do embarque.
-  const { error: plUpdErr } = await admin
-    .from("pre_loadings")
-    .update({
-      seal_number: input.seal_number.trim(),
-      leader_id: input.preloading_leader_id,
-      shipping_confirmed_at: new Date().toISOString(),
-    })
-    .eq("id", preLoadingId);
-  if (plUpdErr) return { ok: false, error: plUpdErr.message };
+  // Shipment + loading_status + snapshot + split + confirma o PL — tudo numa
+  // função de banco (RPC), rodando como uma única transação: uma falha no
+  // meio desfaz tudo, em vez de deixar o shipment órfão que o comentário
+  // antigo desta função alertava. Ver supabase/migrations/20260917120000_shipping_atomic.sql.
+  const { data: rpcResult, error: rpcError } = await admin.rpc("confirm_shipping", {
+    p_pre_loading_id: preLoadingId,
+    p_container_number: input.container_number.trim(),
+    p_seal_number: input.seal_number.trim(),
+    p_estimated_date: input.estimated_date,
+    p_shipment_leader_id: input.shipment_leader_id,
+    p_preloading_leader_id: input.preloading_leader_id,
+    p_carrier_id: input.carrier_id,
+    p_shipment_model_id: input.shipment_model_id,
+    p_signer_id: input.signer_id,
+    p_created_by: session.userId,
+    p_statuses: input.statuses,
+  });
+  if (rpcError) return { ok: false, error: rpcError.message };
 
   revalidatePath("/pre-loading/[id]", "page");
   revalidatePath("/pre-loading");
@@ -559,5 +391,10 @@ export async function confirmShipping(
   // Realtime: novo embarque na lista Shipments E o PL sai da lista Pre-loading.
   await broadcastShipmentPing();
   await broadcastPreLoadingPing();
+  const changedOrderIds = rpcResult?.changed_order_ids ?? [];
+  if (changedOrderIds.length > 0) {
+    await broadcastOrderStatusPing({ order_ids: changedOrderIds });
+  }
+  await scheduleClientNotificationDispatch();
   return { ok: true };
 }
