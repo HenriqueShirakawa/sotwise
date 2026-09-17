@@ -795,7 +795,8 @@ export function PlChecklistClient({
           plNumber={preLoading.pl_number}
           clientReference={preLoading.client_reference}
           sealNumber={preLoading.seal_number}
-          loadingDate={steps.find((s) => s.step === "loading_date")?.estimated_date ?? null}
+          loadingDateEstimated={steps.find((s) => s.step === "loading_date")?.estimated_date ?? null}
+          loadingDateCompletedOn={steps.find((s) => s.step === "loading_date")?.completed_on ?? null}
           preloadingLeaderId={preloadingLeaderId}
           currentUserId={currentUserId}
           profiles={profiles}

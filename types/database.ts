@@ -1279,6 +1279,7 @@ export type Database = {
           p_container_number: string;
           p_seal_number: string;
           p_estimated_date: string;
+          p_loading_date_completed_on: string;
           p_shipment_leader_id: string;
           p_preloading_leader_id: string;
           p_carrier_id: string;
