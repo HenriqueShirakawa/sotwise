@@ -6,8 +6,10 @@ import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
+import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
+import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -292,8 +294,10 @@ export async function deleteShipmentStepAttachment(
  * (`in_production`, fora de qualquer PL, sem terem sido divididos de novo). Se um
  * deles já avançou, reverter bagunçaria o estado — então bloqueia.
  *
- * Sem transação (mesma limitação de `confirmShipping`); a ordem minimiza estado
- * inconsistente caso falhe no meio.
+ * Guards + escrita rodam na RPC `delete_shipment` (atômica) — ver
+ * supabase/migrations/20260917120000_shipping_atomic.sql. Esta action só faz o
+ * `requireFeature` (autorização não é responsabilidade do banco) e repassa o
+ * resultado.
  */
 export async function deleteShipment(shipmentId: string): Promise<ActionResult> {
   // Exige o `delete` da feature: desfazer um embarque reverte split, status de
@@ -302,171 +306,24 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   await requireFeature("shipments", "delete");
   const admin = createAdminClient();
 
-  const { data: shipment, error: shipErr } = await admin
-    .from("shipments")
-    .select("id, pre_loading_id, status, created_at")
-    .eq("id", shipmentId)
-    .maybeSingle();
-  if (shipErr) return { ok: false, error: shipErr.message };
-  if (!shipment) return { ok: false, error: "Shipment not found." };
-  // Embarque entregue não se desfaz: a carga chegou, e reverter mexeria no
-  // status de lotes e Orders já encerrados.
-  if (shipment.status === "delivered") {
-    return { ok: false, error: "A delivered shipment can't be deleted." };
-  }
-
-  // Lotes embarcados = os lotes do PL.
-  const { data: links, error: linkErr } = await admin
-    .from("pre_loading_batches")
-    .select("batch_id")
-    .eq("pre_loading_id", shipment.pre_loading_id);
-  if (linkErr) return { ok: false, error: linkErr.message };
-  const origIds = (links ?? []).map((l) => l.batch_id);
-  if (origIds.length === 0) return { ok: false, error: "Shipment has no batches." };
-
-  // Lotes que receberam a parte que NÃO embarcou. Dois casos, separados pela
-  // data de criação: os que NASCERAM neste split (depois do embarque) e os que
-  // já existiam e só receberam as linhas (regra do "próximo lote aberto" em
-  // confirmShipping). Apagar um lote que já existia levaria junto a produção
-  // que era dele — por isso a distinção.
-  const { data: children, error: childErr } = await admin
-    .from("batches")
-    .select("id, status, split_from_batch_id, created_at")
-    .in("split_from_batch_id", origIds);
-  if (childErr) return { ok: false, error: childErr.message };
-  const childIds = (children ?? []).map((c) => c.id);
-  // O shipment é gravado ANTES do split (ver confirmShipping), então o lote que
-  // nasceu ali é sempre mais novo que ele.
-  const shipmentAt = Date.parse(shipment.created_at);
-  const bornHere = (children ?? []).filter((c) => Date.parse(c.created_at) >= shipmentAt);
-  const merged = (children ?? []).filter((c) => Date.parse(c.created_at) < shipmentAt);
-
-  // Guard: só reverte se cada lote do split continua intacto.
-  if (childIds.length) {
-    if (bornHere.some((c) => c.status !== "in_production")) {
-      return {
-        ok: false,
-        error: "Can't undo this shipment: a batch created by the split already moved forward.",
-      };
-    }
-    // O lote que já existia pode estar em negociação ou produção; qualquer
-    // coisa além disso quer dizer que a produção dele já seguiu.
-    if (merged.some((c) => c.status !== "in_production" && c.status !== "in_negotiation")) {
-      return {
-        ok: false,
-        error: "Can't undo this shipment: the batch that received the split already moved forward.",
-      };
-    }
-    const { data: childInPl, error: e1 } = await admin
-      .from("pre_loading_batches")
-      .select("batch_id")
-      .in("batch_id", childIds);
-    if (e1) return { ok: false, error: e1.message };
-    if (childInPl && childInPl.length) {
-      return {
-        ok: false,
-        error: "Can't undo this shipment: a split batch is already in another Pre-loading.",
-      };
-    }
-    const { data: grandkids, error: e2 } = await admin
-      .from("batches")
-      .select("id")
-      .in("split_from_batch_id", childIds);
-    if (e2) return { ok: false, error: e2.message };
-    if (grandkids && grandkids.length) {
-      return {
-        ok: false,
-        error: "Can't undo this shipment: a split batch was split again.",
-      };
-    }
-  }
-
-  // Desfaz o split: cada linha Factory×Category volta ao lote de origem...
-  for (const child of bornHere) {
-    const { error } = await admin
-      .from("order_factory_category")
-      .update({ batch_id: child.split_from_batch_id })
-      .eq("batch_id", child.id);
-    if (error) return { ok: false, error: error.message };
-  }
-  // ...e os lotes que nasceram no split somem.
-  if (bornHere.length) {
-    const { error } = await admin
-      .from("batches")
-      .delete()
-      .in("id", bornHere.map((c) => c.id));
-    if (error) return { ok: false, error: error.message };
-  }
-
-  // No lote que já existia, voltam só as linhas que ESTE embarque empurrou pra
-  // lá — as que ele registrou como não-Total no snapshot do carregamento. O que
-  // era dele fica onde está, e o lote não é apagado.
-  //
-  // O snapshot é a fonte: o próprio split zera o loading_status da
-  // linha que migra, então filtrar por ele (como se fazia antes) não achava ninguém.
-  // Embarque confirmado ANTES da tabela existir não tem snapshot — aí sobra o
-  // filtro antigo, que é o comportamento que esse dado já tinha.
-  const { data: loadedLines, error: loadedErr } = await admin
-    .from("shipment_loaded_lines")
-    .select("order_factory_category_id, loading_status")
-    .eq("shipment_id", shipmentId);
-  if (loadedErr) return { ok: false, error: loadedErr.message };
-  const pushedOutIds = (loadedLines ?? [])
-    .filter((l) => l.loading_status !== "total")
-    .map((l) => l.order_factory_category_id);
-  const hasSnapshot = (loadedLines ?? []).length > 0;
-
-  for (const child of merged) {
-    const query = admin
-      .from("order_factory_category")
-      .update({ batch_id: child.split_from_batch_id })
-      .eq("batch_id", child.id);
-    const { error } = hasSnapshot
-      ? await query.in("id", pushedOutIds)
-      : await query.in("loading_status", ["none", "partial"]);
-    if (error) return { ok: false, error: error.message };
-
-    // A linhagem foi anotada por este embarque; sem ele, o lote volta a não ter
-    // origem registrada.
-    const { error: lnErr } = await admin
-      .from("batches")
-      .update({ split_from_batch_id: null })
-      .eq("id", child.id);
-    if (lnErr) return { ok: false, error: lnErr.message };
-  }
-
-  // O loading_status era do embarque desfeito.
-  const { error: lsErr } = await admin
-    .from("order_factory_category")
-    .update({ loading_status: null })
-    .in("batch_id", origIds);
-  if (lsErr) return { ok: false, error: lsErr.message };
-
-  // Os lotes voltam para a fase de Pre-loading (revertem de in_transit ou delivered).
-  const { error: stErr } = await admin
-    .from("batches")
-    .update({ status: "preloading" })
-    .in("id", origIds);
-  if (stErr) return { ok: false, error: stErr.message };
-
-  const { error: rmErr } = await admin.from("shipments").delete().eq("id", shipmentId);
-  if (rmErr) return { ok: false, error: rmErr.message };
-
-  // Reabre o PL: sem shipping_confirmed_at ele volta à lista de Pre-loading.
-  const { error: plErr } = await admin
-    .from("pre_loadings")
-    .update({ shipping_confirmed_at: null })
-    .eq("id", shipment.pre_loading_id);
-  if (plErr) return { ok: false, error: plErr.message };
-
-  // Rollup: as Orders voltam de Shipped/Partially Shipped para pre_loading/partially.
-  const statusError = await syncOrderStatusForBatches(admin, origIds);
-  if (statusError) return { ok: false, error: statusError };
+  // Guards (shipment existe? não é delivered? lotes do split intactos?) +
+  // reversão do split + apagar o shipment — tudo numa função de banco (RPC),
+  // rodando como uma única transação. Ver
+  // supabase/migrations/20260917120000_shipping_atomic.sql.
+  const { data: rpcResult, error: rpcError } = await admin.rpc("delete_shipment", {
+    p_shipment_id: shipmentId,
+  });
+  if (rpcError) return { ok: false, error: rpcError.message };
 
   revalidatePath("/shipments");
   revalidatePath("/pre-loading");
   revalidatePath("/orders");
   // Realtime: embarque excluído sai da lista Shipments na hora.
   await broadcastShipmentPing();
+  const changedOrderIds = rpcResult?.changed_order_ids ?? [];
+  if (changedOrderIds.length > 0) {
+    await broadcastOrderStatusPing({ order_ids: changedOrderIds });
+  }
+  await scheduleClientNotificationDispatch();
   return { ok: true };
 }
