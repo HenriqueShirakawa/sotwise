@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
   ArrowLeft,
@@ -334,11 +334,28 @@ export function PlChecklistClient({
   viewPrefs: ViewPrefs;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
+  // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
+  // depois de montado mesmo que a URL mude).
+  const [deepLinkStep] = useState<ChecklistStep | null>(
+    () => (searchParams.get("step") as ChecklistStep | null) ?? null
+  );
   const [infoOpen, setInfoOpen] = useState(true);
-  const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
+  const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(
+    () => new Set(deepLinkStep ? [deepLinkStep] : [])
+  );
   const [shipOpen, setShipOpen] = useState(false);
   const [viewBatch, setViewBatch] = useState<PlBatchRow | null>(null);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!deepLinkStep) return;
+    document
+      .getElementById(`step-${deepLinkStep}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para o
   // contador e para a trava do Confirm Shipping (`doneCount < steps.length`) —
@@ -553,7 +570,7 @@ export function PlChecklistClient({
             const open = isStepOpen(s.step);
             const facts = plStepFacts(s, s.attachments.length, contactCountByAgent);
             return (
-              <div key={s.step} className="border-b last:border-b-0">
+              <div key={s.step} id={`step-${s.step}`} className="border-b last:border-b-0">
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                   <StepIcon
                     done={s.done}

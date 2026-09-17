@@ -281,13 +281,7 @@ export function TodoClient({
         enableHiding: false,
         cell: ({ row }) => (
           <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(row.original.href);
-              }}
-            >
+            <Button size="sm" onClick={() => router.push(row.original.href)}>
               Check
             </Button>
           </div>
@@ -397,7 +391,6 @@ export function TodoClient({
         headerColumnIds={["status", "actions"]}
         emptyMessage="You have no pending tasks."
         breakpoint="720"
-        onRowClick={(row) => router.push(row.original.href)}
       />
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
@@ -421,11 +414,7 @@ export function TodoClient({
           <TableBody>
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className="cursor-pointer hover:bg-slate-50/60"
-                  onClick={() => router.push(row.original.href)}
-                >
+                <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="px-4 text-sm">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

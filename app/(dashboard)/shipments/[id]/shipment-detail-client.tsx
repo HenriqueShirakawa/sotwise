@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
   ArrowLeft,
@@ -333,11 +333,28 @@ export function ShipmentDetailClient({
   };
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
+  // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
+  // depois de montado mesmo que a URL mude).
+  const [deepLinkStep] = useState<ChecklistStep | null>(
+    () => (searchParams.get("step") as ChecklistStep | null) ?? null
+  );
   const [infoOpen, setInfoOpen] = useState(true);
-  const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(new Set());
+  const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(
+    () => new Set(deepLinkStep ? [deepLinkStep] : [])
+  );
   const [partsOf, setPartsOf] = useState<ShipmentBatchRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!deepLinkStep) return;
+    document
+      .getElementById(`step-${deepLinkStep}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para o
   // contador de progresso — esconder etapa é preferência de leitura.
@@ -573,7 +590,7 @@ export function ShipmentDetailClient({
             // a mesma trava, então o cadeado aqui não é a única defesa.
             const readOnly = PRE_LOADING_STEPS.includes(s.step) && !canEditInherited;
             return (
-              <div key={s.step} className="border-b last:border-b-0">
+              <div key={s.step} id={`step-${s.step}`} className="border-b last:border-b-0">
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                   <StepIcon done={s.done} gated={s.gated} title={s.missing ?? undefined} />
                   <button
