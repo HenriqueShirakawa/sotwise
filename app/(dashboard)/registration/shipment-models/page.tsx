@@ -29,11 +29,12 @@ export default async function ShipmentModelsPage() {
     <SimpleRegistrationCrud
       data={data}
       title="Shipment Models"
-      subtitle="View, manage, and create new shipment models"
+      subtitle="View and manage shipment models"
       singular="shipment model"
       columnLabel="Shipment Model"
       searchPlaceholder="Shipment model name"
       createLabel="Create new shipment model"
+      canCreate={false}
       createAction={createShipmentModels}
       updateAction={updateShipmentModel}
       deleteAction={deleteShipmentModel}
