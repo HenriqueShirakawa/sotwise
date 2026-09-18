@@ -62,6 +62,7 @@ export function SimpleRegistrationCrud({
   columnLabel,
   searchPlaceholder,
   createLabel,
+  canCreate = true,
   extraColumns = [],
   createAction,
   updateAction,
@@ -76,6 +77,8 @@ export function SimpleRegistrationCrud({
   columnLabel: string;
   searchPlaceholder: string;
   createLabel: string;
+  /** false esconde o botão de criar (cadastro passou a vir só do GSS); edit/delete continuam. */
+  canCreate?: boolean;
   /** Colunas só-de-leitura exibidas depois do nome, lidas de `row.extras`. */
   extraColumns?: { key: string; label: string }[];
   createAction: (names: string[]) => Promise<ActionResult>;
@@ -211,10 +214,12 @@ export function SimpleRegistrationCrud({
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={openCreate}>
-          <Plus />
-          {createLabel}
-        </Button>
+        {canCreate && (
+          <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={openCreate}>
+            <Plus />
+            {createLabel}
+          </Button>
+        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">

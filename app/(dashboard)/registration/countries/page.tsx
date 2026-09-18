@@ -28,11 +28,12 @@ export default async function CountriesPage() {
       data={data.map((c) => ({ id: c.id, name: c.name, extras: { iso_code: c.iso_code } }))}
       extraColumns={[{ key: "iso_code", label: "ISO code" }]}
       title="Countries"
-      subtitle="View, manage, and create new countries"
+      subtitle="View and manage countries"
       singular="country"
       columnLabel="Country"
       searchPlaceholder="Country name"
       createLabel="Create new country"
+      canCreate={false}
       createAction={createCountries}
       updateAction={updateCountry}
       deleteAction={deleteCountry}
