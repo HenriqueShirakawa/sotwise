@@ -25,11 +25,12 @@ export default async function CountriesPage() {
     <SimpleRegistrationCrud
       data={data}
       title="Countries"
-      subtitle="View, manage, and create new countries"
+      subtitle="View and manage countries"
       singular="country"
       columnLabel="Country"
       searchPlaceholder="Country name"
       createLabel="Create new country"
+      canCreate={false}
       createAction={createCountries}
       updateAction={updateCountry}
       deleteAction={deleteCountry}

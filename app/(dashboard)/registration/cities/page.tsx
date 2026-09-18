@@ -39,6 +39,7 @@ export default async function CitiesPage() {
       columnLabel="City"
       searchPlaceholder="City name"
       createLabel="Create city"
+      canCreate={false}
       createAction={createCities}
       updateAction={updateCity}
       deleteAction={deleteCity}
