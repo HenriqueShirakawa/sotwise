@@ -142,7 +142,7 @@ export default async function ShipmentDetailPage({
     admin
       .from("pre_loading_batches")
       .select(
-        "batch_id, batches(id, batch_number, status, orders(po_number, client_id, date_po))"
+        "batch_id, batches(id, batch_number, status, orders(po_number, client_id, client_reference, date_po))"
       )
       .eq("pre_loading_id", pl.id),
     fetchAll<{ id: string; full_name: string | null }>((from, to) =>
@@ -214,7 +214,12 @@ export default async function ShipmentDetailPage({
       id: string;
       batch_number: string;
       status: BatchStatus;
-      orders: { po_number: string; client_id: string | null; date_po: string | null } | null;
+      orders: {
+        po_number: string;
+        client_id: string | null;
+        client_reference: string | null;
+        date_po: string | null;
+      } | null;
     } | null;
   };
   const batchRows = ((plBatchesRes.data ?? []) as unknown as BatchEmbed[])
@@ -325,6 +330,7 @@ export default async function ShipmentDetailPage({
     .map((b) => ({
       id: b.id,
       client: b.orders?.client_id ? (clientNameById.get(b.orders.client_id) ?? null) : null,
+      client_reference: b.orders?.client_reference ?? null,
       po_number: b.orders?.po_number ?? "—",
       batch_number: b.batch_number,
       status: b.status,

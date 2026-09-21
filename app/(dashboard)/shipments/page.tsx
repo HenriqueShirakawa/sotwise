@@ -85,9 +85,17 @@ export default async function ShipmentsPage() {
         .is("deleted_at", null)
         .range(from, to)
     ),
-    fetchAll<{ id: string; pl_number: string; pod_id: string | null; leader_id: string | null }>(
-      (from, to) =>
-        admin.from("pre_loadings").select("id, pl_number, pod_id, leader_id").range(from, to)
+    fetchAll<{
+      id: string;
+      pl_number: string;
+      pod_id: string | null;
+      leader_id: string | null;
+      client_reference: string | null;
+    }>((from, to) =>
+      admin
+        .from("pre_loadings")
+        .select("id, pl_number, pod_id, leader_id, client_reference")
+        .range(from, to)
     ),
     fetchAll<{ pre_loading_id: string; client_id: string }>((from, to) =>
       admin.from("pre_loading_clients").select("pre_loading_id, client_id").range(from, to)
@@ -234,6 +242,7 @@ export default async function ShipmentsPage() {
       pl_number: plNumberById.get(s.pre_loading_id) ?? "—",
       client: [...(clientNamesByPl.get(s.pre_loading_id) ?? [])].sort().join(", ") || null,
       client_ids: [...(clientIdsByPl.get(s.pre_loading_id) ?? [])],
+      client_reference: pl?.client_reference ?? null,
       order_type: [...(typeNamesByPl.get(s.pre_loading_id) ?? [])].sort().join(", ") || null,
       order_type_ids: [...(typeIdsByPl.get(s.pre_loading_id) ?? [])],
       order_ids: [...(orderIdsByPl.get(s.pre_loading_id) ?? [])],

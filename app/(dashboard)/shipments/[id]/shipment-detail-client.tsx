@@ -72,6 +72,7 @@ export type ShipmentDetail = {
 export type ShipmentBatchRow = {
   id: string;
   client: string | null;
+  client_reference: string | null;
   po_number: string;
   batch_number: string;
   status: BatchStatus;
@@ -493,8 +494,9 @@ export function ShipmentDetailClient({
         <p className="border-b bg-slate-50/80 px-6 py-3 text-sm font-medium text-slate-700">
           Batches in shipment container
         </p>
-        <div className="hidden grid-cols-[1fr_1fr_1fr_2fr_15rem] gap-3 border-b px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
+        <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_2fr_15rem] gap-3 border-b px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
           <span>Client</span>
+          <span>Client Reference</span>
           <span>PO Number . Batches</span>
           <span>Order date</span>
           <span>Factories</span>
@@ -508,10 +510,13 @@ export function ShipmentDetailClient({
           batches.map((b) => (
             <div
               key={b.id}
-              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr_2fr_15rem] lg:items-center"
+              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr_1fr_2fr_15rem] lg:items-center"
             >
               <RowField label="Client">
                 <span className="text-slate-700">{b.client ?? "—"}</span>
+              </RowField>
+              <RowField label="Client Reference">
+                <span className="text-slate-700">{b.client_reference ?? "—"}</span>
               </RowField>
               <RowField label="PO Number . Batches">
                 <span className="text-slate-700">
