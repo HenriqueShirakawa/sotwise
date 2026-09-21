@@ -112,18 +112,26 @@ export async function requestPasswordReset(
     email: parsed.data.email,
   });
 
-  if (!error && data.properties) {
+  if (error || !data.properties) {
+    // Engolido de propósito pro usuário (não revela se o e-mail existe — ver
+    // docstring acima), mas precisa aparecer no log do servidor, senão uma
+    // falha real (Admin API fora do ar, env var errada) fica invisível.
+    console.error("requestPasswordReset: generateLink falhou:", error?.message ?? error);
+  } else {
     // O convite grava full_name no metadata; sem ele o e-mail cai no "Olá".
     const metaName = data.user?.user_metadata?.full_name;
     const link =
       `${origin}/auth/callback` +
       `?token_hash=${encodeURIComponent(data.properties.hashed_token)}` +
       `&type=recovery&next=/update-password`;
-    await sendEmail({
+    const sent = await sendEmail({
       to: parsed.data.email,
       subject: "Redefinir sua senha do SOTWISE",
       html: resetPasswordEmailHtml(link, typeof metaName === "string" ? metaName : undefined),
     });
+    if (!sent.ok) {
+      console.error("requestPasswordReset: sendEmail falhou:", sent.error);
+    }
   }
 
   return {
