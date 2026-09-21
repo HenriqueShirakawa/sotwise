@@ -1653,6 +1653,7 @@ pods · carriers  (referenciados por Shipments — Bloco 4)
 |---|---|
 | PL Number | `pre_loadings.pl_number` (herdado) |
 | Client | Clientes do PL — **múltiplos** (ex.: "Valflex, JP4"; "AGK, Figaro, Magnetron") |
+| Client Reference | ✅ **Adicionado** (não existe no Bubble) — `pre_loadings.client_reference` |
 | Order Type | Tipos das Orders envolvidas — **múltiplos** (ex.: "Sales, Samples") |
 | POL | Da etapa Port of Loading do PL |
 | **Ship Model** | `shipment_model_id` → **`shipment_models`** (Courier, Air, Hand Carrier, FCL) |
@@ -1729,6 +1730,7 @@ Ao clicar numa linha da lista, cai direto no detalhe/checklist. O cabeçalho **"
 | Coluna | Conteúdo |
 |---|---|
 | Client | Cliente do lote |
+| Client Reference | ✅ **Adicionado** (não existe no Bubble) — `orders.client_reference` da Order dona do lote |
 | PO Number . Batches | Ex.: `1488 .01`, `1487 .01` |
 | Order date | Data do pedido |
 | Factories | **Tags** com as fábricas envolvidas (ex.: `Wenxin`; `Aideli` `Tongqing` `Baixin`) |

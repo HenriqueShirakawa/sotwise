@@ -50,6 +50,7 @@ export type ShipmentRow = {
   pl_number: string;
   client: string | null;
   client_ids: string[];
+  client_reference: string | null;
   order_type: string | null;
   order_type_ids: string[];
   order_ids: string[];
@@ -158,6 +159,7 @@ function OrdersSummaryCell({
 const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "pl_number", label: "PL Number" },
   { id: "client", label: "Client" },
+  { id: "client_reference", label: "Client Reference" },
   { id: "order_type", label: "Order Type" },
   { id: "pol", label: "POL" },
   { id: "ship_model", label: "Ship Model" },
@@ -291,6 +293,12 @@ export function ShipmentsClient({
         accessorFn: (r) => r.client ?? "",
         header: ({ column }) => <SortableHeader label="Client" column={column} />,
         cell: ({ row }) => text(row.original.client),
+      },
+      {
+        id: "client_reference",
+        accessorFn: (r) => r.client_reference ?? "",
+        header: ({ column }) => <SortableHeader label="Client Reference" column={column} />,
+        cell: ({ row }) => text(row.original.client_reference),
       },
       {
         id: "order_type",
