@@ -67,7 +67,7 @@ export function AttachedDocuments({
           <span
             className={`rounded-full px-2 py-0.5 text-xs ${
               hasDocs
-                ? "border border-emerald-600 text-emerald-700"
+                ? "text-emerald-700"
                 : "bg-slate-200 text-slate-600"
             }`}
           >
