@@ -176,26 +176,36 @@ export async function resolveOwnerThreads(
   admin: Admin,
   owner: StepOwner,
   orders: Pick<OwnerOrder, "id" | "client_id">[],
-  kind: EmailThreadKind
+  kind: EmailThreadKind,
+  scopeClientId: string | null = null
 ): Promise<{ ok: true; threads: ResolvedThread[] } | { ok: false; error: string }> {
+  // Aba por cliente do compositor (22/09/2026): num Pre-loading/Shipment, o
+  // envio de UMA aba vai sempre pra conversa PRÓPRIA daquele cliente,
+  // independente do `kind` da etapa — é a mesma thread `external` por
+  // cliente (o check `email_threads_client_scope_check` só aceita
+  // client_id com kind='external'), então quando a AGK mandar a lista de
+  // etapas externas as duas coisas caem na mesma conversa.
+  const threadKind: EmailThreadKind = owner.kind === "pre_loading" && scopeClientId ? "external" : kind;
   const keys: ThreadOwnerKey[] =
     owner.kind === "order"
       ? [{ ownerType: "order", ownerId: orders[0]!.id }]
-      : kind === "internal"
-        ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: null }]
-        : [...new Set(orders.map((o) => o.client_id))]
-            .sort((a, b) => (a ?? "").localeCompare(b ?? ""))
-            .map((clientId) => ({ ownerType: "pre_loading" as const, ownerId: owner.preLoadingId, clientId }));
+      : scopeClientId
+        ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: scopeClientId }]
+        : kind === "internal"
+          ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: null }]
+          : [...new Set(orders.map((o) => o.client_id))]
+              .sort((a, b) => (a ?? "").localeCompare(b ?? ""))
+              .map((clientId) => ({ ownerType: "pre_loading" as const, ownerId: owner.preLoadingId, clientId }));
 
   const threads: ResolvedThread[] = [];
   for (const key of keys) {
-    const found = await findOrCreateThread(admin, key, kind);
+    const found = await findOrCreateThread(admin, key, threadKind);
     if ("error" in found) return { ok: false, error: found.error };
     threads.push({
       id: found.id,
       ownerType: key.ownerType,
       ownerId: key.ownerId,
-      kind,
+      kind: threadKind,
       clientId: key.ownerType === "pre_loading" ? key.clientId : null,
       anchorMessageId: found.anchorMessageId,
     });
@@ -385,7 +395,9 @@ export async function peekQuotedHistory(
 ): Promise<QuotedMessage[]> {
   const orders = await resolveOwnerOrders(admin, owner);
   if (orders.length === 0) return [];
-  const kind = threadKindForStep(step);
+  // Com cliente definido (aba do compositor), a thread é sempre a `external`
+  // daquele cliente — mesma regra de `resolveOwnerThreads`.
+  const kind = owner.kind === "pre_loading" && clientId ? "external" : threadKindForStep(step);
 
   const base = admin.from("email_threads").select("id").eq("kind", kind);
   const query =

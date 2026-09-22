@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ChevronDown, Mail, Send, User, X } from "lucide-react";
+import { Check, ChevronDown, Mail, Send, User, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateTime } from "@/lib/format";
@@ -13,6 +13,8 @@ import {
   previewStepEmail,
   sendStepEmail,
   type Option,
+  type StepEmailClientTab,
+  type StepEmailLanguageGroup,
   type StepEmailPreview,
   type StepEmailRow,
   type StepOwner,
@@ -123,6 +125,16 @@ export function StepEmailSection({
   /** Idioma que a equipe interna e os avulsos sempre recebem — sempre
    *  `languages[0]` (ver `resolveClientLanguageGroups`). */
   const [primaryLanguage, setPrimaryLanguage] = useState<EmailLanguage>("en");
+  /** Aba-pasta por cliente (Pre-loading/Shipment, 22/09/2026): cada aba manda
+   *  só pra conversa PRÓPRIA daquele cliente; depois de enviar, o modal não
+   *  fecha — limpa e passa pro próximo cliente ainda não enviado. Vazio =
+   *  sem abas (Order, ou PL sem cliente identificado → modo antigo). */
+  const [clientTabs, setClientTabs] = useState<StepEmailClientTab[]>([]);
+  const [activeClientId, setActiveClientId] = useState<string | null>(null);
+  const [sentClientIds, setSentClientIds] = useState<string[]>([]);
+  /** Aba cujo carregamento é o "vigente" — resposta atrasada de outra aba
+   *  (troca rápida de aba) é descartada. */
+  const loadingTabRef = useRef<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -130,14 +142,22 @@ export function StepEmailSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (composeOpen && recipientOptions.length === 0) {
-      loadStepRecipientOptions().then(setRecipientOptions);
+  function applyLanguageGroups(senderName: string, groups: StepEmailLanguageGroup[]) {
+    const nextBodies: Partial<Record<EmailLanguage, string>> = {};
+    for (const group of groups) {
+      nextBodies[group.language] = buildDefaultStepBody(
+        step,
+        { customerName: group.customerName, senderName },
+        group.language
+      );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composeOpen]);
+    setBodies(nextBodies);
+    setLanguages(groups.map((g) => g.language));
+    setPrimaryLanguage(groups[0].language);
+    setActiveLanguage(groups[0].language);
+  }
 
-  function openCompose() {
+  function resetForm() {
     setSubject(defaultSubject);
     setBodies({ en: buildDefaultStepBody(step, {}) });
     setLanguages(["en"]);
@@ -148,25 +168,46 @@ export function StepEmailSection({
     setAdHocDraft("");
     setStage("compose");
     setPreview(null);
+  }
+
+  /** Abre (ou reabre, depois de um envio) a aba de um cliente: formulário
+   *  limpo, corpo no idioma/nome DESSE cliente, lista com equipe + contatos
+   *  só dele, e Responsible/Signed by da etapa já no "To". */
+  function openClientTab(clientId: string) {
+    loadingTabRef.current = clientId;
+    setActiveClientId(clientId);
+    resetForm();
+    setRecipientOptions([]);
+    Promise.all([loadStepEmailDefaults(owner, clientId), loadStepRecipientOptions(clientId)]).then(
+      ([defaults, options]) => {
+        if (loadingTabRef.current !== clientId) return;
+        setRecipientOptions(options);
+        setRecipientIds(defaults.defaultRecipientIds.filter((id) => options.some((o) => o.id === id)));
+        applyLanguageGroups(defaults.senderName, defaults.groups);
+      }
+    );
+  }
+
+  function openCompose() {
+    resetForm();
+    setClientTabs([]);
+    setActiveClientId(null);
+    setSentClientIds([]);
+    loadingTabRef.current = null;
     setComposeOpen(true);
     // Corpo padrão nasce em inglês com os colchetes originais e troca pro
     // texto/idioma de verdade assim que resolver — evita segurar a abertura
     // do modal numa ida ao banco. Roda de novo toda vez que abre (o
     // cliente/usuário pode mudar). Uma aba por idioma que a etapa resolve —
     // só vira abas visíveis de verdade quando há mais de 1 (ver JSX abaixo).
-    loadStepEmailDefaults(owner).then(({ senderName, groups }) => {
-      const nextBodies: Partial<Record<EmailLanguage, string>> = {};
-      for (const group of groups) {
-        nextBodies[group.language] = buildDefaultStepBody(
-          step,
-          { customerName: group.customerName, senderName },
-          group.language
-        );
+    loadStepEmailDefaults(owner).then((defaults) => {
+      if (feature !== "orders" && defaults.clients.length > 0) {
+        setClientTabs(defaults.clients);
+        openClientTab(defaults.clients[0].id);
+        return;
       }
-      setBodies(nextBodies);
-      setLanguages(groups.map((g) => g.language));
-      setPrimaryLanguage(groups[0].language);
-      setActiveLanguage(groups[0].language);
+      loadStepRecipientOptions().then(setRecipientOptions);
+      applyLanguageGroups(defaults.senderName, defaults.groups);
     });
   }
 
@@ -219,6 +260,7 @@ export function StepEmailSection({
         bodies,
         recordPath,
         step,
+        client_id: activeClientId,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -241,6 +283,7 @@ export function StepEmailSection({
         bodies,
         recordPath,
         step,
+        client_id: activeClientId,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -254,10 +297,27 @@ export function StepEmailSection({
         loadStepEmailHistory(owner).then(setHistory);
         return;
       }
-      toast.success("E-mail sent.");
+      loadStepEmailHistory(owner).then(setHistory);
+      // Aba de cliente: não fecha — marca como enviada e vai pro próximo
+      // cliente que ainda não recebeu; só fecha quando todos receberam.
+      if (activeClientId) {
+        const nextSent = [...new Set([...sentClientIds, activeClientId])];
+        setSentClientIds(nextSent);
+        const currentName = clientTabs.find((c) => c.id === activeClientId)?.name ?? "client";
+        const next = clientTabs.find((c) => !nextSent.includes(c.id));
+        if (next) {
+          toast.success(`Sent to ${currentName}. Next: ${next.name}.`);
+          openClientTab(next.id);
+          return;
+        }
+        toast.success(
+          clientTabs.length > 1 ? `Sent to all ${clientTabs.length} clients.` : `Sent to ${currentName}.`
+        );
+      } else {
+        toast.success("E-mail sent.");
+      }
       setComposeOpen(false);
       setHistoryOpen(true);
-      loadStepEmailHistory(owner).then(setHistory);
     });
   }
 
@@ -336,6 +396,37 @@ export function StepEmailSection({
           <DialogHeader>
             <DialogTitle>{stage === "compose" ? "Send email" : "Review before sending"}</DialogTitle>
           </DialogHeader>
+          {clientTabs.length > 1 && (
+            <div>
+              <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200" role="tablist">
+                {clientTabs.map((client) => {
+                  const active = client.id === activeClientId;
+                  const sent = sentClientIds.includes(client.id);
+                  return (
+                    <button
+                      key={client.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      disabled={pending}
+                      onClick={() => !active && openClientTab(client.id)}
+                      className={`flex shrink-0 items-center gap-1 rounded-t-md border-b-2 px-3 py-2 text-sm transition-colors ${
+                        active
+                          ? "border-[#640BB7] bg-[#640BB7]/5 font-medium text-[#640BB7]"
+                          : "border-transparent text-muted-foreground hover:bg-slate-50 hover:text-slate-700"
+                      }`}
+                    >
+                      {sent && <Check className="size-3 text-emerald-600" />}
+                      {client.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {`${sentClientIds.length} of ${clientTabs.length} clients sent — each tab is that client's own conversation.`}
+              </p>
+            </div>
+          )}
           {stage === "compose" ? (
             <div className="space-y-3">
               {languages.length === 1 && primaryLanguage !== "en" && (
@@ -446,8 +537,9 @@ export function StepEmailSection({
             <div className="space-y-2">
               {feature !== "orders" && (
                 <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
-                  This is the record&apos;s own conversation — your team shares one internal
-                  thread; each client consolidated here gets their own separate reply.
+                  {activeClientId
+                    ? `Goes only to ${clientTabs.find((c) => c.id === activeClientId)?.name ?? "this client"}'s own conversation — other clients on this record never see it.`
+                    : "This is the record's own conversation — your team shares one internal thread."}
                 </p>
               )}
               {previewVariantCount > 1 && (
@@ -518,7 +610,7 @@ export function StepEmailSection({
                   onClick={() => setComposeOpen(false)}
                   disabled={pending}
                 >
-                  Cancel
+                  {sentClientIds.length > 0 ? "Close" : "Cancel"}
                 </Button>
                 <Button type="button" onClick={showPreview} disabled={!canSend}>
                   <Send className="size-3.5" />
