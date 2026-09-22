@@ -348,7 +348,7 @@ export function StepEmailSection({
               {languages.length > 1 && (
                 <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {languages.length} languages here — each tab sends a separate e-mail to only
-                  that language&apos;s clients (with their order&apos;s thread). Ad-hoc recipients
+                  that language&apos;s clients, each in their own conversation. Ad-hoc recipients
                   always go in the {LANGUAGE_LABELS[primaryLanguage]} tab.
                 </p>
               )}
@@ -446,8 +446,8 @@ export function StepEmailSection({
             <div className="space-y-2">
               {feature !== "orders" && (
                 <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
-                  Showing as it will appear in one order&apos;s own thread — each order this record
-                  consolidates gets its own separate reply.
+                  This is the record&apos;s own conversation — your team shares one internal
+                  thread; each client consolidated here gets their own separate reply.
                 </p>
               )}
               {previewVariantCount > 1 && (
@@ -566,9 +566,9 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
       >
         <span>
           <span className="font-medium text-slate-800">{row.subject}</span>
-          {row.order_po_number && (
+          {row.thread_client_name && (
             <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">
-              Order #{row.order_po_number}
+              {row.thread_client_name}
             </span>
           )}
           <span className="ml-2 text-xs text-muted-foreground">
