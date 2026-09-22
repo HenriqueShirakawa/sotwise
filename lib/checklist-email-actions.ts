@@ -21,6 +21,7 @@ import {
   resolveOwnerOrders,
   resolveOwnerThreads,
   threadingHeaders,
+  type OwnerOrder,
   type QuotedMessage,
   type ResolvedThread,
   type ThreadingHeaders,
@@ -580,7 +581,25 @@ export type StepEmailDefaults = {
    *  de cliente. Vazio pra Order (lá a lista só tem clientes, decisão de
    *  16/09/2026, e a equipe não é selecionável). */
   defaultRecipientIds: string[];
+  /** Só com aba de cliente: Order(s) + lote(s) DAQUELE cliente neste
+   *  PL/Shipment (ex.: "Order #1573 · Batch .01") — vai no assunto padrão
+   *  da aba (pedido do usuário, 22/09/2026). */
+  orderLabel: string | null;
 };
+
+/** "Order #1573 · Batch .01" (1 Order) ou "Orders #1573 .01, #1580 .02"
+ *  (várias) — mesmo formato "po .lote" da tabela de lotes do PL. */
+function formatOrderLabel(orders: OwnerOrder[]): string | null {
+  const sorted = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number, undefined, { numeric: true }));
+  if (sorted.length === 0) return null;
+  if (sorted.length === 1) {
+    const [o] = sorted;
+    return o.batch_numbers.length
+      ? `Order #${o.po_number} · Batch ${o.batch_numbers.join(", ")}`
+      : `Order #${o.po_number}`;
+  }
+  return `Orders ${sorted.map((o) => `#${o.po_number}${o.batch_numbers.length ? ` ${o.batch_numbers.join(", ")}` : ""}`).join(", ")}`;
+}
 
 /** Clientes DE VERDADE do owner (pelas Orders consolidadas), ordenados por
  *  nome — mesma fonte das threads e dos grupos de idioma. */
@@ -618,10 +637,15 @@ export async function loadStepEmailDefaults(
 ): Promise<StepEmailDefaults> {
   const session = await requireInternal();
   const admin = createAdminClient();
-  const [groups, clients, defaultRecipientIds] = await Promise.all([
+  const [groups, clients, defaultRecipientIds, orderLabel] = await Promise.all([
     resolveClientLanguageGroups(admin, owner, scopeClientId),
     owner.kind === "pre_loading" ? loadOwnerClients(admin, owner) : Promise.resolve([]),
     loadStepTeamIds(admin, owner),
+    scopeClientId
+      ? resolveOwnerOrders(admin, owner).then((orders) =>
+          formatOrderLabel(orders.filter((o) => o.client_id === scopeClientId))
+        )
+      : Promise.resolve(null),
   ]);
   // Owner com 2+ clientes DE VERDADE no total (somando TODOS os grupos, não só
   // o de cada aba) — não só "2+ clientes NO MESMO grupo de idioma". Bug
@@ -648,6 +672,7 @@ export async function loadStepEmailDefaults(
     })),
     clients,
     defaultRecipientIds,
+    orderLabel,
   };
 }
 
