@@ -70,11 +70,33 @@ type Admin = ReturnType<typeof createAdminClient>;
  * usa o módulo de mensagens (`loadPeople` em `lib/messages-actions.ts`),
  * critério independente de propósito — não há razão pra acoplar os dois.
  */
-export async function loadStepRecipientOptions(): Promise<Option[]> {
+export async function loadStepRecipientOptions(scopeClientId: string | null = null): Promise<Option[]> {
   await requireInternal();
   const admin = createAdminClient();
   const { data: clientRole } = await admin.from("roles").select("id").eq("name", "client").maybeSingle();
   if (!clientRole) return [];
+
+  // Aba por cliente de Pre-loading/Shipment (22/09/2026): a equipe volta a
+  // ser selecionável (Responsible/Signed by da etapa vêm pré-preenchidos),
+  // mais os contatos SÓ daquele cliente — contato de outro cliente nunca
+  // aparece na aba, é a conversa separada que a aba existe pra garantir.
+  if (scopeClientId) {
+    const data = await fetchAll<{ id: string; full_name: string; role_id: string; client_id: string | null }>(
+      (from, to) =>
+        admin
+          .from("profiles")
+          .select("id, full_name, role_id, client_id")
+          .eq("status", "active")
+          .eq("hidden", false)
+          .order("full_name")
+          .range(from, to)
+    );
+    return data
+      .filter((p) => p.full_name.trim())
+      .filter((p) => p.role_id !== clientRole.id || p.client_id === scopeClientId)
+      .map((p) => ({ id: p.id, name: p.full_name }));
+  }
+
   const data = await fetchAll<{ id: string; full_name: string }>((from, to) =>
     admin
       .from("profiles")
@@ -203,8 +225,13 @@ type ClientLanguageGroup = { language: EmailLanguage; clientIds: string[]; custo
  * idioma pra tudo; agora decide também quem absorve órfãs, então ganhou um
  * critério explícito.
  */
-async function resolveClientLanguageGroups(admin: Admin, owner: StepOwner): Promise<ClientLanguageGroup[]> {
-  const clientIds = await loadOwnerClientIds(admin, owner);
+async function resolveClientLanguageGroups(
+  admin: Admin,
+  owner: StepOwner,
+  scopeClientId: string | null = null
+): Promise<ClientLanguageGroup[]> {
+  // Aba por cliente: só o cliente da aba conta — 1 grupo, 1 idioma, nome dele.
+  const clientIds = (await loadOwnerClientIds(admin, owner)).filter((id) => !scopeClientId || id === scopeClientId);
   if (clientIds.length === 0) return [{ language: "en", clientIds: [], customerName: null }];
 
   const { data: clientsData } = await admin
@@ -334,7 +361,8 @@ async function renderStepEmailHtmls(
   senderName: string,
   input: { subject: string; bodies: Partial<Record<EmailLanguage, string>>; recordPath: string; step: ChecklistStep },
   quoted: QuotedMessage[],
-  customerNameOverride: string | null = null
+  customerNameOverride: string | null = null,
+  scopeClientId: string | null = null
 ): Promise<{
   internalHtml: string;
   internalBody: string;
@@ -343,7 +371,7 @@ async function renderStepEmailHtmls(
 }> {
   const [facts, groups, origin] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
-    resolveClientLanguageGroups(admin, owner),
+    resolveClientLanguageGroups(admin, owner, scopeClientId),
     currentOrigin(),
   ]);
   const primaryLanguage = groups[0].language;
@@ -531,12 +559,49 @@ const sendSchema = z.object({
     "ata_brazil",
     "delivered",
   ]),
+  /** Cliente da ABA do compositor (Pre-loading/Shipment, 22/09/2026) — o
+   *  envio vai só pra conversa própria desse cliente (`resolveOwnerThreads`),
+   *  no idioma e com o nome dele. `null` = modo antigo (Order, ou PL sem
+   *  cliente identificado). */
+  client_id: z.uuid().nullable().default(null),
 });
 
-export type SendStepEmailInput = z.infer<typeof sendSchema>;
+export type SendStepEmailInput = z.input<typeof sendSchema>;
 
 export type StepEmailLanguageGroup = { language: EmailLanguage; customerName: string | null };
-export type StepEmailDefaults = { senderName: string; groups: StepEmailLanguageGroup[] };
+export type StepEmailClientTab = { id: string; name: string };
+export type StepEmailDefaults = {
+  senderName: string;
+  groups: StepEmailLanguageGroup[];
+  /** Clientes do Pre-loading/Shipment, 1 aba cada (ordem por nome) — vazio
+   *  pra Order (nunca tem aba). */
+  clients: StepEmailClientTab[];
+  /** Responsible + Signed by da etapa — pré-preenchidos no "To" de cada aba
+   *  de cliente. Vazio pra Order (lá a lista só tem clientes, decisão de
+   *  16/09/2026, e a equipe não é selecionável). */
+  defaultRecipientIds: string[];
+};
+
+/** Clientes DE VERDADE do owner (pelas Orders consolidadas), ordenados por
+ *  nome — mesma fonte das threads e dos grupos de idioma. */
+async function loadOwnerClients(admin: Admin, owner: StepOwner): Promise<StepEmailClientTab[]> {
+  const clientIds = await loadOwnerClientIds(admin, owner);
+  if (clientIds.length === 0) return [];
+  const { data } = await admin.from("clients").select("id, name").in("id", clientIds);
+  return [...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Guard do `client_id` da aba: só vale pra Pre-loading/Shipment e só pra um
+ *  cliente que o owner de fato consolida AGORA. */
+async function checkScopeClient(admin: Admin, owner: StepOwner, scopeClientId: string | null): Promise<string | null> {
+  if (!scopeClientId) return null;
+  if (owner.kind !== "pre_loading") return "Client tabs only exist on Pre-loading/Shipment.";
+  const clientIds = await loadOwnerClientIds(admin, owner);
+  if (!clientIds.includes(scopeClientId)) {
+    return "The clients on this record changed — reopen the compose box to refresh the tabs.";
+  }
+  return null;
+}
 
 /**
  * Nome de quem está compondo agora + um grupo por idioma que a etapa resolve
@@ -547,10 +612,17 @@ export type StepEmailDefaults = { senderName: string; groups: StepEmailLanguageG
  * 15/09/2026 — antes disto devolvia um único `{customerName, language}`,
  * sempre "o primeiro cliente que resolver").
  */
-export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmailDefaults> {
+export async function loadStepEmailDefaults(
+  owner: StepOwner,
+  scopeClientId: string | null = null
+): Promise<StepEmailDefaults> {
   const session = await requireInternal();
   const admin = createAdminClient();
-  const groups = await resolveClientLanguageGroups(admin, owner);
+  const [groups, clients, defaultRecipientIds] = await Promise.all([
+    resolveClientLanguageGroups(admin, owner, scopeClientId),
+    owner.kind === "pre_loading" ? loadOwnerClients(admin, owner) : Promise.resolve([]),
+    loadStepTeamIds(admin, owner),
+  ]);
   // Owner com 2+ clientes DE VERDADE no total (somando TODOS os grupos, não só
   // o de cada aba) — não só "2+ clientes NO MESMO grupo de idioma". Bug
   // reportado pelo usuário em 17/09/2026: um PL com AGK (pt-BR) + Nacional -
@@ -574,7 +646,23 @@ export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmail
       language: g.language,
       customerName: totalClientCount > 1 ? null : g.customerName,
     })),
+    clients,
+    defaultRecipientIds,
   };
+}
+
+/** Responsible + Signed by da etapa de Pre-loading/Shipment (sem duplicar
+ *  quando é a mesma pessoa). Order devolve vazio — ver `StepEmailDefaults`. */
+async function loadStepTeamIds(admin: Admin, owner: StepOwner): Promise<string[]> {
+  if (owner.kind !== "pre_loading") return [];
+  const { data } = await admin
+    .from("pre_loading_checklist_steps")
+    .select("responsible_id, signed_by_id")
+    .eq("pre_loading_id", owner.preLoadingId)
+    .eq("step", owner.step)
+    .maybeSingle();
+  if (!data) return [];
+  return [...new Set([data.responsible_id, data.signed_by_id].filter((id): id is string => Boolean(id)))];
 }
 
 export type StepEmailClientVariant = { language: EmailLanguage; html: string; customerName: string | null };
@@ -605,12 +693,16 @@ export async function previewStepEmail(
   const session = await requireFeature(parsed.data.feature, "edit");
   const admin = createAdminClient();
 
+  const scopeClientId = parsed.data.client_id;
+  const scopeError = await checkScopeClient(admin, owner, scopeClientId);
+  if (scopeError) return { ok: false, error: scopeError };
+
   const recipientIds = [...new Set(parsed.data.recipient_ids)];
   const adHocEmails = [...new Set(parsed.data.ad_hoc_emails)];
   const [stepId, recipientInfoById, quoted] = await Promise.all([
     findStepId(admin, owner),
     loadRecipientInfoByUserId(admin, recipientIds),
-    peekQuotedHistory(admin, owner, parsed.data.step),
+    peekQuotedHistory(admin, owner, parsed.data.step, scopeClientId),
   ]);
   const { internalHtml, clientVariants, primaryLanguage } = await renderStepEmailHtmls(
     admin,
@@ -618,7 +710,9 @@ export async function previewStepEmail(
     stepId,
     session.profile.full_name,
     parsed.data,
-    quoted
+    quoted,
+    null,
+    scopeClientId
   );
 
   // Etapa de conversa com o cliente (`external`): TODO MUNDO recebe a versão
@@ -788,6 +882,10 @@ export async function sendStepEmail(
   const session = await requireFeature(parsed.data.feature, "edit");
   const admin = createAdminClient();
 
+  const scopeClientId = parsed.data.client_id;
+  const scopeError = await checkScopeClient(admin, owner, scopeClientId);
+  if (scopeError) return { ok: false, error: scopeError };
+
   const stepRow = await ensureStepId(admin, owner);
   if ("error" in stepRow) return { ok: false, error: stepRow.error };
 
@@ -812,7 +910,18 @@ export async function sendStepEmail(
   }
 
   const kind = threadKindForStep(parsed.data.step);
-  const threadsResult = await resolveOwnerThreads(admin, owner, orders, kind);
+  // Aba de cliente: contato de OUTRO cliente nunca entra nesta conversa (a
+  // lista da aba já não oferece, isto é o guard do servidor).
+  if (scopeClientId) {
+    for (const id of recipientIds) {
+      const info = recipientInfoById.get(id);
+      if (info?.isClient && info.clientId !== scopeClientId) {
+        return { ok: false, error: "A recipient belongs to another client — remove them from this tab." };
+      }
+    }
+  }
+
+  const threadsResult = await resolveOwnerThreads(admin, owner, orders, kind, scopeClientId);
   if (!threadsResult.ok) return { ok: false, error: threadsResult.error };
   const allThreads = threadsResult.threads;
   const threadByClientId = new Map(allThreads.map((t) => [t.clientId, t] as const));
@@ -848,7 +957,8 @@ export async function sendStepEmail(
         session.profile.full_name,
         parsed.data,
         quoted,
-        customerNameForThread(thread)
+        customerNameForThread(thread),
+        scopeClientId
       )
     );
   }
