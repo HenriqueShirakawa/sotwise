@@ -98,8 +98,24 @@ export function checklistStepEmailHtml(params: {
   /** Mensagens anteriores da conversa (mais recente primeiro), citadas no
    *  rodapé como num reply de verdade — ver `loadQuotedHistory`. */
   quoted?: QuotedMessage[];
+  /** Order(s)/lote(s) do cliente da aba de PL/Shipment (ex.: "Order #1573 ·
+   *  Batch .01") — linha logo abaixo do título da etapa. Vai no CORPO, não no
+   *  assunto: assunto fixo ("PL #1450") é o que faz o Gmail empilhar a
+   *  conversa (decisão do usuário, 22/09/2026). */
+  recordRefs?: string | null;
 }): string {
-  const { subject, stepLabel, senderName, body, facts, actionUrl, logoUrl, language = "en", quoted = [] } = params;
+  const {
+    subject,
+    stepLabel,
+    senderName,
+    body,
+    facts,
+    actionUrl,
+    logoUrl,
+    language = "en",
+    quoted = [],
+    recordRefs,
+  } = params;
   const t = DICT[language];
   const bodyHtml = escapeHtml(body).replace(/\n/g, "<br>");
 
@@ -163,7 +179,12 @@ export function checklistStepEmailHtml(params: {
                 </p>
                 ${
                   stepLabel
-                    ? `<p style="margin:0 0 16px;font-size:20px;font-weight:700;line-height:1.3;color:#1a1523;">${escapeHtml(stepLabel)}</p>`
+                    ? `<p style="margin:0 0 ${recordRefs ? "4px" : "16px"};font-size:20px;font-weight:700;line-height:1.3;color:#1a1523;">${escapeHtml(stepLabel)}</p>`
+                    : ""
+                }
+                ${
+                  recordRefs
+                    ? `<p style="margin:0 0 16px;font-size:14px;font-weight:500;color:#4b4459;">${escapeHtml(recordRefs)}</p>`
                     : ""
                 }
                 <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#1a1523;">

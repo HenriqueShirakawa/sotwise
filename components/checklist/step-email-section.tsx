@@ -182,12 +182,7 @@ export function StepEmailSection({
       ([defaults, options]) => {
         if (loadingTabRef.current !== clientId) return;
         setRecipientOptions(options);
-        setRecipientIds(defaults.defaultRecipientIds.filter((id) => options.some((o) => o.id === id)));
-        // Assunto da aba cita a(s) Order(s)/lote(s) desse cliente — ex.
-        // "PL #1450 · Order #1573 · Batch .01". Fixo por cliente, então o
-        // Gmail continua agrupando a conversa de cada um.
-        if (defaults.orderLabel) setSubject(`${defaultSubject} · ${defaults.orderLabel}`);
-        applyLanguageGroups(defaults.senderName, defaults.groups);
+        setRecipientIds(defaults.defaultRecipientIds.filter((id) => options.some((o) => o.id === id)));        applyLanguageGroups(defaults.senderName, defaults.groups);
       }
     );
   }

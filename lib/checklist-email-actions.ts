@@ -370,10 +370,16 @@ async function renderStepEmailHtmls(
   clientVariants: RenderedClientVariant[];
   primaryLanguage: EmailLanguage;
 }> {
-  const [facts, groups, origin] = await Promise.all([
+  const [facts, groups, origin, recordRefs] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
     resolveClientLanguageGroups(admin, owner, scopeClientId),
     currentOrigin(),
+    // Aba de cliente: Order(s)/lote(s) DELE, numa linha abaixo do título.
+    scopeClientId
+      ? resolveOwnerOrders(admin, owner).then((orders) =>
+          formatOrderLabel(orders.filter((o) => o.client_id === scopeClientId))
+        )
+      : Promise.resolve(null),
   ]);
   const primaryLanguage = groups[0].language;
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
@@ -399,6 +405,7 @@ async function renderStepEmailHtmls(
     logoUrl,
     language: primaryLanguage,
     quoted,
+    recordRefs,
   });
 
   const clientVariants: RenderedClientVariant[] = groups.map((group) => {
@@ -418,6 +425,7 @@ async function renderStepEmailHtmls(
         logoUrl,
         language: group.language,
         quoted,
+        recordRefs,
       }),
     };
   });
@@ -581,14 +589,12 @@ export type StepEmailDefaults = {
    *  de cliente. Vazio pra Order (lá a lista só tem clientes, decisão de
    *  16/09/2026, e a equipe não é selecionável). */
   defaultRecipientIds: string[];
-  /** Só com aba de cliente: Order(s) + lote(s) DAQUELE cliente neste
-   *  PL/Shipment (ex.: "Order #1573 · Batch .01") — vai no assunto padrão
-   *  da aba (pedido do usuário, 22/09/2026). */
-  orderLabel: string | null;
 };
 
 /** "Order #1573 · Batch .01" (1 Order) ou "Orders #1573 .01, #1580 .02"
- *  (várias) — mesmo formato "po .lote" da tabela de lotes do PL. */
+ *  (várias) — mesmo formato "po .lote" da tabela de lotes do PL. Vai numa
+ *  linha do corpo, abaixo do título da etapa (`recordRefs`), nunca no
+ *  assunto — assunto fixo por PL é o que empilha a conversa no Gmail. */
 function formatOrderLabel(orders: OwnerOrder[]): string | null {
   const sorted = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number, undefined, { numeric: true }));
   if (sorted.length === 0) return null;
@@ -637,15 +643,10 @@ export async function loadStepEmailDefaults(
 ): Promise<StepEmailDefaults> {
   const session = await requireInternal();
   const admin = createAdminClient();
-  const [groups, clients, defaultRecipientIds, orderLabel] = await Promise.all([
+  const [groups, clients, defaultRecipientIds] = await Promise.all([
     resolveClientLanguageGroups(admin, owner, scopeClientId),
     owner.kind === "pre_loading" ? loadOwnerClients(admin, owner) : Promise.resolve([]),
     loadStepTeamIds(admin, owner),
-    scopeClientId
-      ? resolveOwnerOrders(admin, owner).then((orders) =>
-          formatOrderLabel(orders.filter((o) => o.client_id === scopeClientId))
-        )
-      : Promise.resolve(null),
   ]);
   // Owner com 2+ clientes DE VERDADE no total (somando TODOS os grupos, não só
   // o de cada aba) — não só "2+ clientes NO MESMO grupo de idioma". Bug
@@ -672,7 +673,6 @@ export async function loadStepEmailDefaults(
     })),
     clients,
     defaultRecipientIds,
-    orderLabel,
   };
 }
 
