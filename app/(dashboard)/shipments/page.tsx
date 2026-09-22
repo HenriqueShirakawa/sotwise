@@ -103,8 +103,8 @@ export default async function ShipmentsPage() {
     fetchAll<{ pre_loading_id: string; batch_id: string }>((from, to) =>
       admin.from("pre_loading_batches").select("pre_loading_id, batch_id").range(from, to)
     ),
-    fetchAll<{ id: string; order_id: string }>((from, to) =>
-      admin.from("batches").select("id, order_id").range(from, to)
+    fetchAll<{ id: string; order_id: string; batch_number: string }>((from, to) =>
+      admin.from("batches").select("id, order_id, batch_number").range(from, to)
     ),
     fetchAll<{ id: string; order_type_id: string | null }>((from, to) =>
       admin.from("orders").select("id, order_type_id").range(from, to)
@@ -165,6 +165,7 @@ export default async function ShipmentsPage() {
   const typeNameById = new Map(typeRes.map((t) => [t.id, t.name]));
   const orderTypeIdByOrder = new Map(orders.map((o) => [o.id, o.order_type_id]));
   const orderIdByBatch = new Map(batches.map((b) => [b.id, b.order_id]));
+  const batchNumberByBatch = new Map(batches.map((b) => [b.id, b.batch_number]));
   const poNumberByOrderId = new Map(orderNumbers.map((o) => [o.id, o.po_number]));
   const ofcCountByBatch = new Map<string, number>();
   for (const o of ofc) {
@@ -189,10 +190,13 @@ export default async function ShipmentsPage() {
   const typeNamesByPl = new Map<string, Set<string>>();
   const typeIdsByPl = new Map<string, Set<string>>();
   const orderIdsByPl = new Map<string, Set<string>>();
-  // Factory x Category das Order(s) do PL — só as linhas que pertencem a lotes
-  // DESTE PL (não o total da Order em outros PLs/shipments), pra bater com o
-  // "View parts" e a tabela de lotes do PL (mesmo critério de escopo).
-  const ofcCountByOrderInPl = new Map<string, Map<string, number>>();
+  // Um lote por entrada (docs §3.10.2: "Sum of Orders" soma LOTES, não Orders,
+  // apesar do rótulo) — só os lotes DESTE PL (não o total da Order em outros
+  // PLs/shipments), pra bater com o "View parts" e a tabela de lotes do PL.
+  const batchesSummaryByPl = new Map<
+    string,
+    { batch_id: string; order_id: string; ofc_count: number }[]
+  >();
   for (const pb of plBatches) {
     const orderId = orderIdByBatch.get(pb.batch_id);
     if (orderId) {
@@ -200,10 +204,13 @@ export default async function ShipmentsPage() {
       orderSet.add(orderId);
       orderIdsByPl.set(pb.pre_loading_id, orderSet);
 
-      const byOrder = ofcCountByOrderInPl.get(pb.pre_loading_id) ?? new Map<string, number>();
-      const ofcCount = ofcCountByBatch.get(pb.batch_id) ?? 0;
-      byOrder.set(orderId, (byOrder.get(orderId) ?? 0) + ofcCount);
-      ofcCountByOrderInPl.set(pb.pre_loading_id, byOrder);
+      const list = batchesSummaryByPl.get(pb.pre_loading_id) ?? [];
+      list.push({
+        batch_id: pb.batch_id,
+        order_id: orderId,
+        ofc_count: ofcCountByBatch.get(pb.batch_id) ?? 0,
+      });
+      batchesSummaryByPl.set(pb.pre_loading_id, list);
     }
     const typeId = orderId ? orderTypeIdByOrder.get(orderId) : null;
     if (typeId) {
@@ -231,12 +238,16 @@ export default async function ShipmentsPage() {
     const pl = plById.get(s.pre_loading_id);
     const polId = st.port_of_loading?.pol_id ?? null;
     const agentsStep = st.agents;
-    const ordersSummary = [...(ofcCountByOrderInPl.get(s.pre_loading_id) ?? [])]
-      .map(([orderId, ofcCount]) => ({
-        po_number: poNumberByOrderId.get(orderId) ?? "—",
-        ofc_count: ofcCount,
+    const ordersSummary = (batchesSummaryByPl.get(s.pre_loading_id) ?? [])
+      .map((b) => ({
+        po_number: poNumberByOrderId.get(b.order_id) ?? "—",
+        batch_number: batchNumberByBatch.get(b.batch_id) ?? "",
+        ofc_count: b.ofc_count,
       }))
-      .sort((a, b) => (Number(a.po_number) || 0) - (Number(b.po_number) || 0));
+      .sort((a, b) => {
+        const byPo = (Number(a.po_number) || 0) - (Number(b.po_number) || 0);
+        return byPo !== 0 ? byPo : a.batch_number.localeCompare(b.batch_number);
+      });
     return {
       id: s.id,
       pl_number: plNumberById.get(s.pre_loading_id) ?? "—",
