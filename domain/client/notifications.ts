@@ -199,11 +199,18 @@ export async function dispatchClientNotifications(
     // notificação é anterior ao redesenho de threading, 11/09, e nunca tinha
     // sido integrada a ele). Falha ao achar/criar a thread não pode derrubar
     // o aviso em si — cai pro assunto antigo, sem cabeçalho de thread.
-    const threadResult = await findOrCreateThread(admin, row.order_id, "internal");
+    const threadResult = await findOrCreateThread(admin, { ownerType: "order", ownerId: row.order_id }, "internal");
     const thread: ResolvedThread | null =
       "error" in threadResult
         ? null
-        : { id: threadResult.id, orderId: row.order_id, kind: "internal", anchorMessageId: threadResult.anchorMessageId };
+        : {
+            id: threadResult.id,
+            ownerType: "order",
+            ownerId: row.order_id,
+            kind: "internal",
+            clientId: null,
+            anchorMessageId: threadResult.anchorMessageId,
+          };
     const threadHeaders: ThreadingHeaders = thread ? await threadingHeaders(admin, [thread]) : {};
     const replyTo = thread ? replyToAddress(thread.id) : undefined;
     const baseSubject = thread ? `Order #${poNumber}` : batchAdvanceSubject(payload);

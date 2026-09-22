@@ -55,8 +55,11 @@ export type StepEmailRecipient = {
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
 export type StepEmailStatus = "success" | "partial" | "failed";
-/** Threading por Order (docs/regras_de_negocio.md) — as 2 conversas por Order. */
+/** Threading (docs/regras_de_negocio.md) — até 2 conversas (`kind`) por dono. */
 export type EmailThreadKind = "internal" | "external";
+/** Dono de uma thread — Order, ou Pre-loading/Shipment (que compartilham o
+ *  mesmo checklist, ver `StepOwner` em lib/checklist-email-actions.ts). */
+export type EmailThreadOwnerType = "order" | "pre_loading";
 /** Como o webhook decidiu a qual envio uma resposta pertence (Fase 2):
  *  'message_id' = casou o In-Reply-To (certeza); 'fallback' = sem cabeçalho
  *  utilizável, caiu na linha mais recente da thread (chute marcado);
@@ -1229,14 +1232,18 @@ export type Database = {
         >;
         Relationships: [];
       };
-      // Fase 1 do threading — conversa contínua por Order (ver migration
-      // 20260910120000). SEM revoke de update: anchor_* é promovido por um
-      // UPDATE condicional legítimo (ver lib/email/threads.ts).
+      // Threading por owner polimórfico — conversa contínua de Order, ou de
+      // Pre-loading/Shipment (ver migrations 20260910120000 e
+      // 20260922120000_email_threads_owner_columns). SEM revoke de update:
+      // anchor_* é promovido por um UPDATE condicional legítimo (ver
+      // lib/email/threads.ts).
       email_threads: {
         Row: {
           id: UUID;
-          order_id: UUID;
+          owner_type: EmailThreadOwnerType;
+          owner_id: UUID;
           kind: EmailThreadKind;
+          client_id: UUID | null;
           anchor_email_id: UUID | null;
           anchor_message_id: string | null;
           created_at: Timestamp;
@@ -1244,8 +1251,10 @@ export type Database = {
         };
         Insert: {
           id?: UUID;
-          order_id: UUID;
+          owner_type: EmailThreadOwnerType;
+          owner_id: UUID;
           kind: EmailThreadKind;
+          client_id?: UUID | null;
           anchor_email_id?: UUID | null;
           anchor_message_id?: string | null;
           created_at?: Timestamp;

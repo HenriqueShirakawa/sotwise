@@ -83,7 +83,7 @@ function buildColumns(timeZone: string): ColumnDef<EmailListRow>[] {
       cell: ({ row }) => (
         <span className="font-mono text-sm text-slate-800">
           {GROUP_LABEL[row.original.group]} {row.original.number}
-          {row.original.orderPoNumber && ` · Order ${row.original.orderPoNumber}`}
+          {row.original.threadClientName && ` · ${row.original.threadClientName}`}
         </span>
       ),
     },
@@ -178,7 +178,7 @@ export function EmailsClient({
       return (
         r.subject.toLowerCase().includes(q) ||
         r.number.toLowerCase().includes(q) ||
-        (r.orderPoNumber ?? "").toLowerCase().includes(q) ||
+        (r.threadClientName ?? "").toLowerCase().includes(q) ||
         (r.clients ?? "").toLowerCase().includes(q) ||
         r.sender_name.toLowerCase().includes(q) ||
         r.recipients.some((rec) => rec.name.toLowerCase().includes(q))

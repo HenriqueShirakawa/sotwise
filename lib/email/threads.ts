@@ -7,16 +7,20 @@ import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
 /**
- * Fase 1 do redesenho de e-mail de checklist (plano em
- * docs/regras_de_negocio.md): resolve/cria as até-2 threads (`email_threads`)
- * por Order que um envio de etapa deve atingir, e o bookkeeping de fan-out +
- * âncora. Helper puro (recebe o client do Supabase por parâmetro), mesmo
- * espírito de `lib/checklist-emails.ts` — não é Server Action.
+ * Redesenho de e-mail de checklist (plano em docs/regras_de_negocio.md):
+ * resolve/cria as threads (`email_threads`) que um envio de etapa deve
+ * atingir, e o bookkeeping de fan-out + âncora. Helper puro (recebe o client
+ * do Supabase por parâmetro), mesmo espírito de `lib/checklist-emails.ts` —
+ * não é Server Action.
  *
- * Nesta fase, nada disto muda o que chega na caixa de entrada: Reply-To e
- * cabeçalhos de e-mail continuam exatamente como hoje (por linha). É só
- * bookkeeping gravado ao lado, validado contra dados reais antes da Fase 2
- * (cabeçalho de verdade + Resend) passar a depender dele.
+ * Owner polimórfico (decisão do usuário, 22/09/2026): cada Order tem sua(s)
+ * própria(s) thread(s) (`owner_type='order'`), e cada Pre-loading/Shipment
+ * (que compartilham o mesmo checklist — `owner_type='pre_loading'`) tem a(s)
+ * sua(s), independente de qualquer Order que consolide — nunca mais
+ * "emprestando" a thread de um Order consolidado. Pra `kind='external'` de um
+ * `pre_loading`, a thread é 1-por-CLIENTE distinto consolidado (nunca funde
+ * 2 clientes reais na mesma conversa); `kind='internal'` continua 1 thread só
+ * pro owner inteiro. Ver `resolveOwnerThreads`.
  */
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -82,37 +86,49 @@ export async function resolveOwnerOrders(admin: Admin, owner: StepOwner): Promis
   return (orders ?? []).map((o) => ({ ...o, batch_numbers: (batchNumbersByOrder.get(o.id) ?? []).sort() }));
 }
 
-/** Busca a thread `(order_id, kind)`; cria se ainda não existir. Corrida
- *  (dois envios concorrentes criando a mesma thread nova) tratada
- *  reconsultando pela unique (order_id, kind) em vez de estourar erro.
- *  Exportada: também usada por `domain/client/notifications.ts` (aviso
- *  automático de avanço de lote), pra cair na mesma conversa da Order. */
-export async function findOrCreateThread(
-  admin: Admin,
-  orderId: string,
-  kind: EmailThreadKind
-): Promise<{ id: string; anchorMessageId: string | null } | { error: string }> {
-  const { data: existing } = await admin
+/** Chave do dono de uma thread — `order` nunca divide por cliente (a Order já
+ *  tem 1 cliente só); `pre_loading` divide por cliente só quando `kind` for
+ *  resolvido como `external` (ver `resolveOwnerThreads`) — `clientId: null`
+ *  aí é o balde "sem cliente identificado" (lotes órfãos), nunca funde 2
+ *  clientes reais. */
+export type ThreadOwnerKey =
+  | { ownerType: "order"; ownerId: string }
+  | { ownerType: "pre_loading"; ownerId: string; clientId: string | null };
+
+async function findThreadRow(admin: Admin, key: ThreadOwnerKey, kind: EmailThreadKind) {
+  const base = admin
     .from("email_threads")
     .select("id, anchor_message_id")
-    .eq("order_id", orderId)
-    .eq("kind", kind)
-    .maybeSingle();
+    .eq("owner_type", key.ownerType)
+    .eq("owner_id", key.ownerId)
+    .eq("kind", kind);
+  const clientId = key.ownerType === "pre_loading" ? key.clientId : null;
+  return clientId ? base.eq("client_id", clientId).maybeSingle() : base.is("client_id", null).maybeSingle();
+}
+
+/** Busca a thread do owner; cria se ainda não existir. Corrida (dois envios
+ *  concorrentes criando a mesma thread nova) tratada reconsultando pelos 2
+ *  índices únicos parciais da tabela em vez de estourar erro. Exportada:
+ *  também usada por `domain/client/notifications.ts` (aviso automático de
+ *  avanço de lote), pra cair na mesma conversa da Order. */
+export async function findOrCreateThread(
+  admin: Admin,
+  key: ThreadOwnerKey,
+  kind: EmailThreadKind
+): Promise<{ id: string; anchorMessageId: string | null } | { error: string }> {
+  const clientId = key.ownerType === "pre_loading" ? key.clientId : null;
+
+  const { data: existing } = await findThreadRow(admin, key, kind);
   if (existing) return { id: existing.id, anchorMessageId: existing.anchor_message_id };
 
   const { data: inserted, error } = await admin
     .from("email_threads")
-    .insert({ order_id: orderId, kind })
+    .insert({ owner_type: key.ownerType, owner_id: key.ownerId, kind, client_id: clientId })
     .select("id")
     .single();
   if (error) {
     if (error.code === "23505") {
-      const { data: retry } = await admin
-        .from("email_threads")
-        .select("id, anchor_message_id")
-        .eq("order_id", orderId)
-        .eq("kind", kind)
-        .maybeSingle();
+      const { data: retry } = await findThreadRow(admin, key, kind);
       if (retry) return { id: retry.id, anchorMessageId: retry.anchor_message_id };
     }
     return { error: error.message };
@@ -123,8 +139,16 @@ export async function findOrCreateThread(
 
 export type ResolvedThread = {
   id: string;
-  orderId: string;
+  ownerType: "order" | "pre_loading";
+  ownerId: string;
   kind: EmailThreadKind;
+  /** Só não-nulo pra thread `pre_loading`+`external` — 1 por cliente real
+   *  distinto consolidado (`null` = balde "sem cliente identificado"). Thread
+   *  de Order ou `internal` de `pre_loading`: sempre `null` aqui (não
+   *  confundir com "qual é o cliente pra saudação do e-mail", que pra Order
+   *  vem de `orders.client_id` direto — ver `customerNameForThread` em
+   *  `lib/checklist-email-actions.ts`). */
+  clientId: string | null;
   /** Message-ID do e-mail-âncora — `null` enquanto a thread ainda não teve
    *  nenhum envio com Message-ID capturado (thread nova, ou só envios de antes
    *  da Fase 2). */
@@ -132,41 +156,58 @@ export type ResolvedThread = {
 };
 
 /**
- * Threads que um conjunto de Orders já resolvido deve atingir — a primeira
- * da lista é sempre a PRIMÁRIA (menor po_number; critério determinístico
- * mesmo quando só há 1 pedido). Recebe os Orders JÁ RESOLVIDOS (com
- * `po_number`), não ids soltos — quem chama (`sendStepEmail`) reusa o mesmo
- * array pra classificar destinatários por cliente, sem round-trip repetido.
+ * Threads que o owner deve atingir pra este envio — substitui a antiga
+ * `resolveThreadsForOrderIds` (fan-out por Order, decisão de 16/09/2026,
+ * superada em 22/09/2026). Recebe os Orders JÁ RESOLVIDOS (com `client_id`),
+ * não ids soltos — quem chama (`sendStepEmail`) reusa o mesmo array pra
+ * outras contas, sem round-trip repetido.
  *
- * Fase multi-idioma (15/09/2026): antes disto vivia dentro de
- * `resolveThreadsForSend` (removida — só `sendStepEmail` a chamava, e agora
- * ele precisa do array de Orders intermediário de qualquer forma pra rotear
- * cada grupo de idioma pras suas próprias threads, então resolve tudo com
- * `resolveOwnerOrders` + esta função diretamente).
+ * - `owner.kind === "order"`: sempre exatamente 1 thread (a Order já tem 1
+ *   cliente só — nada a dividir).
+ * - `owner.kind === "pre_loading"`, `kind === "internal"`: sempre exatamente
+ *   1 thread pro Pre-loading/Shipment inteiro — destinatário interno não é
+ *   client-scoped, não há por que fragmentar a conversa da equipe.
+ * - `owner.kind === "pre_loading"`, `kind === "external"`: 1 thread POR
+ *   CLIENTE distinto entre os `orders` recebidos (nunca funde 2 clientes reais
+ *   na mesma conversa — é o vazamento que este modelo existe pra evitar).
+ *   Orders sem `client_id` caem juntas no balde `clientId: null`.
  */
-export async function resolveThreadsForOrderIds(
+export async function resolveOwnerThreads(
   admin: Admin,
-  orders: Pick<OwnerOrder, "id" | "po_number">[],
-  step: ChecklistStep
+  owner: StepOwner,
+  orders: Pick<OwnerOrder, "id" | "client_id">[],
+  kind: EmailThreadKind
 ): Promise<{ ok: true; threads: ResolvedThread[] } | { ok: false; error: string }> {
-  const kind = threadKindForStep(step);
-  const ordered = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number));
+  const keys: ThreadOwnerKey[] =
+    owner.kind === "order"
+      ? [{ ownerType: "order", ownerId: orders[0]!.id }]
+      : kind === "internal"
+        ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: null }]
+        : [...new Set(orders.map((o) => o.client_id))]
+            .sort((a, b) => (a ?? "").localeCompare(b ?? ""))
+            .map((clientId) => ({ ownerType: "pre_loading" as const, ownerId: owner.preLoadingId, clientId }));
 
   const threads: ResolvedThread[] = [];
-  for (const order of ordered) {
-    const found = await findOrCreateThread(admin, order.id, kind);
+  for (const key of keys) {
+    const found = await findOrCreateThread(admin, key, kind);
     if ("error" in found) return { ok: false, error: found.error };
-    threads.push({ id: found.id, orderId: order.id, kind, anchorMessageId: found.anchorMessageId });
+    threads.push({
+      id: found.id,
+      ownerType: key.ownerType,
+      ownerId: key.ownerId,
+      kind,
+      clientId: key.ownerType === "pre_loading" ? key.clientId : null,
+      anchorMessageId: found.anchorMessageId,
+    });
   }
   return { ok: true, threads };
 }
 
 /** Grava o fan-out — uma linha por thread atingida (ver comentário da
  *  migration 20260910120000: é só auditoria, ninguém lê esta tabela para
- *  decidir nada ainda). Desde 16/09/2026 (fan-out por Order em
- *  `sendStepEmail`), normalmente 1 elemento só — cada e-mail físico agora
- *  toca exatamente a thread do Order pro qual foi de fato entregue; a versão
- *  N:N desta tabela segue existindo pra não quebrar o schema/histórico
+ *  decidir nada ainda). Desde 16/09/2026, normalmente 1 elemento só — cada
+ *  e-mail físico toca exatamente a thread pra qual foi de fato entregue; a
+ *  versão N:N desta tabela segue existindo pra não quebrar o schema/histórico
  *  antigo. Chamado DEPOIS do insert em `checklist_step_emails` (a FK exige
  *  que a linha já exista). */
 export async function recordThreadFanout(
@@ -243,11 +284,12 @@ export type ThreadingHeaders = { "In-Reply-To"?: string; References?: string };
 /**
  * Cabeçalhos RFC 5322 que fazem o e-mail chegar como RESPOSTA na caixa de
  * entrada (Gmail/Outlook/Apple Mail agrupam por eles — confirmado no spike de
- * 11/09/2026 com o Resend): `In-Reply-To` = âncora da thread primária;
- * `References` = âncoras de todas as threads atingidas (fan-out de PL/
- * Shipment) + o Message-ID mais recente da thread primária, pra quem entrou
- * na conversa depois da âncora (ex.: cliente adicionado num envio posterior)
- * ainda ter um elo com a mensagem anterior.
+ * 11/09/2026 com o Resend): `In-Reply-To` = âncora da thread primária
+ * (`threads[0]`); `References` = âncoras de todas as threads recebidas (hoje
+ * sempre 1, `deliverAndRecord` chama isto por thread) + o Message-ID mais
+ * recente da thread primária, pra quem entrou na conversa depois da âncora
+ * (ex.: cliente adicionado num envio posterior) ainda ter um elo com a
+ * mensagem anterior.
  *
  * Objeto vazio quando nenhuma thread tem âncora ainda — este envio é o
  * primeiro da conversa e vira ele mesmo a âncora (`promoteAnchorIfMissing`).
@@ -327,22 +369,31 @@ export async function loadQuotedHistory(admin: Admin, threadId: string): Promise
 }
 
 /**
- * Versão só-leitura de `resolveThreadsForOrderIds` pro PREVIEW: acha a
- * thread primária GERAL que o envio usaria, sem criar nada, e devolve o
- * histórico citado que o e-mail de verdade levaria (mesma simplificação de
- * sempre — 1 thread só, mesmo em envio multi-idioma, ver
- * `docs/regras_de_negocio.md`). Lista vazia = thread ainda não existe (o
- * envio seria o primeiro da conversa).
+ * Versão só-leitura de `resolveOwnerThreads` pro PREVIEW: acha UMA thread do
+ * owner sem criar nada, e devolve o histórico citado que o e-mail de verdade
+ * levaria. `clientId` só importa pra owner `pre_loading` + `kind='external'`
+ * (thread dividida por cliente) — omitido (default `null`), olha o balde
+ * "sem cliente identificado", que é o caso comum hoje (100% do tráfego é
+ * `internal`, sem divisão por cliente nenhuma). Lista vazia = thread ainda
+ * não existe (o envio seria o primeiro da conversa).
  */
-export async function peekQuotedHistory(admin: Admin, owner: StepOwner, step: ChecklistStep): Promise<QuotedMessage[]> {
+export async function peekQuotedHistory(
+  admin: Admin,
+  owner: StepOwner,
+  step: ChecklistStep,
+  clientId: string | null = null
+): Promise<QuotedMessage[]> {
   const orders = await resolveOwnerOrders(admin, owner);
   if (orders.length === 0) return [];
-  const primary = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number))[0];
-  const { data: thread } = await admin
-    .from("email_threads")
-    .select("id")
-    .eq("order_id", primary.id)
-    .eq("kind", threadKindForStep(step))
-    .maybeSingle();
+  const kind = threadKindForStep(step);
+
+  const base = admin.from("email_threads").select("id").eq("kind", kind);
+  const query =
+    owner.kind === "order"
+      ? base.eq("owner_type", "order").eq("owner_id", orders[0]!.id)
+      : clientId
+        ? base.eq("owner_type", "pre_loading").eq("owner_id", owner.preLoadingId).eq("client_id", clientId)
+        : base.eq("owner_type", "pre_loading").eq("owner_id", owner.preLoadingId).is("client_id", null);
+  const { data: thread } = await query.maybeSingle();
   return thread ? loadQuotedHistory(admin, thread.id) : [];
 }
