@@ -4,6 +4,8 @@ Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 
 1. **Orders** — o GSS cria/atualiza pedidos no SOTWISE (`POST`, push) e lê o estado deles de volta (`GET`, pull — §1.5).
 2. **API de Bibliotecas (cadastros)** — CRUD dos cadastros de referência.
+3. **Pre-loadings (PL)** — leitura do estado do PL/embarque: loading, ETD, ETA/ATA, entrega (`GET`, pull — Parte 3).
+4. **ETD Factories** — leitura das entradas Factory × Category com a data de ETD (`GET`, pull — Parte 4).
 
 - **Base URL:** `https://sot.gssdatahub.com` — o endereço antigo `https://sotwise.vercel.app` continua atendendo o mesmo app, mas use o domínio acima.
 - **Formato:** JSON em todas as requisições e respostas (`Content-Type: application/json`)
@@ -460,9 +462,133 @@ Content-Type: application/json
 
 ---
 
+---
+
+# Parte 3 — Pre-loadings (PL)
+
+Leitura do estado do PL/embarque: quando a fábrica carregou, quando o navio saiu/chegou, quando entregou. Só leitura — o PL nasce e evolui inteiramente dentro do SOTWISE (o usuário preenche o checklist, confirma o embarque); o GSS só consulta.
+
+```
+GET https://sot.gssdatahub.com/api/pre-loadings
+Authorization: Bearer <API_TOKEN>
+```
+
+A resposta é **sempre uma lista**, mesmo filtrando por um PL só — mesma convenção de §1.5.
+
+## 3.1. Query params (todos opcionais)
+
+| Param | Valores | Default | Para quê |
+|---|---|---|---|
+| `pl_number` | parte do número do PL (ex.: `1354`) | — | Ler um PL específico |
+| `po_number` | número da PO | — | PLs que carregam algum lote dessa order |
+| `order` | `asc` \| `desc` (por data de criação do PL) | `desc` | `asc` para varrer em ordem cronológica |
+| `limit` | 1–200 | 50 | Tamanho da página |
+| `offset` | ≥ 0 | 0 | Deslocamento da página |
+
+Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issues[]` apontando o campo.
+
+## 3.2. Resposta `200`
+
+```jsonc
+{
+  "data": [
+    {
+      "pl_number": 1354,
+      "estimated_loading_date": "2026-09-10",
+      "loading_date": "2026-09-12",
+      "ETD": "2026-09-14",
+      "ETA_Brazil": "2026-10-05",
+      "ATA_Brazil": null,
+      "DELIVERED_DATE": null,
+      "shipping_date": "2026-09-15"
+    }
+  ],
+  "pagination": { "limit": 50, "offset": 0, "returned": 1, "total": 214 }
+}
+```
+
+- `pl_number` sai como **número** (o prefixo `PL - ` do formato interno é removido).
+- `ETD`/`ETA_Brazil` são a data **estimada** das etapas "Shipping Date"/"ETA Brazil" do checklist do PL; `shipping_date`/`ATA_Brazil`/`DELIVERED_DATE` são a data **real** (quando a etapa foi de fato concluída) das etapas "Shipping Date"/"ATA Brazil"/"Delivered". Mesmo par estimado/real que `estimated_loading_date`/`loading_date` já usa para "Loading Date".
+- Todo campo fica `null` até a etapa correspondente ser preenchida — um PL que ainda não virou embarque devolve as 6 últimas colunas vazias.
+- `total` é a contagem do filtro sem paginação; `returned` é o tamanho desta página.
+
+## 3.3. Códigos
+
+| Código | Quando |
+|---|---|
+| `200` | Sucesso — inclusive quando o filtro não casa nada (`data: []`, `total: 0`). Não existe 404 aqui |
+| `400` | Query param inválido |
+| `401` | Token ausente ou errado |
+| `500` | Erro inesperado do lado do SOTWISE |
+
+> PLs excluídos (soft delete) não aparecem.
+
+---
+
+# Parte 4 — ETD Factories
+
+Leitura das entradas Factory × Category com a data de ETD preenchida no checklist da Order — a mesma informação da rua "ETD Factories" do SOTWISE, servida como feed de sincronização em vez de tela.
+
+```
+GET https://sot.gssdatahub.com/api/etd-factories
+Authorization: Bearer <API_TOKEN>
+```
+
+A resposta é **sempre uma lista**.
+
+## 4.1. Query params (todos opcionais)
+
+| Param | Valores | Default | Para quê |
+|---|---|---|---|
+| `po_number` | parte do número da PO | — | Entradas de uma order específica |
+| `batch_status` | `in_negotiation`, `in_production`, `preloading`, `in_transit`, `delivered`, `canceled` (separados por vírgula) | todos | Restringir por status do lote — **sem filtro vem tudo**, diferente da tela do SOTWISE (que só mostra lotes ativos) |
+| `order` | `asc` \| `desc` (por data de criação da entrada) | `desc` | `asc` para varrer em ordem cronológica |
+| `limit` | 1–200 | 50 | Tamanho da página |
+| `offset` | ≥ 0 | 0 | Deslocamento da página |
+
+Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issues[]` apontando o campo.
+
+## 4.2. Resposta `200`
+
+```jsonc
+{
+  "data": [
+    {
+      "po_number": "1488",
+      "lote": ".02",
+      "FACTORY": "Aok",
+      "category": "Absorber",
+      "initial_date": "2026-08-20",
+      "current_date": "2026-08-22",
+      "ready_parts": false
+    }
+  ],
+  "pagination": { "limit": 50, "offset": 0, "returned": 1, "total": 1317 }
+}
+```
+
+- `lote` sozinho (formato `.NN`) **não é único no sistema** — o número reseta a cada Order. Por isso toda linha traz `po_number` junto, para religar a entrada à Order certa.
+- `initial_date`/`current_date` ficam `null` até a etapa ETD da Order ser preenchida pela primeira vez (hoje isso vale para uma minoria das entradas).
+- `ready_parts` é o checkbox "Ready Parts" da tela ETD Factories.
+- `total` é a contagem do filtro sem paginação; `returned` é o tamanho desta página.
+
+## 4.3. Códigos
+
+| Código | Quando |
+|---|---|
+| `200` | Sucesso — inclusive quando o filtro não casa nada (`data: []`, `total: 0`). Não existe 404 aqui |
+| `400` | Query param inválido |
+| `401` | Token ausente ou errado |
+| `500` | Erro inesperado do lado do SOTWISE |
+
+> Entradas de orders excluídas (soft delete) não aparecem.
+
+---
+
 ## Observações da integração (contexto)
 
 - **Bibliotecas:** o GSS é a **fonte** delas; o SOTWISE normalmente **puxa** (pull). A API acima permite escrita, mas o pareamento SOTWISE↔GSS é por `gss_id` (não exposto nesta API de cadastros).
 - **Orders:** o `POST` (Parte 1) é a direção **push** (GSS → SOTWISE); o `GET` (§1.5) é o **pull** de volta, para o GSS ver status, lote e checklist.
+- **Pre-loadings e ETD Factories (Partes 3 e 4):** só **pull** — não existe `POST`/`PATCH`. Esses dados nascem inteiramente no SOTWISE (checklist preenchido pelo usuário); o GSS só lê. Nenhuma das tabelas por trás (`pre_loadings`, `batches`, `order_factory_category`, `etd_info`) tem `gss_id` próprio — a correlação com o pedido do GSS é sempre por `po_number` (ou, para Pre-loadings, pelo filtro `po_number` do endpoint).
 - **Factory × Category:** no GSS correspondem aos registros de **supplier-category**; o `supplier_category_gss_id` de cada `item` é o id desse registro.
-- **Auth unificada (2026-09-10):** Orders e Bibliotecas usam o mesmo `API_TOKEN` e o mesmo mecanismo de autenticação — antes Orders vivia num path (`/api/gss/orders`) e secret (`GSS_INBOUND_SECRET`) dedicados.
+- **Auth unificada (2026-09-10):** Orders e Bibliotecas usam o mesmo `API_TOKEN` e o mesmo mecanismo de autenticação — antes Orders vivia num path (`/api/gss/orders`) e secret (`GSS_INBOUND_SECRET`) dedicados. Pre-loadings e ETD Factories (2026-09-22) já nasceram nesse padrão único.

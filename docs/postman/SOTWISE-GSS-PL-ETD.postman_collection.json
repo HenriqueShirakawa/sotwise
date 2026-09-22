@@ -1,0 +1,432 @@
+{
+  "info": {
+    "name": "SOTWISE — GSS Pre-loadings & ETD Factories (GET)",
+    "description": "Teste dos dois endpoints de leitura GSS ← SOTWISE de PL e ETD.\n\nEndpoints: GET /api/pre-loadings (estado do PL/embarque) e GET /api/etd-factories (entradas Factory×Category com ETD)\nAuth: Authorization: Bearer {{api_token}} (mesmo token da API inteira — Orders e Bibliotecas usam o mesmo)\n\nSó leitura — não existe POST/PATCH nos dois. PL e ETD nascem inteiramente dentro do SOTWISE (usuário preenche o checklist); o GSS só consulta. Os testes rodam sobre dados REAIS de produção (não geram fixtures como a collection de Orders), então as asserções validam forma da resposta (200/400/401, `data[]` + `pagination`), não valores específicos — preencha as variáveis `sample_pl_number`/`sample_po_number` no environment com um PL/PO que exista no ambiente para exercitar os filtros de verdade.\n\nDoc de referência: docs/SOTWISE-API-para-GSS.md (Partes 3 e 4). Decisões registradas em docs/regras_de_negocio.md §6.2.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://sot.gssdatahub.com",
+      "type": "string"
+    },
+    {
+      "key": "sample_pl_number",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sample_po_number",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Pre-loadings (PL)",
+      "item": [
+        {
+          "name": "1. Listar PLs (página) — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pre-loadings?limit=5&order=desc",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pre-loadings"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5",
+                  "description": "1–200 (default 50)"
+                },
+                {
+                  "key": "order",
+                  "value": "desc",
+                  "description": "asc | desc, por data de criação do PL (default desc)"
+                }
+              ]
+            },
+            "description": "Lista os PLs mais recentes. A resposta é SEMPRE uma lista, com `pagination` (limit/offset/returned/total). `ETD`/`ETA_Brazil` são a data ESTIMADA das etapas do checklist; `shipping_date`/`ATA_Brazil`/`DELIVERED_DATE` são a data REAL — ficam `null` até a etapa ser preenchida."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve data[] e pagination', () => {",
+                  "  pm.expect(b.data).to.be.an('array');",
+                  "  pm.expect(b.pagination).to.have.property('total');",
+                  "});",
+                  "pm.test('respeita o limit', () => pm.expect(b.data.length).to.be.at.most(5));",
+                  "pm.test('shape de cada linha', () => {",
+                  "  if (b.data.length === 0) return pm.test.skip('sem PL nesta página');",
+                  "  const row = b.data[0];",
+                  "  ['pl_number','estimated_loading_date','loading_date','ETD','ETA_Brazil','ATA_Brazil','DELIVERED_DATE','shipping_date']",
+                  "    .forEach((k) => pm.expect(row).to.have.property(k));",
+                  "  pm.expect(row.pl_number === null || typeof row.pl_number === 'number').to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Filtrar por pl_number — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pre-loadings?pl_number={{sample_pl_number}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pre-loadings"],
+              "query": [
+                {
+                  "key": "pl_number",
+                  "value": "{{sample_pl_number}}",
+                  "description": "parte do número do PL (ex.: 1354). Preencha sample_pl_number no environment com um PL real."
+                }
+              ]
+            },
+            "description": "Busca parcial (ilike) por número do PL. Sem `sample_pl_number` preenchido, cai no vazio (nenhum filtro é aplicado) — preencha no environment para exercitar de verdade."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve data[] e pagination', () => {",
+                  "  pm.expect(b.data).to.be.an('array');",
+                  "  pm.expect(b.pagination).to.have.property('total');",
+                  "});",
+                  "if (!pm.variables.get('sample_pl_number')) {",
+                  "  pm.test.skip('sample_pl_number vazio no environment — filtro não exercitado de verdade');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Filtrar por po_number — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pre-loadings?po_number={{sample_po_number}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pre-loadings"],
+              "query": [
+                {
+                  "key": "po_number",
+                  "value": "{{sample_po_number}}",
+                  "description": "PLs que carregam algum lote dessa order. Preencha sample_po_number no environment com uma PO real."
+                }
+              ]
+            },
+            "description": "Religa PL → Order via pre_loading_batches → batches → orders. Sem `sample_po_number` preenchido, nenhum PL casa (lista vazia, ainda 200)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve data[] e pagination', () => {",
+                  "  pm.expect(b.data).to.be.an('array');",
+                  "  pm.expect(b.pagination).to.have.property('total');",
+                  "});",
+                  "if (!pm.variables.get('sample_po_number')) {",
+                  "  pm.test.skip('sample_po_number vazio no environment — filtro não exercitado de verdade');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Sem autenticação — 401",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pre-loadings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pre-loadings"]
+            },
+            "description": "Sem o header Authorization (auth = No Auth). Deve responder 401 antes de tocar no banco."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Query param inválido (limit fora do range) — 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pre-loadings?limit=999",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pre-loadings"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "999",
+                  "description": "máximo permitido é 200"
+                }
+              ]
+            },
+            "description": "`limit` acima de 200 falha na validação Zod → 400 com `issues[]` apontando o campo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('aponta o campo com problema', () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.include('limit');",
+                  "  pm.expect(b.issues).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ETD Factories",
+      "item": [
+        {
+          "name": "6. Listar ETD, todos os status — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/etd-factories?limit=5&order=desc",
+              "host": ["{{base_url}}"],
+              "path": ["api", "etd-factories"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5",
+                  "description": "1–200 (default 50)"
+                },
+                {
+                  "key": "order",
+                  "value": "desc",
+                  "description": "asc | desc, por data de criação da entrada (default desc)"
+                }
+              ]
+            },
+            "description": "Lista entradas Factory×Category com ETD. Sem `batch_status`, vem TODOS os status de lote (diferente da tela ETD Factories, que só mostra os ativos por padrão)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve data[] e pagination', () => {",
+                  "  pm.expect(b.data).to.be.an('array');",
+                  "  pm.expect(b.pagination).to.have.property('total');",
+                  "});",
+                  "pm.test('respeita o limit', () => pm.expect(b.data.length).to.be.at.most(5));",
+                  "pm.test('shape de cada linha', () => {",
+                  "  if (b.data.length === 0) return pm.test.skip('sem entrada nesta página');",
+                  "  const row = b.data[0];",
+                  "  ['po_number','lote','FACTORY','category','initial_date','current_date','ready_parts']",
+                  "    .forEach((k) => pm.expect(row).to.have.property(k));",
+                  "  pm.expect(typeof row.ready_parts).to.eql('boolean');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Filtrar por batch_status (ativos) — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/etd-factories?batch_status=in_production,preloading&limit=5",
+              "host": ["{{base_url}}"],
+              "path": ["api", "etd-factories"],
+              "query": [
+                {
+                  "key": "batch_status",
+                  "value": "in_production,preloading",
+                  "description": "separados por vírgula — aqui reproduz o filtro padrão da tela ETD Factories"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Mesmo filtro que a tela ETD Factories usa como padrão (lotes ativos). Outros valores válidos: in_negotiation, in_transit, delivered, canceled."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve data[] e pagination', () => {",
+                  "  pm.expect(b.data).to.be.an('array');",
+                  "  pm.expect(b.pagination).to.have.property('total');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Filtrar por po_number — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/etd-factories?po_number={{sample_po_number}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "etd-factories"],
+              "query": [
+                {
+                  "key": "po_number",
+                  "value": "{{sample_po_number}}",
+                  "description": "parte do número da PO. Preencha sample_po_number no environment com uma PO real."
+                }
+              ]
+            },
+            "description": "Todas as entradas Factory×Category dessa order. `po_number` volta em toda linha porque `lote` sozinho (formato .NN) reseta a cada Order — não é único no sistema."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('devolve data[] e pagination', () => {",
+                  "  pm.expect(b.data).to.be.an('array');",
+                  "  pm.expect(b.pagination).to.have.property('total');",
+                  "});",
+                  "if (!pm.variables.get('sample_po_number')) {",
+                  "  pm.test.skip('sample_po_number vazio no environment — filtro não exercitado de verdade');",
+                  "} else {",
+                  "  pm.test('toda linha traz o po_number filtrado', () => {",
+                  "    if (b.data.length === 0) return pm.test.skip('nenhuma entrada para essa PO');",
+                  "    b.data.forEach((row) => pm.expect(row.po_number).to.include(pm.variables.get('sample_po_number')));",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Sem autenticação — 401",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/etd-factories",
+              "host": ["{{base_url}}"],
+              "path": ["api", "etd-factories"]
+            },
+            "description": "Sem o header Authorization (auth = No Auth). Deve responder 401 antes de tocar no banco."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Query param inválido (batch_status errado) — 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/etd-factories?batch_status=nao_existe",
+              "host": ["{{base_url}}"],
+              "path": ["api", "etd-factories"],
+              "query": [
+                {
+                  "key": "batch_status",
+                  "value": "nao_existe",
+                  "description": "valor fora da lista de BatchStatus"
+                }
+              ]
+            },
+            "description": "Valor inválido em `batch_status` responde 400 com `issues[]` apontando o campo — mesmo padrão de erro do resto da API."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('aponta o campo com problema', () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.include('batch_status');",
+                  "  pm.expect(b.issues).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
