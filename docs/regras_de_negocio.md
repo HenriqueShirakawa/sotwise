@@ -25,7 +25,7 @@
    - 3.12 [Bloco Auxiliares — Login e To do list](#312-bloco-auxiliares--login-e-to-do-list)
 4. [Sistema de permissões (RBAC)](#4-sistema-de-permissões-rbac)
 5. [Fluxos de negócio](#5-fluxos-de-negócio) _(em construção)_
-6. [Integrações externas](#6-integrações-externas) _(pendente)_
+6. [Integrações externas](#6-integrações-externas)
 7. [Controle de acesso — a validar com o cliente](#7-controle-de-acesso--a-validar-com-o-cliente)
 8. [Decisões pendentes do cliente](#8-decisões-pendentes-do-cliente)
 9. [Stack técnica](#9-stack-técnica)
@@ -1997,6 +1997,17 @@ As ferramentas nasceram espelhando **uma tela cada**, e por isso o copilot enxer
 - ⚠️ **A permissão continua valendo por nível:** PL e embarque só aparecem para quem tem as features `pre_loading`/`shipments`, e o conteúdo (as orders dentro do PL) só para quem tem `orders`. A travessia não pode virar a porta dos fundos para dado que a tela negaria. Por isso `hasFeature()` foi extraído para `domain/access/features.ts` — o `can()` do DAL delega para lá, e a camada de domínio checa permissão sem arrastar o `next/headers`.
 - 🔑 **`ANTHROPIC_API_KEY` é obrigatória no ambiente** (server-side, nunca com prefixo `NEXT_PUBLIC_`). Fica **fora** do `lib/env.ts` de propósito: aquele módulo valida no import e é carregado por todo acesso a dados, então chave ausente derrubaria o app inteiro em vez de só o copilot. Sem a chave, a rota responde **503** e o resto do sistema segue normal. **Precisa estar cadastrada nas variáveis de ambiente da Vercel** — não basta o `.env.local`.
 - ⚠️ **Pegadinha de dev (13/08/2026):** um `next dev` já rodando pode ficar com o manifesto de rotas velho e devolver **404 (página HTML de not-found) para todo `/api/*`** — inclusive rotas antigas como `/api/[resource]`. No copilot isso aparece como "Failed to reach the copilot", porque o cliente tenta ler JSON de uma página HTML. Não é bug de código: `rm -rf .next` e subir o dev de novo. Antes de investigar o copilot, confirmar com `curl -X POST /api/copilot` — a rota sã responde `401 {"error":"Not authenticated."}` sem cookie de sessão.
+
+### 6.2 Leitura de PL e ETD pelo GSS (2026-09-22)
+
+📥 **`GET /api/pre-loadings` e `GET /api/etd-factories`** — dois endpoints novos de **só leitura** para o GSS, no mesmo padrão que `GET /api/orders` já fixou em 2026-09-10: mesmo path-pattern (`/api/{recurso}`), mesmo `Authorization: Bearer $API_TOKEN` (`requireApiSession()`, `lib/api-auth.ts`), mesmo envelope `{ data, pagination }`. Gate por feature já existente (`pre_loading`/`etd_factories`, `view`) — nenhum RBAC novo. Não existe `POST`/`PATCH`: PL e ETD nascem inteiramente dentro do SOTWISE (usuário preenche o checklist), o GSS só consulta. Código: `domain/pre-loadings/gss-read.ts` + `app/api/pre-loadings/route.ts`; `domain/etd-factories/gss-read.ts` + `app/api/etd-factories/route.ts`. Doc para o time do GSS: `docs/SOTWISE-API-para-GSS.md` §Parte 3/4.
+
+Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o schema existente (igual ao que a tela ETD Factories e os tools de copilot `list_etd_entries`/`list_pre_loadings` já fazem). Duas leituras que não tinham dado 100% direto no banco, resolvidas assim:
+
+- **`ETD`/`ETA_Brazil` (Pre-loadings) não são coluna — são a data ESTIMADA de uma etapa do checklist único do PL** (`pre_loading_checklist_steps`), pelo mesmo par estimado/real que `estimated_loading_date`/`loading_date` já usa pra etapa "Loading Date": `ETD = estimated_date` da etapa **Shipping Date** (#18) · `shipping_date = completed_on` da mesma etapa · `ETA_Brazil = estimated_date` da etapa **ETA Brazil** (#22) · `ATA_Brazil`/`DELIVERED_DATE = completed_on` das etapas **ATA Brazil** (#23)/**Delivered** (#24). ⚠️ Interpretação minha, não confirmada com o cliente/GSS — a própria doc já sinalizava esse campo como "exato a confirmar" (ver nota em 3.10.1, "Ship Date | ⚠️ campo exato a confirmar"). Descartei `shipments.estimated_date` como fonte do `ETD`: essa coluna é preenchida no modal "Confirm Shipping" com o valor do **Loading Date** estimado, não é um ETD próprio do embarque.
+- **`lote` (ETD Factories) sozinho não é único no sistema** — o formato `.NN` reseta a cada Order (§3.7.1). O endpoint devolve `po_number` junto em toda linha (campo a mais além dos pedidos originalmente) pra dar ao GSS como religar a entrada à Order certa — sem isso o feed não seria utilizável. Mesma lógica que a tela ETD Factories já resolve combinando os dois na exibição (`1310 .010`, §3.7.4).
+- **`pl_number` sai como inteiro** (`1354`), não como texto (`PL - 1354`) — extrai só o número, igual à listagem de Pre-loading já faz na UI.
+- **`ETD Factories` sem filtro de status devolve TODOS os lotes**, diferente da tela (que só mostra `in_production`/`preloading` por padrão) — é um feed de sincronização, não uma tela; `batch_status` é o jeito de restringir.
 
 ---
 
