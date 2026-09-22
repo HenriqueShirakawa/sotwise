@@ -591,6 +591,13 @@ export function StepEmailSection({
                     // scroll dele mesmo (`scrolling="no"`, sempre do tamanho
                     // exato do conteúdo).
                     const doc = e.currentTarget.contentWindow?.document;
+                    // Link do e-mail (logo, "Go to") clicado no preview
+                    // navegava o PRÓPRIO iframe pro app — sem scripts no
+                    // sandbox, a tela ficava presa no esqueleto de loading
+                    // no lugar do e-mail. Preview é só pra ler.
+                    doc?.addEventListener("click", (ev) => {
+                      if ((ev.target as Element | null)?.closest?.("a")) ev.preventDefault();
+                    });
                     const contentHeight = doc?.body?.scrollHeight;
                     if (contentHeight) setPreviewHeight(Math.max(contentHeight + 2, 200));
                   }}
