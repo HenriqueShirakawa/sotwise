@@ -73,10 +73,11 @@ export type ShipmentRow = {
   ata_date: string | null;
   delivered_date: string | null;
   sum_of_orders: number;
-  /** Uma entrada por Order deste PL — PO number + quantas linhas Factory x
-   *  Category ela contribui (só as dos lotes DESTE PL, não o total da Order
-   *  em outros PLs/shipments). Alimenta o popover da coluna "Sum of Orders". */
-  orders_summary: { po_number: string; ofc_count: number }[];
+  /** Uma entrada por LOTE deste PL (não por Order — docs §3.10.2: o rótulo diz
+   *  "Orders" mas a contagem é de lotes) — PO number + Batch number + quantas
+   *  linhas Factory x Category esse lote tem neste PL. Alimenta o popover da
+   *  coluna "Sum of Orders". */
+  orders_summary: { po_number: string; batch_number: string; ofc_count: number }[];
   /** Label exibido; `status_value` é o valor cru, que o filtro compara. */
   status: string;
   status_value: string;
@@ -121,7 +122,7 @@ const text = (v: string | null) => v || dash;
 function OrdersSummaryCell({
   orders,
 }: {
-  orders: { po_number: string; ofc_count: number }[];
+  orders: { po_number: string; batch_number: string; ofc_count: number }[];
 }) {
   if (orders.length === 0) return <span className="text-slate-400">0</span>;
   return (
@@ -142,10 +143,12 @@ function OrdersSummaryCell({
       >
         {orders.map((o) => (
           <div
-            key={o.po_number}
+            key={`${o.po_number}${o.batch_number}`}
             className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
           >
-            <span className="text-slate-600">PO {o.po_number}</span>
+            <span className="text-slate-600">
+              PO {o.po_number} {o.batch_number}
+            </span>
             <span className="text-xs text-muted-foreground">
               {o.ofc_count} {o.ofc_count === 1 ? "Factory x Category" : "Factories x Categories"}
             </span>
