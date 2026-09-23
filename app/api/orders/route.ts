@@ -246,6 +246,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
   const query = parsed.data;
 
+  // O token só-leitura de PO (consumidor externo) vê cabeçalho + items; o
+  // checklist é operação interna e fica de fora.
+  if (auth.session.tokenScope === "po_read" && query.include.includes("checklist")) {
+    return json({ error: "include=checklist is not available for this token." }, 403);
+  }
+
   const admin = createAdminClient();
   try {
     const { data, total } = await listGssOrders(admin, query);
