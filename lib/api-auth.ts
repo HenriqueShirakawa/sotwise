@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   FEATURE_KEYS,
   FULL_ACCESS,
+  NO_ACCESS,
   resolvePermissions,
   type FeatureAction,
   type FeatureKey,
@@ -21,9 +22,13 @@ import {
  * Diferente de `verifySession()` (lib/dal.ts), NÃO redireciona: devolve
  * respostas JSON (401/403) próprias para consumo via `fetch`. Aceita duas vias:
  *
- *  1. TOKEN de serviço (máquina-a-máquina): `Authorization: Bearer <API_TOKEN>`.
- *     Habilitado só quando a env `API_TOKEN` está setada. `userId` fica null
- *     (as inserções gravam `created_by = null`). É como o middleware/GSS entra.
+ *  1. TOKEN de serviço (máquina-a-máquina): `Authorization: Bearer <token>`.
+ *     `userId` fica null (as inserções gravam `created_by = null`). Dois tokens,
+ *     cada um só vale se a env correspondente estiver setada:
+ *     - `API_TOKEN` — acesso total. É como o middleware/GSS entra.
+ *     - `API_TOKEN_PO_READ` — consumidor externo só-leitura: apenas
+ *       `orders.view` (GET /api/orders), sem o bloco `checklist`. Qualquer outra
+ *       rota/verbo cai no 403 do `requireApiFeature`. Revogar = apagar a env.
  *  2. SESSÃO por cookie (browser logado): mesmo login do app.
  *
  * Em ambos os casos o acesso a dados continua via `service_role` no servidor
@@ -38,6 +43,13 @@ export type ApiSession = {
   /** true quando entrou pelo `Authorization: Bearer` (não por cookie). */
   viaToken: boolean;
   /**
+   * Qual token autenticou: `full` (`API_TOKEN`), `po_read`
+   * (`API_TOKEN_PO_READ`) ou `null` (sessão por cookie). Serve para as rotas
+   * aplicarem restrições que o mapa de features não expressa (ex.: o
+   * `include=checklist` do GET /api/orders fica fora do `po_read`).
+   */
+  tokenScope: "full" | "po_read" | null;
+  /**
    * Permissões por feature. Quem entra por TOKEN recebe acesso total: é a
    * integração máquina-a-máquina (GSS), que não tem papel no RBAC e quebraria
    * se dependesse de linha em `role_features`. Quem entra por COOKIE carrega as
@@ -48,6 +60,14 @@ export type ApiSession = {
 
 const TOKEN_PERMISSIONS: PermissionMap = Object.fromEntries(
   FEATURE_KEYS.map((key) => [key, { ...FULL_ACCESS }])
+) as PermissionMap;
+
+/** `API_TOKEN_PO_READ`: nada além de ler orders. */
+const PO_READ_PERMISSIONS: PermissionMap = Object.fromEntries(
+  FEATURE_KEYS.map((key) => [
+    key,
+    key === "orders" ? { ...NO_ACCESS, view: true } : { ...NO_ACCESS },
+  ])
 ) as PermissionMap;
 
 export type ApiAuthResult =
@@ -67,13 +87,15 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export async function requireApiSession(): Promise<ApiAuthResult> {
-  // --- Via 1: token de serviço (só se API_TOKEN estiver configurado) ---------
-  const expected = process.env.API_TOKEN;
-  if (expected) {
+  // --- Via 1: token de serviço (só se alguma env de token estiver setada) ---
+  const fullToken = process.env.API_TOKEN;
+  const poReadToken = process.env.API_TOKEN_PO_READ;
+  if (fullToken || poReadToken) {
     const authz = (await headers()).get("authorization");
     const token = authz?.startsWith("Bearer ") ? authz.slice(7).trim() : null;
     if (token) {
-      if (safeEqual(token, expected)) {
+      // `API_TOKEN` primeiro e do mesmo jeito de sempre — o GSS não muda nada.
+      if (fullToken && safeEqual(token, fullToken)) {
         return {
           ok: true,
           session: {
@@ -81,7 +103,21 @@ export async function requireApiSession(): Promise<ApiAuthResult> {
             email: null,
             isAdmin: true,
             viaToken: true,
+            tokenScope: "full",
             permissions: TOKEN_PERMISSIONS,
+          },
+        };
+      }
+      if (poReadToken && safeEqual(token, poReadToken)) {
+        return {
+          ok: true,
+          session: {
+            userId: null,
+            email: null,
+            isAdmin: false,
+            viaToken: true,
+            tokenScope: "po_read",
+            permissions: PO_READ_PERMISSIONS,
           },
         };
       }
@@ -143,6 +179,7 @@ export async function requireApiSession(): Promise<ApiAuthResult> {
       email: user.email ?? null,
       isAdmin: roleName === "admin",
       viaToken: false,
+      tokenScope: null,
       permissions: resolvePermissions({ isOwner, roleGrants, userGrants }),
     },
   };

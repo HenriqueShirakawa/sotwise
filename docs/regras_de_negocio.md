@@ -2009,6 +2009,15 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **`pl_number` sai como inteiro** (`1354`), não como texto (`PL - 1354`) — extrai só o número, igual à listagem de Pre-loading já faz na UI.
 - **`ETD Factories` sem filtro de status devolve TODOS os lotes**, diferente da tela (que só mostra `in_production`/`preloading` por padrão) — é um feed de sincronização, não uma tela; `batch_status` é o jeito de restringir.
 
+### 6.3 Consumidor externo só-leitura de PO (2026-09-23)
+
+🔑 **Segundo token de serviço: `API_TOKEN_PO_READ`**, para uma empresa terceira (não o GSS) que só **consome** Purchase Orders. O `API_TOKEN` único dava acesso total (leitura e escrita em tudo) e não podia ir para um terceiro. O token novo entra pelo mesmo `requireApiSession()` (`lib/api-auth.ts`), mas com o mapa de permissões zerado exceto `orders.view`. Na prática só `GET /api/orders` responde; qualquer outra rota ou verbo cai no 403 do `requireApiFeature`, sem precisar mexer em cada rota.
+
+- **Escopo: cabeçalho + `include=items`.** `include=checklist` responde 403 para esse token (checagem explícita via `session.tokenScope === "po_read"` em `app/api/orders/route.ts`), porque o checklist é operação interna.
+- **Aditivo:** o `API_TOKEN` é comparado primeiro e do mesmo jeito de sempre; sem a env nova, o comportamento é idêntico ao anterior. Revogar = apagar a env na Vercel.
+- ⚠️ **`updated_since` não pega mudança só de linha.** `orders.updated_at` só muda com UPDATE na própria order (inclusive o rollup de status); lote atribuído, `loading_status`, linha nova etc. só tocam `order_factory_category.updated_at`/`batches.updated_at`. O doc orienta um refresh periódico das linhas. Se virar problema, a correção é um trigger que "toca" `orders.updated_at` quando linha ou lote mudam, mas isso também afeta o GSS e o realtime da lista.
+- Doc para o consumidor (em inglês): `docs/SOTWISE-API-Purchase-Orders.md` + `.pdf`.
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente
