@@ -41,6 +41,8 @@ type OrderListRow = {
  */
 const NEW_ORDER_CUTOFF = new Date("2026-08-25T00:00:00Z");
 
+const VALID_PO_NUMBER = /^\d+$/;
+
 export const metadata = { title: "Orders" };
 
 export default async function OrdersPage() {
@@ -127,6 +129,10 @@ export default async function OrdersPage() {
   }
 
   const rows: OrderRow[] = orders
+    // Sem order number de verdade = sujeira da migração: as ~80 "fantasmas" do
+    // Bubble têm po_number = unique id do Bubble ("1774…x…"). Só entra na lista
+    // quem tem número puramente numérico.
+    .filter((o) => VALID_PO_NUMBER.test(o.po_number?.trim() ?? ""))
     // Regra de visibilidade: só orders do GSS (gss_id setado) exigem ≥1 F×C, e
     // só a partir do corte; orders criadas direto no SOTWISE e as anteriores ao
     // corte ficam sempre visíveis (não escondemos as migradas).
