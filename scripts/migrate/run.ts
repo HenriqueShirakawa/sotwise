@@ -414,18 +414,73 @@ function safeDate(v: unknown): string | null {
   return d && d >= "2000-01-01" ? d : null;
 }
 
+const normName = (v: unknown) =>
+  String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * bubble_id -> uuid de uma biblioteca, com fallback por NOME. A recarga só das
+ * transacionais (core/preload/checklist) não reimporta as bibliotecas, e o dedup
+ * de fábricas (27/08) unificou duplicatas perdendo o bubble_id das perdedoras —
+ * sem isto, toda linha que aponta para uma fábrica/cliente novo ou unificado era
+ * pulada. Sem par nem por nome, cria a entrada (só nome + bubble_id), igual à
+ * Camada 1 faria — mas SÓ para ids em `needed` (referenciados de fato): criar
+ * tudo que falta ressuscitaria as fábricas sem uso apagadas no dedup.
+ */
+async function libMapWithNameFallback(
+  table: "factories" | "clients", bubbleType: string, nameField: string, needed: Set<string>,
+) {
+  const map = await loadIdMap(table);
+  const raw = await fetchAll(bubbleType);
+  const faltando = raw.filter((r) => needed.has(r._id) && !map.has(r._id) && str(r[nameField]));
+  if (faltando.length === 0) return map;
+
+  const byName = new Map<string, string>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .select("id, name, gss_id")
+      .order("gss_id", { ascending: true, nullsFirst: false })
+      .range(from, from + 999);
+    if (error) throw new Error(`load ${table} names: ${error.message}`);
+    for (const r of data ?? []) if (!byName.has(normName(r.name))) byName.set(normName(r.name), r.id);
+    if (!data || data.length < 1000) break;
+  }
+
+  const users = await loadIdMap("profiles");
+  const novos: Row[] = [];
+  for (const r of faltando) {
+    const id = byName.get(normName(r[nameField]));
+    if (id) map.set(r._id, id);
+    else novos.push({ name: reqStr(r[nameField]), bubble_id: r._id, created_by: ref(users, r["Created By"]) });
+  }
+  if (novos.length) {
+    await upsertByBubbleId(table, novos);
+    console.log(`${table}: ${novos.length} criada(s) do Bubble — ${novos.map((n) => n.name).join(", ")}`);
+    for (const [bid, id] of await loadIdMap(table)) map.set(bid, id);
+  }
+  return map;
+}
+
+/** Ids (string) referenciados num campo simples ou lista dos registros do Bubble. */
+function refsOf(rows: Row[], field: string): Set<string> {
+  const out = new Set<string>();
+  for (const r of rows) for (const v of Array.isArray(r[field]) ? r[field] : [r[field]]) if (typeof v === "string") out.add(v);
+  return out;
+}
+
 async function importTransactionalCore() {
   const results: Record<string, { fetched: number; upserted: number; skipped?: number }> = {};
+  const ordersRaw = await fetchAll("[vistapub]order");
+  const ofcRaw = await fetchAll("[vistapub]listoffactoriesxcategoriesxlote");
   const orderTypeMap = await loadIdMap("order_types");
-  const clientMap = await loadIdMap("clients");
+  const clientMap = await libMapWithNameFallback("clients", "clients", "ClientID", refsOf(ordersRaw, "Clients"));
   const buMap = await loadIdMap("business_units");
   const userMap = await loadIdMap("profiles");
   const catMap = await loadIdMap("categories");
-  const factMap = await loadIdMap("factories");
+  const factMap = await libMapWithNameFallback("factories", "factory", "factory", refsOf(ofcRaw, "Factories"));
   const exporterMap = await loadIdMap("exporters");
 
   // ORDERS
-  const ordersRaw = await fetchAll("[vistapub]order");
   // Orders antigas não têm "Exporter" no Bubble; o valor veio do GSS (24/09).
   // Sem Exporter no Bubble, mantém o que já está gravado em vez de zerar.
   const currentExporter = new Map<string, string>();
@@ -496,7 +551,6 @@ async function importTransactionalCore() {
   const batchMap = await loadIdMap("batches");
 
   // ORDER_FACTORY_CATEGORY
-  const ofcRaw = await fetchAll("[vistapub]listoffactoriesxcategoriesxlote");
   let ofcSkip = 0;
   const ofcRows = ofcRaw
     .map((f) => {
@@ -560,11 +614,11 @@ async function importPreloadingShipments() {
   const results: Record<string, { fetched: number; upserted: number; skipped?: number }> = {};
   const userMap = await loadIdMap("profiles");
   const podMap = await loadIdMap("pods");
-  const clientMap = await loadIdMap("clients");
+  const plRaw = await fetchAll("[vistapub]pre-loading");
+  const clientMap = await libMapWithNameFallback("clients", "clients", "ClientID", refsOf(plRaw, "List of Clients"));
   const batchMap = await loadIdMap("batches");
 
   // PRE_LOADINGS
-  const plRaw = await fetchAll("[vistapub]pre-loading");
   const plRows = plRaw.map((p) => ({
     pl_number: reqStr(p["PL Number Txt"]) || String(p["PL Number"] ?? p._id),
     created_date: dateOnly(p["Created Date"]) || new Date().toISOString().slice(0, 10),
@@ -598,7 +652,11 @@ async function importPreloadingShipments() {
   results.pre_loading_batches = { fetched: plb.length, upserted: await upsertJunction("pre_loading_batches", plb, "pre_loading_id,batch_id") };
 
   // SHIPMENTS (1:1 com pre_loading)
-  const shipRaw = await fetchAll("[vistapub]shippment");
+  // Criado por último primeiro: há PLs com 2 shipments no Bubble (o "Shipped" antigo e o
+  // "Delivered" recriado depois) — o dedupe por PL abaixo fica com o atual. Não usar
+  // Modified Date: o antigo às vezes foi tocado depois do novo.
+  const shipRaw = (await fetchAll("[vistapub]shippment")).sort((a, b) =>
+    String(b["Created Date"] ?? "").localeCompare(String(a["Created Date"] ?? "")));
   let shipSkip = 0;
   const seenPl = new Set<string>();
   const shipRows = shipRaw
@@ -634,7 +692,8 @@ const STEP_BY_SORTED: (string | null)[] = [
 async function importChecklist() {
   const results: Record<string, { fetched: number; upserted: number; skipped?: number }> = {};
   const userMap = await loadIdMap("profiles");
-  const factMap = await loadIdMap("factories");
+  const plRaw = await fetchAll("[vistapub]pre-loading");
+  const factMap = await libMapWithNameFallback("factories", "factory", "factory", refsOf(plRaw, "Consolidation Point"));
   const cityMap = await loadIdMap("cities");
   const polMap = await loadIdMap("pols");
   const orderMap = await loadIdMap("orders");
@@ -643,8 +702,6 @@ async function importChecklist() {
   // template _id → Sorted (1..24)
   const tmplSorted = new Map<string, number>();
   for (const t of await fetchAll("[vistapub]checklist")) tmplSorted.set(t._id, Number(t.Sorted));
-
-  const plRaw = await fetchAll("[vistapub]pre-loading");
 
   // item → order uuid  (order."List of Checklist x Item")
   const itemToOrder = new Map<string, string>();
