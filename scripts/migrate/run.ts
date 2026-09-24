@@ -426,6 +426,20 @@ async function importTransactionalCore() {
 
   // ORDERS
   const ordersRaw = await fetchAll("[vistapub]order");
+  // Orders antigas não têm "Exporter" no Bubble; o valor veio do GSS (24/09).
+  // Sem Exporter no Bubble, mantém o que já está gravado em vez de zerar.
+  const currentExporter = new Map<string, string>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabaseAdmin
+      .from("orders")
+      .select("bubble_id, exporter_id")
+      .not("bubble_id", "is", null)
+      .not("exporter_id", "is", null)
+      .range(from, from + 999);
+    if (error) throw new Error(`load orders.exporter_id: ${error.message}`);
+    for (const r of data ?? []) currentExporter.set(r.bubble_id, r.exporter_id);
+    if (!data || data.length < 1000) break;
+  }
   const orderRows = ordersRaw.map((o) => ({
     po_number: reqStr(o["Number PO text"]) || String(o["Number PO"] ?? o._id),
     order_type_id: ref(orderTypeMap, o["Order Type"]),
@@ -441,7 +455,7 @@ async function importTransactionalCore() {
     // "Leader Order"/"Requester", "Order Resp" resolvia pro Leader real).
     requester_id: ref(userMap, o["Requester"]) ?? ref(userMap, o["Order Resp"]),
     leader_id: ref(userMap, o["Leader Order"]) ?? ref(userMap, o["Order Resp"]),
-    exporter_id: ref(exporterMap, o["Exporter"]),
+    exporter_id: ref(exporterMap, o["Exporter"]) ?? currentExporter.get(o._id) ?? null,
     status: orderStatus(o["Status Order OS [Vistapub]"]),
     date_po: dateOnly(o["Date PO"]),
     // "Data criação" é um campo custom que o usuário criou pra preservar a
