@@ -527,7 +527,10 @@ async function importTransactionalCore() {
       };
     })
     .filter(Boolean) as Row[];
-  results.etd_info = { fetched: etdRaw.length, upserted: await upsertByBubbleId("etd_info", etdRows), skipped: etdSkip };
+  // Casa por order_factory_category_id (1:1), NÃO por bubble_id: cada edição de ETD
+  // no Bubble cria um log novo, então o "último log" da linha muda de _id entre
+  // cargas, e o ETD criado pelo app não tem bubble_id — ambos colidiriam na unique.
+  results.etd_info = { fetched: etdRaw.length, upserted: await upsertByKey("etd_info", etdRows, "order_factory_category_id"), skipped: etdSkip };
 
   return results;
 }
@@ -598,7 +601,10 @@ async function importPreloadingShipments() {
       };
     })
     .filter(Boolean) as Row[];
-  results.shipments = { fetched: shipRaw.length, upserted: await upsertByBubbleId("shipments", shipRows), skipped: shipSkip };
+  // Casa por pre_loading_id (1:1), NÃO por bubble_id: o Bubble às vezes recria o
+  // shipment de um PL com outro _id, e o Confirm Shipping do app cria o seu sem
+  // bubble_id — ambos colidiriam na unique. Só as colunas acima são sobrescritas.
+  results.shipments = { fetched: shipRaw.length, upserted: await upsertByKey("shipments", shipRows, "pre_loading_id"), skipped: shipSkip };
 
   return results;
 }
