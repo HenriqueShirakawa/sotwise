@@ -7,6 +7,7 @@ import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { findBatchTwinError } from "@/lib/ofc-twins";
 import { syncOrderStatus } from "@/lib/order-status";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
@@ -112,6 +113,11 @@ export async function createBatch(
   await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
+  const keys = input.rows.map((r) => `${r.category_id}|${r.factory_id}`);
+  if (new Set(keys).size !== keys.length) {
+    return { ok: false, error: "The same Category + Factory can only appear once per batch." };
+  }
+
   const { data: batch, error } = await admin
     .from("batches")
     .insert({ order_id: orderId, batch_number: input.batch_number })
@@ -173,6 +179,15 @@ export async function updateOrderFactoryCategoryBatch(
 
   await assertBatchEditable(batchId);
 
+  const { data: entry, error: entryError } = await admin
+    .from("order_factory_category")
+    .select("category_id, factory_id")
+    .eq("id", id)
+    .single();
+  if (entryError || !entry) return { ok: false, error: entryError?.message ?? "Entry not found." };
+  const twinError = await findBatchTwinError(admin, batchId, [entry], id);
+  if (twinError) return { ok: false, error: twinError };
+
   const { error } = await admin
     .from("order_factory_category")
     .update({ batch_id: batchId })
@@ -212,6 +227,30 @@ export async function bulkImportOrderFactoryCategory(
   const batchIdByNumber = new Map(
     (existingBatches ?? []).map((b) => [b.batch_number.trim().toLowerCase(), b.id])
   );
+
+  // Mesma Category + Factory não pode repetir no lote — nem contra o que o lote
+  // já tem, nem entre linhas do CSV. Valida antes de criar qualquer lote novo.
+  const rowsByBatch = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const n = r.batch_number.trim().toLowerCase();
+    if (!n) continue;
+    rowsByBatch.set(n, [...(rowsByBatch.get(n) ?? []), r]);
+  }
+  for (const [n, batchRows] of rowsByBatch) {
+    const existingId = batchIdByNumber.get(n);
+    if (existingId) {
+      const twinError = await findBatchTwinError(admin, existingId, batchRows);
+      if (twinError) return { ok: false, error: twinError };
+    } else {
+      const keys = batchRows.map((r) => `${r.category_id}|${r.factory_id}`);
+      if (new Set(keys).size !== keys.length) {
+        return {
+          ok: false,
+          error: `The same Category + Factory appears twice for batch ${batchRows[0].batch_number.trim()}.`,
+        };
+      }
+    }
+  }
 
   const newBatchNumbers = Array.from(
     new Set(
@@ -268,7 +307,11 @@ export async function createOrderFactoryCategory(
   // O lote é opcional (docs/regras_de_negocio.md §3.7): a entrada Factory ×
   // Category pode nascer sem lote e ser atribuída a um depois. A trava de
   // "lote editável" só se aplica quando há lote.
-  if (input.batch_id) await assertBatchEditable(input.batch_id);
+  if (input.batch_id) {
+    await assertBatchEditable(input.batch_id);
+    const twinError = await findBatchTwinError(admin, input.batch_id, [input]);
+    if (twinError) return { ok: false, error: twinError };
+  }
 
   const { error } = await admin.from("order_factory_category").insert({
     order_id: orderId,

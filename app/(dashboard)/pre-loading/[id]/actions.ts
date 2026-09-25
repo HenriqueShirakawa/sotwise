@@ -8,6 +8,7 @@ import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { requireFeature } from "@/lib/dal";
+import { keepSplitTwinsInOrigin } from "@/lib/ofc-twins";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
@@ -387,6 +388,15 @@ export async function confirmShipping(
     p_statuses: input.statuses,
   });
   if (rpcError) return { ok: false, error: rpcError.message };
+
+  // Lotes espelhados: a linha Partial/None que o split levou para um lote que
+  // já tinha a mesma Category + Factory volta para o lote que embarcou (ver
+  // lib/ofc-twins). O embarque já está gravado — falha aqui só é registrada,
+  // não desfaz o Confirm Shipping.
+  if (rpcResult?.shipment_id) {
+    const twinError = await keepSplitTwinsInOrigin(admin, rpcResult.shipment_id);
+    if (twinError) console.error("[confirm-shipping] gêmeas do split:", twinError);
+  }
 
   revalidatePath("/pre-loading/[id]", "page");
   revalidatePath("/pre-loading");
