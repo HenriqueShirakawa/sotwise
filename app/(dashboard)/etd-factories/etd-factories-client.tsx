@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -18,6 +19,10 @@ import { toast } from "sonner";
 import { formatDate, formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus } from "@/types/database";
+import { useEtdRealtime } from "@/lib/use-etd-realtime";
+import { useOrdersRealtime } from "@/lib/use-orders-realtime";
+import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
+import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -152,6 +157,20 @@ export function EtdFactoriesClient({
     ofcId: string;
     title: string;
   } | null>(null);
+
+  // Realtime (mesmo modelo do TO-DO): ETD salvo, entrada Factory×Category
+  // criada/movida, lote mudando de status, PL criado ou embarque confirmado —
+  // a lista reflete sem F5. Debounce curto coalesce rajadas num só refresh.
+  const router = useRouter();
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => router.refresh(), 300);
+  };
+  useEtdRealtime(scheduleRefresh);
+  useOrdersRealtime(scheduleRefresh);
+  usePreLoadingRealtime(scheduleRefresh);
+  useShipmentsRealtime(scheduleRefresh);
 
   const filterCount = activeFilterCount(filters);
 
