@@ -1284,7 +1284,16 @@ export function OrderDetailClient({
             const owned = ownedBatchIds.get(b.id) ?? new Set([b.id]);
             const loaded = loadedByBatch[b.id];
             const viewRows: OfcRow[] = ofc
-              .filter((r) => r.batch_id && owned.has(r.batch_id))
+              // Linha de um lote descendente só entra se ESTE lote a carregou
+              // (snapshot) — o lote seguinte pode já existir antes do split
+              // (lotes espelhados) com linhas próprias, que apareciam aqui como
+              // duplicatas "—". Sem snapshot (dado antigo) vale a linhagem.
+              .filter(
+                (r) =>
+                  r.batch_id &&
+                  owned.has(r.batch_id) &&
+                  (r.batch_id === b.id || !loaded || r.id in loaded)
+              )
               .map((r) => ({
                 ...r,
                 // Sem snapshot (embarque anterior à tabela, ou lote que ainda
