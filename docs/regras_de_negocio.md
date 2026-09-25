@@ -853,6 +853,14 @@ Consequências na UI e nas ações:
 - **Desfazer embarque (`deleteShipment`):** as entradas que voltam para o lote de origem são as registradas como não-Total **neste** embarque. Antes o filtro era pelo `loading_status`, que o próprio split já tinha zerado — no caso "lote de destino já existia" ninguém voltava.
 - **Sem snapshot** (embarques confirmados antes desta tabela, incluindo o dado migrado do Bubble) vale o `loading_status` atual da entrada, e só para a entrada que é fisicamente daquele lote — o comportamento que esse dado já tinha. Não há como reconstruir Partial vs None de um split antigo: o dado nunca foi gravado.
 
+##### Lotes espelhados — Partial/None não duplica no lote seguinte (2026-09-25)
+
+QA 25/09 (pedidos 1665 e 1668): o `.01` e o `.02` tinham as mesmas entradas (mesma Category + Factory, Ship req. diferentes). Embarcar o `.01` com uma delas Partial movia a linha pro `.02`, que já tinha a sua — o `.02` ficava com a entrada duas vezes (e o PL/embarque seguinte levava a duplicata adiante). No "View batch" do `.01` ainda apareciam as linhas próprias do `.02` como "—", porque a tela subia a linhagem inteira.
+
+Regra: no Confirm Shipping, a linha Partial/None **só migra** se o lote de destino **não** tem uma entrada com a mesma Category + Factory. Se tem, a do destino já é a continuação do saldo; a de origem **fica no lote embarcado** com o Partial/None gravado (aparece no ETD do pedido sob o lote `.01`). Lote criado na hora pelo split não tem gêmea — tudo migra como antes. A linhagem `split_from_batch_id` só é anotada quando alguma linha realmente migrou. Migration `20260925130000_confirm_shipping_twin_lines.sql`.
+
+"View batch" e "View parts": linha de lote descendente só entra no lote embarcado se estiver no snapshot (`shipment_loaded_lines`) dele; sem snapshot (dado antigo) vale a linhagem, como antes.
+
 #### 3.7.3 order_factory_category (entradas)
 
 As entradas Category + Factory + Batch + Ship requirement de um pedido. É a `List of Factories x Categories x Lote` do Bubble. Criável manualmente ou via **bulk import CSV**.

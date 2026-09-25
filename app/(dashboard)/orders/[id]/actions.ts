@@ -8,6 +8,7 @@ import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { syncOrderStatus } from "@/lib/order-status";
+import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
@@ -21,14 +22,16 @@ const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production
  * status) e, quando o lote está em in_production/preloading, a lista de seleção
  * do Create Pre-loading e a tela ETD Factories (SELECTABLE/ACTIVE_BATCH_STATUSES).
  * Sem isso, mover um lote pra Production só aparecia nessas telas após um F5.
+ * O ping do ETD faz o mesmo para quem já está com a tela ETD Factories aberta.
  */
-function revalidateBatchViews(orderId: string) {
+async function revalidateBatchViews(orderId: string) {
   // Pelo padrão da rota, não por valor: a página vive em duas URLs (po_number
   // e UUID antigo) — isto invalida as duas de uma vez.
   revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/pre-loading");
   revalidatePath("/etd-factories");
+  await broadcastEtdPing({ order_ids: [orderId] });
 }
 
 /** Batch só é editável (status ou Factory x Category) em in_negotiation/in_production. */
@@ -78,7 +81,7 @@ export async function updateBatchStatus(
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -95,7 +98,7 @@ export async function updateBatchNumber(
   const { error } = await admin.from("batches").update({ batch_number }).eq("id", batchId);
   if (error) return { ok: false, error: error.message };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -134,7 +137,7 @@ export async function createBatch(
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -156,7 +159,7 @@ export async function deleteBatch(orderId: string, batchId: string): Promise<Act
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -176,7 +179,7 @@ export async function updateOrderFactoryCategoryBatch(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -246,7 +249,7 @@ export async function bulkImportOrderFactoryCategory(
     if (statusError) return { ok: false, error: statusError };
   }
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -276,7 +279,7 @@ export async function createOrderFactoryCategory(
   });
   if (error) return { ok: false, error: error.message };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -295,7 +298,7 @@ export async function deleteOrderFactoryCategory(
   const { error } = await admin.from("order_factory_category").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  revalidateBatchViews(orderId);
+  await revalidateBatchViews(orderId);
   return { ok: true };
 }
 
@@ -512,6 +515,7 @@ export async function upsertEtdInfo(
   revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
+  await broadcastEtdPing({ order_ids: [orderId] });
   return { ok: true };
 }
 
@@ -684,6 +688,7 @@ export async function updateEtdInfoWithReason(
   revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
+  await broadcastEtdPing({ order_ids: [orderId] });
   return { ok: true };
 }
 
