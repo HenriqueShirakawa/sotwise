@@ -51,6 +51,16 @@ export type StepEmailRecipient = {
   /** Message-ID da mensagem entregue a ESTE destinatário (Fase 2 do
    *  threading) — ausente/nulo em envios antigos ou que falharam. */
   message_id?: string | null;
+  /** Calculado na LEITURA (não gravado em `recipients`): o Resend avisou pelo
+   *  webhook que o e-mail não chegou a este destinatário. Ver
+   *  lib/email/delivery-issues.ts. */
+  delivery_issue?: EmailDeliveryIssue | null;
+};
+export type EmailDeliveryEvent = "bounced" | "failed" | "suppressed" | "complained";
+export type EmailDeliveryIssue = {
+  event: EmailDeliveryEvent;
+  reason: string | null;
+  occurred_at: Timestamp;
 };
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
@@ -1227,6 +1237,32 @@ export type Database = {
         Update: Partial<
           Database["public"]["Tables"]["checklist_step_email_reply_recipients"]["Insert"]
         >;
+        Relationships: [];
+      };
+      // Bounce/falha de entrega avisados pelo webhook do Resend (migration
+      // 20260925140000). Insert-only.
+      email_delivery_events: {
+        Row: {
+          id: UUID;
+          checklist_step_email_id: UUID;
+          email: string;
+          event: EmailDeliveryEvent;
+          reason: string | null;
+          provider_email_id: string | null;
+          occurred_at: Timestamp;
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          checklist_step_email_id: UUID;
+          email: string;
+          event: EmailDeliveryEvent;
+          reason?: string | null;
+          provider_email_id?: string | null;
+          occurred_at?: Timestamp;
+          created_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_delivery_events"]["Insert"]>;
         Relationships: [];
       };
       // Fase 1 do threading — conversa contínua por Order (ver migration

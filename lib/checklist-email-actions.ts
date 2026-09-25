@@ -10,6 +10,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
+import { withDeliveryIssues } from "@/lib/email/delivery-issues";
 import { sendEmail } from "@/lib/email/resend";
 import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
@@ -412,8 +413,9 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     .eq(ownerColumn(owner), stepId)
     .order("created_at", { ascending: false });
 
-  const rows = data ?? [];
-  if (rows.length === 0) return [];
+  if (!data || data.length === 0) return [];
+  // Bounce/falha avisados pelo webhook do Resend depois do envio.
+  const rows = await withDeliveryIssues(admin, data);
 
   const senderIds = [...new Set(rows.map((r) => r.sender_id))];
   const { data: senders } = await admin

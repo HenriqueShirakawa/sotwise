@@ -2,6 +2,7 @@
 
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
+import { withDeliveryIssues } from "@/lib/email/delivery-issues";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { loadEntityContexts, loadProfileNames, type EntityRef } from "@/lib/messages";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -47,7 +48,7 @@ export async function loadEmailRecords(): Promise<EmailListRow[]> {
   const session = await requireFeature("email_history");
   const admin = createAdminClient();
 
-  const rows = await fetchAll<{
+  const fetched = await fetchAll<{
     id: string;
     subject: string;
     status: StepEmailStatus | null;
@@ -67,7 +68,9 @@ export async function loadEmailRecords(): Promise<EmailListRow[]> {
       .order("created_at", { ascending: false })
       .range(from, to)
   );
-  if (rows.length === 0) return [];
+  if (fetched.length === 0) return [];
+  // Bounce/falha avisados pelo webhook do Resend depois do envio.
+  const rows = await withDeliveryIssues(admin, fetched);
 
   // Order que cada linha respondeu de verdade — só interessa pra linhas de
   // Pre-loading/Shipment (`group === "pl"`); um `po` já é o próprio Order.
