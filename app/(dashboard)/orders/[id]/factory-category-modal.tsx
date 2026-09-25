@@ -289,14 +289,63 @@ function findColumn(header: string[], needle: string): number {
   return header.findIndex((h) => h.trim().toLowerCase().includes(needle));
 }
 
-function normalizeDate(raw: string): string | null {
+/** Ordem dos números numa data com barra: dia/mês (BR) ou mês/dia (US). */
+type DateOrder = "dmy" | "mdy";
+
+/** "10/30/2026", "30-10-26", "1/5/2026 12:00 am" → as três partes numéricas. */
+const SLASHED_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})(?:[ T].*)?$/;
+
+function isoDate(y: number, m: number, d: number): string | null {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  // Rejeita o que o Date "conserta" sozinho (30/02 vira 02/03, mês 30...).
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+    return null;
+  }
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * Decide, pelo arquivo inteiro, se as datas com barra são dia/mês ou mês/dia.
+ * O template exportado do PO no SOT (Bubble) sai em mês/dia (US: "10/30/2026");
+ * uma planilha editada no Excel em português sai em dia/mês. Basta uma data
+ * com o primeiro número > 12 pra ser dia/mês, ou o segundo > 12 pra ser
+ * mês/dia. Se todas forem ambíguas (ambos ≤ 12), vale mês/dia — o formato do
+ * template do Bubble. O preview mostra a data já convertida (dd/mm/yyyy) pro
+ * usuário conferir antes do Insert.
+ */
+function detectDateOrder(values: string[]): DateOrder {
+  let dmy = false;
+  let mdy = false;
+  for (const v of values) {
+    const m = SLASHED_DATE.exec(v.trim());
+    if (!m) continue;
+    if (Number(m[1]) > 12) dmy = true;
+    if (Number(m[2]) > 12) mdy = true;
+  }
+  if (dmy && !mdy) return "dmy";
+  return "mdy";
+}
+
+function normalizeDate(raw: string, order: DateOrder): string | null {
   const v = raw.trim();
   if (!v) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v);
-  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?$/.exec(v);
+  if (iso) return isoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const slashed = SLASHED_DATE.exec(v);
+  if (slashed) {
+    const a = Number(slashed[1]);
+    const b = Number(slashed[2]);
+    const y = slashed[3].length === 2 ? 2000 + Number(slashed[3]) : Number(slashed[3]);
+    // Se a ordem do arquivo não cabe nesta data (ex.: "30/10" num arquivo
+    // mês/dia), tenta a outra — o isoDate recusa o que não existir.
+    return order === "dmy"
+      ? (isoDate(y, b, a) ?? isoDate(y, a, b))
+      : (isoDate(y, a, b) ?? isoDate(y, b, a));
+  }
+  // Texto ("Sep 30, 2026"): partes locais, não toISOString — em UTC-3 a
+  // meia-noite local já é outro dia em UTC.
   const d = new Date(v);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  if (!Number.isNaN(d.getTime())) return isoDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
   return null;
 }
 
@@ -366,6 +415,9 @@ function BulkImportPanel({
           toast.error("CSV must have Category and Factory columns.");
           return;
         }
+        const dateOrder = detectDateOrder(
+          shipIdx === -1 ? [] : table.slice(1).map((cols) => cols[shipIdx] ?? "")
+        );
         const parsed: ParsedRow[] = table.slice(1).map((cols, i) => {
           const categoryRaw = (cols[categoryIdx] ?? "").trim();
           const factoryRaw = (cols[factoryIdx] ?? "").trim();
@@ -385,7 +437,7 @@ function BulkImportPanel({
             shipRequirementRaw: shipRaw,
             categoryId: category?.id ?? null,
             factoryId: factory?.id ?? null,
-            shipRequirement: normalizeDate(shipRaw),
+            shipRequirement: normalizeDate(shipRaw, dateOrder),
           };
         });
         setParsedRows(parsed);
@@ -493,6 +545,7 @@ function BulkImportPanel({
           <div className="max-h-64 overflow-y-auto">
             {parsedRows.map((r) => {
               const ok = !!r.categoryId && !!r.factoryId;
+              const rowOk = ok && !!r.shipRequirement;
               const matchedBatch = batches.find(
                 (b) => b.batch_number.trim().toLowerCase() === r.batchNumberRaw.trim().toLowerCase()
               );
@@ -514,15 +567,22 @@ function BulkImportPanel({
                     orderId={orderId}
                     onBatchesChanged={onBatchesChanged}
                   />
-                  <span className="truncate text-slate-700">
-                    {r.shipRequirement ? formatDateNumeric(r.shipRequirement) : "—"}
+                  {/* Data que não deu pra entender aparece crua, em vermelho —
+                      antes "10/30/2026" virava "2026-30-10" e só estourava no banco. */}
+                  <span
+                    className={`truncate ${r.shipRequirement ? "text-slate-700" : "text-rose-600"}`}
+                    title={r.shipRequirement ? undefined : "Invalid date"}
+                  >
+                    {r.shipRequirement
+                      ? formatDateNumeric(r.shipRequirement)
+                      : r.shipRequirementRaw || "—"}
                   </span>
                   <span
                     className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${
-                      ok ? "bg-emerald-500" : "bg-rose-500"
+                      rowOk ? "bg-emerald-500" : "bg-rose-500"
                     }`}
                   >
-                    {ok ? (
+                    {rowOk ? (
                       <Check className="size-3 text-white" />
                     ) : (
                       <X className="size-3 text-white" />
@@ -654,18 +714,25 @@ export function FactoryCategoryModal({
     [batches]
   );
 
-  // Ordem fixa: Category → Factory → Batch No. (a listagem crua por ordem de
-  // criação ficava impossível de navegar em pedidos com muitas entradas).
+  // Ordem fixa: Batch No. → Category → Factory — o lote inteiro fica junto
+  // (pedido do cliente, QA 25/09). Entrada sem lote vai pro fim; empate final
+  // pelo Ship req.
   const sortedOfc = useMemo(
     () =>
       [...ofc].sort((a, b) => {
+        const aBatch = batchNumberById.get(a.batch_id ?? "");
+        const bBatch = batchNumberById.get(b.batch_id ?? "");
+        if (aBatch !== bBatch) {
+          if (aBatch === undefined) return 1;
+          if (bBatch === undefined) return -1;
+          const batchCmp = aBatch.localeCompare(bBatch, undefined, { numeric: true });
+          if (batchCmp !== 0) return batchCmp;
+        }
         const catCmp = a.category_name.localeCompare(b.category_name);
         if (catCmp !== 0) return catCmp;
         const facCmp = a.factory_name.localeCompare(b.factory_name);
         if (facCmp !== 0) return facCmp;
-        const aBatch = batchNumberById.get(a.batch_id ?? "") ?? "";
-        const bBatch = batchNumberById.get(b.batch_id ?? "") ?? "";
-        return aBatch.localeCompare(bBatch, undefined, { numeric: true });
+        return (a.ship_requirement ?? "").localeCompare(b.ship_requirement ?? "");
       }),
     [ofc, batchNumberById]
   );

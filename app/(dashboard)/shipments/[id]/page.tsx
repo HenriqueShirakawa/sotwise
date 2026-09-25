@@ -309,6 +309,12 @@ export default async function ShipmentDetailPage({
     // marcada com o lote onde ela está hoje.
     const ancestor = shippedAncestorOf.get(o.batch_id);
     const targetBatchId = ancestor ?? o.batch_id;
+    // O lote-filho pode já existir antes do split (lotes espelhados) e ter
+    // linhas próprias que o lote embarcado nunca carregou. Com snapshot, só
+    // entra o que ESTE embarque registrou; sem ele (dado antigo), fica a
+    // linhagem inteira como antes.
+    const loaded = loadedByBatch.get(targetBatchId);
+    if (ancestor && loaded && !loaded.has(o.id)) continue;
     const etd = Array.isArray(o.etd_info) ? o.etd_info[0] : o.etd_info;
     const arr = partsByBatch.get(targetBatchId) ?? [];
     arr.push({
