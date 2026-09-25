@@ -861,6 +861,8 @@ Regra: no Confirm Shipping, a linha Partial/None **só migra** se o lote de dest
 
 "View batch" e "View parts": linha de lote descendente só entra no lote embarcado se estiver no snapshot (`shipment_loaded_lines`) dele; sem snapshot (dado antigo) vale a linhagem, como antes.
 
+**Validador (sem depender de migration):** a mesma regra roda no app, logo depois do `confirm_shipping` — `keepSplitTwinsInOrigin` (`lib/ofc-twins.ts`) devolve pro lote embarcado a linha que o split levou pra um lote que já tinha a gêmea. Com a migration aplicada, essa passada não encontra nada pra corrigir. E no **cadastro**, o mesmo lote não aceita a mesma Category + Factory duas vezes: New entry manual, troca de lote pelo seletor "Batch No.", Create batch e Bulk import CSV (o preview marca a linha repetida em vermelho e trava o Insert) — `findBatchTwinError`.
+
 #### 3.7.3 order_factory_category (entradas)
 
 As entradas Category + Factory + Batch + Ship requirement de um pedido. É a `List of Factories x Categories x Lote` do Bubble. Criável manualmente ou via **bulk import CSV**.

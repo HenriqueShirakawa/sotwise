@@ -377,6 +377,7 @@ function downloadTemplate() {
 function BulkImportPanel({
   orderId,
   batches,
+  ofc,
   categories,
   factories,
   onImported,
@@ -385,6 +386,7 @@ function BulkImportPanel({
 }: {
   orderId: string;
   batches: BatchRow[];
+  ofc: OfcRow[];
   categories: Ref[];
   factories: Ref[];
   onImported: () => void;
@@ -450,7 +452,29 @@ function BulkImportPanel({
   // Batch No. é opcional (docs/regras_de_negocio.md §3.7): linha sem lote entra
   // com batch_id null. Só o Ship requirement segue obrigatório.
   const allComplete = parsedRows.every((r) => r.shipRequirement);
-  const canInsert = allRegistered && allComplete;
+
+  // Mesma Category + Factory não repete no lote (lib/ofc-twins no servidor):
+  // marca a linha que bate com uma entrada que o lote já tem, ou com uma linha
+  // anterior do próprio CSV no mesmo lote.
+  const duplicateKeys = useMemo(() => {
+    const batchIdByNumber = new Map(
+      batches.map((b) => [b.batch_number.trim().toLowerCase(), b.id])
+    );
+    const taken = new Set(
+      ofc.filter((o) => o.batch_id).map((o) => `${o.batch_id}|${o.category_id}|${o.factory_id}`)
+    );
+    const dups = new Set<string>();
+    for (const r of parsedRows) {
+      const n = r.batchNumberRaw.trim().toLowerCase();
+      if (!n || !r.categoryId || !r.factoryId) continue;
+      const key = `${batchIdByNumber.get(n) ?? `new:${n}`}|${r.categoryId}|${r.factoryId}`;
+      if (taken.has(key)) dups.add(r.key);
+      taken.add(key);
+    }
+    return dups;
+  }, [parsedRows, batches, ofc]);
+  const noDuplicates = duplicateKeys.size === 0;
+  const canInsert = allRegistered && allComplete && noDuplicates;
 
   function setRowBatch(key: string, batchId: string) {
     const batch = batches.find((b) => b.id === batchId);
@@ -545,7 +569,8 @@ function BulkImportPanel({
           <div className="max-h-64 overflow-y-auto">
             {parsedRows.map((r) => {
               const ok = !!r.categoryId && !!r.factoryId;
-              const rowOk = ok && !!r.shipRequirement;
+              const duplicate = duplicateKeys.has(r.key);
+              const rowOk = ok && !!r.shipRequirement && !duplicate;
               const matchedBatch = batches.find(
                 (b) => b.batch_number.trim().toLowerCase() === r.batchNumberRaw.trim().toLowerCase()
               );
@@ -581,6 +606,7 @@ function BulkImportPanel({
                     className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${
                       rowOk ? "bg-emerald-500" : "bg-rose-500"
                     }`}
+                    title={duplicate ? "Already in this batch" : undefined}
                   >
                     {rowOk ? (
                       <Check className="size-3 text-white" />
@@ -596,7 +622,9 @@ function BulkImportPanel({
             <p className="border-t bg-rose-50 px-3 py-2 text-xs text-rose-600">
               {!allRegistered
                 ? "Some rows have a Category or Factory that isn't registered — fix the CSV and re-upload, or register them first."
-                : "Fill in a valid Ship requirement for every row."}
+                : !allComplete
+                  ? "Fill in a valid Ship requirement for every row."
+                  : "Some rows repeat a Category + Factory that's already in that batch — each batch can have it only once."}
             </p>
           )}
         </div>
@@ -672,6 +700,16 @@ export function FactoryCategoryModal({
   function insertRow() {
     if (!canInsertRow) {
       toast.error("Fill in Category, Factory and Ship requirement.");
+      return;
+    }
+    // Mesma Category + Factory não repete no lote (o servidor também barra).
+    if (
+      batchId &&
+      ofc.some(
+        (o) => o.batch_id === batchId && o.category_id === categoryId && o.factory_id === factoryId
+      )
+    ) {
+      toast.error("This Category + Factory is already in this batch.");
       return;
     }
     startTransition(async () => {
@@ -752,6 +790,7 @@ export function FactoryCategoryModal({
           <BulkImportPanel
             orderId={orderId}
             batches={batches}
+            ofc={ofc}
             categories={categories}
             factories={factories}
             onImported={() => {
