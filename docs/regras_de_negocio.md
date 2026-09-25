@@ -1236,6 +1236,10 @@ Pedido do cliente: poder **revisar o HTML de verdade** do e-mail antes de mandar
 
 > ⚠️ **Revisão 10/09/2026 (2) — corpo padrão pras 24 etapas, não só PI.** Testando o compositor, o usuário abriu a etapa "Order" (não a PI) e notou que o corpo vinha vazio — comportamento esperado até então (`stepHasTemplate` só cobria "pi"), mas o usuário pediu **"quero para todas as etapas"**. `TEMPLATES` em `lib/email/step-templates.ts` virou `Record<ChecklistStep, string>` (exaustivo, não mais `Partial`) — as 23 entradas novas foram redigidas por mim a partir do significado de cada etapa nesta mesma seção (§3.7.5/§3.9.5/§3.10.4), não fornecidas pelo usuário como a PI foi — **revisar o texto de cada uma ao testar**, mesmo espírito de correção que a PI recebeu (bilíngue → só inglês). `stepHasTemplate` foi removida (virou sempre `true`, checagem morta) — `openCompose` em `step-email-section.tsx` agora sempre carrega o corpo padrão da etapa.
 
+##### E-mail que não chegou — alerta no destinatário (2026-09-25)
+
+`recipients[].ok` só diz que o Resend **aceitou** o envio. Se depois o e-mail volta (endereço inexistente, supressão por bounce anterior, falha, marcado como spam), o Resend avisa pelo webhook (`email.bounced` / `email.suppressed` / `email.failed` / `email.complained`) e o app grava em `email_delivery_events` (migration `20260925140000`; `checklist_step_emails` segue imutável). Casamento pelo `message_id` do evento contra `recipients[].message_id` + o endereço em `data.to`. No histórico da etapa e na lista de E-mails, o chip daquele destinatário fica vermelho com ícone de alerta e um tooltip "This email didn't reach …" com o motivo. Caso real: Order #1669, `vistapub@tester.com` — "Recipient not found". O webhook do Resend precisa estar inscrito nesses 4 eventos (antes só tinha `email.received`).
+
 ##### Resposta do cliente por e-mail (decisão 2026-09-09)
 
 Pedido do cliente: poder **responder** o e-mail manual de etapa direto da caixa de entrada, e a resposta aparecer encadeada no histórico da própria etapa, notificando todo o conjunto original de destinatários (quem mandou + quem recebeu).

@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MultiSearchSelect } from "@/components/multi-search-select";
+import { RecipientChip } from "@/components/checklist/recipient-chip";
 
 /**
  * "Send email" por etapa do checklist — mesmo espírito visual do
@@ -546,7 +547,8 @@ export function StepEmailSection({
 function EmailHistoryCard({ row }: { row: StepEmailRow }) {
   const [open, setOpen] = useState(false);
   const [locallyRead, setLocallyRead] = useState<Set<string>>(new Set());
-  const failedCount = row.recipients.filter((r) => !r.ok).length;
+  // Falhou no envio OU o Resend avisou depois que não chegou (bounce etc.).
+  const failedCount = row.recipients.filter((r) => !r.ok || r.delivery_issue).length;
   const unreadReplies = row.replies.filter((r) => !r.read_by_me && !locallyRead.has(r.id));
 
   function toggle() {
@@ -588,16 +590,7 @@ function EmailHistoryCard({ row }: { row: StepEmailRow }) {
       </button>
       <div className="mt-1 flex flex-wrap gap-1">
         {row.recipients.map((r) => (
-          <span
-            key={r.user_id ?? r.email}
-            title={r.error ?? undefined}
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium ${
-              r.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-            }`}
-          >
-            <User className="size-3" />
-            {r.name}
-          </span>
+          <RecipientChip key={r.user_id ?? r.email} recipient={r} />
         ))}
       </div>
       {open && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{row.body}</p>}
