@@ -7,13 +7,14 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { Mail, User } from "lucide-react";
+import { Mail } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDateTime, companyTimeZone } from "@/lib/format";
 import type { EmailListRow, EmailRecordGroup } from "@/lib/checklist-emails-list-actions";
 import type { StepEmailRecipient, StepEmailStatus } from "@/types/database";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { RecipientChip } from "@/components/checklist/recipient-chip";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
   Table,
@@ -57,17 +58,7 @@ function RecipientChips({ recipients }: { recipients: StepEmailRecipient[] }) {
   return (
     <div className="flex flex-wrap gap-1">
       {recipients.map((r) => (
-        <span
-          key={r.user_id ?? r.email}
-          title={r.error ?? undefined}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap",
-            r.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-          )}
-        >
-          <User className="size-3" />
-          {r.name}
-        </span>
+        <RecipientChip key={r.user_id ?? r.email} recipient={r} />
       ))}
     </div>
   );

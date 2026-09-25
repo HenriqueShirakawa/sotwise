@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { RESEND_DELIVERY_EVENTS, recordDeliveryEvent } from "@/lib/email/delivery-issues";
 import { fetchReceivedEmail } from "@/lib/email/resend";
 import { verifyResendWebhook } from "@/lib/email/verify-resend-webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -184,6 +185,15 @@ export async function POST(request: NextRequest): Promise<Response> {
   } catch {
     return json({ error: "Invalid JSON body." }, 400);
   }
+  // Bounce / falha / supressão de um e-mail que o app enviou: marca o
+  // destinatário (chip com alerta no histórico da etapa).
+  if (payload && payload.type in RESEND_DELIVERY_EVENTS) {
+    const recorded = await recordDeliveryEvent(createAdminClient(), payload);
+    // 500 -> o Resend tenta de novo (o upsert é idempotente).
+    if (!recorded.ok) return json({ error: recorded.error }, 500);
+    return json({ ok: true, recorded: recorded.recorded }, 200);
+  }
+
   if (!payload || payload.type !== "email.received" || !payload.data?.email_id) {
     return json({ ignored: true }, 200);
   }
