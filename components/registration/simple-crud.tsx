@@ -62,7 +62,7 @@ export function SimpleRegistrationCrud({
   columnLabel,
   searchPlaceholder,
   createLabel,
-  canCreate = true,
+  canCreate = false,
   extraColumns = [],
   createAction,
   updateAction,
@@ -77,7 +77,7 @@ export function SimpleRegistrationCrud({
   columnLabel: string;
   searchPlaceholder: string;
   createLabel: string;
-  /** false esconde o botão de criar (cadastro passou a vir só do GSS); edit/delete continuam. */
+  /** Default false em `main`: cadastro vem só do GSS, nenhuma biblioteca cria pela UI; edit/delete continuam. */
   canCreate?: boolean;
   /** Colunas só-de-leitura exibidas depois do nome, lidas de `row.extras`. */
   extraColumns?: { key: string; label: string }[];

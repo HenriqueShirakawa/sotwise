@@ -44,6 +44,7 @@ export function RegistrationTable<T>({
   subtitle,
   createLabel,
   onCreate,
+  canCreate = false,
   search,
   onSearchChange,
   searchPlaceholder,
@@ -60,6 +61,8 @@ export function RegistrationTable<T>({
   subtitle: string;
   createLabel: string;
   onCreate: () => void;
+  /** Default false em `main`: cadastro vem só do GSS, nenhuma biblioteca cria pela UI; edit/delete continuam. */
+  canCreate?: boolean;
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder: string;
@@ -98,10 +101,12 @@ export function RegistrationTable<T>({
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={onCreate}>
-          <Plus />
-          {createLabel}
-        </Button>
+        {canCreate && (
+          <Button className="h-11 w-full rounded-xl px-5 sm:w-auto" onClick={onCreate}>
+            <Plus />
+            {createLabel}
+          </Button>
+        )}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
