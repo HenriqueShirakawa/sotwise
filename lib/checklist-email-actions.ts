@@ -11,7 +11,6 @@ import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
 import { sendEmail } from "@/lib/email/resend";
-import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
   loadQuotedHistory,
   peekQuotedHistory,
@@ -27,7 +26,7 @@ import {
   type ThreadingHeaders,
 } from "@/lib/email/threads";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChecklistStep, StepEmailRecipient, StepEmailReply } from "@/types/database";
+import type { ChecklistStep, EmailThreadKind, StepEmailRecipient, StepEmailReply } from "@/types/database";
 
 export type Option = { id: string; name: string };
 
@@ -53,23 +52,25 @@ export type StepEmailRow = {
   status: "success" | "partial" | "failed" | null;
   /** Respostas do cliente por e-mail (Resend inbound), mais antiga primeiro. */
   replies: StepEmailReply[];
-  /** Nome do cliente da thread que esta linha atingiu (via `thread_id` →
-   *  `email_threads.client_id`) — só não-nulo pra owner Pre-loading/Shipment
-   *  cuja thread é `external` dividida por cliente (Order já é 1:1, sem
-   *  ambiguidade nenhuma; thread `internal` de Pre-loading/Shipment não é
-   *  dividida por cliente, nada a desambiguar). */
+  /** Nome do cliente quando esta linha foi pra conversa COM o cliente (thread
+   *  `external`, switch "Include client" ligado) — Pre-loading/Shipment via
+   *  `email_threads.client_id`, Order pelo cliente da própria Order. Nulo na
+   *  thread `internal` (só equipe). */
   thread_client_name: string | null;
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
 
 /**
- * Destinatários selecionáveis — só papel `client`, ativos, não ocultos.
- * Este e-mail (qualquer etapa, Order/Pre-loading/Shipment) é comunicação
- * COM O CLIENTE; equipe interna nunca deve aparecer aqui como destinatário
- * (decisão do usuário, 16/09/2026). Quem precisa ser avisado internamente
- * usa o módulo de mensagens (`loadPeople` em `lib/messages-actions.ts`),
- * critério independente de propósito — não há razão pra acoplar os dois.
+ * Destinatários selecionáveis — ativos, não ocultos, conforme o switch
+ * "Include client" do compositor (28/09/2026):
+ * - `scopeClientId` null (desligado): só a equipe interna — contato de
+ *   cliente nunca entra na thread interna.
+ * - `scopeClientId` = cliente da conversa (ligado; Order: o cliente dela,
+ *   Pre-loading/Shipment: o da aba): a equipe + os contatos SÓ daquele
+ *   cliente — contato de outro cliente nunca aparece.
+ * Revoga a lista "só clientes" de 16/09/2026, que valia pra Order e pra PL
+ * sem aba — a equipe voltou a ser destinatária dos dois lados.
  */
 export async function loadStepRecipientOptions(scopeClientId: string | null = null): Promise<Option[]> {
   await requireInternal();
@@ -77,38 +78,20 @@ export async function loadStepRecipientOptions(scopeClientId: string | null = nu
   const { data: clientRole } = await admin.from("roles").select("id").eq("name", "client").maybeSingle();
   if (!clientRole) return [];
 
-  // Aba por cliente de Pre-loading/Shipment (22/09/2026): a equipe volta a
-  // ser selecionável (Responsible/Signed by da etapa vêm pré-preenchidos),
-  // mais os contatos SÓ daquele cliente — contato de outro cliente nunca
-  // aparece na aba, é a conversa separada que a aba existe pra garantir.
-  if (scopeClientId) {
-    const data = await fetchAll<{ id: string; full_name: string; role_id: string; client_id: string | null }>(
-      (from, to) =>
-        admin
-          .from("profiles")
-          .select("id, full_name, role_id, client_id")
-          .eq("status", "active")
-          .eq("hidden", false)
-          .order("full_name")
-          .range(from, to)
-    );
-    return data
-      .filter((p) => p.full_name.trim())
-      .filter((p) => p.role_id !== clientRole.id || p.client_id === scopeClientId)
-      .map((p) => ({ id: p.id, name: p.full_name }));
-  }
-
-  const data = await fetchAll<{ id: string; full_name: string }>((from, to) =>
-    admin
-      .from("profiles")
-      .select("id, full_name")
-      .eq("status", "active")
-      .eq("hidden", false)
-      .eq("role_id", clientRole.id)
-      .order("full_name")
-      .range(from, to)
+  const data = await fetchAll<{ id: string; full_name: string; role_id: string; client_id: string | null }>(
+    (from, to) =>
+      admin
+        .from("profiles")
+        .select("id, full_name, role_id, client_id")
+        .eq("status", "active")
+        .eq("hidden", false)
+        .order("full_name")
+        .range(from, to)
   );
-  return data.filter((p) => p.full_name.trim()).map((p) => ({ id: p.id, name: p.full_name }));
+  return data
+    .filter((p) => p.full_name.trim())
+    .filter((p) => p.role_id !== clientRole.id || (scopeClientId !== null && p.client_id === scopeClientId))
+    .map((p) => ({ id: p.id, name: p.full_name }));
 }
 
 /** Acha o id da linha de etapa sem criar — etapa nunca tocada não tem e-mail
@@ -374,8 +357,9 @@ async function renderStepEmailHtmls(
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
     resolveClientLanguageGroups(admin, owner, scopeClientId),
     currentOrigin(),
-    // Aba de cliente: Order(s)/lote(s) DELE, numa linha abaixo do título.
-    scopeClientId
+    // Aba de cliente de PL/Shipment: Order(s)/lote(s) DELE, numa linha abaixo
+    // do título. Order não precisa — o assunto já é a própria Order.
+    scopeClientId && owner.kind === "pre_loading"
       ? resolveOwnerOrders(admin, owner).then((orders) =>
           formatOrderLabel(orders.filter((o) => o.client_id === scopeClientId))
         )
@@ -461,28 +445,32 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     session.userId
   );
 
-  // Nome do cliente que cada thread atingiu de verdade — só vale a query pra
-  // owner Pre-loading/Shipment (Order já é 1:1, sem ambiguidade nenhuma).
-  // Thread `internal` (client_id null) não entra aqui — nada a desambiguar,
-  // é a conversa única do owner inteiro.
+  // Nome do cliente da conversa `external` que cada linha atingiu — vira o
+  // chip do card. Thread `internal` (só equipe) fica sem chip. A thread de
+  // Order não guarda `client_id` (a Order já tem 1 cliente só, check
+  // `email_threads_client_scope_check`) — o nome vem da própria Order.
   const clientNameByThreadId = new Map<string, string>();
-  if (owner.kind !== "order") {
-    const threadIds = [...new Set(rows.map((r) => r.thread_id).filter((id): id is string => Boolean(id)))];
-    if (threadIds.length > 0) {
-      const { data: threadRows } = await admin
-        .from("email_threads")
-        .select("id, client_id")
-        .in("id", threadIds)
-        .not("client_id", "is", null);
-      const clientIds = [...new Set((threadRows ?? []).map((t) => t.client_id).filter((id): id is string => Boolean(id)))];
-      const { data: clientsData } = clientIds.length
-        ? await admin.from("clients").select("id, name").in("id", clientIds)
-        : { data: [] as { id: string; name: string }[] };
-      const nameByClientId = new Map((clientsData ?? []).map((c) => [c.id, c.name]));
-      for (const t of threadRows ?? []) {
-        const name = t.client_id ? nameByClientId.get(t.client_id) : undefined;
-        if (name) clientNameByThreadId.set(t.id, name);
-      }
+  const threadIds = [...new Set(rows.map((r) => r.thread_id).filter((id): id is string => Boolean(id)))];
+  if (threadIds.length > 0) {
+    const { data: threadRows } = await admin
+      .from("email_threads")
+      .select("id, client_id")
+      .in("id", threadIds)
+      .eq("kind", "external");
+    const externalThreads = threadRows ?? [];
+    const orderClientId =
+      owner.kind === "order" && externalThreads.length > 0
+        ? ((await resolveOwnerOrders(admin, owner))[0]?.client_id ?? null)
+        : null;
+    const clientIdByThreadId = new Map(externalThreads.map((t) => [t.id, t.client_id ?? orderClientId]));
+    const clientIds = [...new Set([...clientIdByThreadId.values()].filter((id): id is string => Boolean(id)))];
+    const { data: clientsData } = clientIds.length
+      ? await admin.from("clients").select("id, name").in("id", clientIds)
+      : { data: [] as { id: string; name: string }[] };
+    const nameByClientId = new Map((clientsData ?? []).map((c) => [c.id, c.name]));
+    for (const [threadId, clientId] of clientIdByThreadId) {
+      const name = clientId ? nameByClientId.get(clientId) : undefined;
+      if (name) clientNameByThreadId.set(threadId, name);
     }
   }
 
@@ -538,10 +526,8 @@ const sendSchema = z.object({
   /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" pro
    *  destinatário interno; cliente nunca recebe esse link. */
   recordPath: z.string().trim().min(1),
-  /** Etapa do checklist que está compondo — decide em qual `email_threads` da
-   *  Order o envio entra (ver `lib/email/threads.ts`) e vira o título em
-   *  destaque no corpo do e-mail. `previewStepEmail` só usa pro título
-   *  (preview nunca cria/toca thread nenhuma). */
+  /** Etapa do checklist que está compondo — vira o título em destaque no
+   *  corpo do e-mail. Não decide mais a thread (ver `thread_kind`). */
   step: z.enum([
     "order",
     "po",
@@ -568,10 +554,16 @@ const sendSchema = z.object({
     "ata_brazil",
     "delivered",
   ]),
-  /** Cliente da ABA do compositor (Pre-loading/Shipment, 22/09/2026) — o
-   *  envio vai só pra conversa própria desse cliente (`resolveOwnerThreads`),
-   *  no idioma e com o nome dele. `null` = modo antigo (Order, ou PL sem
-   *  cliente identificado). */
+  /** Switch "Include client" do compositor (28/09/2026) — decide em qual
+   *  `email_threads` o envio entra: `internal` = só a equipe (desligado),
+   *  `external` = a conversa com o cliente (ligado). Substitui o mapa fixo
+   *  por etapa (`step-thread-kind.ts`, que virou só a posição inicial). */
+  thread_kind: z.enum(["internal", "external"]),
+  /** Cliente da conversa quando `thread_kind` é `external` (obrigatório aí —
+   *  ver `checkAudience`): Order = o cliente dela; Pre-loading/Shipment = o
+   *  da aba. O envio vai só pra conversa própria desse cliente
+   *  (`resolveOwnerThreads`), no idioma e com o nome dele. `null` com o
+   *  switch desligado. */
   client_id: z.uuid().nullable().default(null),
 });
 
@@ -582,12 +574,12 @@ export type StepEmailClientTab = { id: string; name: string };
 export type StepEmailDefaults = {
   senderName: string;
   groups: StepEmailLanguageGroup[];
-  /** Clientes do Pre-loading/Shipment, 1 aba cada (ordem por nome) — vazio
-   *  pra Order (nunca tem aba). */
+  /** Clientes do registro, por nome — 1 aba cada com o switch "Include
+   *  client" ligado (Order: só o dela, sem barra de abas). Vazio = não há
+   *  cliente pra incluir (o switch fica travado em "só equipe"). */
   clients: StepEmailClientTab[];
-  /** Responsible + Signed by da etapa — pré-preenchidos no "To" de cada aba
-   *  de cliente. Vazio pra Order (lá a lista só tem clientes, decisão de
-   *  16/09/2026, e a equipe não é selecionável). */
+  /** Responsible + Signed by da etapa — pré-preenchidos no "To" dos dois
+   *  lados do switch. */
   defaultRecipientIds: string[];
 };
 
@@ -616,14 +608,47 @@ async function loadOwnerClients(admin: Admin, owner: StepOwner): Promise<StepEma
   return [...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Guard do `client_id` da aba: só vale pra Pre-loading/Shipment e só pra um
- *  cliente que o owner de fato consolida AGORA. */
+/** Guard do `client_id` da conversa: só pra um cliente que o owner de fato
+ *  tem AGORA (Order: o dela; Pre-loading/Shipment: um dos consolidados). */
 async function checkScopeClient(admin: Admin, owner: StepOwner, scopeClientId: string | null): Promise<string | null> {
   if (!scopeClientId) return null;
-  if (owner.kind !== "pre_loading") return "Client tabs only exist on Pre-loading/Shipment.";
   const clientIds = await loadOwnerClientIds(admin, owner);
   if (!clientIds.includes(scopeClientId)) {
     return "The clients on this record changed — reopen the compose box to refresh the tabs.";
+  }
+  return null;
+}
+
+/**
+ * Guard do switch "Include client" (28/09/2026), o mesmo no preview e no
+ * envio — a lista do compositor já não oferece nada disso, aqui é o servidor:
+ * - `internal` (só equipe): nenhum contato de cliente e nenhum avulso — a
+ *   thread interna é citada inteira no rodapé do próximo envio, então
+ *   ninguém de fora pode entrar nela nem uma vez.
+ * - `external` (com o cliente): precisa nomear o cliente da conversa, e
+ *   contato de OUTRO cliente nunca entra.
+ */
+function checkAudience(
+  kind: EmailThreadKind,
+  scopeClientId: string | null,
+  adHocCount: number,
+  recipientIds: string[],
+  recipientInfoById: Map<string, RecipientInfo>
+): string | null {
+  if (kind === "internal") {
+    if (scopeClientId) return "Team-only e-mails aren't tied to a client — reopen the compose box.";
+    if (adHocCount > 0) return "Team-only e-mails can't go to outside addresses — turn on Include client.";
+    if (recipientIds.some((id) => recipientInfoById.get(id)?.isClient)) {
+      return "Team-only e-mails can't go to client contacts — turn on Include client.";
+    }
+    return null;
+  }
+  if (!scopeClientId) return "Choose which client this conversation is with.";
+  for (const id of recipientIds) {
+    const info = recipientInfoById.get(id);
+    if (info?.isClient && info.clientId !== scopeClientId) {
+      return "A recipient belongs to another client — remove them from this conversation.";
+    }
   }
   return null;
 }
@@ -645,7 +670,7 @@ export async function loadStepEmailDefaults(
   const admin = createAdminClient();
   const [groups, clients, defaultRecipientIds] = await Promise.all([
     resolveClientLanguageGroups(admin, owner, scopeClientId),
-    owner.kind === "pre_loading" ? loadOwnerClients(admin, owner) : Promise.resolve([]),
+    loadOwnerClients(admin, owner),
     loadStepTeamIds(admin, owner),
   ]);
   // Owner com 2+ clientes DE VERDADE no total (somando TODOS os grupos, não só
@@ -676,16 +701,21 @@ export async function loadStepEmailDefaults(
   };
 }
 
-/** Responsible + Signed by da etapa de Pre-loading/Shipment (sem duplicar
- *  quando é a mesma pessoa). Order devolve vazio — ver `StepEmailDefaults`. */
+/** Responsible + Signed by da etapa (sem duplicar quando é a mesma pessoa). */
 async function loadStepTeamIds(admin: Admin, owner: StepOwner): Promise<string[]> {
-  if (owner.kind !== "pre_loading") return [];
-  const { data } = await admin
-    .from("pre_loading_checklist_steps")
-    .select("responsible_id, signed_by_id")
-    .eq("pre_loading_id", owner.preLoadingId)
-    .eq("step", owner.step)
-    .maybeSingle();
+  const { data } =
+    owner.kind === "order"
+      ? await admin
+          .from("order_checklist_steps")
+          .select("responsible_id, signed_by_id")
+          .eq("id", owner.stepId)
+          .maybeSingle()
+      : await admin
+          .from("pre_loading_checklist_steps")
+          .select("responsible_id, signed_by_id")
+          .eq("pre_loading_id", owner.preLoadingId)
+          .eq("step", owner.step)
+          .maybeSingle();
   if (!data) return [];
   return [...new Set([data.responsible_id, data.signed_by_id].filter((id): id is string => Boolean(id)))];
 }
@@ -718,6 +748,7 @@ export async function previewStepEmail(
   const session = await requireFeature(parsed.data.feature, "edit");
   const admin = createAdminClient();
 
+  const kind = parsed.data.thread_kind;
   const scopeClientId = parsed.data.client_id;
   const scopeError = await checkScopeClient(admin, owner, scopeClientId);
   if (scopeError) return { ok: false, error: scopeError };
@@ -727,8 +758,11 @@ export async function previewStepEmail(
   const [stepId, recipientInfoById, quoted] = await Promise.all([
     findStepId(admin, owner),
     loadRecipientInfoByUserId(admin, recipientIds),
-    peekQuotedHistory(admin, owner, parsed.data.step, scopeClientId),
+    peekQuotedHistory(admin, owner, kind, scopeClientId),
   ]);
+  const audienceError = checkAudience(kind, scopeClientId, adHocEmails.length, recipientIds, recipientInfoById);
+  if (audienceError) return { ok: false, error: audienceError };
+
   const { internalHtml, clientVariants, primaryLanguage } = await renderStepEmailHtmls(
     admin,
     owner,
@@ -740,10 +774,10 @@ export async function previewStepEmail(
     scopeClientId
   );
 
-  // Etapa de conversa com o cliente (`external`): TODO MUNDO recebe a versão
-  // limpa — sem campos internos e sem botão "Go to", só ler e responder
-  // (decisão do usuário em 11/09/2026). Ver `sendStepEmail`.
-  const externalThread = threadKindForStep(parsed.data.step) === "external";
+  // Conversa com o cliente (`external`): TODO MUNDO recebe a versão limpa —
+  // sem campos internos e sem botão "Go to", só ler e responder (decisão do
+  // usuário em 11/09/2026). Ver `sendStepEmail`.
+  const externalThread = kind === "external";
   const isPlain = (id: string) => externalThread || recipientInfoById.get(id)?.isClient === true;
   const hasInternal = !externalThread && recipientIds.some((id) => !isPlain(id));
 
@@ -867,9 +901,12 @@ const missingEmail = (people: Person[]): StepEmailRecipient[] =>
  * CLIENTE distinto consolidado pro `kind` `external` (nunca funde 2 clientes
  * reais na mesma conversa). Decisão do usuário em 22/09/2026 — supera o
  * fan-out por Order de 16/09/2026 (PL/Shipment deixou de "pegar carona" em
- * Order nenhuma) — ver docs/regras_de_negocio.md.
+ * Order nenhuma) — ver docs/regras_de_negocio.md. O `kind` vem do switch
+ * "Include client" (`thread_kind`, 28/09/2026): desligado = só equipe na
+ * thread `internal`; ligado = a conversa `external` de UM cliente (Order: o
+ * dela; PL: o da aba) — ver `checkAudience`.
  *
- * Cada destinatário "plain" (papel `client`, ou qualquer um numa etapa
+ * Cada destinatário "plain" (papel `client`, ou qualquer um numa thread
  * `external` — decisão do usuário em 11/09/2026) pertence a um GRUPO DE
  * IDIOMA (via `profiles.client_id`, `resolveClientLanguageGroups`) — isso
  * decide só qual HTML/idioma ele recebe; QUAL THREAD é outra conta agora,
@@ -881,13 +918,13 @@ const missingEmail = (people: Person[]): StepEmailRecipient[] =>
  * **Colapsa pro caminho mais simples quando ≤1 grupo tem destinatário
  * "plain" selecionado NESTE envio** (Fase multi-idioma, 15/09/2026): 1 linha
  * em `checklist_step_emails` POR THREAD atingida (combinando interno + o
- * único grupo ativo, ou só interno) — a esmagadora maioria dos envios (todo
- * Order, e todo PL `internal`, que é 100% do tráfego hoje) nunca sai desse
- * caminho. Só quando 2+ grupos têm destinatário "plain" de verdade (só
- * possível numa thread `external` que consolida 2+ clientes) é que interno e
- * cada grupo geram mensagens/linhas separadas. Todos no "To" dentro do
- * próprio grupo, igual à decisão de 11/09/2026 — o "grupo" é (papel, idioma),
- * não só papel.
+ * único grupo ativo, ou só interno). Desde o switch (28/09/2026) todo envio
+ * do compositor cai aqui: `internal` não tem destinatário "plain" nenhum, e
+ * `external` é sempre de 1 cliente só. O caminho de 2+ grupos (thread
+ * `external` sem cliente escolhido, consolidando 2+ clientes — interno e
+ * cada grupo em mensagens/linhas separadas) ficou sem chamador:
+ * `checkAudience` exige o cliente. Todos no "To" dentro do próprio grupo,
+ * igual à decisão de 11/09/2026 — o "grupo" é (papel, idioma), não só papel.
  *
  * Recipiente `external` cujo `client_id` não bate com NENHUM cliente que o
  * owner de fato consolida agora (estado mudou entre abrir o compositor e
@@ -934,17 +971,15 @@ export async function sendStepEmail(
     };
   }
 
-  const kind = threadKindForStep(parsed.data.step);
-  // Aba de cliente: contato de OUTRO cliente nunca entra nesta conversa (a
-  // lista da aba já não oferece, isto é o guard do servidor).
-  if (scopeClientId) {
-    for (const id of recipientIds) {
-      const info = recipientInfoById.get(id);
-      if (info?.isClient && info.clientId !== scopeClientId) {
-        return { ok: false, error: "A recipient belongs to another client — remove them from this tab." };
-      }
-    }
-  }
+  const kind = parsed.data.thread_kind;
+  const audienceError = checkAudience(
+    kind,
+    scopeClientId,
+    new Set(parsed.data.ad_hoc_emails).size,
+    recipientIds,
+    recipientInfoById
+  );
+  if (audienceError) return { ok: false, error: audienceError };
 
   const threadsResult = await resolveOwnerThreads(admin, owner, orders, kind, scopeClientId);
   if (!threadsResult.ok) return { ok: false, error: threadsResult.error };
@@ -1017,11 +1052,13 @@ export async function sendStepEmail(
     return (clientId && clientIdToLanguage.get(clientId)) || primaryLanguage;
   };
 
-  // Numa thread `external` (dividida por cliente), um destinatário cujo
+  // Numa thread `external` de PL (dividida por cliente), um destinatário cujo
   // `client_id` não bate com NENHUM cliente que o owner de fato consolida
   // agora precisa ser REJEITADO, não cair silenciosamente numa thread
   // errada — é o vazamento entre clientes que este modelo existe pra evitar.
-  if (kind === "external") {
+  // Order não entra: a thread dela não tem `client_id`, e `checkAudience` já
+  // barrou contato de outro cliente.
+  if (kind === "external" && owner.kind === "pre_loading") {
     for (const id of recipientIds) {
       const clientId = recipientInfoById.get(id)?.clientId ?? null;
       if (clientId && !threadByClientId.has(clientId)) {

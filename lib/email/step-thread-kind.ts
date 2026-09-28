@@ -1,20 +1,16 @@
 import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
 /**
- * Qual das 2 conversas de e-mail da Order (`email_threads.kind`) cada etapa
- * do checklist alimenta — ver docs/regras_de_negocio.md (threading por Order).
+ * Posição INICIAL do switch "Include client" do compositor, por etapa —
+ * `external` abre ligado (conversa com o cliente), `internal` abre desligado
+ * (só a equipe). Ver docs/regras_de_negocio.md (switch "Include client").
  *
- * Atualizado 16/09/2026: TODAS as etapas ficam em "internal" por enquanto —
- * a AGK ainda não definiu quais etapas são conversa "external" de verdade, e
- * ter 2 threads por Order (uma delas quase sempre vazia) estava confundindo
- * os próprios testes. A distinção internal/external não foi removida, só
- * zerada: quando a AGK definir o mapeamento de verdade, é só trocar os
- * valores aqui, nada mais depende disso (era a decisão de 11/09/2026, que só
- * marcava as 2 etapas de pagamento como "external").
- *
- * Isto decide apenas em qual thread o envio entra (cabeçalhos/Reply-To); o
- * destinatário continua escolhido à mão a cada envio, e "cliente vs. interno"
- * de cada destinatário (variante do HTML) é um eixo independente, por papel.
+ * Desde 28/09/2026 quem decide a thread de cada envio é o switch, não mais
+ * este mapa (pedido do usuário: a AGK ainda não mandou a lista de etapas que
+ * envolvem o cliente, então a escolha fica na mão de quem envia). Tudo
+ * `internal` = o compositor sempre abre em "só equipe"; quando a lista da AGK
+ * chegar, trocar aqui só muda de que lado o switch nasce em cada etapa —
+ * continua dando pra virar na hora.
  */
 const STEP_THREAD_KIND: Record<ChecklistStep, EmailThreadKind> = {
   order: "internal",
@@ -43,6 +39,6 @@ const STEP_THREAD_KIND: Record<ChecklistStep, EmailThreadKind> = {
   delivered: "internal",
 };
 
-export function threadKindForStep(step: ChecklistStep): EmailThreadKind {
+export function defaultThreadKindForStep(step: ChecklistStep): EmailThreadKind {
   return STEP_THREAD_KIND[step];
 }

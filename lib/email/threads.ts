@@ -3,7 +3,6 @@ import "server-only";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { StepOwner } from "@/lib/checklist-email-actions";
 import { STEP_LABELS } from "@/lib/checklist";
-import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import type { ChecklistStep, EmailThreadKind } from "@/types/database";
 
 /**
@@ -167,10 +166,15 @@ export type ResolvedThread = {
  * - `owner.kind === "pre_loading"`, `kind === "internal"`: sempre exatamente
  *   1 thread pro Pre-loading/Shipment inteiro — destinatário interno não é
  *   client-scoped, não há por que fragmentar a conversa da equipe.
- * - `owner.kind === "pre_loading"`, `kind === "external"`: 1 thread POR
+ * - `owner.kind === "pre_loading"`, `kind === "external"`: a thread PRÓPRIA do
+ *   cliente da aba do compositor (`scopeClientId`); sem aba, 1 thread POR
  *   CLIENTE distinto entre os `orders` recebidos (nunca funde 2 clientes reais
  *   na mesma conversa — é o vazamento que este modelo existe pra evitar).
  *   Orders sem `client_id` caem juntas no balde `clientId: null`.
+ *
+ * `kind` vem do switch "Include client" do compositor (28/09/2026) — até
+ * então, uma aba de cliente forçava `external` por conta própria, porque o
+ * `kind` vinha do mapa por etapa (`step-thread-kind.ts`, tudo `internal`).
  */
 export async function resolveOwnerThreads(
   admin: Admin,
@@ -179,33 +183,29 @@ export async function resolveOwnerThreads(
   kind: EmailThreadKind,
   scopeClientId: string | null = null
 ): Promise<{ ok: true; threads: ResolvedThread[] } | { ok: false; error: string }> {
-  // Aba por cliente do compositor (22/09/2026): num Pre-loading/Shipment, o
-  // envio de UMA aba vai sempre pra conversa PRÓPRIA daquele cliente,
-  // independente do `kind` da etapa — é a mesma thread `external` por
-  // cliente (o check `email_threads_client_scope_check` só aceita
-  // client_id com kind='external'), então quando a AGK mandar a lista de
-  // etapas externas as duas coisas caem na mesma conversa.
-  const threadKind: EmailThreadKind = owner.kind === "pre_loading" && scopeClientId ? "external" : kind;
+  // Thread `internal` nunca é dividida por cliente — mesmo que chegue um
+  // `scopeClientId` (o check `email_threads_client_scope_check` só aceita
+  // client_id com kind='external').
   const keys: ThreadOwnerKey[] =
     owner.kind === "order"
       ? [{ ownerType: "order", ownerId: orders[0]!.id }]
-      : scopeClientId
-        ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: scopeClientId }]
-        : kind === "internal"
-          ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: null }]
+      : kind === "internal"
+        ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: null }]
+        : scopeClientId
+          ? [{ ownerType: "pre_loading", ownerId: owner.preLoadingId, clientId: scopeClientId }]
           : [...new Set(orders.map((o) => o.client_id))]
               .sort((a, b) => (a ?? "").localeCompare(b ?? ""))
               .map((clientId) => ({ ownerType: "pre_loading" as const, ownerId: owner.preLoadingId, clientId }));
 
   const threads: ResolvedThread[] = [];
   for (const key of keys) {
-    const found = await findOrCreateThread(admin, key, threadKind);
+    const found = await findOrCreateThread(admin, key, kind);
     if ("error" in found) return { ok: false, error: found.error };
     threads.push({
       id: found.id,
       ownerType: key.ownerType,
       ownerId: key.ownerId,
-      kind: threadKind,
+      kind,
       clientId: key.ownerType === "pre_loading" ? key.clientId : null,
       anchorMessageId: found.anchorMessageId,
     });
@@ -382,28 +382,24 @@ export async function loadQuotedHistory(admin: Admin, threadId: string): Promise
  * Versão só-leitura de `resolveOwnerThreads` pro PREVIEW: acha UMA thread do
  * owner sem criar nada, e devolve o histórico citado que o e-mail de verdade
  * levaria. `clientId` só importa pra owner `pre_loading` + `kind='external'`
- * (thread dividida por cliente) — omitido (default `null`), olha o balde
- * "sem cliente identificado", que é o caso comum hoje (100% do tráfego é
- * `internal`, sem divisão por cliente nenhuma). Lista vazia = thread ainda
- * não existe (o envio seria o primeiro da conversa).
+ * (thread dividida por cliente — a aba do compositor); nos outros casos olha
+ * a thread sem cliente (`client_id` null). Lista vazia = thread ainda não
+ * existe (o envio seria o primeiro da conversa).
  */
 export async function peekQuotedHistory(
   admin: Admin,
   owner: StepOwner,
-  step: ChecklistStep,
+  kind: EmailThreadKind,
   clientId: string | null = null
 ): Promise<QuotedMessage[]> {
   const orders = await resolveOwnerOrders(admin, owner);
   if (orders.length === 0) return [];
-  // Com cliente definido (aba do compositor), a thread é sempre a `external`
-  // daquele cliente — mesma regra de `resolveOwnerThreads`.
-  const kind = owner.kind === "pre_loading" && clientId ? "external" : threadKindForStep(step);
 
   const base = admin.from("email_threads").select("id").eq("kind", kind);
   const query =
     owner.kind === "order"
       ? base.eq("owner_type", "order").eq("owner_id", orders[0]!.id)
-      : clientId
+      : kind === "external" && clientId
         ? base.eq("owner_type", "pre_loading").eq("owner_id", owner.preLoadingId).eq("client_id", clientId)
         : base.eq("owner_type", "pre_loading").eq("owner_id", owner.preLoadingId).is("client_id", null);
   const { data: thread } = await query.maybeSingle();
