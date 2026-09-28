@@ -278,6 +278,7 @@ export function UsersClient({
         title="Users"
         subtitle="View, manage, and create new users"
         createLabel="Create new user"
+        canCreate
         onCreate={() => {
           setEditing(null);
           setFormOpen(true);
