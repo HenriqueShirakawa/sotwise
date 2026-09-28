@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Pencil, Trash2, X, Loader2 } from "lucide-react";
+import { Pencil, Trash2, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDate } from "@/lib/format";
@@ -116,17 +116,6 @@ export function FactoriesClient({ data }: { data: Factory[] }) {
         data={data}
         searchPlaceholder="Search factories…"
         emptyMessage="No factories yet."
-        toolbar={
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setDrawerOpen(true);
-            }}
-          >
-            <Plus />
-            New
-          </Button>
-        }
       />
 
       <FormDrawer
