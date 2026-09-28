@@ -14,6 +14,7 @@ import {
   sendStepEmail,
   type Option,
   type StepEmailClientTab,
+  type StepEmailLanguageFallback,
   type StepEmailLanguageGroup,
   type StepEmailPreview,
   type StepEmailRow,
@@ -139,6 +140,9 @@ export function StepEmailSection({
   /** Idioma que a equipe interna e os avulsos sempre recebem — sempre
    *  `languages[0]` (ver `resolveClientLanguageGroups`). */
   const [primaryLanguage, setPrimaryLanguage] = useState<EmailLanguage>("en");
+  /** O idioma do cliente da conversa caiu no padrão (sem país, ou país sem
+   *  idioma mapeado) — aviso âmbar no compositor (QA A3/A4, 28/09/2026). */
+  const [languageFallback, setLanguageFallback] = useState<StepEmailLanguageFallback | null>(null);
   /** Switch "Include client" — nasce na posição da etapa em
    *  `step-thread-kind.ts` (hoje sempre "só equipe") e decide a thread de
    *  CADA envio. Virar o switch recomeça o formulário daquele lado (lista de
@@ -180,6 +184,7 @@ export function StepEmailSection({
     setLanguages(groups.map((g) => g.language));
     setPrimaryLanguage(groups[0].language);
     setActiveLanguage(groups[0].language);
+    setLanguageFallback(groups.length === 1 ? groups[0].fallback : null);
   }
 
   function resetForm() {
@@ -188,6 +193,7 @@ export function StepEmailSection({
     setLanguages(["en"]);
     setActiveLanguage("en");
     setPrimaryLanguage("en");
+    setLanguageFallback(null);
     setRecipientIds([]);
     setAdHocEmails([]);
     setAdHocDraft("");
@@ -526,6 +532,13 @@ export function StepEmailSection({
                   This client&apos;s default language is {LANGUAGE_LABELS[primaryLanguage]}. The message below
                   was pre-filled in {LANGUAGE_LABELS[primaryLanguage]} and is exactly what gets sent to the
                   client — so edit it like any other message.
+                </p>
+              )}
+              {audience === "client" && languageFallback && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {languageFallback.reason === "no_country"
+                    ? `${conversationClientName} has no country registered, so the message was pre-filled in English — the default language.`
+                    : `No language is mapped for ${languageFallback.countryName} (${conversationClientName}'s country), so the message was pre-filled in English — the default language.`}
                 </p>
               )}
               {languages.length > 1 && (

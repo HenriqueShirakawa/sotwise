@@ -182,9 +182,21 @@ async function loadOwnerClientIds(admin: Admin, owner: StepOwner): Promise<strin
   return [...new Set(orders.map((o) => o.client_id).filter((id): id is string => Boolean(id)))];
 }
 
+/** Por que o idioma de um cliente caiu no padrão (`'en'`, RN03) — vira o
+ *  aviso do compositor (QA A3/A4, 28/09/2026: o inglês saía sem avisar).
+ *  Sem isto (`null`), o idioma veio do override manual do cliente ou do mapa
+ *  País → Idioma. */
+export type StepEmailLanguageFallback = { reason: "no_country" } | { reason: "unmapped_country"; countryName: string };
+
 /** Um idioma + os clientes (do owner) que resolvem pra ele + o(s) nome(s)
- *  deles juntos (rótulo da aba/variante). */
-type ClientLanguageGroup = { language: EmailLanguage; clientIds: string[]; customerName: string | null };
+ *  deles juntos (rótulo da aba/variante). `fallback` só vem preenchido com 1
+ *  cliente no grupo (aba de cliente) — com vários, não há um motivo só. */
+type ClientLanguageGroup = {
+  language: EmailLanguage;
+  clientIds: string[];
+  customerName: string | null;
+  fallback: StepEmailLanguageFallback | null;
+};
 
 /**
  * Agrupa os clientes do owner por idioma resolvido — substitui a antiga
@@ -217,7 +229,7 @@ async function resolveClientLanguageGroups(
 ): Promise<ClientLanguageGroup[]> {
   // Aba por cliente: só o cliente da aba conta — 1 grupo, 1 idioma, nome dele.
   const clientIds = (await loadOwnerClientIds(admin, owner)).filter((id) => !scopeClientId || id === scopeClientId);
-  if (clientIds.length === 0) return [{ language: "en", clientIds: [], customerName: null }];
+  if (clientIds.length === 0) return [{ language: "en", clientIds: [], customerName: null, fallback: null }];
 
   const { data: clientsData } = await admin
     .from("clients")
@@ -226,28 +238,44 @@ async function resolveClientLanguageGroups(
   const clients = [...(clientsData ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
   const countryIds = [...new Set(clients.map((c) => c.country_id).filter((id): id is string => Boolean(id)))];
-  const { data: defaultsData } = countryIds.length
-    ? await admin.from("country_language_defaults").select("country_id, language").in("country_id", countryIds)
-    : { data: [] as { country_id: string; language: EmailLanguage }[] };
+  const [{ data: defaultsData }, { data: countriesData }] = countryIds.length
+    ? await Promise.all([
+        admin.from("country_language_defaults").select("country_id, language").in("country_id", countryIds),
+        admin.from("countries").select("id, name").in("id", countryIds),
+      ])
+    : [
+        { data: [] as { country_id: string; language: EmailLanguage }[] },
+        { data: [] as { id: string; name: string }[] },
+      ];
   const languageByCountry = new Map((defaultsData ?? []).map((d) => [d.country_id, d.language]));
+  const countryNameById = new Map((countriesData ?? []).map((c) => [c.id, c.name]));
 
-  const groupsByLanguage = new Map<EmailLanguage, { clientIds: string[]; names: string[] }>();
+  const groupsByLanguage = new Map<
+    EmailLanguage,
+    { clientIds: string[]; names: string[]; fallbacks: (StepEmailLanguageFallback | null)[] }
+  >();
   for (const client of clients) {
-    const language: EmailLanguage =
-      (client.language as EmailLanguage | null) ??
-      (client.country_id ? languageByCountry.get(client.country_id) : undefined) ??
-      "en";
-    const group = groupsByLanguage.get(language) ?? { clientIds: [], names: [] };
+    const mapped = client.country_id ? languageByCountry.get(client.country_id) : undefined;
+    const language: EmailLanguage = (client.language as EmailLanguage | null) ?? mapped ?? "en";
+    const fallback: StepEmailLanguageFallback | null =
+      client.language || mapped
+        ? null
+        : client.country_id
+          ? { reason: "unmapped_country", countryName: countryNameById.get(client.country_id) ?? "this country" }
+          : { reason: "no_country" };
+    const group = groupsByLanguage.get(language) ?? { clientIds: [], names: [], fallbacks: [] };
     group.clientIds.push(client.id);
     group.names.push(client.name);
+    group.fallbacks.push(fallback);
     groupsByLanguage.set(language, group);
   }
 
-  if (groupsByLanguage.size === 0) return [{ language: "en", clientIds: [], customerName: null }];
+  if (groupsByLanguage.size === 0) return [{ language: "en", clientIds: [], customerName: null, fallback: null }];
   return [...groupsByLanguage.entries()].map(([language, group]) => ({
     language,
     clientIds: group.clientIds,
     customerName: group.names.join(", ") || null,
+    fallback: group.clientIds.length === 1 ? group.fallbacks[0] : null,
   }));
 }
 
@@ -571,7 +599,11 @@ const sendSchema = z.object({
 
 export type SendStepEmailInput = z.input<typeof sendSchema>;
 
-export type StepEmailLanguageGroup = { language: EmailLanguage; customerName: string | null };
+export type StepEmailLanguageGroup = {
+  language: EmailLanguage;
+  customerName: string | null;
+  fallback: StepEmailLanguageFallback | null;
+};
 export type StepEmailClientTab = { id: string; name: string };
 export type StepEmailDefaults = {
   senderName: string;
@@ -697,6 +729,7 @@ export async function loadStepEmailDefaults(
     groups: groups.map((g) => ({
       language: g.language,
       customerName: totalClientCount > 1 ? null : g.customerName,
+      fallback: g.fallback,
     })),
     clients,
     defaultRecipientIds,
