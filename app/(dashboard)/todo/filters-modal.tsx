@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import {
   STEP_LABELS,
   CHECKLIST_STEP_ORDER,
@@ -10,7 +10,7 @@ import {
   PRELOADING_STEPS,
   SHIPMENT_STEPS,
 } from "@/lib/checklist";
-import type { ChecklistStep, OrderStatus } from "@/types/database";
+import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/date-picker";
 import { Label } from "@/components/ui/label";
@@ -55,7 +55,7 @@ export function activeFilterCount(filters: TodoFilters): number {
 
 /** Enums viram opções {id,name} pro SearchSelect (mesma UI dos cadastros). */
 const STATUS_OPTIONS: Ref[] = (
-  Object.entries(ORDER_STATUS_LABELS) as [OrderStatus, string][]
+  Object.entries(BATCH_STATUS_LABELS) as [BatchStatus, string][]
 ).map(([id, name]) => ({ id, name }));
 
 const STEPS_BY_PHASE: Record<StepPhase, ChecklistStep[]> = {
@@ -164,7 +164,7 @@ export function FiltersModal({
                 placeholder="Choose some clients"
               />
             </Field>
-            <Field label="Status">
+            <Field label="Batch Status">
               <SearchSelect
                 value={draft.status}
                 onChange={(v) => set("status", v)}
