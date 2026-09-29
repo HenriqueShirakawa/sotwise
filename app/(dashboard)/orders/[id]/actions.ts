@@ -49,6 +49,29 @@ async function assertBatchEditable(batchId: string) {
   return batch;
 }
 
+/**
+ * Contrapartida da trava de `updateBatchStatus`: lote em Production não pode
+ * ficar sem nenhuma Factory x Category — nem apagando, nem movendo a última
+ * linha pra outro lote. Sem isto dava pra contornar a trava (QA 28/09).
+ */
+async function lastEntryOfProductionBatchError(
+  admin: ReturnType<typeof createAdminClient>,
+  batchId: string,
+  entryId: string
+): Promise<string | null> {
+  const { data: batch } = await admin.from("batches").select("status").eq("id", batchId).single();
+  if (batch?.status !== "in_production") return null;
+  const { count, error } = await admin
+    .from("order_factory_category")
+    .select("id", { count: "exact", head: true })
+    .eq("batch_id", batchId)
+    .neq("id", entryId);
+  if (error) return error.message;
+  return count
+    ? null
+    : "A batch In Production needs at least one Factory x Category entry. Move the batch back to In Negotiation first.";
+}
+
 export async function updateBatchStatus(
   orderId: string,
   batchId: string,
@@ -181,10 +204,14 @@ export async function updateOrderFactoryCategoryBatch(
 
   const { data: entry, error: entryError } = await admin
     .from("order_factory_category")
-    .select("category_id, factory_id")
+    .select("category_id, factory_id, batch_id")
     .eq("id", id)
     .single();
   if (entryError || !entry) return { ok: false, error: entryError?.message ?? "Entry not found." };
+  if (entry.batch_id && entry.batch_id !== batchId) {
+    const lastError = await lastEntryOfProductionBatchError(admin, entry.batch_id, id);
+    if (lastError) return { ok: false, error: lastError };
+  }
   const twinError = await findBatchTwinError(admin, batchId, [entry], id);
   if (twinError) return { ok: false, error: twinError };
 
@@ -337,6 +364,16 @@ export async function deleteOrderFactoryCategory(
   // Entrada sem lote é sempre removível — a trava de lote embarcado só vale
   // quando existe um lote.
   if (batchId) await assertBatchEditable(batchId);
+  // O lote da trava vem do banco, não do cliente.
+  const { data: entry } = await admin
+    .from("order_factory_category")
+    .select("batch_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (entry?.batch_id) {
+    const lastError = await lastEntryOfProductionBatchError(admin, entry.batch_id, id);
+    if (lastError) return { ok: false, error: lastError };
+  }
 
   const { error } = await admin.from("order_factory_category").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
