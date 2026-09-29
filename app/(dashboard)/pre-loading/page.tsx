@@ -59,6 +59,7 @@ type StepRow = {
   agent_china_id: string | null;
   carrier_id: string | null;
   booking_number: string | null;
+  cutoff_date: string | null;
 };
 
 export const metadata = { title: "Pre-Loading" };
@@ -105,7 +106,7 @@ export default async function PreLoadingPage() {
       admin
         .from("pre_loading_checklist_steps")
         .select(
-          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_id, booking_number"
+          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_id, booking_number, cutoff_date"
         )
         .in("step", LIST_STEPS)
         .range(from, to)
@@ -256,6 +257,8 @@ export default async function PreLoadingPage() {
       // é essa mesma conclusão.
       loading_date: loadingDateStep?.completed_on ?? loadingDateStep?.estimated_date ?? null,
       completed: !!loadingDateStep?.completed_on,
+      // "Cut-off" da etapa Booking — data livre, sem regra de conclusão.
+      cutoff: steps.booking?.cutoff_date ?? null,
       // "Booking Status" = etapa "Booking" do checklist concluída — que exige
       // o booking number além da data (ver lib/checklist-completion).
       booking_confirmed: steps.booking

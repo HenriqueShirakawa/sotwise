@@ -34,6 +34,7 @@ export type StepPatch = Partial<{
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
+  cutoff_date: string | null;
 }>;
 
 /**

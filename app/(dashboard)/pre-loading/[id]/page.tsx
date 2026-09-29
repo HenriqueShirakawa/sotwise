@@ -45,6 +45,7 @@ type StepRow = {
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
+  cutoff_date: string | null;
 };
 
 /** Etapa ainda não gravada no banco: um PL novo não tem nenhuma linha. */
@@ -67,6 +68,7 @@ function emptyStep(step: ChecklistStep): PlStepRow {
     contact_brazil_id: null,
     contact_china_id: null,
     booking_number: null,
+    cutoff_date: null,
   };
 }
 
@@ -125,7 +127,7 @@ export default async function PreLoadingChecklistPage({
       .select(
         "id, step, done, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
-          "agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date"
       )
       .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),

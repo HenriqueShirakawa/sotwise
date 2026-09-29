@@ -225,7 +225,7 @@ Resolução (`lib/dal.ts` + `resolvePermissions` em `domain/access/features.ts`)
 | `client_id` | uuid | → `clients` |
 | `client_reference` | text | |
 | `business_unit_id` | uuid | → `business_units` |
-| `requester_id`, `leader_id`, `created_by` | uuid | → `profiles` |
+| `requester_id`, `leader_id`, `operational_responsible_id`, `created_by` | uuid | → `profiles` |
 | `exporter_id` | uuid | → `exporters` |
 | `status` | `order_status` NOT NULL | **rollup dos lotes** — recalculado na aplicação (`lib/order-status.ts`), não há trigger |
 | `date_po` | date | |
@@ -277,7 +277,7 @@ de exclusividade), mais `factory_id` opcional e `uploaded_by`.
 apontando para bibliotecas: `consolidation_point_id` → `factories`, `city_id` →
 `cities`, `pol_id` → `pols`, `carrier_agent_id` / `agent_brazil_id` /
 `agent_china_id` → `agents`, `contact_brazil_id` / `contact_china_id` →
-`contacts`, `booking_number`.
+`contacts`, `booking_number`, `cutoff_date` (Cut-off da etapa Booking, opcional).
 
 ### 5.4 Shipments
 

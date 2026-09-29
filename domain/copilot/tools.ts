@@ -471,7 +471,7 @@ const getOrderDetail = defineTool({
     const { data: orders } = await admin
       .from("orders")
       .select(
-        "id, po_number, status, date_po, schedule_requested, client_reference, asap, client_id, business_unit_id, order_type_id, leader_id, requester_id, exporter_id"
+        "id, po_number, status, date_po, schedule_requested, client_reference, asap, client_id, business_unit_id, order_type_id, leader_id, requester_id, exporter_id, operational_responsible_id"
       )
       .ilike("po_number", `%${input.po_number}%`)
       .is("deleted_at", null)
@@ -526,7 +526,12 @@ const getOrderDetail = defineTool({
       nameMap(admin, "order_types", [order.order_type_id]),
       nameMap(admin, "factories", ofc.map((r) => r.factory_id)),
       nameMap(admin, "categories", ofc.map((r) => r.category_id)),
-      peopleMap(admin, [order.leader_id, order.requester_id, ...steps.map((s) => s.responsible_id)]),
+      peopleMap(admin, [
+        order.leader_id,
+        order.requester_id,
+        order.operational_responsible_id,
+        ...steps.map((s) => s.responsible_id),
+      ]),
     ]);
 
     const today = todayIso(todayMs);
@@ -551,6 +556,9 @@ const getOrderDetail = defineTool({
         order_type: order.order_type_id ? (types.get(order.order_type_id) ?? null) : null,
         leader: order.leader_id ? (people.get(order.leader_id) ?? null) : null,
         requester: order.requester_id ? (people.get(order.requester_id) ?? null) : null,
+        operational_responsible: order.operational_responsible_id
+          ? (people.get(order.operational_responsible_id) ?? null)
+          : null,
         date_po: order.date_po,
         schedule_requested: order.schedule_requested,
         asap: order.asap,
