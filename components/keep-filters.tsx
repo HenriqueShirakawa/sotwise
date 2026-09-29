@@ -1,20 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table";
-import { Pin, PinOff } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { saveListState } from "@/lib/list-state-actions";
 import type { SavedListState } from "@/lib/list-state";
-import { cn } from "@/lib/utils";
 
 // Última versão de cada lista NESTA aba. Sobrevive à navegação client-side (o
 // módulo não é recarregado), que é justamente o caso "abri o checklist e voltei":
@@ -132,47 +124,29 @@ export function useListState<
 }
 
 /**
- * Botão "Keep filters" ao lado do Filters: alfinete preenchido = a lista lembra
- * a filtragem ao voltar; riscado = abre limpa da próxima vez. Desligar não
+ * Chave "Keep filters" no rodapé do modal de Filters (pedido do usuário: fica
+ * dentro do popup, não na barra da lista). Ligada = a lista lembra a filtragem
+ * ao voltar; desligada = abre limpa da próxima vez. Vale na hora — é
+ * preferência, não rascunho de filtro, então não espera o "Filter". Desligar não
  * apaga o que está na tela agora, só deixa de lembrar.
  */
-export function KeepFiltersToggle({
+export function KeepFiltersSwitch({
   keep,
   onChange,
-  onAfterClick,
 }: {
   keep: boolean;
   onChange: (keep: boolean) => void;
-  /** Fecha o "⋮" da toolbar no mobile. */
-  onAfterClick?: () => void;
 }) {
+  const id = useId();
   return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            aria-pressed={keep}
-            className={cn(
-              "h-11 rounded-xl bg-white",
-              keep &&
-                "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
-            )}
-            onClick={() => {
-              onChange(!keep);
-              onAfterClick?.();
-            }}
-          >
-            {keep ? <Pin /> : <PinOff />}
-            {keep ? "Keeping filters" : "Keep filters"}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-64">
-          {keep
-            ? "Filters, search and page are remembered when you come back to this list. Click to stop remembering."
-            : "This list opens without filters. Click to remember your filters when you come back."}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <div className="flex items-center gap-2.5 sm:mr-auto">
+      <Switch id={id} checked={keep} onCheckedChange={onChange} />
+      <label htmlFor={id} className="cursor-pointer leading-tight">
+        <span className="block text-sm font-medium text-foreground">Keep filters</span>
+        <span className="block text-xs text-muted-foreground">
+          Remember them when you come back to this list
+        </span>
+      </label>
+    </div>
   );
 }

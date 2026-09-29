@@ -22,7 +22,7 @@ import type { SavedListState } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
-import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -394,25 +394,22 @@ export function ShipmentsClient({
         placeholder="PL number"
         activeCount={filterCount}
         controls={(close) => (
-          <>
-            <Button
-              variant="outline"
-              className="h-11 rounded-xl bg-white"
-              onClick={() => {
-                close();
-                setFiltersOpen(true);
-              }}
-            >
-              <Filter />
-              Filters
-              {filterCount > 0 && (
-                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                  {filterCount}
-                </span>
-              )}
-            </Button>
-            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
-          </>
+          <Button
+            variant="outline"
+            className="h-11 rounded-xl bg-white"
+            onClick={() => {
+              close();
+              setFiltersOpen(true);
+            }}
+          >
+            <Filter />
+            Filters
+            {filterCount > 0 && (
+              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                {filterCount}
+              </span>
+            )}
+          </Button>
         )}
         trailing={() => (
           <ColumnsMenu
@@ -429,6 +426,8 @@ export function ShipmentsClient({
         filters={filters}
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         clients={clients}
         profiles={profiles}
         orders={orders}

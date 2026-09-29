@@ -61,7 +61,7 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
-import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -658,7 +658,6 @@ export function OrdersClient({
                 </span>
               )}
             </Button>
-            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
           </>
         )}
         trailing={() => (
@@ -676,6 +675,8 @@ export function OrdersClient({
         filters={filters}
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         orderTypes={orderTypes}
         businessUnits={businessUnits}
         exporters={exporters}

@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { countActiveFilters } from "@/lib/list-state";
+import { KeepFiltersSwitch } from "@/components/keep-filters";
 
 export type Ref = { id: string; name: string };
 
@@ -80,6 +81,8 @@ export function FiltersModal({
   filters,
   onApply,
   onClear,
+  keep,
+  onKeepChange,
   clients,
   profiles,
   orders,
@@ -94,6 +97,9 @@ export function FiltersModal({
   filters: PreLoadingFilters;
   onApply: (filters: PreLoadingFilters) => void;
   onClear: () => void;
+  /** "Keep filters" da lista — ver components/keep-filters. */
+  keep: boolean;
+  onKeepChange: (keep: boolean) => void;
   clients: Ref[];
   profiles: Ref[];
   orders: Ref[];
@@ -259,6 +265,7 @@ export function FiltersModal({
         </div>
 
         <DialogFooter>
+          <KeepFiltersSwitch keep={keep} onChange={onKeepChange} />
           <Button variant="outline" className="sm:min-w-32" onClick={clear}>
             Clear Filters
           </Button>
