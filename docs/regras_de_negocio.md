@@ -1939,8 +1939,10 @@ To do list    = VIEW read-only sobre order_checklist_steps + pre_loading_checkli
 - ✅ **Critério:** apenas etapas **não concluídas** (`completed_on IS NULL`) **com `responsible_id` E `estimated_date` preenchidos** — sem os dois não é tarefa de ninguém, é resíduo de migração (etapa que nunca teve responsável ou nunca teve data prevista).
 - ✅ **View (por linha):** é **somente leitura e navega** — leva o usuário à página do checklist correspondente (Order / PL / Shipment), onde a conclusão de fato acontece. Não edita nada na própria To do list.
 - ✅ **Download XLS:** **cortado** (segue a decisão global; não é uma das 3 exceções).
-- Colunas: PO number, PL number, Step, Status PO, Responsible, Date preview, Client.
-- Filtros: Client, Responsible, Status, Step, Date Preview (range).
+- Colunas: PO number, PL number, Step, **Batch Status**, Responsible, Date preview, Client.
+- Filtros: Client, Responsible, **Batch Status**, Step, Date Preview (range).
+- ✅ **Batch Status no lugar de Status PO (2026-09-29, pedido do usuário):** a coluna mostra o status dos **lotes** da linha, não o rollup da PO. Linha de Order → lotes da PO; linha de PL/Shipment → lotes vinculados ao PL (`pre_loading_batches`). Se os lotes estão em fases diferentes, aparece um chip por status distinto, na ordem da esteira; `canceled` só aparece se não houver lote ativo (mesma regra do rollup, §3.7.2). Order sem lote ainda → "—". O filtro de Status passou a ser por status de lote (casa se qualquer lote da linha estiver nele).
+- ✅ **Paginação da consulta (2026-09-29):** a montagem da lista pagina as etapas (o PostgREST corta em 1000 linhas — havia 1405 etapas de Order pendentes e ~400 sumiam) e quebra os `.in()` por id em blocos de 150 (com ~1000 ids a URL estourava em Bad Request, calado, e o ramo PL ficava sem PO/lote — era o "—" no PO dos PLs).
 - Interface 100% em inglês.
 
 > As "abas Inbox/Pre-loading/Shipment" citadas em documentação antiga do MD **não existem** no design atual — a lista é única.

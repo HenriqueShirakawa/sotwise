@@ -21,9 +21,9 @@ import type { ListStateSeed } from "@/lib/list-state";
 import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
 import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
-import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { STEP_LABELS } from "@/lib/checklist";
-import type { ChecklistStep, OrderStatus } from "@/types/database";
+import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
@@ -61,8 +61,11 @@ export type TodoRow = {
   po_number: string | null;
   pl_number: string | null;
   step: ChecklistStep;
-  /** Só nas linhas de Order (etapas de PL não têm status de PO). */
-  status: OrderStatus | null;
+  /**
+   * Status distintos dos lotes da linha, na ordem da esteira — Order: lotes da
+   * PO; PL/Shipment: lotes vinculados ao PL. Normalmente é um só.
+   */
+  batch_statuses: BatchStatus[];
   responsible: string | null;
   /** Usado só pelo filtro de Responsible — o nome já basta pra coluna. */
   responsible_id: string | null;
@@ -109,7 +112,7 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "po_number", label: "PO Number" },
   { id: "pl_number", label: "PL Number" },
   { id: "step", label: "Step" },
-  { id: "status", label: "Status PO" },
+  { id: "status", label: "Batch Status" },
   { id: "responsible", label: "Responsible" },
   { id: "date_preview", label: "Date preview" },
   { id: "client", label: "Client" },
@@ -209,7 +212,8 @@ export function TodoClient({
       if (tab !== "all" && r.phase !== tab) return false;
       if (filters.user_id && r.responsible_id !== filters.user_id) return false;
       if (filters.client_id && !r.client_ids.includes(filters.client_id)) return false;
-      if (filters.status && r.status !== filters.status) return false;
+      if (filters.status && !r.batch_statuses.includes(filters.status as BatchStatus))
+        return false;
       if (filters.step && r.step !== filters.step) return false;
       if (!inDateRange(r.date_preview, filters.date_from, filters.date_to)) return false;
       if (!q) return true;
@@ -259,11 +263,15 @@ export function TodoClient({
       },
       {
         id: "status",
-        accessorFn: (r) => (r.status ? ORDER_STATUS_LABELS[r.status] : ""),
-        header: ({ column }) => <SortableHeader label="Status PO" column={column} />,
+        accessorFn: (r) => r.batch_statuses.map((st) => BATCH_STATUS_LABELS[st]).join(", "),
+        header: ({ column }) => <SortableHeader label="Batch Status" column={column} />,
         cell: ({ row }) =>
-          row.original.status ? (
-            <StatusPill label={ORDER_STATUS_LABELS[row.original.status]} />
+          row.original.batch_statuses.length ? (
+            <div className="flex flex-wrap gap-1">
+              {row.original.batch_statuses.map((st) => (
+                <StatusPill key={st} label={BATCH_STATUS_LABELS[st]} />
+              ))}
+            </div>
           ) : (
             dash
           ),

@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { readListState } from "@/lib/list-state";
 import { SHIPMENT_STEPS } from "@/lib/checklist";
-import type { ChecklistStep, OrderStatus } from "@/types/database";
+import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 
 import { TodoClient, type TodoRow } from "./todo-client";
 import type { Ref } from "./filters-modal";
@@ -17,6 +17,31 @@ const SHIPMENT_STEP_SET = new Set<ChecklistStep>(SHIPMENT_STEPS);
  * data de conclusão não veio do Bubble —, não tarefa. Some da To do list.
  */
 const TERMINAL_STATUS = new Set<string>(["delivered", "canceled"]);
+
+/** Teto de linhas por resposta do PostgREST. */
+const PAGE_SIZE = 1000;
+/** Ids por `.in()` — mantém a URL da query bem abaixo do limite. */
+const ID_CHUNK = 150;
+
+/** Ordem da esteira — os status de lote da linha saem nesta sequência. */
+const BATCH_STATUS_ORDER: BatchStatus[] = [
+  "in_negotiation",
+  "in_production",
+  "preloading",
+  "in_transit",
+  "delivered",
+  "canceled",
+];
+
+/**
+ * Status distintos dos lotes da linha, na ordem da esteira. Lote cancelado só
+ * aparece se não sobrar nenhum ativo — mesma regra do rollup (docs §3.7.2).
+ */
+function distinctBatchStatuses(statuses: BatchStatus[]): BatchStatus[] {
+  const set = new Set(statuses);
+  if ([...set].some((s) => s !== "canceled")) set.delete("canceled");
+  return BATCH_STATUS_ORDER.filter((s) => set.has(s));
+}
 
 /**
  * To do list (docs §3.12.2). VIEW read-only sobre as etapas de checklist
@@ -41,13 +66,34 @@ export default async function TodoPage() {
   const { profile } = await requireFeature("todo");
   const admin = createAdminClient();
 
+  // O PostgREST corta toda resposta em 1000 linhas: pagina com `range` até
+  // esgotar. A query precisa de `order` estável pra página não pular/repetir.
+  const fetchAll = async <T,>(
+    build: () => {
+      range: (from: number, to: number) => PromiseLike<{ data: T[] | null }>;
+    }
+  ): Promise<T[]> => {
+    const out: T[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data } = await build().range(from, from + PAGE_SIZE - 1);
+      out.push(...(data ?? []));
+      if (!data || data.length < PAGE_SIZE) return out;
+    }
+  };
+
+  // `.in()` com centenas de uuids estoura o tamanho da URL (Bad Request, que
+  // antes virava lista vazia calada) — quebra os ids em blocos.
   const inIds = async <T,>(
     ids: Set<string>,
-    build: (list: string[]) => PromiseLike<{ data: T[] | null }>
+    build: (list: string[]) => {
+      range: (from: number, to: number) => PromiseLike<{ data: T[] | null }>;
+    }
   ): Promise<T[]> => {
-    if (ids.size === 0) return [];
-    const { data } = await build([...ids]);
-    return data ?? [];
+    const all = [...ids];
+    const chunks: string[][] = [];
+    for (let i = 0; i < all.length; i += ID_CHUNK) chunks.push(all.slice(i, i + ID_CHUNK));
+    const results = await Promise.all(chunks.map((list) => fetchAll(() => build(list))));
+    return results.flat();
   };
 
   // Etapas pendentes de todo mundo — sem filtro de role. `responsible_id` e
@@ -55,37 +101,39 @@ export default async function TodoPage() {
   // designado ou nunca teve uma data prevista) ficam de fora: sem os dois não
   // é o "to-do" de ninguém, é trabalho não atribuído, outra categoria.
   // Order tem `enabled` (etapa N/A não é tarefa); pre-loading não tem esse conceito.
-  const orderStepsQuery = admin
-    .from("order_checklist_steps")
-    .select("id, order_id, step, estimated_date, responsible_id")
-    .eq("enabled", true)
-    .is("completed_on", null)
-    .not("responsible_id", "is", null)
-    .not("estimated_date", "is", null);
-
-  const plStepsQuery = admin
-    .from("pre_loading_checklist_steps")
-    .select("id, pre_loading_id, step, estimated_date, responsible_id")
-    .is("completed_on", null)
-    .not("responsible_id", "is", null)
-    .not("estimated_date", "is", null);
-
-  const [orderStepsRes, plStepsRes] = await Promise.all([orderStepsQuery, plStepsQuery]);
-
-  const orderSteps = (orderStepsRes.data ?? []) as {
-    id: string;
-    order_id: string;
-    step: ChecklistStep;
-    estimated_date: string | null;
-    responsible_id: string | null;
-  }[];
-  const plSteps = (plStepsRes.data ?? []) as {
-    id: string;
-    pre_loading_id: string;
-    step: ChecklistStep;
-    estimated_date: string | null;
-    responsible_id: string | null;
-  }[];
+  const [orderSteps, plSteps] = await Promise.all([
+    fetchAll<{
+      id: string;
+      order_id: string;
+      step: ChecklistStep;
+      estimated_date: string | null;
+      responsible_id: string | null;
+    }>(() =>
+      admin
+        .from("order_checklist_steps")
+        .select("id, order_id, step, estimated_date, responsible_id")
+        .eq("enabled", true)
+        .is("completed_on", null)
+        .not("responsible_id", "is", null)
+        .not("estimated_date", "is", null)
+        .order("id")
+    ),
+    fetchAll<{
+      id: string;
+      pre_loading_id: string;
+      step: ChecklistStep;
+      estimated_date: string | null;
+      responsible_id: string | null;
+    }>(() =>
+      admin
+        .from("pre_loading_checklist_steps")
+        .select("id, pre_loading_id, step, estimated_date, responsible_id")
+        .is("completed_on", null)
+        .not("responsible_id", "is", null)
+        .not("estimated_date", "is", null)
+        .order("id")
+    ),
+  ]);
 
   const plIds = new Set(plSteps.map((s) => s.pre_loading_id));
 
@@ -109,15 +157,39 @@ export default async function TodoPage() {
     ),
   ]);
 
-  // batches → order_id (para consolidar as POs de cada PL).
+  // batches → order_id (para consolidar as POs de cada PL) + status do lote.
+  // Os lotes das Orders do ramo Order vêm junto: a coluna Status mostra o
+  // status dos LOTES da linha, não o rollup da PO.
   const plBatchIds = new Set(plBatches.map((b) => b.batch_id));
-  const batchOrderRows = await inIds<{ id: string; order_id: string }>(plBatchIds, (list) =>
-    admin.from("batches").select("id, order_id").in("id", list)
-  );
+  const orderStepOrderIds = new Set(orderSteps.map((s) => s.order_id));
+  const [batchOrderRows, orderBatchRows] = await Promise.all([
+    inIds<{ id: string; order_id: string; status: BatchStatus }>(plBatchIds, (list) =>
+      admin.from("batches").select("id, order_id, status").in("id", list)
+    ),
+    inIds<{ order_id: string; status: BatchStatus }>(orderStepOrderIds, (list) =>
+      admin.from("batches").select("order_id, status").in("order_id", list)
+    ),
+  ]);
   const orderIdByBatch = new Map(batchOrderRows.map((b) => [b.id, b.order_id]));
+  const batchStatusById = new Map(batchOrderRows.map((b) => [b.id, b.status]));
+
+  const batchStatusesByOrder = new Map<string, BatchStatus[]>();
+  for (const b of orderBatchRows) {
+    const list = batchStatusesByOrder.get(b.order_id) ?? [];
+    list.push(b.status);
+    batchStatusesByOrder.set(b.order_id, list);
+  }
+  const batchStatusesByPl = new Map<string, BatchStatus[]>();
+  for (const pb of plBatches) {
+    const st = batchStatusById.get(pb.batch_id);
+    if (!st) continue;
+    const list = batchStatusesByPl.get(pb.pre_loading_id) ?? [];
+    list.push(st);
+    batchStatusesByPl.set(pb.pre_loading_id, list);
+  }
 
   // Orders: ramo Order (order_id direto) + Orders vinculadas aos PLs.
-  const orderIds = new Set<string>(orderSteps.map((s) => s.order_id));
+  const orderIds = new Set<string>(orderStepOrderIds);
   for (const b of batchOrderRows) orderIds.add(b.order_id);
   const orders = await inIds<{
     id: string;
@@ -184,7 +256,7 @@ export default async function TodoPage() {
         po_number: order.po_number,
         pl_number: null,
         step: s.step,
-        status: order.status,
+        batch_statuses: distinctBatchStatuses(batchStatusesByOrder.get(order.id) ?? []),
         responsible: s.responsible_id ? (responsibleNameById.get(s.responsible_id) ?? null) : null,
         responsible_id: s.responsible_id,
         date_preview: s.estimated_date,
@@ -216,7 +288,7 @@ export default async function TodoPage() {
         po_number: pos ? [...pos].sort().join(", ") : null,
         pl_number: plNumber ?? null,
         step: s.step,
-        status: null,
+        batch_statuses: distinctBatchStatuses(batchStatusesByPl.get(s.pre_loading_id) ?? []),
         responsible: s.responsible_id ? (responsibleNameById.get(s.responsible_id) ?? null) : null,
         responsible_id: s.responsible_id,
         date_preview: s.estimated_date,
