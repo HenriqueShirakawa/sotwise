@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
-import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 
 import { deletePreLoading, getSelectableBatchOptions } from "./actions";
@@ -458,7 +458,6 @@ export function PreLoadingClient({
                 </span>
               )}
             </Button>
-            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
             <Button
               variant="outline"
               className="h-11 rounded-xl bg-white"
@@ -499,6 +498,8 @@ export function PreLoadingClient({
         filters={filters}
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         clients={clients}
         profiles={profiles}
         agents={agents}
