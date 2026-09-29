@@ -96,6 +96,8 @@ export type PlStepRow = {
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
+  /** Etapa Booking: "Cut-off" — data livre, opcional (não conta pra concluir). */
+  cutoff_date: string | null;
 };
 
 /** As 7 etapas da fase pre-loading, na ordem do Bubble (docs §3.9.5). */
@@ -747,19 +749,36 @@ export function PlChecklistClient({
                       </div>
                     )}
                     {s.step === "booking" && (
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Booking number</Label>
-                        <Input
-                          defaultValue={s.booking_number ?? ""}
-                          disabled={pending}
-                          placeholder="Booking number"
-                          onBlur={(e) => {
-                            const v = e.target.value.trim() || null;
-                            if (v !== (s.booking_number ?? null))
-                              save(s.step, { booking_number: v });
-                          }}
-                          className="mt-1 bg-white"
-                        />
+                      <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Booking number</Label>
+                          <Input
+                            defaultValue={s.booking_number ?? ""}
+                            disabled={pending}
+                            placeholder="Booking number"
+                            onBlur={(e) => {
+                              const v = e.target.value.trim() || null;
+                              if (v !== (s.booking_number ?? null))
+                                save(s.step, { booking_number: v });
+                            }}
+                            className="mt-1 bg-white"
+                          />
+                        </div>
+                        <div>
+                          {/* Data livre e opcional: sem trava de passado/futuro e
+                              fora da regra de conclusão da etapa. */}
+                          <Label className="text-xs text-muted-foreground">Cut-off</Label>
+                          <DatePicker
+                            value={s.cutoff_date}
+                            disabled={pending}
+                            ariaLabel="Cut-off"
+                            onChange={(v) => {
+                              if (v !== (s.cutoff_date ?? null))
+                                save(s.step, { cutoff_date: v });
+                            }}
+                            className="mt-1 bg-white"
+                          />
+                        </div>
                       </div>
                     )}
 

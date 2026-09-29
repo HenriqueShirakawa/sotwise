@@ -175,6 +175,7 @@ type OrderDetail = {
   client_reference: string | null;
   requester: string | null;
   leader: string | null;
+  operational_responsible: string | null;
   exporter: string | null;
   date_po: string | null;
   status: OrderStatus;
@@ -1248,6 +1249,10 @@ export function OrderDetailClient({
               </InfoCard>
               <InfoCard title="Responsible">
                 <ResponsibleRow name={order.leader} role="Leader" />
+                <ResponsibleRow
+                  name={order.operational_responsible}
+                  role="Operational Responsible"
+                />
                 <ResponsibleRow name={order.requester} role="Requester" />
                 <ResponsibleRow name={order.exporter} role="Exporter" />
               </InfoCard>

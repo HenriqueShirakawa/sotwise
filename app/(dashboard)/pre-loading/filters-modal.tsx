@@ -30,6 +30,8 @@ export type PreLoadingFilters = {
   consolidation_point_id: string;
   loading_from: string;
   loading_to: string;
+  cutoff_from: string;
+  cutoff_to: string;
 };
 
 export const EMPTY_FILTERS: PreLoadingFilters = {
@@ -45,6 +47,8 @@ export const EMPTY_FILTERS: PreLoadingFilters = {
   consolidation_point_id: "",
   loading_from: "",
   loading_to: "",
+  cutoff_from: "",
+  cutoff_to: "",
 };
 
 export function activeFilterCount(filters: PreLoadingFilters): number {
@@ -233,6 +237,20 @@ export function FiltersModal({
                   value={draft.loading_to}
                   onChange={(v) => set("loading_to", v ?? "")}
                   ariaLabel="To"
+                />
+              </div>
+            </Field>
+            <Field label="Cut-off">
+              <div className="grid grid-cols-2 gap-3">
+                <DatePicker
+                  value={draft.cutoff_from}
+                  onChange={(v) => set("cutoff_from", v ?? "")}
+                  ariaLabel="Cut-off from"
+                />
+                <DatePicker
+                  value={draft.cutoff_to}
+                  onChange={(v) => set("cutoff_to", v ?? "")}
+                  ariaLabel="Cut-off to"
                 />
               </div>
             </Field>

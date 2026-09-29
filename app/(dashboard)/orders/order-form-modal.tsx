@@ -38,6 +38,7 @@ type FormState = {
   requester_id: string;
   exporter_id: string;
   leader_id: string;
+  operational_responsible_id: string;
 };
 
 const EMPTY: FormState = {
@@ -49,6 +50,7 @@ const EMPTY: FormState = {
   requester_id: "",
   exporter_id: "",
   leader_id: "",
+  operational_responsible_id: "",
 };
 
 function fromRow(row: OrderRow): FormState {
@@ -61,6 +63,7 @@ function fromRow(row: OrderRow): FormState {
     requester_id: row.requester_id ?? "",
     exporter_id: row.exporter_id ?? "",
     leader_id: row.leader_id ?? "",
+    operational_responsible_id: row.operational_responsible_id ?? "",
   };
 }
 
@@ -74,6 +77,7 @@ export function OrderFormModal({
   businessUnits,
   exporters,
   profiles,
+  operationalUsers,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -84,6 +88,8 @@ export function OrderFormModal({
   businessUnits: Ref[];
   exporters: Ref[];
   profiles: Ref[];
+  /** Só usuários internos ativos — ver orders/page.tsx. */
+  operationalUsers: Ref[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -102,6 +108,15 @@ export function OrderFormModal({
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
+  // O responsável já gravado pode ter sido bloqueado depois: ele entra nas opções
+  // pra o campo mostrar quem está salvo (sem isso aparecia vazio e o Save
+  // regravava o valor escondido).
+  const current = form.operational_responsible_id;
+  const operationalOptions =
+    current && !operationalUsers.some((u) => u.id === current)
+      ? [...operationalUsers, ...profiles.filter((p) => p.id === current)]
+      : operationalUsers;
+
   const poNumber = editing ? editing.po_number : nextPo;
   // Campos "importantes" que liberam o submit (espelha o botão travado do Bubble).
   const canSubmit =
@@ -118,6 +133,7 @@ export function OrderFormModal({
       requester_id: form.requester_id || null,
       exporter_id: form.exporter_id || null,
       leader_id: form.leader_id || null,
+      operational_responsible_id: form.operational_responsible_id || null,
     };
     startTransition(async () => {
       if (editing) {
@@ -221,13 +237,22 @@ export function OrderFormModal({
                 options={exporters}
               />
             </div>
-            <SelectField
-              label="Leader's Order"
-              placeholder="Select leader"
-              value={form.leader_id}
-              onChange={(v) => set("leader_id", v)}
-              options={profiles}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField
+                label="Leader's Order"
+                placeholder="Select leader"
+                value={form.leader_id}
+                onChange={(v) => set("leader_id", v)}
+                options={profiles}
+              />
+              <SelectField
+                label="Operational Responsible"
+                placeholder="Select operational responsible"
+                value={form.operational_responsible_id}
+                onChange={(v) => set("operational_responsible_id", v)}
+                options={operationalOptions}
+              />
+            </div>
           </Section>
         </div>
 
