@@ -10,12 +10,13 @@ import { fetchAll } from "@/lib/fetch-all";
 import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
-import { withDeliveryIssues } from "@/lib/email/delivery-issues";
+import { withDeliveryStatus } from "@/lib/email/delivery-issues";
 import { sendEmail } from "@/lib/email/resend";
 import {
   loadQuotedHistory,
   peekQuotedHistory,
   promoteAnchorIfMissing,
+  recipientThreadingHeaders,
   recordThreadFanout,
   replyToAddress,
   resolveOwnerOrders,
@@ -459,8 +460,9 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     .order("created_at", { ascending: false });
 
   if (!data || data.length === 0) return [];
-  // Bounce/falha avisados pelo webhook do Resend depois do envio.
-  const rows = await withDeliveryIssues(admin, data);
+  // Entregue / devolvido de cada destinatário, do que já está gravado — quem
+  // ainda está a caminho a tela consulta depois (`refreshEmailDelivery`).
+  const rows = await withDeliveryStatus(admin, data);
 
   const senderIds = [...new Set(rows.map((r) => r.sender_id))];
   const { data: senders } = await admin
@@ -515,6 +517,33 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     replies: repliesByEmailId.get(r.id) ?? [],
     thread_client_name: r.thread_id ? (clientNameByThreadId.get(r.thread_id) ?? null) : null,
   }));
+}
+
+const refreshIdsSchema = z.array(z.uuid()).min(1).max(50);
+
+/**
+ * Consulta no Resend o status dos destinatários que ainda estão a caminho
+ * nestas linhas, grava o que já é final (entregue / devolvido) e devolve os
+ * destinatários de cada linha atualizados. A tela chama em intervalo enquanto
+ * algum chip está "enviando" — histórico da etapa e lista de E-mails (ver
+ * components/checklist/use-live-delivery.ts).
+ */
+export async function refreshEmailDelivery(
+  emailIds: string[]
+): Promise<{ ok: true; recipients: Record<string, StepEmailRecipient[]> } | { ok: false; error: string }> {
+  await requireInternal();
+  const parsed = refreshIdsSchema.safeParse(emailIds);
+  if (!parsed.success) return { ok: false, error: "Invalid e-mail ids." };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("checklist_step_emails")
+    .select("id, recipients, created_at")
+    .in("id", parsed.data);
+  if (error) return { ok: false, error: error.message };
+
+  const rows = await withDeliveryStatus(admin, data ?? [], { refresh: true });
+  return { ok: true, recipients: Object.fromEntries(rows.map((r) => [r.id, r.recipients])) };
 }
 
 /** "Mark as read" de UMA resposta, chamado ao abrir o card no histórico
@@ -958,8 +987,10 @@ const missingEmail = (people: Person[]): StepEmailRecipient[] =>
  * `external` é sempre de 1 cliente só. O caminho de 2+ grupos (thread
  * `external` sem cliente escolhido, consolidando 2+ clientes — interno e
  * cada grupo em mensagens/linhas separadas) ficou sem chamador:
- * `checkAudience` exige o cliente. Todos no "To" dentro do próprio grupo,
- * igual à decisão de 11/09/2026 — o "grupo" é (papel, idioma), não só papel.
+ * `checkAudience` exige o cliente. O "grupo" é (papel, idioma), não só papel.
+ * Dentro dele, desde 29/09/2026 cada destinatário recebe um envio próprio (não
+ * mais todos no "To" da mesma mensagem, decisão de 11/09/2026) — é o que deixa
+ * saber se o e-mail chegou a cada um (ver `deliverAndRecord`).
  *
  * Recipiente `external` cujo `client_id` não bate com NENHUM cliente que o
  * owner de fato consolida agora (estado mudou entre abrir o compositor e
@@ -1148,22 +1179,25 @@ export async function sendStepEmail(
     rowLanguage: EmailLanguage
   ): Promise<{ ok: true; sent: number; failed: number } | { ok: false; error: string }> => {
     const threadHeaders = await threadHeadersFor([thread]);
+    const headersFor = await recipientThreadingHeaders(admin, thread.id, threadHeaders);
     const replyTo = replyToAddress(thread.id);
     const smtpSubject = smtpSubjectForThread(threadHeaders);
 
+    // Um envio (request) por destinatário (29/09/2026): cada um ganha seu id no
+    // Resend e o status dele — entregue ou devolvido — é consultado sozinho
+    // (ver lib/email/delivery-issues.ts). Numa mensagem só para todos, o Resend
+    // dava UM status para o grupo e o bounce de um endereço sumia.
     const recipients: StepEmailRecipient[] = [];
     for (const pass of passes) {
       recipients.push(...missingEmail(pass.people));
-      const members = withEmail(pass.people);
-      if (members.length === 0) continue;
-      const sent = await sendEmail({
-        to: members.map((p) => p.email),
-        subject: smtpSubject,
-        html: pass.html,
-        replyTo,
-        headers: threadHeaders,
-      });
-      for (const p of members) {
+      for (const p of withEmail(pass.people)) {
+        const sent = await sendEmail({
+          to: p.email,
+          subject: smtpSubject,
+          html: pass.html,
+          replyTo,
+          headers: headersFor(p.email),
+        });
         recipients.push({
           user_id: p.userId,
           name: p.name,
@@ -1171,6 +1205,7 @@ export async function sendStepEmail(
           ok: sent.ok,
           error: sent.ok ? null : sent.error,
           message_id: sent.ok ? sent.messageId : null,
+          provider_id: sent.ok ? sent.id || null : null,
         });
       }
     }

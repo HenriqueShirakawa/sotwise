@@ -51,16 +51,34 @@ export type StepEmailRecipient = {
   /** Message-ID da mensagem entregue a ESTE destinatário (Fase 2 do
    *  threading) — ausente/nulo em envios antigos ou que falharam. */
   message_id?: string | null;
-  /** Calculado na LEITURA (não gravado em `recipients`): o Resend avisou pelo
-   *  webhook que o e-mail não chegou a este destinatário. Ver
+  /** Id do e-mail DESTE destinatário no Resend. Desde 29/09/2026 cada
+   *  destinatário é um envio (request) próprio, e é por este id que o app
+   *  consulta se chegou (`GET /emails/:id`). Ausente em envios antigos, que
+   *  iam numa mensagem só para todos. */
+  provider_id?: string | null;
+  /** Calculado na LEITURA (não gravado em `recipients`): o e-mail não chegou
+   *  a este destinatário (bounce, supressão, falha, spam). Ver
    *  lib/email/delivery-issues.ts. */
   delivery_issue?: EmailDeliveryIssue | null;
+  /** Calculado na LEITURA: onde está o e-mail enquanto não deu problema —
+   *  `null` em envio antigo (sem `provider_id`) ou que o Resend recusou. */
+  delivery?: EmailDelivery | null;
 };
-export type EmailDeliveryEvent = "bounced" | "failed" | "suppressed" | "complained";
+/** Tudo o que o app grava do destino de um e-mail (`email_delivery_events`). */
+export type EmailDeliveryEvent = "delivered" | EmailDeliveryProblem;
+/** Os eventos que significam "não chegou". */
+export type EmailDeliveryProblem = "bounced" | "failed" | "suppressed" | "complained";
 export type EmailDeliveryIssue = {
-  event: EmailDeliveryEvent;
+  event: EmailDeliveryProblem;
   reason: string | null;
   occurred_at: Timestamp;
+};
+/** `sending` = o Resend aceitou e ainda não houve resposta do servidor do
+ *  destinatário; `delayed` = recusa temporária, o Resend segue tentando;
+ *  `unconfirmed` = passou a janela de consulta sem resposta final. */
+export type EmailDelivery = {
+  state: "sending" | "delayed" | "delivered" | "unconfirmed";
+  at: Timestamp | null;
 };
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
@@ -1246,8 +1264,9 @@ export type Database = {
         >;
         Relationships: [];
       };
-      // Bounce/falha de entrega avisados pelo webhook do Resend (migration
-      // 20260925140000). Insert-only.
+      // Destino de cada destinatário dos e-mails por etapa: bounce/falha (webhook
+      // do Resend, migration 20260925140000) e, desde 20260929140000, também
+      // "delivered" (consulta por destinatário). Insert-only.
       email_delivery_events: {
         Row: {
           id: UUID;
