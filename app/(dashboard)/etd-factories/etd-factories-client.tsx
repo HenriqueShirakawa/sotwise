@@ -17,7 +17,7 @@ import { Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide
 import { toast } from "sonner";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
-import type { SavedListState } from "@/lib/list-state";
+import type { ListStateSeed } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus } from "@/types/database";
 import { useEtdRealtime } from "@/lib/use-etd-realtime";
@@ -149,7 +149,7 @@ export function EtdFactoriesClient({
   factories: Ref[];
   categories: Ref[];
   initialColumns: VisibilityState;
-  initialListState: SavedListState | null;
+  initialListState: ListStateSeed;
 }) {
   // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
   // "Keep filters" está ligado (ver components/keep-filters).

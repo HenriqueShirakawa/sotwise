@@ -17,7 +17,7 @@ import { Filter, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
-import type { SavedListState } from "@/lib/list-state";
+import type { ListStateSeed } from "@/lib/list-state";
 import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
 import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
@@ -145,7 +145,7 @@ export function TodoClient({
   /** Responsáveis presentes nas tarefas carregadas — alimenta o filtro de Responsible. */
   users: Ref[];
   initialColumns: VisibilityState;
-  initialListState: SavedListState | null;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
   // Aba, busca, filtros, ordenação e página: lembrados ao voltar do checklist

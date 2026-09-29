@@ -255,7 +255,7 @@ export default async function TodoPage() {
       clients={clientOptions}
       users={userOptions}
       initialColumns={readColumnVisibility(profile.ui_preferences, "todo")}
-      initialListState={readListState(profile.ui_preferences, "todo")}
+      initialListState={readListState(profile, "todo")}
     />
   );
 }

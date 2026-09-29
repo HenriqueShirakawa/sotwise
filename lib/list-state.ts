@@ -18,8 +18,22 @@ export type SavedListState = {
   at: number;
 };
 
-/** Lê, com segurança, o estado salvo de UMA lista (null = nunca gravou). */
+/**
+ * O que a página entrega ao `useListState`: o estado salvo da lista + de quem é
+ * (`owner` = id do profile). O dono separa a cópia local da aba por usuário —
+ * trocar de conta no mesmo navegador não herda a lista de outra pessoa.
+ */
+export type ListStateSeed = { owner: string; saved: SavedListState | null };
+
 export function readListState(
+  profile: { id: string; ui_preferences: Record<string, unknown> | null | undefined },
+  listKey: string
+): ListStateSeed {
+  return { owner: profile.id, saved: readSaved(profile.ui_preferences, listKey) };
+}
+
+/** Lê, com segurança, o estado salvo de UMA lista (null = nunca gravou). */
+function readSaved(
   uiPreferences: Record<string, unknown> | null | undefined,
   listKey: string
 ): SavedListState | null {

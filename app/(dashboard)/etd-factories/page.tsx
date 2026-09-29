@@ -157,7 +157,7 @@ export default async function EtdFactoriesPage() {
       factories={factories}
       categories={categories}
       initialColumns={readColumnVisibility(profile.ui_preferences, "etd-factories")}
-      initialListState={readListState(profile.ui_preferences, "etd-factories")}
+      initialListState={readListState(profile, "etd-factories")}
     />
   );
 }

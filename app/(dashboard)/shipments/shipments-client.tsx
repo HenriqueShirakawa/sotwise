@@ -18,7 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
-import type { SavedListState } from "@/lib/list-state";
+import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
@@ -198,7 +198,7 @@ export function ShipmentsClient({
 }: {
   rows: ShipmentRow[];
   initialColumns: VisibilityState;
-  initialListState: SavedListState | null;
+  initialListState: ListStateSeed;
   clients: Ref[];
   profiles: Ref[];
   orders: Ref[];

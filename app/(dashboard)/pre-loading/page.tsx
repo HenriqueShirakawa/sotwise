@@ -336,7 +336,7 @@ export default async function PreLoadingPage() {
       nextPlNumber={String(maxPl + 1)}
       today={todayIso()}
       initialColumns={readColumnVisibility(profile.ui_preferences, "pre-loading")}
-      initialListState={readListState(profile.ui_preferences, "pre-loading")}
+      initialListState={readListState(profile, "pre-loading")}
     />
   );
 }
