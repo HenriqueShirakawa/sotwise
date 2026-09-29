@@ -23,6 +23,7 @@ export const orderSchema = z.object({
   requester_id: optionalFk,
   exporter_id: optionalFk,
   leader_id: optionalFk,
+  operational_responsible_id: optionalFk,
 });
 
 export type OrderInput = z.infer<typeof orderSchema>;

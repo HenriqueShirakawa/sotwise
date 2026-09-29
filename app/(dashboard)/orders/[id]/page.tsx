@@ -46,7 +46,7 @@ export default async function OrderDetailPage({
   const orderQuery = admin
     .from("orders")
     .select(
-      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, date_po"
+      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, date_po"
     )
     .is("deleted_at", null);
   const { data: order } = await (isUuid(id) ? orderQuery.eq("id", id) : orderQuery.eq("po_number", id)).single();
@@ -184,6 +184,9 @@ export default async function OrderDetailPage({
     ? profileMap.get(order.requester_id) ?? null
     : null;
   const leaderName = order.leader_id ? profileMap.get(order.leader_id) ?? null : null;
+  const operationalResponsibleName = order.operational_responsible_id
+    ? profileMap.get(order.operational_responsible_id) ?? null
+    : null;
 
   const ofc: OfcRow[] = (ofcRes.data ?? []).map((o) => ({
     id: o.id,
@@ -253,6 +256,7 @@ export default async function OrderDetailPage({
         client_reference: order.client_reference,
         requester: requesterName,
         leader: leaderName,
+        operational_responsible: operationalResponsibleName,
         exporter: exporterRes.data ? exporterRes.data.acronym || exporterRes.data.name : null,
         date_po: order.date_po,
         status: order.status,

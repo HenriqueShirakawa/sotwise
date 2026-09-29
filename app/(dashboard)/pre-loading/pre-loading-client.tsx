@@ -75,6 +75,8 @@ export type PreLoadingRow = {
   loading_date: string | null;
   completed: boolean;
   booking_confirmed: boolean;
+  /** "Cut-off" da etapa Booking (YYYY-MM-DD) — opcional. */
+  cutoff: string | null;
   total_pos: number;
   order_ids: string[];
   batch_ids: string[];
@@ -117,6 +119,7 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "loading_date", label: "Loading Date" },
   { id: "completed", label: "Preloading completed?" },
   { id: "booking_confirmed", label: "Booking Status" },
+  { id: "cutoff", label: "Cut-off" },
   { id: "total_pos", label: "Total PO's" },
 ];
 
@@ -248,6 +251,7 @@ export function PreLoadingClient({
       if (filters.consolidation_point_id && r.consolidation_point_id !== filters.consolidation_point_id)
         return false;
       if (!inDateRange(r.loading_date, filters.loading_from, filters.loading_to)) return false;
+      if (!inDateRange(r.cutoff, filters.cutoff_from, filters.cutoff_to)) return false;
       if (!q) return true;
       return r.pl_number.toLowerCase().includes(q);
     });
@@ -315,6 +319,18 @@ export function PreLoadingClient({
         accessorKey: "booking_confirmed",
         header: ({ column }) => <SortableHeader label="Booking Status" column={column} />,
         cell: ({ row }) => (row.original.booking_confirmed ? "Yes" : "No"),
+      },
+      {
+        // accessorFn com "" no lugar de null: "YYYY-MM-DD" ordena certo como
+        // texto, e o sort automático do TanStack não trata null.
+        id: "cutoff",
+        accessorFn: (r) => r.cutoff ?? "",
+        header: ({ column }) => <SortableHeader label="Cut-off" column={column} />,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-slate-600">
+            {formatDateNumeric(row.original.cutoff)}
+          </span>
+        ),
       },
       {
         accessorKey: "total_pos",

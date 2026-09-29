@@ -637,6 +637,7 @@ export type Database = {
           requester_id: UUID | null;
           exporter_id: UUID | null;
           leader_id: UUID | null;
+          operational_responsible_id: UUID | null;
           status: OrderStatus;
           date_po: DateStr | null;
           deleted_at: Timestamp | null;
@@ -658,6 +659,7 @@ export type Database = {
           requester_id?: UUID | null;
           exporter_id?: UUID | null;
           leader_id?: UUID | null;
+          operational_responsible_id?: UUID | null;
           status?: OrderStatus;
           date_po?: DateStr | null;
           deleted_at?: Timestamp | null;
@@ -992,6 +994,7 @@ export type Database = {
           contact_brazil_id: UUID | null;
           contact_china_id: UUID | null;
           booking_number: string | null;
+          cutoff_date: DateStr | null;
           created_at: Timestamp;
           updated_at: Timestamp;
         };
@@ -1015,6 +1018,7 @@ export type Database = {
           contact_brazil_id?: UUID | null;
           contact_china_id?: UUID | null;
           booking_number?: string | null;
+          cutoff_date?: DateStr | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
         };

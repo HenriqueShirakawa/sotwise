@@ -95,6 +95,7 @@ export type OrderRow = {
   client_reference: string | null;
   batches: { batch_number: string; status: BatchStatus }[];
   leader: string | null;
+  operational_responsible: string | null;
   requester: string | null;
   exporter: string | null;
   date_create: string;
@@ -108,6 +109,7 @@ export type OrderRow = {
   requester_id: string | null;
   exporter_id: string | null;
   leader_id: string | null;
+  operational_responsible_id: string | null;
 };
 
 function buIcon(name: string): LucideIcon {
@@ -284,6 +286,7 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "po_number", label: "PO No." },
   { id: "client_reference", label: "Client Ref." },
   { id: "batches", label: "Batches" },
+  { id: "operational_responsible", label: "Operational Responsible" },
   { id: "leader", label: "Leader" },
   { id: "requester", label: "Requester" },
   { id: "exporter", label: "Exporter" },
@@ -301,6 +304,7 @@ export function OrdersClient({
   businessUnits,
   exporters,
   profiles,
+  operationalUsers,
   initialColumns,
 }: {
   rows: OrderRow[];
@@ -309,6 +313,8 @@ export function OrdersClient({
   businessUnits: Ref[];
   exporters: Ref[];
   profiles: Ref[];
+  /** Opções do Operational Responsible: só usuários internos ativos. */
+  operationalUsers: Ref[];
   initialColumns: VisibilityState;
 }) {
   const router = useRouter();
@@ -384,6 +390,11 @@ export function OrdersClient({
         return false;
       if (filters.order_type_id && r.order_type_id !== filters.order_type_id) return false;
       if (filters.leader_id && r.leader_id !== filters.leader_id) return false;
+      if (
+        filters.operational_responsible_id &&
+        r.operational_responsible_id !== filters.operational_responsible_id
+      )
+        return false;
       if (filters.exporter_id && r.exporter_id !== filters.exporter_id) return false;
       if (filters.status && r.status !== filters.status) return false;
       if (!inDateRange(r.date_create, filters.create_date_from, filters.create_date_to))
@@ -467,6 +478,16 @@ export function OrdersClient({
         header: "Batch No.",
         enableSorting: false,
         cell: ({ row }) => <BatchCell batches={row.original.batches} />,
+      },
+      {
+        // accessorFn (não accessorKey): a maioria das orders vem sem esse campo,
+        // e o sort automático do TanStack não trata null.
+        id: "operational_responsible",
+        accessorFn: (r) => r.operational_responsible ?? "",
+        header: ({ column }) => (
+          <SortableHeader label="Operational Responsible" column={column} />
+        ),
+        cell: ({ row }) => row.original.operational_responsible ?? dash,
       },
       {
         accessorKey: "leader",
@@ -640,6 +661,7 @@ export function OrdersClient({
         businessUnits={businessUnits}
         exporters={exporters}
         profiles={profiles}
+        operationalUsers={operationalUsers}
       />
 
       {/* Cards só no mobile real (<720px); de 720 pra cima assume a tabela.
@@ -740,6 +762,7 @@ export function OrdersClient({
         businessUnits={businessUnits}
         exporters={exporters}
         profiles={profiles}
+        operationalUsers={operationalUsers}
       />
       <ConfirmDialog
         open={!!deleteTarget}

@@ -24,6 +24,7 @@ type OrderListRow = {
   requester_id: string | null;
   exporter_id: string | null;
   leader_id: string | null;
+  operational_responsible_id: string | null;
   status: OrderRow["status"];
   schedule_requested: string | null;
   created_at: string;
@@ -55,7 +56,7 @@ export default async function OrdersPage() {
         admin
           .from("orders")
           .select(
-            "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, status, schedule_requested, created_at, gss_id"
+            "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, created_at, gss_id"
           )
           .is("deleted_at", null)
           .order("po_number", { ascending: false })
@@ -90,8 +91,14 @@ export default async function OrdersPage() {
       fetchAll<{ id: string; name: string; acronym: string | null }>((from, to) =>
         admin.from("exporters").select("id, name, acronym").is("deleted_at", null).range(from, to)
       ),
-      fetchAll<{ id: string; full_name: string | null }>((from, to) =>
-        admin.from("profiles").select("id, full_name").range(from, to)
+      fetchAll<{
+        id: string;
+        full_name: string | null;
+        status: "active" | "blocked";
+        hidden: boolean;
+        client_id: string | null;
+      }>((from, to) =>
+        admin.from("profiles").select("id, full_name, status, hidden, client_id").range(from, to)
       ),
       // order_ids que têm ≥1 Factory×Category — base da regra de visibilidade.
       fetchAll<{ order_id: string }>((from, to) =>
@@ -156,6 +163,9 @@ export default async function OrdersPage() {
         a.batch_number.localeCompare(b.batch_number)
       ),
       leader: o.leader_id ? profileMap.get(o.leader_id) ?? null : null,
+      operational_responsible: o.operational_responsible_id
+        ? profileMap.get(o.operational_responsible_id) ?? null
+        : null,
       requester: o.requester_id ? profileMap.get(o.requester_id) ?? null : null,
       exporter: o.exporter_id ? exporterMap.get(o.exporter_id) ?? null : null,
       date_create: o.created_at,
@@ -168,6 +178,7 @@ export default async function OrdersPage() {
       requester_id: o.requester_id,
       exporter_id: o.exporter_id,
       leader_id: o.leader_id,
+      operational_responsible_id: o.operational_responsible_id,
     };
   });
 
@@ -187,6 +198,13 @@ export default async function OrdersPage() {
     .filter((p) => p.full_name)
     .map((p) => ({ id: p.id, name: p.full_name as string }))
     .sort(byName);
+  // Operational Responsible: só usuário interno em uso — sem bloqueados, ocultos
+  // e contas do portal do cliente. (Decisão 29/09: todos os internos, não só os
+  // de Company = China — hoje nenhum usuário está marcado como China.)
+  const operationalUsers = profileRes
+    .filter((p) => p.full_name && p.status === "active" && !p.hidden && !p.client_id)
+    .map((p) => ({ id: p.id, name: p.full_name as string }))
+    .sort(byName);
 
   return (
     <OrdersClient
@@ -196,6 +214,7 @@ export default async function OrdersPage() {
       businessUnits={businessUnits}
       exporters={exporters}
       profiles={profiles}
+      operationalUsers={operationalUsers}
       initialColumns={readColumnVisibility(profile.ui_preferences, "orders")}
     />
   );

@@ -62,6 +62,7 @@ export async function createOrder(input: OrderInput): Promise<CreateResult> {
     requester_id: d.requester_id,
     exporter_id: d.exporter_id,
     leader_id: d.leader_id,
+    operational_responsible_id: d.operational_responsible_id,
     created_by: session.userId,
   };
 
@@ -124,6 +125,7 @@ export async function updateOrder(
       requester_id: d.requester_id,
       exporter_id: d.exporter_id,
       leader_id: d.leader_id,
+      operational_responsible_id: d.operational_responsible_id,
     })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
