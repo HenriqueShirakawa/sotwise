@@ -561,53 +561,56 @@ export function StepEmailSection({
                 />
                 {/* Destinatário sem cadastro no SOTWISE. Controle próprio, de
                     propósito: o MultiSearchSelect é compartilhado com outras 5
-                    telas que não têm nada a ver com e-mail. Quem entra por
-                    aqui recebe SEMPRE a versão de cliente (sem campos
-                    internos/botão "Acessar") — não há perfil pra checar papel.
-                    Só com o switch ligado: ninguém de fora entra na thread
-                    interna (ver `checkAudience`). */}
-                {audience === "client" && (
-                  <>
-                    <div className="mt-1.5 flex gap-1.5">
-                      <Input
-                        value={adHocDraft}
-                        onChange={(e) => setAdHocDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === ",") {
-                            e.preventDefault();
-                            addAdHocEmail();
-                          }
-                        }}
-                        onBlur={addAdHocEmail}
-                        type="email"
-                        placeholder="Add an e-mail not registered in the system..."
-                        className="h-8 text-xs"
-                      />
-                      <Button type="button" variant="outline" size="sm" onClick={addAdHocEmail}>
-                        Add
-                      </Button>
-                    </div>
-                    {adHocEmails.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {adHocEmails.map((email) => (
-                          <span
-                            key={email}
-                            className="inline-flex items-center gap-1 rounded-full bg-[#640BB7]/10 px-2 py-0.5 text-xs text-[#640BB7]"
-                          >
-                            {email}
-                            <button
-                              type="button"
-                              aria-label={`Remove ${email}`}
-                              onClick={() => setAdHocEmails(adHocEmails.filter((e) => e !== email))}
-                              className="text-[#640BB7]/60 hover:text-[#640BB7]"
-                            >
-                              <X className="size-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                    telas que não têm nada a ver com e-mail. Nos dois lados do
+                    switch (decisão do usuário, 29/09/2026 — antes só com o
+                    cliente): recebe o mesmo que o resto da conversa — com o
+                    cliente, a versão de cliente; só equipe, o e-mail da
+                    equipe, com o histórico interno no rodapé (ver
+                    `checkAudience`). */}
+                <div className="mt-1.5 flex gap-1.5">
+                  <Input
+                    value={adHocDraft}
+                    onChange={(e) => setAdHocDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        addAdHocEmail();
+                      }
+                    }}
+                    onBlur={addAdHocEmail}
+                    type="email"
+                    placeholder="Add an e-mail not registered in the system..."
+                    className="h-8 text-xs"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={addAdHocEmail}>
+                    Add
+                  </Button>
+                </div>
+                {adHocEmails.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {adHocEmails.map((email) => (
+                      <span
+                        key={email}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#640BB7]/10 px-2 py-0.5 text-xs text-[#640BB7]"
+                      >
+                        {email}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${email}`}
+                          onClick={() => setAdHocEmails(adHocEmails.filter((e) => e !== email))}
+                          className="text-[#640BB7]/60 hover:text-[#640BB7]"
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {audience === "team" && adHocEmails.length > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    They get the same e-mail as the team, including the earlier internal e-mails quoted at the
+                    bottom.
+                  </p>
                 )}
               </div>
               <div>

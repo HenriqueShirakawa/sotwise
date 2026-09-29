@@ -565,9 +565,10 @@ const sendSchema = z.object({
   feature: z.enum(["orders", "pre_loading", "shipments"]),
   recipient_ids: z.array(z.uuid()).min(1, "Select at least one recipient."),
   /** E-mails digitados à mão, de gente sem cadastro no SOTWISE (Fase 3).
-   *  Sempre recebem a versão LIMPA do e-mail: sem perfil pra checar papel, o
-   *  seguro é tratar como externo — e, sem `client_id`, sempre no idioma
-   *  PRIMÁRIO do envio (ver `resolveClientLanguageGroups`). */
+   *  Recebem o mesmo que o resto da conversa: com o cliente, a versão LIMPA,
+   *  sempre no idioma PRIMÁRIO do envio (sem `client_id` — ver
+   *  `resolveClientLanguageGroups`); só com a equipe (desde 29/09/2026), o
+   *  e-mail da equipe, com o histórico interno no rodapé. */
   ad_hoc_emails: z
     .array(z.email("Invalid e-mail address.").transform((e) => e.trim().toLowerCase()))
     .max(20, "Too many extra e-mails.")
@@ -685,22 +686,21 @@ async function checkScopeClient(admin: Admin, owner: StepOwner, scopeClientId: s
 /**
  * Guard do switch "Include client" (28/09/2026), o mesmo no preview e no
  * envio — a lista do compositor já não oferece nada disso, aqui é o servidor:
- * - `internal` (só equipe): nenhum contato de cliente e nenhum avulso — a
- *   thread interna é citada inteira no rodapé do próximo envio, então
- *   ninguém de fora pode entrar nela nem uma vez.
+ * - `internal` (só equipe): nenhum contato de cliente. Avulso pode (decisão
+ *   do usuário, 29/09/2026 — antes era barrado) e recebe o mesmo e-mail da
+ *   equipe, com o histórico interno citado no rodapé; só não pode ser
+ *   e-mail de contato de cliente (`checkTeamAdHoc`).
  * - `external` (com o cliente): precisa nomear o cliente da conversa, e
  *   contato de OUTRO cliente nunca entra.
  */
 function checkAudience(
   kind: EmailThreadKind,
   scopeClientId: string | null,
-  adHocCount: number,
   recipientIds: string[],
   recipientInfoById: Map<string, RecipientInfo>
 ): string | null {
   if (kind === "internal") {
     if (scopeClientId) return "Team-only e-mails aren't tied to a client — reopen the compose box.";
-    if (adHocCount > 0) return "Team-only e-mails can't go to outside addresses — turn on Include client.";
     if (recipientIds.some((id) => recipientInfoById.get(id)?.isClient)) {
       return "Team-only e-mails can't go to client contacts — turn on Include client.";
     }
@@ -714,6 +714,31 @@ function checkAudience(
     }
   }
   return null;
+}
+
+/**
+ * Avulso na conversa só da equipe: e-mail digitado à mão que é de um contato
+ * de CLIENTE cadastrado não entra — mesma trava de quem é escolhido na lista
+ * (a tela promete "The client never sees it"). Sem conseguir checar, não
+ * deixa passar.
+ */
+async function checkTeamAdHoc(admin: Admin, kind: EmailThreadKind, adHocEmails: string[]): Promise<string | null> {
+  if (kind !== "internal" || adHocEmails.length === 0) return null;
+  const matches = await Promise.all(
+    adHocEmails.map(async (email) => {
+      const { data, error } = await admin.rpc("profile_id_by_email", { p_email: email });
+      return { email, profileId: data ?? null, failed: Boolean(error) };
+    })
+  );
+  if (matches.some((m) => m.failed)) return "Couldn't check the extra e-mail addresses — try again.";
+
+  const profileIds = matches.map((m) => m.profileId).filter((id): id is string => Boolean(id));
+  if (profileIds.length === 0) return null;
+  const infoById = await loadRecipientInfoByUserId(admin, profileIds);
+  const clientContact = matches.find((m) => m.profileId && infoById.get(m.profileId)?.isClient);
+  return clientContact
+    ? `${clientContact.email} is a client contact — team-only e-mails can't go to clients. Turn on Include client.`
+    : null;
 }
 
 /**
@@ -824,7 +849,9 @@ export async function previewStepEmail(
     loadRecipientInfoByUserId(admin, recipientIds),
     peekQuotedHistory(admin, owner, kind, scopeClientId),
   ]);
-  const audienceError = checkAudience(kind, scopeClientId, adHocEmails.length, recipientIds, recipientInfoById);
+  const audienceError =
+    checkAudience(kind, scopeClientId, recipientIds, recipientInfoById) ??
+    (await checkTeamAdHoc(admin, kind, adHocEmails));
   if (audienceError) return { ok: false, error: audienceError };
 
   const { internalHtml, clientVariants, primaryLanguage } = await renderStepEmailHtmls(
@@ -843,7 +870,8 @@ export async function previewStepEmail(
   // usuário em 11/09/2026). Ver `sendStepEmail`.
   const externalThread = kind === "external";
   const isPlain = (id: string) => externalThread || recipientInfoById.get(id)?.isClient === true;
-  const hasInternal = !externalThread && recipientIds.some((id) => !isPlain(id));
+  // Avulso só da equipe recebe o e-mail da equipe (ver `checkAudience`).
+  const hasInternal = !externalThread && (recipientIds.some((id) => !isPlain(id)) || adHocEmails.length > 0);
 
   // clientId -> idioma do grupo, pra saber em qual variante cada destinatário
   // "plain" cai. Avulso e destinatário cujo client_id não bate com nenhum
@@ -859,7 +887,7 @@ export async function previewStepEmail(
   };
 
   const activeLanguages = new Set<EmailLanguage>();
-  if (adHocEmails.length > 0) activeLanguages.add(primaryLanguage);
+  if (adHocEmails.length > 0 && externalThread) activeLanguages.add(primaryLanguage);
   for (const id of recipientIds) {
     if (isPlain(id)) activeLanguages.add(languageForRecipient(id));
   }
@@ -1038,13 +1066,9 @@ export async function sendStepEmail(
   }
 
   const kind = parsed.data.thread_kind;
-  const audienceError = checkAudience(
-    kind,
-    scopeClientId,
-    new Set(parsed.data.ad_hoc_emails).size,
-    recipientIds,
-    recipientInfoById
-  );
+  const audienceError =
+    checkAudience(kind, scopeClientId, recipientIds, recipientInfoById) ??
+    (await checkTeamAdHoc(admin, kind, [...new Set(parsed.data.ad_hoc_emails)]));
   if (audienceError) return { ok: false, error: audienceError };
 
   const threadsResult = await resolveOwnerThreads(admin, owner, orders, kind, scopeClientId);
@@ -1148,13 +1172,15 @@ export async function sendStepEmail(
       };
     })
   );
-  // Avulso entra como qualquer outro destinatário, só sem `user_id` — sempre
-  // "plain" e sempre no idioma PRIMÁRIO (sem client_id, não há como saber o
-  // idioma de verdade — RN03: nunca bloqueia, cai no idioma padrão do envio).
+  // Avulso entra como qualquer outro destinatário, só sem `user_id`, e recebe
+  // o mesmo que o resto da conversa: com o cliente, a versão "plain" no idioma
+  // PRIMÁRIO (sem client_id, não há como saber o idioma de verdade — RN03:
+  // nunca bloqueia, cai no idioma padrão do envio); só com a equipe, o e-mail
+  // da equipe (decisão do usuário, 29/09/2026).
   const knownEmails = new Set(people.map((p) => p.email?.toLowerCase()).filter(Boolean));
   for (const email of [...new Set(parsed.data.ad_hoc_emails)]) {
     if (knownEmails.has(email)) continue; // já está na lista como usuário
-    people.push({ userId: null, name: email, email, language: primaryLanguage });
+    people.push({ userId: null, name: email, email, language: kind === "external" ? primaryLanguage : null });
   }
 
   const threadHeadersFor = (threads: ResolvedThread[]): Promise<ThreadingHeaders> => threadingHeaders(admin, threads);
