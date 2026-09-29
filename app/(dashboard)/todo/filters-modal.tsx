@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { countActiveFilters } from "@/lib/list-state";
 
 export type Ref = { id: string; name: string };
 
@@ -48,7 +49,7 @@ export const EMPTY_FILTERS: TodoFilters = {
 };
 
 export function activeFilterCount(filters: TodoFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
+  return countActiveFilters(filters);
 }
 
 /** Enums viram opções {id,name} pro SearchSelect (mesma UI dos cadastros). */

@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { countActiveFilters } from "@/lib/list-state";
 
 import type { Ref } from "./orders-client";
 
@@ -57,7 +58,7 @@ export const EMPTY_FILTERS: OrdersFilters = {
 };
 
 export function activeFilterCount(filters: OrdersFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
+  return countActiveFilters(filters);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

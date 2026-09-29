@@ -18,9 +18,11 @@ import {
 import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
+import type { SavedListState } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -182,6 +184,7 @@ const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 export function ShipmentsClient({
   rows,
   initialColumns,
+  initialListState,
   clients,
   profiles,
   orders,
@@ -195,6 +198,7 @@ export function ShipmentsClient({
 }: {
   rows: ShipmentRow[];
   initialColumns: VisibilityState;
+  initialListState: SavedListState | null;
   clients: Ref[];
   profiles: Ref[];
   orders: Ref[];
@@ -222,10 +226,18 @@ export function ShipmentsClient({
     []
   );
 
-  const [search, setSearch] = useState("");
-  const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
+  // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
+  // "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("shipments", initialListState, {
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [{ id: "pl_number", desc: true }] as SortingState,
+    pageIndex: 0,
+  });
+  const { search, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: ShipmentFilters) => list.update({ filters: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [filters, setFilters] = useState<ShipmentFilters>(EMPTY_FILTERS);
   const { visibility, save: saveVisibility } = useColumnVisibility("shipments", initialColumns);
 
   const filterCount = activeFilterCount(filters);
@@ -361,11 +373,15 @@ export function ShipmentsClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: visibility,
+      pagination: list.pagination(filtered.length),
+    },
   });
 
   const pageIndex = table.getState().pagination.pageIndex;
@@ -378,22 +394,25 @@ export function ShipmentsClient({
         placeholder="PL number"
         activeCount={filterCount}
         controls={(close) => (
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl bg-white"
-            onClick={() => {
-              close();
-              setFiltersOpen(true);
-            }}
-          >
-            <Filter />
-            Filters
-            {filterCount > 0 && (
-              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {filterCount}
-              </span>
-            )}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
+          </>
         )}
         trailing={() => (
           <ColumnsMenu

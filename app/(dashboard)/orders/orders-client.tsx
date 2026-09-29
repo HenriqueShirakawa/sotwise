@@ -40,6 +40,7 @@ import {
 import { toast } from "sonner";
 
 import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
+import type { SavedListState } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,7 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -302,6 +304,7 @@ export function OrdersClient({
   exporters,
   profiles,
   initialColumns,
+  initialListState,
 }: {
   rows: OrderRow[];
   clients: Ref[];
@@ -310,6 +313,7 @@ export function OrdersClient({
   exporters: Ref[];
   profiles: Ref[];
   initialColumns: VisibilityState;
+  initialListState: SavedListState | null;
 }) {
   const router = useRouter();
 
@@ -328,11 +332,20 @@ export function OrdersClient({
     []
   );
 
-  const [search, setSearch] = useState("");
-  const [client, setClient] = useState("all");
-  const [filters, setFilters] = useState<OrdersFilters>(EMPTY_FILTERS);
+  // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
+  // "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("orders", initialListState, {
+    search: "",
+    client: "all",
+    filters: EMPTY_FILTERS,
+    sorting: [] as SortingState,
+    pageIndex: 0,
+  });
+  const { search, client, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: OrdersFilters) => list.update({ filters: value });
+  const setClient = (value: string) => list.update({ client: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([]);
   const { visibility, save: saveVisibility } = useColumnVisibility("orders", initialColumns);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -367,7 +380,8 @@ export function OrdersClient({
     });
   }
 
-  const filterCount = activeFilterCount(filters);
+  // O select de cliente fica fora do modal, mas é filtro também — entra no badge.
+  const filterCount = activeFilterCount(filters) + (client !== "all" ? 1 : 0);
 
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -554,11 +568,15 @@ export function OrdersClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: visibility,
+      pagination: list.pagination(data.length),
+    },
   });
 
   const pageIndex = table.getState().pagination.pageIndex;
@@ -619,6 +637,7 @@ export function OrdersClient({
                 </span>
               )}
             </Button>
+            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
           </>
         )}
         trailing={() => (

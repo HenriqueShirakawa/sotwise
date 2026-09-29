@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { countActiveFilters } from "@/lib/list-state";
 
 export type Ref = { id: string; name: string };
 
@@ -81,7 +82,7 @@ export const EMPTY_FILTERS: ShipmentFilters = {
 };
 
 export function activeFilterCount(filters: ShipmentFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
+  return countActiveFilters(filters);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

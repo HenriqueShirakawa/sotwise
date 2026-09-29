@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { countActiveFilters } from "@/lib/list-state";
 
 import type { Ref } from "./etd-factories-client";
 
@@ -64,7 +65,7 @@ export const EMPTY_FILTERS: EtdFactoriesFilters = {
 };
 
 export function activeFilterCount(filters: EtdFactoriesFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
+  return countActiveFilters(filters);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
