@@ -19,8 +19,9 @@ const RESEND_RECEIVING_ENDPOINT = "https://api.resend.com/emails/receiving";
 const DEFAULT_FROM = "SOTWISE <onboarding@resend.dev>";
 
 type SendEmailArgs = {
-  /** Um endereço, ou vários numa ÚNICA mensagem (todos se veem no "To" e o
-   *  "Responder a todos" alcança o grupo inteiro — ver sendStepEmail). */
+  /** Um endereço, ou vários numa ÚNICA mensagem (todos se veem no "To"). O
+   *  e-mail de etapa manda um por destinatário, para saber se cada um chegou
+   *  (ver sendStepEmail); o aviso automático ao cliente ainda agrupa. */
   to: string | string[];
   subject: string;
   html: string;
@@ -53,7 +54,7 @@ export async function sendEmail({ to, subject, html, replyTo, headers }: SendEma
 
   let res: Response;
   try {
-    res = await fetch(RESEND_ENDPOINT, {
+    res = await resendFetch(RESEND_ENDPOINT, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -97,7 +98,7 @@ async function fetchMessageId(apiKey: string, id: string): Promise<string | null
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 700));
     try {
-      const res = await fetch(`${RESEND_ENDPOINT}/${id}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const res = await resendFetch(`${RESEND_ENDPOINT}/${id}`, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!res.ok) continue;
       const data: { message_id?: string | null } = await res.json().catch(() => ({}));
       if (data.message_id) return data.message_id;
@@ -106,6 +107,40 @@ async function fetchMessageId(apiKey: string, id: string): Promise<string | null
     }
   }
   return null;
+}
+
+/**
+ * `last_event` de um e-mail enviado (`GET /emails/:id`): "sent" enquanto o
+ * servidor do destinatário não respondeu; depois "delivered", "bounced",
+ * "delivery_delayed"… É a consulta que diz se o e-mail de UM destinatário
+ * chegou (ver lib/email/delivery-issues.ts). `null` quando a consulta falha —
+ * quem chama trata como "ainda sem resposta" e pergunta de novo depois.
+ */
+export async function fetchEmailLastEvent(id: string): Promise<string | null> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await resendFetch(`${RESEND_ENDPOINT}/${id}`, { headers: { Authorization: `Bearer ${apiKey}` } });
+    if (!res.ok) return null;
+    const data: { last_event?: string | null } = await res.json().catch(() => ({}));
+    return data.last_event ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `fetch` para o Resend respeitando o limite de requisições (10/s por time):
+ * 429 → espera o `retry-after` (no máximo 2 s) e tenta de novo, até 3 vezes.
+ * Um e-mail de etapa para vários destinatários vira uma sequência de envios.
+ */
+async function resendFetch(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init);
+    if (res.status !== 429 || attempt >= 3) return res;
+    const waitSeconds = Math.min(Number(res.headers.get("retry-after")) || 1, 2);
+    await new Promise((r) => setTimeout(r, waitSeconds * 1000));
+  }
 }
 
 type ReceivedEmail = { html: string | null; text: string | null; headers: Record<string, string> };

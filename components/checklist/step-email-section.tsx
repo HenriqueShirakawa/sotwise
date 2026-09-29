@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { MultiSearchSelect } from "@/components/multi-search-select";
 import { RecipientChip } from "@/components/checklist/recipient-chip";
+import { useLiveDelivery } from "@/components/checklist/use-live-delivery";
 
 /**
  * "Send email" por etapa do checklist — mesmo espírito visual do
@@ -126,6 +127,8 @@ export function StepEmailSection({
   const [previewVariant, setPreviewVariant] = useState<PreviewTab>("internal");
   const [previewHeight, setPreviewHeight] = useState(240);
   const [history, setHistory] = useState<StepEmailRow[] | null>(null);
+  // Chips que acompanham a entrega de cada destinatário até entregue/devolvido.
+  const liveHistory = useLiveDelivery(history);
   const [recipientOptions, setRecipientOptions] = useState<Option[]>([]);
   const [recipientIds, setRecipientIds] = useState<string[]>([]);
   /** E-mails digitados à mão (gente sem cadastro no SOTWISE). */
@@ -464,9 +467,9 @@ export function StepEmailSection({
         </Button>
       </div>
 
-      {historyOpen && (history?.length ?? 0) > 0 && (
+      {historyOpen && liveHistory && liveHistory.length > 0 && (
         <div className="mt-2 space-y-1.5">
-          {history!.map((row) => (
+          {liveHistory.map((row) => (
             <EmailHistoryCard key={row.id} row={row} />
           ))}
         </div>

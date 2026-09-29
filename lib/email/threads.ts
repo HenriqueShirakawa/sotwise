@@ -324,6 +324,45 @@ export async function threadingHeaders(admin: Admin, threads: ResolvedThread[]):
   return { "In-Reply-To": inReplyTo, References: references.join(" ") };
 }
 
+/**
+ * Cabeçalhos de thread POR DESTINATÁRIO (29/09/2026). Desde que o e-mail de
+ * etapa virou um envio por destinatário, cada cópia tem Message-ID próprio, e a
+ * âncora da thread só existe na caixa de quem recebeu aquela cópia. Para cada
+ * endereço, o `In-Reply-To` aponta para a última cópia que ELE recebeu nesta
+ * thread, e `References` junta os da thread (`base`) com a primeira e a última
+ * dele. Quem ainda não recebeu nada na thread fica com `base`.
+ */
+export async function recipientThreadingHeaders(
+  admin: Admin,
+  threadId: string,
+  base: ThreadingHeaders
+): Promise<(email: string) => ThreadingHeaders> {
+  if (!base["In-Reply-To"]) return () => base;
+  const { data } = await admin
+    .from("checklist_step_emails")
+    .select("recipients")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: true });
+
+  // e-mail → Message-IDs das cópias que ele recebeu, da mais antiga à mais nova
+  const copies = new Map<string, string[]>();
+  for (const row of data ?? []) {
+    for (const rc of row.recipients) {
+      if (!rc.ok || !rc.message_id || !rc.email) continue;
+      const key = rc.email.trim().toLowerCase();
+      copies.set(key, [...(copies.get(key) ?? []), rc.message_id]);
+    }
+  }
+
+  return (email) => {
+    const own = copies.get(email.trim().toLowerCase());
+    if (!own?.length) return base;
+    const last = own[own.length - 1];
+    const references = [...new Set([...(base.References?.split(" ") ?? []), own[0], last])];
+    return { "In-Reply-To": last, References: references.join(" ") };
+  };
+}
+
 export type QuotedMessage = {
   sentAt: string;
   senderName: string;
