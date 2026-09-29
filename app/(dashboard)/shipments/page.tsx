@@ -296,7 +296,7 @@ export default async function ShipmentsPage() {
       <ShipmentsClient
         rows={rows}
         initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
-        initialListState={readListState(profile.ui_preferences, "shipments")}
+        initialListState={readListState(profile, "shipments")}
         clients={toRefs(clientRes)}
         profiles={profileRes
           .filter((p) => p.full_name)

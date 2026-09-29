@@ -33,7 +33,7 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
-import type { SavedListState } from "@/lib/list-state";
+import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -168,7 +168,7 @@ export function PreLoadingClient({
   nextPlNumber: string;
   today: string;
   initialColumns: VisibilityState;
-  initialListState: SavedListState | null;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
 

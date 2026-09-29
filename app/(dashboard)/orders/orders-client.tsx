@@ -40,7 +40,7 @@ import {
 import { toast } from "sonner";
 
 import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
-import type { SavedListState } from "@/lib/list-state";
+import type { ListStateSeed } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -319,7 +319,7 @@ export function OrdersClient({
   /** Opções do Operational Responsible: só usuários internos ativos. */
   operationalUsers: Ref[];
   initialColumns: VisibilityState;
-  initialListState: SavedListState | null;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
 

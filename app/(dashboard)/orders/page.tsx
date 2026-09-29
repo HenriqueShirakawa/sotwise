@@ -217,7 +217,7 @@ export default async function OrdersPage() {
       profiles={profiles}
       operationalUsers={operationalUsers}
       initialColumns={readColumnVisibility(profile.ui_preferences, "orders")}
-      initialListState={readListState(profile.ui_preferences, "orders")}
+      initialListState={readListState(profile, "orders")}
     />
   );
 }
