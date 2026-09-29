@@ -1,6 +1,7 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import { fetchAll } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/page-header";
 
@@ -295,6 +296,7 @@ export default async function ShipmentsPage() {
       <ShipmentsClient
         rows={rows}
         initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
+        initialListState={readListState(profile.ui_preferences, "shipments")}
         clients={toRefs(clientRes)}
         profiles={profileRes
           .filter((p) => p.full_name)

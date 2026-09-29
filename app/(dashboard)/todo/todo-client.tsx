@@ -17,6 +17,7 @@ import { Filter, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
+import type { SavedListState } from "@/lib/list-state";
 import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
 import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
@@ -26,6 +27,7 @@ import type { ChecklistStep, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
@@ -136,19 +138,29 @@ export function TodoClient({
   clients,
   users,
   initialColumns,
+  initialListState,
 }: {
   rows: TodoRow[];
   clients: Ref[];
   /** Responsáveis presentes nas tarefas carregadas — alimenta o filtro de Responsible. */
   users: Ref[];
   initialColumns: VisibilityState;
+  initialListState: SavedListState | null;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"all" | TodoPhase>("all");
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<TodoFilters>(EMPTY_FILTERS);
+  // Aba, busca, filtros, ordenação e página: lembrados ao voltar do checklist
+  // quando o "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("todo", initialListState, {
+    tab: "all" as "all" | TodoPhase,
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [{ id: "po_number", desc: true }] as SortingState,
+    pageIndex: 0,
+  });
+  const { tab, search, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: TodoFilters) => list.update({ filters: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "po_number", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("todo", initialColumns);
 
   // Realtime: a lista reflete etapa concluída/reatribuída (Order, Pre-loading
@@ -300,11 +312,15 @@ export function TodoClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: effectiveVisibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: effectiveVisibility,
+      pagination: list.pagination(data.length),
+    },
   });
 
   const pageIndex = table.getState().pagination.pageIndex;
@@ -326,11 +342,13 @@ export function TodoClient({
               key={t.id}
               type="button"
               onClick={() => {
-                setTab(t.id);
                 // Step é específico da fase — zera pra não filtrar a aba nova por
                 // uma etapa que não existe nela.
-                setFilters((f) => ({ ...f, step: "" }));
-                table.setPageIndex(0);
+                list.update((prev) => ({
+                  tab: t.id,
+                  filters: { ...prev.filters, step: "" },
+                  pageIndex: 0,
+                }));
               }}
               className={cn(
                 "shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
@@ -354,22 +372,25 @@ export function TodoClient({
         placeholder="PO or PL number"
         activeCount={filterCount}
         controls={(close) => (
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl bg-white"
-            onClick={() => {
-              close();
-              setFiltersOpen(true);
-            }}
-          >
-            <Filter />
-            Filters
-            {filterCount > 0 && (
-              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {filterCount}
-              </span>
-            )}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
+          </>
         )}
         trailing={() => (
           <ColumnsMenu columns={columnMenuOptions} visibility={visibility} onSave={saveVisibility} />

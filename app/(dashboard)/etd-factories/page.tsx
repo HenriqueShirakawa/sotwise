@@ -1,6 +1,7 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import { fetchAll } from "@/lib/fetch-all";
 import { daysDelay, gapOfReady } from "@/lib/etd";
 import type { BatchStatus } from "@/types/database";
@@ -156,6 +157,7 @@ export default async function EtdFactoriesPage() {
       factories={factories}
       categories={categories}
       initialColumns={readColumnVisibility(profile.ui_preferences, "etd-factories")}
+      initialListState={readListState(profile.ui_preferences, "etd-factories")}
     />
   );
 }

@@ -33,6 +33,7 @@ import {
 import { toast } from "sonner";
 
 import { formatDateNumeric } from "@/lib/format";
+import type { SavedListState } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -44,6 +45,7 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 
 import { deletePreLoading, getSelectableBatchOptions } from "./actions";
@@ -148,6 +150,7 @@ export function PreLoadingClient({
   nextPlNumber,
   today,
   initialColumns,
+  initialListState,
 }: {
   rows: PreLoadingRow[];
   clients: Ref[];
@@ -162,6 +165,7 @@ export function PreLoadingClient({
   nextPlNumber: string;
   today: string;
   initialColumns: VisibilityState;
+  initialListState: SavedListState | null;
 }) {
   const router = useRouter();
 
@@ -179,10 +183,18 @@ export function PreLoadingClient({
     []
   );
 
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<PreLoadingFilters>(EMPTY_FILTERS);
+  // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
+  // "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("pre-loading", initialListState, {
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [{ id: "pl_number", desc: true }] as SortingState,
+    pageIndex: 0,
+  });
+  const { search, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: PreLoadingFilters) => list.update({ filters: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("pre-loading", initialColumns);
   const [toDelete, setToDelete] = useState<PreLoadingRow | null>(null);
   const [isDeleting, startDelete] = useTransition();
@@ -362,11 +374,15 @@ export function PreLoadingClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: visibility,
+      pagination: list.pagination(data.length),
+    },
   });
 
   const pageIndex = table.getState().pagination.pageIndex;
@@ -426,6 +442,7 @@ export function PreLoadingClient({
                 </span>
               )}
             </Button>
+            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
             <Button
               variant="outline"
               className="h-11 rounded-xl bg-white"

@@ -4,6 +4,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { todayIso } from "@/lib/format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import type { BatchStatus } from "@/types/database";
 
 import { PreLoadingClient, type PreLoadingRow } from "./pre-loading-client";
@@ -332,6 +333,7 @@ export default async function PreLoadingPage() {
       nextPlNumber={String(maxPl + 1)}
       today={todayIso()}
       initialColumns={readColumnVisibility(profile.ui_preferences, "pre-loading")}
+      initialListState={readListState(profile.ui_preferences, "pre-loading")}
     />
   );
 }

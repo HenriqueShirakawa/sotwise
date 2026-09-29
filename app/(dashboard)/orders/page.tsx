@@ -1,6 +1,7 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import { fetchAll } from "@/lib/fetch-all";
 
 import { OrdersClient, type OrderRow } from "./orders-client";
@@ -197,6 +198,7 @@ export default async function OrdersPage() {
       exporters={exporters}
       profiles={profiles}
       initialColumns={readColumnVisibility(profile.ui_preferences, "orders")}
+      initialListState={readListState(profile.ui_preferences, "orders")}
     />
   );
 }

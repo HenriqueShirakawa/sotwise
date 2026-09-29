@@ -1,6 +1,7 @@
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import { SHIPMENT_STEPS } from "@/lib/checklist";
 import type { ChecklistStep, OrderStatus } from "@/types/database";
 
@@ -254,6 +255,7 @@ export default async function TodoPage() {
       clients={clientOptions}
       users={userOptions}
       initialColumns={readColumnVisibility(profile.ui_preferences, "todo")}
+      initialListState={readListState(profile.ui_preferences, "todo")}
     />
   );
 }

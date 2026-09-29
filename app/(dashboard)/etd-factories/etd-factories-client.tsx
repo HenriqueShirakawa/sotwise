@@ -17,6 +17,7 @@ import { Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide
 import { toast } from "sonner";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
+import type { SavedListState } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus } from "@/types/database";
 import { useEtdRealtime } from "@/lib/use-etd-realtime";
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { KeepFiltersToggle, useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
@@ -140,17 +142,27 @@ export function EtdFactoriesClient({
   factories,
   categories,
   initialColumns,
+  initialListState,
 }: {
   rows: EtdFactoryRow[];
   clients: Ref[];
   factories: Ref[];
   categories: Ref[];
   initialColumns: VisibilityState;
+  initialListState: SavedListState | null;
 }) {
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<EtdFactoriesFilters>(EMPTY_FILTERS);
+  // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
+  // "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("etd-factories", initialListState, {
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [{ id: "po_batch", desc: true }] as SortingState,
+    pageIndex: 0,
+  });
+  const { search, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: EtdFactoriesFilters) => list.update({ filters: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "po_batch", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("etd-factories", initialColumns);
   const [modalTarget, setModalTarget] = useState<{
     orderId: string;
@@ -341,11 +353,15 @@ export function EtdFactoriesClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: visibility,
+      pagination: list.pagination(data.length),
+    },
   });
 
   const pageIndex = table.getState().pagination.pageIndex;
@@ -384,6 +400,7 @@ export function EtdFactoriesClient({
                 </span>
               )}
             </Button>
+            <KeepFiltersToggle keep={list.keep} onChange={list.setKeep} onAfterClick={close} />
             <Button
               variant="outline"
               className="h-11 rounded-xl bg-white"
