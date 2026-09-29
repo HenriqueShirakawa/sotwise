@@ -693,6 +693,7 @@ Pedido. PO gerado automaticamente e **não editável**. Exclusão: a doc atual d
 | Requester | `requester_id` | uuid FK → profiles | Quem solicitou. |
 | Exporter | `exporter_id` | uuid FK → exporters | Exportador. |
 | Leader | `leader_id` | uuid FK → profiles | Líder/responsável. ⚠️ Doc confirma que é pessoa (User), apesar do placeholder "Select factory" no design. |
+| Operational Responsible | `operational_responsible_id` | uuid FK → profiles | ✅ **Novo (29/09/2026, pedido da equipe AGK):** quem opera o pedido do lado da China. **Opcional.** Escolhido à mão no Create/Edit order entre os **usuários internos ativos** (sem bloqueados, ocultos e contas do portal do cliente) — não só os de Company = China, porque hoje nenhum usuário está marcado assim. Aparece como coluna na lista de Orders (com filtro) e no card Responsible do cabeçalho do pedido. **Não vem do cadastro do cliente** por ora (o texto original previa preencher a partir do Client, junto com um "Commercial Responsible" = o Leader atual — ficou para depois; o Leader segue com o mesmo nome). Não existe no Bubble, nasce vazio. |
 | Status | `status` | `order_status` (enum) | **Rollup dos lotes**, com override manual limitado (ver regra abaixo). Editável à mão apenas para `in_negotiation` / `in_production` / `canceled`; os demais vêm do rollup automático. |
 | Date PO | `date_po` | date | Data do pedido (qual data exatamente: a confirmar). |
 
@@ -1547,7 +1548,7 @@ create table public.pre_loading_batches (
   | **Customer / Order data** | `Client` (múltiplo — "Choose some client") · `Client Reference` (busca texto) · `Leader` (busca) · `Orders` (dropdown "Choose Orders") |
   | **Involved agents** | `Agent Brazil` (busca) · `Agent China` (busca) |
   | **Transport and logistics** | `Carrier` (busca por nome) · `POL (Port of Loading)` (dropdown) · `POD (Port of Discharge)` (busca) · `Consolidation Point` (busca) |
-  | **Dates** | `Loading Date` — **range** (dois campos de data: de/até) |
+  | **Dates** | `Loading Date` — **range** (dois campos de data: de/até) · `Cut-off` — **range** (29/09/2026) |
 
   Ações do modal: **Clear Filters** e **Filter**.
 - ✅ **Download XLS — MANTIDO nesta tela.** Assim como na rua ETD Factories, é uma **exceção** confirmada à decisão global de cortar exportações.
@@ -1595,7 +1596,7 @@ Mesmas etapas 11–17 já mapeadas no enum `checklist_step` (fase `preloading`),
 | Port of Loading | idem | `pol_id` → pols |
 | Shipping Docs | idem | — (só os campos padrão) |
 | Agents | idem | `carrier_agent_id`, `agent_brazil_id`, `agent_china_id`, `contact_brazil_id`, `contact_china_id` |
-| Booking | idem | `booking_number` (text) |
+| Booking | idem | `booking_number` (text) · `cutoff_date` (date — **Cut-off**, opcional, 29/09/2026) |
 | Loading Date | idem | — (a data vem de "Completed on"/"Estimated date") |
 
 **Ícones de estado das etapas** (iguais aos de Orders): laranja = a etapa exige algo além da data e ainda não cumpriu (o tooltip diz o quê) · verde ✓ = concluída · azul = só a data pendente.
@@ -1604,6 +1605,7 @@ Mesmas etapas 11–17 já mapeadas no enum `checklist_step` (fase `preloading`),
 
 - ✅ **Sem toggle de conclusão — gatilho confirmado.** Diferente da Rua Orders - Checklist (que tem switch por etapa), aqui **não existe toggle manual**. A conclusão da etapa (✓ verde) é **derivada dos campos preenchidos**, com `completed_on` (Completed date) sempre obrigatório. Estimated date, Responsible e Signed by nunca travam a conclusão.
   - ⚠️ **Revisado (12/08/2026):** a versão anterior desta regra dizia que `completed_on` era o **único** campo obrigatório. Não é: o cliente detalhou etapa a etapa e 13 das 24 exigem também documento, cadastro escolhido ou número digitado — ver a tabela em **3.7.5**. Aqui isso alcança Consolidation Point, City, Port of Loading, Shipping Docs, Agents e Booking. _(A evidência antiga de "Port of Loading" concluída com o campo vazio era bug do Bubble; agora o campo é exigido de verdade.)_
+- ✅ **Cut-off (etapa Booking) — 29/09/2026, pedido da equipe AGK:** data **livre e opcional** ao lado do Booking number (sem trava de passado/futuro). **Não entra na regra de conclusão** da etapa — o Booking continua exigindo só o booking number + Completed on. Vira a coluna **Cut-off** da lista de Pre-loading, ordenável e com filtro por período (de/até). Não existe no Bubble, nasce vazio.
 - ✅ **Shipping Docs não tem campo específico.** O campo "Consolidation Point" que aparece nessa etapa no Figma é **erro de reuso do protótipo** — no Bubble a etapa tem apenas os campos padrão (Estimated date, Responsible, Completed on, Signed by, Attached documents).
 - ✅ **Table information (cabeçalho do PL) é apenas visual/read-only** dentro do checklist. Toda a edição dos dados do PL (PL number, POD, Leader, Client(s) Reference, etc.) é feita **fora**, na lista de Pre-loading, pelo ícone de lápis — que reabre **o mesmo popup usado na criação**.
 

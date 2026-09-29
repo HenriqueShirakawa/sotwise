@@ -32,6 +32,7 @@ export type OrdersFilters = {
   business_unit_id: string;
   order_type_id: string;
   leader_id: string;
+  operational_responsible_id: string;
   exporter_id: string;
   status: OrderStatus | "";
   create_date_from: string;
@@ -47,6 +48,7 @@ export const EMPTY_FILTERS: OrdersFilters = {
   business_unit_id: "",
   order_type_id: "",
   leader_id: "",
+  operational_responsible_id: "",
   exporter_id: "",
   status: "",
   create_date_from: "",
@@ -112,6 +114,7 @@ export function FiltersModal({
   businessUnits,
   exporters,
   profiles,
+  operationalUsers,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -122,6 +125,7 @@ export function FiltersModal({
   businessUnits: Ref[];
   exporters: Ref[];
   profiles: Ref[];
+  operationalUsers: Ref[];
 }) {
   const [draft, setDraft] = useState<OrdersFilters>(filters);
 
@@ -209,6 +213,16 @@ export function FiltersModal({
                   placeholder="Select Leader"
                 />
               </Field>
+              <Field label="Operational Responsible">
+                <SearchSelect
+                  value={draft.operational_responsible_id}
+                  onChange={(v) => set("operational_responsible_id", v)}
+                  options={operationalUsers}
+                  placeholder="Select Operational Responsible"
+                />
+              </Field>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Exporter">
                 <SearchSelect
                   value={draft.exporter_id}
