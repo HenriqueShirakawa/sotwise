@@ -10,6 +10,7 @@ import { scheduleClientNotificationDispatch } from "@/domain/client/notification
 import { requireFeature } from "@/lib/dal";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
+import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -172,6 +173,12 @@ export async function saveShipmentStep(
     if (ruleError) return { ok: false, error: ruleError };
   }
 
+  // Data prevista posta numa etapa que já tinha o documento: fecha sozinha
+  // (ver lib/pl-step-autocomplete). Limpar o "Completed on" à mão não reabre-fecha.
+  if (!("completed_on" in patch) && "estimated_date" in patch) {
+    await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+  }
+
   revalidateShipmentViews();
   // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
   revalidatePath("/todo");
@@ -233,7 +240,14 @@ export async function registerShipmentAttachment(
     return { ok: false, error: insertError.message };
   }
 
+  // O anexo pode ser o que faltava pra etapa fechar (BL, Original Docs…).
+  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+
   revalidateShipmentViews();
+  if (completed) {
+    revalidatePath("/todo");
+    await broadcastShipmentPing();
+  }
   return { ok: true };
 }
 
