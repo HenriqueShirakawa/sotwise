@@ -6,6 +6,7 @@ import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
+import { promoteBatchesIfDepositSettled } from "@/lib/deposit-production";
 import { fetchAll } from "@/lib/fetch-all";
 import { findBatchTwinError } from "@/lib/ofc-twins";
 import { syncOrderStatus } from "@/lib/order-status";
@@ -70,6 +71,33 @@ async function lastEntryOfProductionBatchError(
   return count
     ? null
     : "A batch In Production needs at least one Factory x Category entry. Move the batch back to In Negotiation first.";
+}
+
+/** Lote ainda sem nenhuma Factory x Category — a 1ª entrada dele o torna "lote novo". */
+async function batchIsEmpty(
+  admin: ReturnType<typeof createAdminClient>,
+  batchId: string
+): Promise<boolean> {
+  const { count } = await admin
+    .from("order_factory_category")
+    .select("id", { count: "exact", head: true })
+    .eq("batch_id", batchId);
+  return !count;
+}
+
+/**
+ * Lote que acabou de ganhar a 1ª Factory x Category numa Order com Deposit
+ * Payment resolvido vai para In Production (lib/deposit-production) + rollup.
+ */
+async function promoteFilledBatches(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  batchIds: string[]
+): Promise<string | null> {
+  if (batchIds.length === 0) return null;
+  const promoteError = await promoteBatchesIfDepositSettled(admin, orderId, batchIds);
+  if (promoteError) return promoteError;
+  return syncOrderStatus(admin, [orderId]);
 }
 
 export async function updateBatchStatus(
@@ -159,10 +187,15 @@ export async function createBatch(
       }))
     );
     if (rowsError) return { ok: false, error: rowsError.message };
+
+    // Deposit Payment já resolvido: lote novo com Factory x Category nasce
+    // In Production (docs §3.7.2, decisão 30/09/2026).
+    const promoteError = await promoteBatchesIfDepositSettled(admin, orderId, [batch.id]);
+    if (promoteError) return { ok: false, error: promoteError };
   }
 
-  // Lote novo nasce In Negotiation e entra no rollup — pode puxar a Order de
-  // volta para In Negotiation, que é a regra (nem todos os lotes em produção).
+  // Lote novo nasce In Negotiation (ou In Production, acima) e entra no rollup
+  // — pode puxar a Order de volta para In Negotiation, que é a regra.
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
@@ -214,12 +247,18 @@ export async function updateOrderFactoryCategoryBatch(
   }
   const twinError = await findBatchTwinError(admin, batchId, [entry], id);
   if (twinError) return { ok: false, error: twinError };
+  const targetWasEmpty = entry.batch_id !== batchId && (await batchIsEmpty(admin, batchId));
 
   const { error } = await admin
     .from("order_factory_category")
     .update({ batch_id: batchId })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+
+  if (targetWasEmpty) {
+    const promoteError = await promoteFilledBatches(admin, orderId, [batchId]);
+    if (promoteError) return { ok: false, error: promoteError };
+  }
 
   await revalidateBatchViews(orderId);
   return { ok: true };
@@ -287,6 +326,22 @@ export async function bulkImportOrderFactoryCategory(
     )
   );
 
+  // Lotes que ganham a 1ª Factory x Category nesta importação: os criados agora
+  // e os que já existiam vazios (promoção pelo Deposit Payment, abaixo).
+  const existingTargetIds = [...rowsByBatch.keys()]
+    .map((n) => batchIdByNumber.get(n))
+    .filter((id): id is string => !!id);
+  const filledBatchIds: string[] = [];
+  if (existingTargetIds.length > 0) {
+    const { data: nonEmpty, error: nonEmptyError } = await admin
+      .from("order_factory_category")
+      .select("batch_id")
+      .in("batch_id", existingTargetIds);
+    if (nonEmptyError) return { ok: false, error: nonEmptyError.message };
+    const hasEntries = new Set((nonEmpty ?? []).map((e) => e.batch_id));
+    filledBatchIds.push(...existingTargetIds.filter((id) => !hasEntries.has(id)));
+  }
+
   if (newBatchNumbers.length > 0) {
     const { data: createdBatches, error: createError } = await admin
       .from("batches")
@@ -295,6 +350,7 @@ export async function bulkImportOrderFactoryCategory(
     if (createError) return { ok: false, error: createError.message };
     for (const b of createdBatches ?? []) {
       batchIdByNumber.set(b.batch_number.trim().toLowerCase(), b.id);
+      filledBatchIds.push(b.id);
     }
   }
 
@@ -309,9 +365,10 @@ export async function bulkImportOrderFactoryCategory(
   );
   if (insertError) return { ok: false, error: insertError.message };
 
-  // A importação pode ter criado lotes novos (In Negotiation) — refaz o rollup.
-  if (newBatchNumbers.length > 0) {
-    const statusError = await syncOrderStatus(admin, [orderId]);
+  // A importação pode ter criado lotes novos (In Negotiation, ou In Production
+  // com o Deposit resolvido) — refaz o rollup.
+  if (filledBatchIds.length > 0) {
+    const statusError = await promoteFilledBatches(admin, orderId, filledBatchIds);
     if (statusError) return { ok: false, error: statusError };
   }
 
@@ -334,10 +391,12 @@ export async function createOrderFactoryCategory(
   // O lote é opcional (docs/regras_de_negocio.md §3.7): a entrada Factory ×
   // Category pode nascer sem lote e ser atribuída a um depois. A trava de
   // "lote editável" só se aplica quando há lote.
+  let batchWasEmpty = false;
   if (input.batch_id) {
     await assertBatchEditable(input.batch_id);
     const twinError = await findBatchTwinError(admin, input.batch_id, [input]);
     if (twinError) return { ok: false, error: twinError };
+    batchWasEmpty = await batchIsEmpty(admin, input.batch_id);
   }
 
   const { error } = await admin.from("order_factory_category").insert({
@@ -348,6 +407,11 @@ export async function createOrderFactoryCategory(
     ship_requirement: input.ship_requirement,
   });
   if (error) return { ok: false, error: error.message };
+
+  if (input.batch_id && batchWasEmpty) {
+    const promoteError = await promoteFilledBatches(admin, orderId, [input.batch_id]);
+    if (promoteError) return { ok: false, error: promoteError };
+  }
 
   await revalidateBatchViews(orderId);
   return { ok: true };
@@ -399,7 +463,7 @@ export async function updateChecklistStep(
   // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
   const { data: current, error: readError } = await admin
     .from("order_checklist_steps")
-    .select("estimated_date, completed_on")
+    .select("step, estimated_date, completed_on")
     .eq("id", stepId)
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
@@ -419,6 +483,16 @@ export async function updateChecklistStep(
 
   const { error } = await admin.from("order_checklist_steps").update(update).eq("id", stepId);
   if (error) return { ok: false, error: error.message };
+
+  // Deposit Payment concluído ou desligado: os lotes In Negotiation com Factory
+  // x Category vão para In Production (docs §3.7.2). Reabrir não rebaixa.
+  if (current.step === "deposit_payment" && (patch.completed_on || patch.enabled === false)) {
+    const promoteError = await promoteBatchesIfDepositSettled(admin, orderId);
+    if (promoteError) return { ok: false, error: promoteError };
+    const statusError = await syncOrderStatus(admin, [orderId]);
+    if (statusError) return { ok: false, error: statusError };
+    await revalidateBatchViews(orderId);
+  }
 
   // Atribuir/trocar responsável ou concluir/reabrir uma etapa muda a To do list
   // (pendências do responsável) — revalida pra ela refletir na hora, sem F5.

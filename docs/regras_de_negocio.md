@@ -808,6 +808,13 @@ Ao finalizar um Pre-loading (lote passando de `preloading` para `in_transit`), o
 - **O lote original** (a parte que efetivamente carregou) segue seu curso normal: `in_transit` → `delivered`.
 - **O lote novo** nasce direto em `in_production` (pula `in_negotiation`, pois já foi negociado antes) e refaz o ciclo a partir daí.
 - Hoje (Bubble) a **decisão** Total/Partial/None é manual (usuário atribui por entrada); a **troca de status do lote** em si (avançar de etapa) é automática, disparada pelos gatilhos acima.
+- ✅ **Lote nunca sai com TODAS as entradas None (regra do usuário, reforçada 30/09/2026).** Se o lote tem **uma entrada só**, a opção **None nem aparece** no popup do Confirm Shipping (só Partial/Total). Com várias entradas, pelo menos uma tem que ser Partial ou Total: o None fica desabilitado na linha que deixaria o lote inteiro None, e o servidor (`confirmShipping`) recusa o envio se chegar assim. Motivo: um lote todo None não embarcou nada — antes ele ia para `in_transit` vazio e a Order virava Partially Shipped sem nada a bordo (QA E2E 30/09, PL-1473).
+
+> ✅ **Gatilho `in_negotiation -> in_production` implementado (30/09/2026, QA E2E).** Até aqui só existia na doc; o app mudava o lote apenas pelo seletor manual. Agora (`lib/deposit-production.ts`):
+> - concluir o **Deposit Payment** (Completed on) **ou desligar o toggle** dele leva **todos** os lotes In Negotiation da Order que têm ao menos uma Factory x Category para In Production;
+> - com o Deposit já resolvido, **lote novo** também vai direto para In Production: lote criado com entradas (Create batch / Bulk import CSV) ou lote criado vazio no momento em que recebe a **primeira** entrada (New entry ou troca de lote);
+> - lote sem nenhuma entrada continua In Negotiation (regra de 17/09: lote vazio não vai para produção);
+> - reabrir o Deposit (limpar a data / religar o toggle) **não rebaixa** lote nenhum; o seletor manual do lote segue valendo nos dois sentidos.
 
 ✅ **Numeração do lote — RESOLVIDA (print de produção, popover da coluna Batch No.):** o `batch_number` é um **sequencial simples de 2 dígitos por pedido**, no formato `.NN` (`.01`, `.02`, `.03`...), começando em `.01` e **resetando a cada pedido**. Não tem relação com o PO number (o `1490` etc. é o número do pedido, não do lote). Sem limite superior. A leitura anterior (`NNNN .NN`, "independente do PO") estava **errada** — corrigida aqui.
 
@@ -1811,6 +1818,8 @@ Ao clicar numa linha da lista, cai direto no detalhe/checklist. O cabeçalho **"
 ##### Modal "View parts"
 
 Abre a partir de cada linha da tabela de batches. Mostra o **status de carregamento por entrada Factory × Category** daquele lote:
+
+> ✅ **Seta "→ .NN" da linha Partial/None (corrigido 30/09/2026):** aponta para o lote que **recebeu o saldo neste embarque** — o filho direto do lote embarcado na linhagem `split_from_batch_id` —, não para o lote onde a entrada está hoje. Ex.: `.01` None → `.02`, e o `.02` depois Partial → `.03`: o View parts do embarque do `.01` mostra "None → .02" (antes mostrava "→ .03").
 
 - Cabeçalho: **PO number** (read-only, ex.: `1487 .01`)
 - Tabela: **Factory** | **Category** | **Part** (dropdown: **Total / Partial / None**)

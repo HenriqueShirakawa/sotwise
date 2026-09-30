@@ -166,6 +166,35 @@ export function ConfirmShippingModal({
     return [...lines].sort((a, b) => first(a, b) || second(a, b));
   }, [lines, primarySort]);
 
+  // Lote nunca sai com TODAS as entradas None (regra do usuário, 30/09): com
+  // uma entrada só, None nem aparece; com várias, None trava na linha que
+  // deixaria o lote inteiro None.
+  const lineIdsByBatch = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const l of lines) m.set(l.batch_id, [...(m.get(l.batch_id) ?? []), l.id]);
+    return m;
+  }, [lines]);
+  const noneOption = (l: ShipmentLine): "hidden" | "disabled" | "enabled" => {
+    const ids = lineIdsByBatch.get(l.batch_id) ?? [];
+    if (ids.length <= 1) return "hidden";
+    const othersAllNone = ids.every((id) => id === l.id || statuses[id] === "none");
+    return othersAllNone && statuses[l.id] !== "none" ? "disabled" : "enabled";
+  };
+  const statusOptions = (l: ShipmentLine) => {
+    const none = noneOption(l);
+    return (
+      <SelectContent>
+        {none !== "hidden" && (
+          <SelectItem value="none" disabled={none === "disabled"}>
+            None
+          </SelectItem>
+        )}
+        <SelectItem value="partial">Partial</SelectItem>
+        <SelectItem value="total">Total</SelectItem>
+      </SelectContent>
+    );
+  };
+
   const allLinesSet = lines.length > 0 && lines.every((l) => statuses[l.id]);
   const headerFilled =
     containerNumber.trim() &&
@@ -177,7 +206,10 @@ export function ConfirmShippingModal({
     carrierId &&
     shipmentModelId &&
     signerId;
-  const canConfirm = Boolean(headerFilled && allLinesSet);
+  const someBatchAllNone = [...lineIdsByBatch.values()].some((ids) =>
+    ids.every((id) => statuses[id] === "none")
+  );
+  const canConfirm = Boolean(headerFilled && allLinesSet && !someBatchAllNone);
 
   function confirm() {
     startTransition(async () => {
@@ -315,11 +347,7 @@ export function ConfirmShippingModal({
                   <SelectTrigger className="h-9 w-36 bg-white">
                     <SelectValue placeholder="Choose status" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                    <SelectItem value="total">Total</SelectItem>
-                  </SelectContent>
+                  {statusOptions(l)}
                 </Select>
               </div>
             </div>
@@ -370,11 +398,7 @@ export function ConfirmShippingModal({
                       <SelectTrigger className="h-9 w-36 bg-white">
                         <SelectValue placeholder="Choose status" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="partial">Partial</SelectItem>
-                        <SelectItem value="total">Total</SelectItem>
-                      </SelectContent>
+                      {statusOptions(l)}
                     </Select>
                   </td>
                 </tr>
