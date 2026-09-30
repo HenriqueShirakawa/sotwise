@@ -402,6 +402,24 @@ export async function confirmShipping(
     return { ok: false, error: "Set the loading status for every line." };
   }
 
+  // Lote nunca sai com TODAS as entradas None — nada embarcou dele (regra do
+  // usuário, 30/09/2026; o popup já esconde/trava o None). Sem isto o lote vazio
+  // ia para In Transit e a Order virava Partially Shipped sem nada a bordo.
+  const statusesByBatch = new Map<string, string[]>();
+  for (const o of ofcRows ?? []) {
+    if (!o.batch_id) continue;
+    statusesByBatch.set(o.batch_id, [
+      ...(statusesByBatch.get(o.batch_id) ?? []),
+      statusByOfc.get(o.id)!,
+    ]);
+  }
+  if ([...statusesByBatch.values()].some((list) => list.every((s) => s === "none"))) {
+    return {
+      ok: false,
+      error: "A batch can't ship with every line as None — set at least one line to Partial or Total.",
+    };
+  }
+
   // Shipment + loading_status + snapshot + split + completed_on do checklist +
   // confirma o PL — tudo numa função de banco (RPC), rodando como uma única
   // transação: uma falha no meio desfaz tudo, em vez de deixar o shipment
