@@ -44,6 +44,13 @@ Complementa [`docs/SCHEMA.md`](SCHEMA.md) (schema do nosso lado) e
 > que a API de Bibliotecas já usava (`requireApiSession()`, lib/api-auth.ts) —
 > mesmo header nas duas áreas. Seguro trocar direto (sem período de transição)
 > porque o GSS ainda não tinha implementado a chamada de Orders do lado deles.
+>
+> ➡️ **Via de SAÍDA SOTWISE → GSS (2026-10-01) — desenhada, sem código.** O
+> usuário quer que algumas gravações do front, além do nosso banco, sejam
+> enviadas ao GSS (POST/PUT/PATCH). Decisão: **salva aqui e envia por fila
+> assíncrona** — a gravação nunca falha por causa do GSS. O que o GSS aceita
+> hoje, os bloqueios e o desenho estão no §10. **O build espera a lista de dados
+> do usuário.**
 
 ---
 
@@ -836,3 +843,105 @@ bibliotecas — antes disso, o custo de travar supera o de conviver com o risco.
 
 O `CRON_SECRET` está cadastrado na Vercel desde 17/08/2026 (sem o token a rota
 responde 401, não 503); o que trava o agendado é o Cloudflare do GSS (§9.9).
+
+---
+
+## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01, aguardando a lista)
+
+Até aqui tudo é GSS → SOTWISE (pull de bibliotecas, push e leitura de orders).
+O pedido novo é o sentido contrário: quando o usuário salva certos dados no
+front, gravar no nosso banco **e** mandar ao GSS por POST/PUT/PATCH. Nenhum
+código existe ainda — `lib/gss/client.ts` só tem `gssGet`.
+
+**Decisões do usuário (01/10):**
+1. **Salva aqui e envia em fila.** O nosso banco é gravado na hora; o envio ao
+   GSS é assíncrono, com retentativa. A gravação do usuário **nunca** falha por
+   causa do GSS.
+2. **Esperar a lista.** Nada é implementado até o usuário definir quais dados
+   vão (e se o endpoint já existe no GSS ou se nós propomos o contrato).
+
+### 10.1 O que o GSS aceita hoje
+
+Sondado em 01/10/2026 pelo `/openapi.json` (Swagger 2.0, `basePath /v1`, 63
+paths), da máquina allowlistada, só leitura:
+
+| Recurso | Métodos |
+|---|---|
+| `/orders/{id}/` | GET, PUT, PATCH — `{id}` = `orders.gss_id` (= `po_number`) |
+| `/orders/` | GET, POST |
+| `/orders/{order_id}/items/`, `/orders/totals/`, `/orders/batch-totals/` | **só GET** |
+| `/core/{agent, business-unit, carrier, company, currency, customer, customer-consignee, customer-importer, exporter, family, order-type, port, sales-representative, sales-representative-customer, supplier, supplier-category}/` | CRUD completo (lista: GET/POST · `{id}`: GET/PUT/PATCH/DELETE); customer, supplier, exporter, order-type, port e business-unit também têm `deactivate`/`reactivate` |
+
+Order (`definitions.Order`) — campos **graváveis**: `customer`, `exporter`,
+`consignee`, `importer`, `leader` (id de usuário **do GSS**, nullable),
+`currency` (`USD`|`RMB`), `usd_rmb`, `down_payment`, `fob_cost_rate`, `pod`,
+`sales_representative`, `business_unit`, `order_type`, `is_locked`. Os `*_name`,
+`leader_username`, `requester_username`, `id`, `created_at`, `updated_at` são
+read-only. **Obrigatórios:** customer, exporter, consignee, importer, usd_rmb,
+down_payment, order_type.
+
+Consequências:
+- **PUT e POST de Order não dão:** exigem consignee, importer, usd_rmb e
+  down_payment, que não existem no nosso schema. **Só PATCH (parcial) serve.**
+- Do nosso cabeçalho, hoje só dá para mandar **customer** (`clients.gss_id`),
+  **exporter**, **business_unit** e **order_type**. `leader` não: `profiles` não
+  tem o id de usuário do GSS.
+- **Status, checklist (ETD/ETA/Booking/Cut-off…), lotes, F×C, PL e Shipment não
+  têm campo no GSS.** Se algum deles entrar na lista, o time do GSS precisa criar
+  o endpoint — e aí nós propomos o payload.
+
+### 10.2 Bloqueios que independem da lista
+
+- **Cloudflare barra a Vercel** (§9.9): enquanto o GSS não liberar a regra para
+  o nosso service token (pedido em 01/10), o envio fica **desligado** na Vercel e
+  os eventos acumulam na fila sem se perder. O único caminho é o CLI rodado de
+  máquina allowlistada.
+- **Permissão de escrita do usuário técnico** em Order (`change_order`) é
+  desconhecida. Descobrir exige um PATCH de teste — só com aprovação explícita.
+- **Quem manda em cada campo.** O cabeçalho da Order nasce no GSS; mandar o
+  nosso valor sobrescreve o deles, e hoje há divergência (50 exporters, 18 order
+  types com troca real — ver o de-para de 24/09). Decidir campo a campo antes de
+  ligar envio de cabeçalho.
+- **Eco.** O GSS escreve em nós por `POST /api/orders`; se essa rota também
+  enfileirasse envio, a mudança voltaria pro GSS. O desenho abaixo evita isso
+  enfileirando só nas server actions do front.
+
+### 10.3 Desenho (a construir quando a lista chegar)
+
+- **Fila `gss_outbound`** (migration nova): `kind`, `entity_type`, `entity_id`,
+  `status` (`pending|sending|sent|failed|skipped`), `attempts`,
+  `next_attempt_at`, `locked_until`, `method`, `path`, `payload` (o que foi
+  enviado), `response_status`, `response_body` (truncado), `last_error`,
+  `created_by`, timestamps. RLS deny-all. Índice único parcial em
+  `(kind, entity_id) where status = 'pending'` — saves seguidos viram **um**
+  envio.
+- **Reserva sem envio duplo:** RPC `claim_gss_outbound(p_limit)` (`security
+  definer`, só service_role) com `FOR UPDATE SKIP LOCKED` + `locked_until`. Ao
+  contrário de `client_notifications` (que aceita envio duplo), aqui um PATCH/POST
+  repetido teria efeito no GSS.
+- **Cliente de escrita:** `gssRequest(method, path, body)` em `lib/gss/client.ts`,
+  reusando `readConfig`/`ensureAccessToken`/`cfHeaders`; `gssGet` vira invólucro.
+  Timeout de 15s. Dentro da chamada só repete em 401 (renova token); o resto
+  volta classificado para a fila: **`blocked`** (challenge do Cloudflare —
+  `cf-mitigated: challenge` ou HTML "Just a moment"), **`retryable`** (rede, 429,
+  5xx), **`permanent`** (400/403/404/409/422, guardando o corpo do GSS).
+- **Mapeadores** (`lib/gss/outbound/events.ts`): `kind → build(admin, entityId)`
+  devolve `{ method, path, body }` ou `{ skip }`. O payload é montado **na hora
+  do envio** a partir do estado atual do banco (vale o último estado). Sem
+  `gss_id` no registro ou na biblioteca referenciada → `skipped` com motivo.
+- **Enfileirar** (`lib/gss/outbound/enqueue.ts`): `enqueueGssOutbound(...)` na
+  server action **depois** da gravação, `on conflict do nothing`, e agenda o
+  disparo com `after()` (mesmo padrão de `scheduleClientNotificationDispatch`).
+  Nunca lança erro para a action. Exceção: dado com muitos pontos de escrita
+  (status de lote: 7 lugares + 2 RPCs) vai por trigger, como
+  `trg_batches_notify_client`, com guarda contra eco.
+- **Disparo** (`lib/gss/outbound/dispatch.ts`): com `GSS_OUTBOUND_ENABLED !==
+  "true"` não envia (a fila acumula). Backoff `2^attempts` min (teto 6h); 8
+  tentativas → `failed`; `blocked` **não conta tentativa**. Acionado por
+  `after()`, por `POST /api/gss/outbound/dispatch` (`CRON_SECRET`), pelo cron
+  diário e pelo CLI `scripts/sync-gss/push-outbound.ts [--dry|--commit]`.
+- **Painel** em `/access/gss`: contagem por status, últimos eventos com
+  `last_error` e "Reenviar" nos que falharam.
+
+**Receita por dado:** um mapeador em `events.ts` + uma chamada de
+`enqueueGssOutbound` em cada action que grava aquele dado + uma linha aqui.
