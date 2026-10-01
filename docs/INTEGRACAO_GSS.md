@@ -572,10 +572,22 @@ sem ela uma falha de leitura não deixava rastro (o banco seguia mostrando o
 último "ok" manual — foi assim que o cron ficou parado de 01/09 a 01/10/2026 sem
 ninguém ver). O CLI não toca essa linha: ela é o batimento só do agendado.
 
-> ⚠️ **Hoje o agendado falha na leitura** (01/10/2026): o Cloudflare do GSS
-> desafia o IP de datacenter da Vercel (§9.9). Pedido ao time do GSS: regra no
-> Cloudflare que libere as requisições com o nosso service token do Cloudflare
-> Access. Até lá, o sync roda à mão pelo CLI.
+> ✅ **Agendado de volta em 01/10/2026** (primeira execução ok às 18:41 UTC,
+> disparada pelo botão **Run** em Vercel → Settings → Cron Jobs). Eram três
+> travas empilhadas, e cada uma só aparecia depois de tirar a anterior:
+>
+> 1. **Bot Fight Mode** na zona `gssdatahub.com` desafiava o IP da Vercel
+>    (§9.9). A zona é plano Free, onde o Bot Fight Mode não aceita exceção (nem
+>    regra Skip, nem por IP) — foi **desligado** na zona inteira. O `api.`
+>    continua atrás do Cloudflare Access (sem service token → login).
+> 2. **`GSS_CF_ACCESS_CLIENT_SECRET` vazia** no projeto `agk-solution/sotwise`
+>    (existia desde 28/08, sem valor) → "Credenciais do GSS ausentes no runtime".
+> 3. **`GSS_USERNAME`/`GSS_PASSWORD` desatualizados** na Vercel → GSS respondia
+>    401 *"No active account found with the given credentials"*.
+>
+> Env var na Vercel só vale depois de **Redeploy**. A recuperação de um mês
+> gravou de uma vez: +7044 cidades, 29 factories, 5 clients, 34 vínculos
+> Factory×Category.
 
 ### 9.7 Em aberto
 
@@ -800,10 +812,15 @@ O gerador espelha a resposta CRUA da API (payload em `jsonb`) e carimba a
 geração; o painel mostra "snapshot tirado há…" e, se a última geração falhou,
 segue exibindo a foto anterior com aviso. Rodar o gerador de dentro de um
 datacenter (Vercel/CI/GitHub Actions) esbarra no mesmo challenge — tem que ser
-de IP allowlistado. **Consequência ainda aberta:** o cron `app/api/cron/sync-gss`
-roda na Vercel e apanha do mesmo jeito; o sync operacional segue disparado à mão
-pelo CLI até o GSS liberar o nosso service token no Cloudflare (pedido em
-01/10/2026 — ver "O agendado" no §9.6).
+de IP allowlistado.
+
+**Atualização 01/10/2026:** o desafio vinha do **Bot Fight Mode** da zona
+`gssdatahub.com` (Security → Analytics → Events: *Managed Challenge*, service
+*Bot fight mode*, IP da AWS São Paulo). Temos acesso ao Cloudflare da zona e o
+Bot Fight Mode foi **desligado** — no plano Free ele não aceita exceção por regra
+nem por IP. Com isso o cron voltou a ler o GSS da Vercel (ver "O agendado" no
+§9.6). O painel segue no snapshot; dá para voltar a ler ao vivo, mas não foi
+mexido. Se alguém religar o Bot Fight Mode, o cron volta a falhar na hora.
 
 Por recurso, a tela mostra a lista do GSS com o par de cada linha e quatro
 contadores — quantos vieram, quantos casaram, quantos do GSS estão sem par e
@@ -842,7 +859,8 @@ pareamento automático (o match por nome só pega linha ainda sem vínculo).
 bibliotecas — antes disso, o custo de travar supera o de conviver com o risco.
 
 O `CRON_SECRET` está cadastrado na Vercel desde 17/08/2026 (sem o token a rota
-responde 401, não 503); o que trava o agendado é o Cloudflare do GSS (§9.9).
+responde 401, não 503). O agendado voltou a rodar em 01/10/2026 — ver "O
+agendado" no §9.6.
 
 ---
 
@@ -892,10 +910,9 @@ Consequências:
 
 ### 10.2 Bloqueios que independem da lista
 
-- **Cloudflare barra a Vercel** (§9.9): enquanto o GSS não liberar a regra para
-  o nosso service token (pedido em 01/10), o envio fica **desligado** na Vercel e
-  os eventos acumulam na fila sem se perder. O único caminho é o CLI rodado de
-  máquina allowlistada.
+- ~~**Cloudflare barra a Vercel**~~ (§9.9) — **resolvido em 01/10/2026**: o
+  desafio era o Bot Fight Mode da zona, que foi desligado; a Vercel já lê o GSS
+  (o cron voltou). Para a escrita, falta só a permissão abaixo.
 - **Permissão de escrita do usuário técnico** em Order (`change_order`) é
   desconhecida. Descobrir exige um PATCH de teste — só com aprovação explícita.
 - **Quem manda em cada campo.** O cabeçalho da Order nasce no GSS; mandar o
