@@ -2105,7 +2105,7 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 
 ➡️ **Primeira via de SAÍDA para o GSS.** Algumas gravações feitas no front, além de irem para o nosso banco, serão enviadas ao GSS por POST/PUT/PATCH. **Quais dados ainda não foi definido** — o build espera essa lista.
 
-- **Regra: salva aqui e envia em fila.** A gravação no SOTWISE acontece na hora e **nunca falha por causa do GSS**; o envio é assíncrono, com retentativa e backoff, e o que falhar fica visível no painel `/access/gss` com opção de reenviar. Motivo extra: o Cloudflare do GSS barra a Vercel hoje — envio síncrono faria toda gravação falhar.
+- **Regra: salva aqui e envia em fila.** A gravação no SOTWISE acontece na hora e **nunca falha por causa do GSS**; o envio é assíncrono, com retentativa e backoff, e o que falhar fica visível no painel `/access/gss` com opção de reenviar. Motivo extra: o GSS pode estar fora do ar ou bloquear a requisição (até 01/10/2026 o Cloudflare dele barrava a Vercel) — envio síncrono faria toda gravação falhar junto.
 - **Só o que vem do front enfileira.** O que o GSS grava em nós (`POST /api/orders`) não volta para o GSS (sem eco).
 - **Vale o último estado:** o payload é montado na hora do envio, a partir do banco; saves seguidos do mesmo registro viram um envio só.
 - **Limite do lado do GSS (sondado 01/10):** a Order deles só aceita **cabeçalho**, e só por PATCH (PUT/POST exigem consignee, importer, usd_rmb e down_payment, que não temos). Status, checklist, lotes, F×C, PL e Shipment **não têm campo lá** — precisam de endpoint novo do GSS.
@@ -2217,7 +2217,7 @@ Lacunas onde o sistema tem a funcionalidade mas **falta a regra definida**. Não
 - [ ] **Shipment Models (cadastro):** confirmar lista completa de valores (vistos: Courier, Air, Hand Carrier, FCL) e se tem campos além do nome.
 - [ ] **Modelagem shipments 1:1 com pre_loadings:** avaliar na implementação se compensa manter tabela separada ou fundir as colunas em `pre_loadings` com um flag de confirmação.
 - [ ] **Anexos (step_attachments):** tipos e tamanho de arquivo permitidos, e confirmação (popup) ao excluir um anexo já enviado de uma etapa do checklist.
-- [ ] **Envio SOTWISE → GSS (6.4) — lista de dados.** Quais informações vão, de qual tela e em que momento (ao salvar o campo? ao concluir a etapa?); para cada uma, se o GSS já tem o endpoint ou se propomos o contrato; e, se o cabeçalho da Order entrar, **quem é o dono de cada campo** (hoje há divergências GSS × SOTWISE). Depende também do GSS liberar o nosso service token no Cloudflare para o envio funcionar da Vercel.
+- [ ] **Envio SOTWISE → GSS (6.4) — lista de dados.** Quais informações vão, de qual tela e em que momento (ao salvar o campo? ao concluir a etapa?); para cada uma, se o GSS já tem o endpoint ou se propomos o contrato; e, se o cabeçalho da Order entrar, **quem é o dono de cada campo** (hoje há divergências GSS × SOTWISE). (O bloqueio do Cloudflare à Vercel foi resolvido em 01/10/2026 — Bot Fight Mode desligado.)
 - [ ] 🔴 **Profile Filters for Steps (rua 25) — escopo indefinido.** Lida a rua: é uma **deny-list por etapa** (regras fixas "Deny Step [etapa]"; adiciona-se quem fica **negado**). Nível confirmado **por perfil** (não por usuário — mas a UI atual do Bubble adiciona usuários, contradição a levar ao designer). **Indefinido se entra no MVP** — com RBAC simplificado (admin/user) pode ser redundante. Schema proposto `role_step_denies` em 3.7.5. Demais detalhes (efeito do deny, lista de etapas cobertas) só resolver se a rua for confirmada no escopo.
 
 ---
