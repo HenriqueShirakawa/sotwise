@@ -558,11 +558,17 @@ A política do agendado é conservadora de propósito: campos e vínculos sempre
 INSERT só de `countries`/`cities`, e **`softDelete` desligado** — sem
 `deleted_at` na origem o sumiço é inferido por diferença de conjunto, e uma
 falha parcial da API viraria exclusão em massa. Cada recurso grava
-`gss_sync_state` (status, linhas, erro), inclusive quando falha.
+`gss_sync_state` (status, linhas, erro), inclusive quando falha. O próprio
+agendado grava a linha **`cron`** da mesma tabela a cada execução, com sucesso
+ou erro: a leitura do GSS acontece antes de qualquer recurso gravar estado, então
+sem ela uma falha de leitura não deixava rastro (o banco seguia mostrando o
+último "ok" manual — foi assim que o cron ficou parado de 01/09 a 01/10/2026 sem
+ninguém ver). O CLI não toca essa linha: ela é o batimento só do agendado.
 
-> ⚠️ **`CRON_SECRET` precisa ser configurada na Vercel** — sem ela a rota
-> responde 503 e o cron nunca roda. Mesma pendência de ambiente do Copilot e do
-> Resend.
+> ⚠️ **Hoje o agendado falha na leitura** (01/10/2026): o Cloudflare do GSS
+> desafia o IP de datacenter da Vercel (§9.9). Pedido ao time do GSS: regra no
+> Cloudflare que libere as requisições com o nosso service token do Cloudflare
+> Access. Até lá, o sync roda à mão pelo CLI.
 
 ### 9.7 Em aberto
 
@@ -787,9 +793,10 @@ O gerador espelha a resposta CRUA da API (payload em `jsonb`) e carimba a
 geração; o painel mostra "snapshot tirado há…" e, se a última geração falhou,
 segue exibindo a foto anterior com aviso. Rodar o gerador de dentro de um
 datacenter (Vercel/CI/GitHub Actions) esbarra no mesmo challenge — tem que ser
-de IP allowlistado. **Consequência ainda aberta:** o cron `app/api/cron/gss-sync`
+de IP allowlistado. **Consequência ainda aberta:** o cron `app/api/cron/sync-gss`
 roda na Vercel e apanha do mesmo jeito; o sync operacional segue disparado à mão
-pelo CLI (ver §9 e a memória do projeto).
+pelo CLI até o GSS liberar o nosso service token no Cloudflare (pedido em
+01/10/2026 — ver "O agendado" no §9.6).
 
 Por recurso, a tela mostra a lista do GSS com o par de cada linha e quatro
 contadores — quantos vieram, quantos casaram, quantos do GSS estão sem par e
@@ -827,6 +834,5 @@ pareamento automático (o match por nome só pega linha ainda sem vínculo).
 **Gatilho para retomar:** quando o GSS virar a fonte operacional de verdade das
 bibliotecas — antes disso, o custo de travar supera o de conviver com o risco.
 
-Na mesma linha, o **`CRON_SECRET` não está cadastrado na Vercel**: a rota
-responde 503 em produção e o agendado não roda. Fica assim de propósito
-enquanto o sync for disparado à mão pelo CLI durante os testes.
+O `CRON_SECRET` está cadastrado na Vercel desde 17/08/2026 (sem o token a rota
+responde 401, não 503); o que trava o agendado é o Cloudflare do GSS (§9.9).

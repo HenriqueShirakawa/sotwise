@@ -53,6 +53,22 @@ function summarize(p: ResourcePlan, opts: SyncOptions) {
   };
 }
 
+/**
+ * Batimento do próprio agendado, na linha `cron` de `gss_sync_state`. Os
+ * recursos só gravam estado depois de lidos do GSS, então uma falha na leitura
+ * (o desafio do Cloudflare, por exemplo) não deixava rastro — o banco seguia
+ * mostrando o último "ok" de uma execução manual. Esta linha diz se o agendado
+ * rodou e como terminou; o CLI não a toca.
+ */
+async function recordCronRun(sb: ReturnType<typeof createAdminClient>, error?: string): Promise<void> {
+  const now = new Date().toISOString();
+  const { error: e } = await sb.from("gss_sync_state").upsert(
+    { resource: "cron", last_run_at: now, last_status: error ? "error" : "ok", last_error: error ?? null, updated_at: now },
+    { onConflict: "resource" }
+  );
+  if (e) console.warn(`gss_sync_state cron: ${e.message}`);
+}
+
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
@@ -68,9 +84,11 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   const opts: SyncOptions = { ...DEFAULT_OPTIONS, ...CRON_POLICY, commit: !dry };
+  const sb = createAdminClient();
 
   try {
-    const { resources: plans, junctions } = await runSync(createAdminClient(), opts);
+    const { resources: plans, junctions } = await runSync(sb, opts);
+    if (!dry) await recordCronRun(sb);
     const total = (f: (p: ResourcePlan) => number) => plans.reduce((s, p) => s + f(p), 0);
     const jTotal = (f: (j: JunctionPlan) => number) => junctions.reduce((s, j) => s + f(j), 0);
     return Response.json({
@@ -98,10 +116,11 @@ export async function GET(request: Request) {
       })),
     });
   } catch (error) {
-    // `gss_sync_state` já registrou o erro no recurso que falhou (o motor grava
-    // antes de propagar), então aqui basta devolver 500 para o agendador.
+    // Se a falha foi num recurso, o motor já gravou o erro nele; se foi na
+    // leitura do GSS, só a linha `cron` registra.
     const message = error instanceof Error ? error.message : String(error);
     console.error("[cron/sync-gss]", message);
+    if (!dry) await recordCronRun(sb, message);
     return Response.json({ ok: false, error: message, durationMs: Date.now() - startedAt }, { status: 500 });
   }
 }
