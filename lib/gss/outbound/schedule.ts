@@ -3,18 +3,52 @@ import "server-only";
 import { after } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { ChecklistStep } from "@/types/database";
 
 import { dispatchGssOutbound, gssOutboundEnabled } from "./dispatch";
+import { PL_SHIPMENT_STEPS, pushPlShipment } from "./pl-shipment";
+
+/** As etapas do checklist do PL cujas datas vão ao GSS. */
+export function isGssShipmentStep(step: ChecklistStep): boolean {
+  return (PL_SHIPMENT_STEPS as readonly string[]).includes(step);
+}
 
 /**
- * Agenda a drenagem da fila do GSS para DEPOIS da resposta (`after` do Next 16)
- * — o save do usuário nunca espera o GSS nem falha por causa dele. Mesmo molde
- * de `scheduleClientNotificationDispatch` (domain/client/notifications.ts).
+ * Manda o estado atual do PL ao GSS (`/v1/shipments/`) logo DEPOIS da resposta
+ * (`after` do Next 16): o usuário troca a data no checklist e o GSS recebe na
+ * hora, sem o save esperar o GSS nem falhar por causa dele.
  *
- * Chamado pelas actions que mexem no PL (Create PL, etapas do checklist,
- * Confirm Shipping). Quem ENFILEIRA é o trigger; isto só apressa o envio. Se não
- * rodar (fora de request, chave desligada, erro), o evento fica na fila e sai no
- * próximo disparo — outra action, o cron diário ou o CLI.
+ * Chamado por Create PL, pelos saves das etapas de data (Pre-loading e
+ * Shipment) e pelo Confirm Shipping. Falha só vai pro log (`[gss]`); a fila
+ * `gss_outbound` (migration 20261002120000), quando aplicada, é a rede de
+ * retentativa.
+ */
+export function sendPlShipmentToGss(preLoadingId: string): void {
+  try {
+    after(async () => {
+      try {
+        const push = await pushPlShipment(createAdminClient(), preLoadingId);
+        if (push.outcome === "skipped") {
+          console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);
+        } else if (push.outcome === "called") {
+          const { call, result } = push;
+          const line = `[gss] ${call.method} ${call.path} → ${result.status} (${result.kind})`;
+          if (result.kind === "ok") console.log(line);
+          else console.error(`${line}: ${result.error ?? result.text}`);
+        }
+      } catch (err) {
+        console.error(`[gss] envio do PL ${preLoadingId} falhou:`, err);
+      }
+    });
+  } catch (err) {
+    console.error("[gss] after() indisponível:", err);
+  }
+}
+
+/**
+ * Drena a fila `gss_outbound` depois da resposta. Só age com a migration
+ * 20261002120000 aplicada e `GSS_OUTBOUND_ENABLED=true`; sem isso é no-op.
+ * Hoje só o Create PL usa (os saves de data mandam direto, acima).
  */
 export async function scheduleGssOutboundDispatch(): Promise<void> {
   if (!gssOutboundEnabled()) return;
