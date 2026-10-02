@@ -12,6 +12,7 @@ import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import type { ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -178,6 +179,8 @@ export async function saveShipmentStep(
   // Realtime: colunas da lista Shipments (datas/status) mudaram — atualiza quem
   // está com ela aberta e parada.
   await broadcastShipmentPing();
+  // Data de Shipping date / ETA / ATA / Delivered mudou → GSS na hora (só PATCH).
+  if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
   return { ok: true };
 }
 
