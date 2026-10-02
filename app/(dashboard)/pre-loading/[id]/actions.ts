@@ -13,6 +13,7 @@ import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import type { ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -99,6 +100,8 @@ export async function savePreLoadingStep(
   revalidatePath("/todo");
   // Realtime: colunas da lista Pre-loading (datas/booking) mudaram.
   await broadcastPreLoadingPing();
+  // Data do Loading date mudou → GSS na hora (depois da resposta, só PATCH).
+  if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
   return { ok: true };
 }
 
@@ -413,5 +416,7 @@ export async function confirmShipping(
     await broadcastOrderStatusPing({ order_ids: changedOrderIds });
   }
   await scheduleClientNotificationDispatch();
+  // A RPC grava o Loading date concluído → GSS.
+  sendPlShipmentToGss(preLoadingId);
   return { ok: true };
 }
