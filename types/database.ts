@@ -37,6 +37,9 @@ export type BatchStatus =
   | "delivered"
   | "canceled";
 export type LoadingStatus = "total" | "partial" | "none";
+/** Fila de saída para o GSS (`gss_outbound`). `pl_shipment` = PL → /v1/shipments/. */
+export type GssOutboundKind = "pl_shipment";
+export type GssOutboundStatus = "pending" | "sending" | "sent" | "failed" | "skipped";
 /** Registro ao qual uma thread de mensagens está ancorada. */
 export type MessageEntity = "order" | "pre_loading" | "shipment";
 /** Resultado de UM destinatário, congelado em `checklist_step_emails.recipients`. */
@@ -1139,6 +1142,45 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_snapshot_runs"]["Insert"]>;
         Relationships: [];
       };
+      /** Fila de envio SOTWISE → GSS (via de saída). Escrita por trigger,
+       * drenada por lib/gss/outbound/dispatch.ts. Ver
+       * supabase/migrations/20261002120000_gss_outbound.sql e INTEGRACAO_GSS §10. */
+      gss_outbound: {
+        Row: {
+          id: UUID;
+          kind: GssOutboundKind;
+          entity_id: UUID;
+          status: GssOutboundStatus;
+          attempts: number;
+          next_attempt_at: Timestamp;
+          locked_until: Timestamp | null;
+          request: Record<string, unknown> | null;
+          response_status: number | null;
+          response_body: string | null;
+          last_error: string | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          sent_at: Timestamp | null;
+        };
+        Insert: {
+          id?: UUID;
+          kind: GssOutboundKind;
+          entity_id: UUID;
+          status?: GssOutboundStatus;
+          attempts?: number;
+          next_attempt_at?: Timestamp;
+          locked_until?: Timestamp | null;
+          request?: Record<string, unknown> | null;
+          response_status?: number | null;
+          response_body?: string | null;
+          last_error?: string | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          sent_at?: Timestamp | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_outbound"]["Insert"]>;
+        Relationships: [];
+      };
       /** Outbox dos avanços de lote a comunicar ao cliente (Fase 2.1). */
       client_notifications: {
         Row: {
@@ -1361,6 +1403,14 @@ export type Database = {
       delete_shipment: {
         Args: { p_shipment_id: string };
         Returns: { pre_loading_id: string; changed_order_ids: string[] };
+      };
+      enqueue_gss_outbound: {
+        Args: { p_kind: GssOutboundKind; p_entity_id: string };
+        Returns: undefined;
+      };
+      claim_gss_outbound: {
+        Args: { p_limit?: number };
+        Returns: Database["public"]["Tables"]["gss_outbound"]["Row"][];
       };
     };
     Enums: {

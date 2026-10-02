@@ -205,6 +205,101 @@ export async function gssGet<T = unknown>(path: string): Promise<GssResult<T>> {
   return { ok: false, error: `GSS ${path}: esgotou as tentativas.` };
 }
 
+/**
+ * Como a fila de saída (lib/gss/outbound) trata o resultado de uma escrita:
+ *   - `ok`        2xx;
+ *   - `blocked`   challenge do Cloudflare ou credencial ausente no runtime —
+ *                 não é culpa do dado, tenta depois sem gastar tentativa;
+ *   - `retryable` rede, timeout, login falhou, 429, 5xx (o GSS já devolveu 502
+ *                 no login);
+ *   - `permanent` demais 4xx (400 de campo, 403 de permissão, 404, 409 de
+ *                 regra) — repetir igual não muda nada.
+ */
+export type GssWriteKind = "ok" | "blocked" | "retryable" | "permanent";
+
+export type GssWriteResult = {
+  kind: GssWriteKind;
+  /** 0 quando não houve resposta (rede/timeout/credencial ausente). */
+  status: number;
+  data: unknown;
+  /** Corpo cru (truncado), para log e auditoria. */
+  text: string;
+  error?: string;
+};
+
+const WRITE_TIMEOUT_MS = 15_000;
+const BODY_LOG_MAX = 2000;
+
+function isCloudflareChallenge(res: Response, text: string): boolean {
+  if (res.headers.get("cf-mitigated") === "challenge") return true;
+  return /<title>\s*Just a moment/i.test(text);
+}
+
+/**
+ * Requisição autenticada de ESCRITA no GSS. Diferente de `gssGet`, não repete
+ * 429/5xx aqui dentro: quem decide quando tentar de novo é a fila (backoff entre
+ * disparos). Só renova o token num 401 e repete 1x.
+ */
+export async function gssRequest(
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+  path: string,
+  body?: unknown
+): Promise<GssWriteResult> {
+  const cfg = readConfig();
+  if (!cfg.ok) return { kind: "blocked", status: 0, data: null, text: "", error: cfg.error };
+
+  const url = `${cfg.base}${path.startsWith("/") ? path : `/${path}`}`;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = await ensureAccessToken(cfg);
+    if (!tok.ok) return { kind: "retryable", status: 0, data: null, text: "", error: tok.error };
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: {
+          ...cfHeaders(cfg.cfId, cfg.cfSecret),
+          Authorization: `Bearer ${tok.data}`,
+          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+      });
+    } catch (cause) {
+      return { kind: "retryable", status: 0, data: null, text: "", error: `Falha de rede em ${method} ${path}: ${String(cause)}` };
+    }
+
+    if (res.status === 401 && attempt === 0) {
+      // Token pode ter sido revogado; invalida o cache e tenta de novo.
+      cachedAccess = null;
+      cachedAccessExp = 0;
+      cachedRefresh = null;
+      continue;
+    }
+
+    const text = await res.text().catch(() => "");
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      // corpo não-JSON (HTML do Cloudflare, por exemplo)
+    }
+    const logText = text.slice(0, BODY_LOG_MAX);
+
+    if (isCloudflareChallenge(res, text)) {
+      return { kind: "blocked", status: res.status, data: null, text: logText, error: `Cloudflare challenge em ${method} ${path}` };
+    }
+    if (res.ok) return { kind: "ok", status: res.status, data, text: logText };
+    if (res.status === 429 || res.status >= 500) {
+      return { kind: "retryable", status: res.status, data, text: logText, error: `GSS ${res.status} em ${method} ${path}` };
+    }
+    return { kind: "permanent", status: res.status, data, text: logText, error: `GSS ${res.status} em ${method} ${path}: ${logText.slice(0, 300)}` };
+  }
+
+  return { kind: "retryable", status: 401, data: null, text: "", error: `GSS 401 em ${method} ${path} mesmo após renovar o token.` };
+}
+
 // ---- tipos dos recursos usados (confirmados em 2026-08-14) -----------------
 // Todos trazem `id` inteiro. `updated_at`/`created_at` em ISO. FKs = id inteiro
 // + `<campo>_name` de conveniência. `supplier` é a exceção: sem timestamps.

@@ -2101,15 +2101,37 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - ⚠️ **`updated_since` não pega mudança só de linha.** `orders.updated_at` só muda com UPDATE na própria order (inclusive o rollup de status); lote atribuído, `loading_status`, linha nova etc. só tocam `order_factory_category.updated_at`/`batches.updated_at`. O doc orienta um refresh periódico das linhas. Se virar problema, a correção é um trigger que "toca" `orders.updated_at` quando linha ou lote mudam, mas isso também afeta o GSS e o realtime da lista.
 - Doc para o consumidor (em inglês): `docs/SOTWISE-API-Purchase-Orders.md` + `.pdf`.
 
-### 6.4 Envio SOTWISE → GSS (decisão de 2026-10-01 — desenho, sem código)
+### 6.4 Envio SOTWISE → GSS (decisão de 2026-10-01; fila construída em 2026-10-02)
 
-➡️ **Primeira via de SAÍDA para o GSS.** Algumas gravações feitas no front, além de irem para o nosso banco, serão enviadas ao GSS por POST/PUT/PATCH. **Quais dados ainda não foi definido** — o build espera essa lista.
+➡️ **Primeira via de SAÍDA para o GSS.** Algumas gravações feitas no front, além de irem para o nosso banco, são enviadas ao GSS por POST/PATCH. **Primeiro dado: PL/Shipment (§6.5, 02/10).** Cabeçalho de Order segue sem decisão.
 
 - **Regra: salva aqui e envia em fila.** A gravação no SOTWISE acontece na hora e **nunca falha por causa do GSS**; o envio é assíncrono, com retentativa e backoff, e o que falhar fica visível no painel `/access/gss` com opção de reenviar. Motivo extra: o GSS pode estar fora do ar ou bloquear a requisição (até 01/10/2026 o Cloudflare dele barrava a Vercel) — envio síncrono faria toda gravação falhar junto.
-- **Só o que vem do front enfileira.** O que o GSS grava em nós (`POST /api/orders`) não volta para o GSS (sem eco).
+- **Sem eco.** O que o GSS grava em nós (`POST /api/orders`) não volta para o GSS. Para PL/Shipment a captura é por trigger no banco (o GSS não escreve PL em nós, então não há eco possível).
 - **Vale o último estado:** o payload é montado na hora do envio, a partir do banco; saves seguidos do mesmo registro viram um envio só.
 - **Limite do lado do GSS (sondado 01/10):** a Order deles só aceita **cabeçalho**, e só por PATCH (PUT/POST exigem consignee, importer, usd_rmb e down_payment, que não temos). Status, checklist, lotes, F×C, PL e Shipment **não têm campo lá** — precisam de endpoint novo do GSS.
 - Detalhe técnico (fila `gss_outbound`, cliente de escrita, classes de erro, chave `GSS_OUTBOUND_ENABLED`): `docs/INTEGRACAO_GSS.md` §10.
+
+### 6.5 PL/Shipment → GSS (2026-10-02 — primeiro dado da via de saída, implementado)
+
+📤 **O GSS abriu `/v1/shipments/`** (um registro por PL, chave = `pl_number` inteiro; junta PL e Shipment) e o usuário definiu a lista. Regras:
+
+- **Create PL cria o PL no GSS.** E antes de atualizar, valida: se o PL não existe lá (PL antigo, de antes da integração), cria na hora e então atualiza. Na criação vão `pl_number`, `status`, `customer_reference` (client reference) e `pod` (se o POD tiver `gss_id`).
+- **Cada data é a data CONCLUÍDA (`completed_on`) da etapa do checklist do PL** — quando a etapa é concluída (ou reaberta, que limpa lá), o GSS recebe:
+
+| Lista do usuário | Etapa | Campo no GSS |
+|---|---|---|
+| loading_date | Loading date (#17) | `loading_date` (datetime — vai às 12:00Z, mesmo dia no Brasil e na China) |
+| shipping_date | Shipping date (#18) | `shipping_date` |
+| ETA_Brazil | ETA Brazil (#22) | `eta_destination` |
+| ATA_Brazil | ATA Brazil (#23) | `ata_destination` |
+| DELIVERED_DATE | Delivered (#24) | `delivered_date` |
+| estimated_loading_date | Loading date — data **estimada** | ⏳ sem campo no GSS (pedido a eles) |
+| ETD | etapa **ETD da Order** (#8) | ⏳ sem campo no GSS; falta a regra para PL com várias orders |
+
+- **Status só na criação** (sem embarque = `preloading`; `in_transit`/`delivered` conforme o Shipment; embarque cancelado não cria). Depois vão só as datas — o GSS avisa que troca de status dispara regras financeiras dele.
+- **Não vai:** lotes (o GSS não tem OrderBatch nem endpoint para criar), POL (o GSS não tem Qingdao entre os 27 portos), consolidation point (lá é cidade, aqui é fábrica), exclusão de PL.
+- **O `GET /api/pre-loadings` (§6.2) não mudou** — segue com `ETD`/`ETA_Brazil` pela data estimada. Diverge desta regra; alinhar se o GSS for usar as duas vias.
+- PL 1306 criado à mão no GSS em 02/10 (id 1, primeiro shipment de lá) para validar o contrato; o envio automático foi testado contra ele (PATCH 200).
 
 ---
 

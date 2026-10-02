@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_OPTIONS, runSync, willInsert, type JunctionPlan, type ResourcePlan, type SyncOptions } from "@/lib/gss/sync";
+import { dispatchGssOutbound } from "@/lib/gss/outbound/dispatch";
 
 /**
  * Sync agendado GSS → SOTWISE (docs/INTEGRACAO_GSS.md §9).
@@ -89,6 +90,11 @@ export async function GET(request: Request) {
   try {
     const { resources: plans, junctions } = await runSync(sb, opts);
     if (!dry) await recordCronRun(sb);
+    // Rede de segurança da via de saída (§10): o que nenhuma action despachou
+    // sai aqui. Falha do envio não derruba o pull — fica registrada na fila.
+    const outbound = dry ? null : await dispatchGssOutbound(sb, { maxRounds: 8 }).catch((e: unknown) => ({
+      error: e instanceof Error ? e.message : String(e),
+    }));
     const total = (f: (p: ResourcePlan) => number) => plans.reduce((s, p) => s + f(p), 0);
     const jTotal = (f: (j: JunctionPlan) => number) => junctions.reduce((s, j) => s + f(j), 0);
     return Response.json({
@@ -114,6 +120,7 @@ export async function GET(request: Request) {
         removable: j.deletes.length,
         unresolved: j.unresolved,
       })),
+      outbound,
     });
   } catch (error) {
     // Se a falha foi num recurso, o motor já gravou o erro nele; se foi na

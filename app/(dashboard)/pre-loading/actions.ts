@@ -7,6 +7,7 @@ import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { scheduleGssOutboundDispatch } from "@/lib/gss/outbound/schedule";
 import { loadSelectableBatchOptions } from "@/domain/pre-loadings/selectable-batches";
 import {
   preLoadingSchema,
@@ -193,6 +194,8 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
   revalidatePath(PATH);
   revalidatePath("/orders"); // os lotes selecionados mudaram de fase
   await broadcastPreLoadingPing(); // lista Pre-loading aberta reflete o PL novo
+  // Create PL cria o PL no GSS (o trigger enfileira; isto só apressa o envio).
+  await scheduleGssOutboundDispatch();
   return { ok: true, id: preLoadingId, pl_number: created.pl_number };
 }
 
