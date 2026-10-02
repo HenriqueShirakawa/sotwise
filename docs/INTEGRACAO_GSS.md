@@ -864,12 +864,12 @@ agendado" no §9.6.
 
 ---
 
-## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01, aguardando a lista)
+## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01; PL/Shipment construído em 2026-10-02)
 
 Até aqui tudo é GSS → SOTWISE (pull de bibliotecas, push e leitura de orders).
 O pedido novo é o sentido contrário: quando o usuário salva certos dados no
-front, gravar no nosso banco **e** mandar ao GSS por POST/PUT/PATCH. Nenhum
-código existe ainda — `lib/gss/client.ts` só tem `gssGet`.
+front, gravar no nosso banco **e** mandar ao GSS por POST/PUT/PATCH. O primeiro
+dado construído é **PL/Shipment → `/v1/shipments/`** (§10.4).
 
 **Decisões do usuário (01/10):**
 1. **Salva aqui e envia em fila.** O nosso banco é gravado na hora; o envio ao
@@ -888,6 +888,7 @@ paths), da máquina allowlistada, só leitura:
 | `/orders/{id}/` | GET, PUT, PATCH — `{id}` = `orders.gss_id` (= `po_number`) |
 | `/orders/` | GET, POST |
 | `/orders/{order_id}/items/`, `/orders/totals/`, `/orders/batch-totals/` | **só GET** |
+| `/shipments/` · `/shipments/{pl_number}/` | GET, POST · GET, PATCH, DELETE — **novo em 02/10**, ver §10.4 |
 | `/core/{agent, business-unit, carrier, company, currency, customer, customer-consignee, customer-importer, exporter, family, order-type, port, sales-representative, sales-representative-customer, supplier, supplier-category}/` | CRUD completo (lista: GET/POST · `{id}`: GET/PUT/PATCH/DELETE); customer, supplier, exporter, order-type, port e business-unit também têm `deactivate`/`reactivate` |
 
 Order (`definitions.Order`) — campos **graváveis**: `customer`, `exporter`,
@@ -915,6 +916,7 @@ Consequências:
   (o cron voltou). Para a escrita, falta só a permissão abaixo.
 - **Permissão de escrita do usuário técnico** em Order (`change_order`) é
   desconhecida. Descobrir exige um PATCH de teste — só com aprovação explícita.
+  Em Shipment ela existe: POST 201 e PATCH 200 testados em 02/10 (§10.4).
 - **Quem manda em cada campo.** O cabeçalho da Order nasce no GSS; mandar o
   nosso valor sobrescreve o deles, e hoje há divergência (50 exporters, 18 order
   types com troca real — ver o de-para de 24/09). Decidir campo a campo antes de
@@ -923,7 +925,7 @@ Consequências:
   enfileirasse envio, a mudança voltaria pro GSS. O desenho abaixo evita isso
   enfileirando só nas server actions do front.
 
-### 10.3 Desenho (a construir quando a lista chegar)
+### 10.3 Desenho (de 01/10 — o que foi construído e onde mudou: §10.4)
 
 - **Fila `gss_outbound`** (migration nova): `kind`, `entity_type`, `entity_id`,
   `status` (`pending|sending|sent|failed|skipped`), `attempts`,
@@ -962,3 +964,76 @@ Consequências:
 
 **Receita por dado:** um mapeador em `events.ts` + uma chamada de
 `enqueueGssOutbound` em cada action que grava aquele dado + uma linha aqui.
+
+### 10.4 PL/Shipment → `/v1/shipments/` (construído em 2026-10-02)
+
+**Contrato do GSS** (sondado em 02/10): um registro por PL, chave = `pl_number`
+**inteiro** (não o id). Lista paginada `{count, next, previous, results}`
+(`page_size` ≤ 200 — diferente das `/core/*`), com filtros `status`,
+`pl_number`, `order_id`, `batch_id`, `search`, `created_since/until`,
+`updated_since/until`. `status` por código (`preloading`/`in_transit`/
+`delivered`; legados `PRE`/`RDY`/`SHP`) + `status_phase` read-only.
+Relacionamentos por id do GSS (`pol`/`pod` = porto, `cons_point`/`city` =
+cidade, `carrier`, `origin_agent`/`destination_agent`); `leader`/`signer` por
+id **ou** e-mail (`leader_email` casou com `leonardo.pacce@…` = usuário 5 lá).
+Lotes por `batch_ids` (ids de OrderBatch do GSS; lote ligado em outro shipment
+→ 409). Escrita atômica; 409 com `code` estável (`pl_number_conflict`,
+`batch_already_linked`, `shipment_status_blocked`, `shipment_status_trigger_failed`,
+`shipment_has_financial_records`, `shipment_delete_blocked`).
+
+**PL 1306** foi criado à mão em 02/10 (id 1 — o primeiro shipment do GSS) para
+validar o contrato e ficou lá. O envio automático foi testado contra ele (PATCH
+200 com os mesmos valores).
+
+**Regra (ver `regras_de_negocio.md` §6.5):** Create PL cria lá; cada data
+concluída das etapas abaixo atualiza; se o PL não existe lá, cria antes.
+
+| Etapa (`completed_on`) | Campo no GSS |
+|---|---|
+| Loading date | `loading_date` (datetime, `YYYY-MM-DDT12:00:00Z`) |
+| Shipping date | `shipping_date` |
+| ETA Brazil | `eta_destination` |
+| ATA Brazil | `ata_destination` |
+| Delivered | `delivered_date` |
+
+Pendentes do lado do GSS: campos `estimated_loading_date` e `etd` (pedidos ao
+time deles), escrita de **OrderBatch** (sem isso não há `batch_ids` — o GSS não
+tem nenhum lote; `/orders/batch-totals/` volta `[]`), porto **Qingdao** (o GSS
+tem 27 portos, sem ele). Consolidation point não mapeia (lá é cidade, aqui é
+fábrica).
+
+**O que foi construído e onde difere do desenho de 01/10:**
+- **Captura por trigger, não nas actions** (migration
+  `20261002120000_gss_outbound.sql`): `trg_pre_loadings_gss_outbound` (AFTER
+  INSERT, ignora linha com `bubble_id` — migração não é Create PL) e
+  `trg_pl_steps_gss_outbound_update/insert` (`completed_on` das 5 etapas mudou).
+  As datas são gravadas em `savePreLoadingStep`, `saveShipmentStep`, na RPC
+  `confirm_shipping` e nas actions de e-mail, e `main`/`dev` escrevem no mesmo
+  banco — o trigger pega todos. Falha da fila vira `warning`, nunca derruba o save.
+- Tabela mais enxuta: `kind`, `entity_id`, `status`, `attempts`,
+  `next_attempt_at`, `locked_until`, `request` (`{method, path, body}`),
+  `response_status`, `response_body`, `last_error`, `sent_at`, timestamps. Sem
+  `entity_type`/`created_by`. RPCs `enqueue_gss_outbound` e
+  `claim_gss_outbound` (só `service_role`).
+- `gssRequest` em `lib/gss/client.ts` (classes `ok|blocked|retryable|permanent`);
+  `gssGet` ficou como estava.
+- Mapeador `lib/gss/outbound/pl-shipment.ts` (em vez de `events.ts`): PATCH com
+  as 5 datas (etapa reaberta → `null`, que limpa lá); 404 → POST com
+  `pl_number`, `status` (só na criação), `customer_reference`, `pod` e as
+  datas; 409 `pl_number_conflict` (corrida) → repete o PATCH.
+- Disparo `lib/gss/outbound/dispatch.ts` + `schedule.ts` (`after()`), chamado
+  em `createPreLoading`, `savePreLoadingStep`, `confirmShipping` e
+  `saveShipmentStep`; o cron diário (`app/api/cron/sync-gss`) drena no fim.
+  **Não foram feitos:** `POST /api/gss/outbound/dispatch` e o painel em
+  `/access/gss`.
+- CLI: `npx tsx scripts/sync-gss/push-outbound.ts` (dry: fila + payloads) ·
+  `--enqueue 1306,1400` (força PLs — backfill à mão) · `--commit` (envia mesmo
+  com a chave desligada).
+
+**Para ligar:** aplicar a migration no Studio do AGK e cadastrar
+`GSS_OUTBOUND_ENABLED=true` no ambiente da Vercel. Sem a chave os triggers
+enfileiram e nada sai.
+
+⚠️ **Re-migração/recarga em massa do checklist enfileira todos os PLs tocados.**
+Antes de uma, desligar a chave; depois, `update gss_outbound set status =
+'skipped', last_error = 'recarga' where status = 'pending'`.

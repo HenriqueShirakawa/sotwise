@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { numericPlNumber } from "@/lib/gss/outbound/pl-shipment";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -73,12 +74,6 @@ type StepRow = {
   estimated_date: DateStr | null;
   completed_on: DateStr | null;
 };
-
-/** Extrai o número de "PL - 1354" → 1354. null se o formato não bater. */
-function numericPlNumber(plNumber: string): number | null {
-  const match = plNumber.match(/(\d+)\s*$/);
-  return match ? Number(match[1]) : null;
-}
 
 /** Ids de PL que carregam pelo menos um lote da order (po_number). */
 async function plIdsForPoNumber(admin: AdminClient, poNumber: string): Promise<UUID[]> {
