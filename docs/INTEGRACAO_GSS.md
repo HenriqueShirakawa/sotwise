@@ -1021,9 +1021,15 @@ fábrica).
   as 5 datas (etapa reaberta → `null`, que limpa lá); 404 → POST com
   `pl_number`, `status` (só na criação), `customer_reference`, `pod` e as
   datas; 409 `pl_number_conflict` (corrida) → repete o PATCH.
-- Disparo `lib/gss/outbound/dispatch.ts` + `schedule.ts` (`after()`), chamado
-  em `createPreLoading`, `savePreLoadingStep`, `confirmShipping` e
-  `saveShipmentStep`; o cron diário (`app/api/cron/sync-gss`) drena no fim.
+- **Envio DIRETO na hora (mudança de 02/10, pedido do usuário):** salvar uma
+  das 5 datas no checklist (`savePreLoadingStep`/`saveShipmentStep`) e o
+  `confirmShipping` chamam `sendPlShipmentToGss` (`schedule.ts`), que manda ao
+  GSS logo depois da resposta (`after()`) — **sem depender da migration nem de
+  `GSS_OUTBOUND_ENABLED`**. Resultado só no log da Vercel (`[gss] PATCH
+  /shipments/1306/ → 200 (ok)`). O Create PL ficou na fila (o envio automático
+  na criação foi barrado pelo controle de permissões desta sessão — pendente).
+- Fila (rede de retentativa, opcional): `lib/gss/outbound/dispatch.ts`; o cron
+  diário (`app/api/cron/sync-gss`) drena no fim — só com a migration e a chave.
   **Não foram feitos:** `POST /api/gss/outbound/dispatch` e o painel em
   `/access/gss`.
 - CLI: `npx tsx scripts/sync-gss/push-outbound.ts` (dry: fila + payloads) ·
