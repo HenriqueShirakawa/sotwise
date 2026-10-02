@@ -366,7 +366,9 @@ type RenderedClientVariant = {
  * de "tela mostra X, envia Y" neste arquivo, então NÃO generalizar pra mais
  * nada sem perguntar de novo (ver [[feedback-wysiwyg-no-hidden-swaps]]). Se o
  * usuário já apagou/reescreveu o colchete à mão, não sobra nada a trocar —
- * continua WYSIWYG pro resto do texto.
+ * continua WYSIWYG pro resto do texto. Desde 02/10/2026 o rascunho sem aba de
+ * cliente já nasce com os nomes de todos os clientes (`loadStepEmailDefaults`),
+ * então o colchete só sobra aqui se alguém digitar de novo.
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -663,6 +665,13 @@ function formatOrderLabel(orders: OwnerOrder[]): string | null {
   return `Orders ${sorted.map((o) => `#${o.po_number}${o.batch_numbers.length ? ` ${o.batch_numbers.join(", ")}` : ""}`).join(", ")}`;
 }
 
+/** "AGK e Amacom" / "AGK and Amacom" / "AGK和Amacom" — lista de nomes no
+ *  idioma do texto, pra saudação de um registro com vários clientes. */
+function formatNameList(names: string[], language: EmailLanguage): string | null {
+  if (names.length === 0) return null;
+  return new Intl.ListFormat(language, { style: "long", type: "conjunction" }).format(names);
+}
+
 /** Clientes DE VERDADE do owner (pelas Orders consolidadas), ordenados por
  *  nome — mesma fonte das threads e dos grupos de idioma. */
 async function loadOwnerClients(admin: Admin, owner: StepOwner): Promise<StepEmailClientTab[]> {
@@ -777,12 +786,20 @@ export async function loadStepEmailDefaults(
   // preserva o comportamento de hoje (nome já preenchido) só quando o owner
   // é de fato 1 cliente só (a esmagadora maioria: toda Order, e todo PL/
   // Shipment de 1 cliente).
+  //
+  // 2+ clientes só acontece sem aba de cliente (`scopeClientId` nulo) — hoje
+  // o lado "só equipe" de PL/Shipment, cuja thread `internal` não tem cliente
+  // nenhum pra trocar o colchete no envio (`customerNameForThread` = null).
+  // O colchete saía literal pra equipe ("Prezado(a) [Customer Name],", QA da
+  // Fase 2.2, 30/09/2026); agora a saudação já nasce com os nomes de TODOS os
+  // clientes do registro, no idioma da caixa ("AGK e Amacom") — WYSIWYG.
   const totalClientCount = groups.reduce((n, g) => n + g.clientIds.length, 0);
+  const clientNames = clients.map((c) => c.name);
   return {
     senderName: session.profile.full_name,
     groups: groups.map((g) => ({
       language: g.language,
-      customerName: totalClientCount > 1 ? null : g.customerName,
+      customerName: totalClientCount > 1 ? formatNameList(clientNames, g.language) : g.customerName,
       fallback: g.fallback,
     })),
     clients,
