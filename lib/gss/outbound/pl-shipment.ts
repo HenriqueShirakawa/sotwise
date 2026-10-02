@@ -167,10 +167,15 @@ function isPlNumberConflict(result: GssWriteResult): boolean {
   return result.status === 409 && (result.data as { code?: string } | null)?.code === "pl_number_conflict";
 }
 
+/**
+ * `create: false` = só PATCH: PL que não existe no GSS sai `skipped` em vez de
+ * ser criado. É o modo do envio na hora (decisão do usuário, 02/10: "testar
+ * apenas o PATCH por enquanto"); a fila e o CLI seguem com o padrão (cria).
+ */
 export async function pushPlShipment(
   db: DB,
   preLoadingId: string,
-  opts: { dry?: boolean } = {}
+  opts: { dry?: boolean; create?: boolean } = {}
 ): Promise<PlShipmentPush> {
   const loaded = await loadPlShipmentState(db, preLoadingId);
   if ("skip" in loaded) return { outcome: "skipped", reason: loaded.skip };
@@ -188,6 +193,10 @@ export async function pushPlShipment(
   const patched = await gssRequest(patch.method, patch.path, patch.body);
   if (!(patched.kind === "permanent" && patched.status === 404)) {
     return { outcome: "called", call: patch, result: patched, created: false };
+  }
+
+  if (opts.create === false) {
+    return { outcome: "skipped", reason: `PL ${state.plNumber} não existe no GSS (criação desligada, só PATCH)` };
   }
 
   // Não existe no GSS → cria ("validar antes e criar").

@@ -27,7 +27,8 @@ export function sendPlShipmentToGss(preLoadingId: string): void {
   try {
     after(async () => {
       try {
-        const push = await pushPlShipment(createAdminClient(), preLoadingId);
+        // Só PATCH por enquanto (02/10): PL que não existe no GSS não é criado.
+        const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: false });
         if (push.outcome === "skipped") {
           console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);
         } else if (push.outcome === "called") {
