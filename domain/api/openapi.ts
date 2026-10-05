@@ -5,12 +5,15 @@ import {
   MAX_LIMIT,
 } from "@/domain/batches/api-schema";
 
+import { integrationPaths, integrationSchemas, integrationTags } from "./openapi-integration";
+
 /**
  * Contrato OpenAPI 3.1 da API do SOTWISE para integradores (GSS).
  *
  * Servido em `/api/openapi.json` e renderizado pelo Swagger UI em `/api/docs`.
- * Por enquanto cobre LOTES (`/api/batches`); os demais endpoints seguem
- * descritos em docs/SOTWISE-API-para-GSS.md até entrarem aqui.
+ * Cobre TODA a API de integração: Lotes (aqui) + Orders, Pre-loadings, ETD
+ * Factories e Bibliotecas (./openapi-integration.ts). Rotas internas (copilot,
+ * cron, webhooks, dispatch) ficam de fora.
  *
  * ⚠️ Escrito à mão: ao mudar domain/batches/api-schema.ts (campos, limites,
  * status), atualizar aqui também. Os enums/limites já vêm de lá.
@@ -83,6 +86,10 @@ export const openApiSpec = {
       "",
       "**Envelope** — success: `{ \"data\": … }` (lists also carry `pagination`). Error: `{ \"error\": \"message\" }` (validation errors also carry `issues`).",
       "",
+      "**Status codes** — 4xx: review what was sent; 5xx: problem on the SOTWISE side (report it with the message, do not retry forever).",
+      "",
+      "**Dates** — `YYYY-MM-DD`; timestamps in ISO 8601 with offset.",
+      "",
       "**Batches** belong to one order and group its Factory × Category lines (the `items`).",
       "A line enters a batch in two ways: `item_ids` (a line that already exists in the order is *moved* — its id comes from `GET /api/orders?include=items`)",
       "or `items` (a *new* line, identified by `supplier_category_gss_id`, same as `items[]` of `POST /api/orders`).",
@@ -98,8 +105,9 @@ export const openApiSpec = {
   },
   servers: [{ url: "/", description: "This environment" }],
   security: [{ bearerAuth: [] }],
-  tags: [{ name: "Batches", description: "Order batches (lotes) — full CRUD." }],
+  tags: [...integrationTags, { name: "Batches", description: "Order batches (lotes) — full CRUD." }],
   paths: {
+    ...integrationPaths,
     "/api/batches": {
       get: {
         tags: ["Batches"],
@@ -307,6 +315,7 @@ export const openApiSpec = {
       bearerAuth: { type: "http", scheme: "bearer", description: "The `API_TOKEN` shared with the GSS team." },
     },
     schemas: {
+      ...integrationSchemas,
       Error: {
         type: "object",
         required: ["error"],
