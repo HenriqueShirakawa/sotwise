@@ -2146,6 +2146,11 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - Token `po_read` (§6.3) **não** alcança lotes — 403 explícito.
 - Sem PUT: o PATCH já é parcial. Sem transação (PostgREST): tudo é validado antes da 1ª escrita.
 - Código: `domain/batches/api-{schema,read,write}.ts`, rotas em `app/api/batches/`, spec em `domain/api/openapi.ts` (escrita à mão — atualizar junto com o schema).
+- **Quem cria o lote é o GSS (decisão do usuário, 05/10/2026).** O GSS passou a ter OrderBatch próprio (primeiros: `1667.01`/`1667.02`, `batch_code` no mesmo formato do nosso `full_number`) e não expõe endpoint para criarmos lote lá — então o lote nasce no GSS e é empurrado para nós por esta API. Ainda **sem** `batches.gss_id`: a correspondência, quando precisar (`batch_ids` do PL, ETD Factories do GSS), é por `batch_code` ↔ `full_number`. O envio de ETD Factories e de `batch_ids` para o GSS ficou **em espera** (decisão do usuário, 05/10).
+
+### 6.7 Datas enviadas ao GSS em Unix (2026-10-05)
+
+🕛 **Toda data que o SOTWISE manda ao GSS vai em Unix (segundos), às 12:00 UTC** — decisão do usuário ("nossas datas como unix apenas"). O GSS passou a responder em Unix e aceita ISO só como legado. Meio-dia UTC cai no mesmo dia no Brasil e na China; antes só `loading_date` ia às 12:00Z e as outras quatro iam como `YYYY-MM-DD`, que o GSS lê como meia-noite UTC — no Brasil, o dia anterior. Conversão em `toGssUnix` (`lib/gss/outbound/pl-shipment.ts`). Testado no PL 1306 (PATCH 200, valores devolvidos iguais).
 
 ---
 
