@@ -231,6 +231,58 @@ async function finish(
   return { ok: true, status, data: batch };
 }
 
+/** `batch_code` do GSS ("1667.01") → o nosso sufixo (".01") quando o prefixo é o po_number. */
+function normalizeBatchNumber(poNumber: string, batchNumber: string | undefined): string | undefined {
+  if (!batchNumber) return undefined;
+  return batchNumber.startsWith(`${poNumber}.`) ? batchNumber.slice(poNumber.length) : batchNumber;
+}
+
+/**
+ * Lote que um `gss_id` já representa aqui. Ordem: (1) já gravado com esse
+ * gss_id; (2) lote da mesma order com o mesmo número e SEM gss_id — é adotado
+ * (grava o gss_id nele): cobre lote que nasceu aqui antes (split, tela) e a
+ * carga inicial. `batch: null` = ainda não existe, o POST cria.
+ */
+async function resolveGssBatch(
+  admin: AdminClient,
+  order: { id: UUID; po_number: string },
+  gssId: string,
+  batchNumber: string | undefined
+): Promise<{ ok: true; batch: { id: UUID; batch_number: string } | null } | Fail> {
+  const { data: known, error } = await admin
+    .from("batches")
+    .select("id, order_id, batch_number")
+    .eq("gss_id", gssId)
+    .maybeSingle();
+  if (error) return fail(500, error.message);
+  if (known) {
+    if (known.order_id !== order.id) {
+      return fail(409, `gss_id '${gssId}' already belongs to a batch of another order.`);
+    }
+    return { ok: true, batch: known };
+  }
+
+  if (!batchNumber) return { ok: true, batch: null };
+  const { data: same, error: sameError } = await admin
+    .from("batches")
+    .select("id, batch_number, gss_id")
+    .eq("order_id", order.id)
+    .eq("batch_number", batchNumber)
+    .maybeSingle();
+  if (sameError) return fail(500, sameError.message);
+  if (!same) return { ok: true, batch: null };
+  if (same.gss_id) {
+    return fail(
+      409,
+      `batch_number '${batchNumber}' already exists in order ${order.po_number} with gss_id '${same.gss_id}'.`
+    );
+  }
+
+  const { error: linkError } = await admin.from("batches").update({ gss_id: gssId }).eq("id", same.id);
+  if (linkError) return fail(linkError.code === "23505" ? 409 : 500, linkError.message);
+  return { ok: true, batch: { id: same.id, batch_number: same.batch_number } };
+}
+
 export async function createBatch(
   admin: AdminClient,
   input: CreateBatchInput
@@ -245,6 +297,30 @@ export async function createBatch(
     );
   }
 
+  const requestedNumber = normalizeBatchNumber(order.po_number, input.batch_number);
+
+  if (input.gss_id) {
+    const existing = await resolveGssBatch(admin, order, input.gss_id, requestedNumber);
+    if (!existing.ok) return existing;
+    if (existing.batch) {
+      const changes: UpdateBatchInput = {
+        batch_number:
+          requestedNumber && requestedNumber !== existing.batch.batch_number ? requestedNumber : undefined,
+        item_ids: input.item_ids,
+        items: input.items,
+      };
+      const nothingToApply =
+        changes.batch_number === undefined && !changes.item_ids?.length && !changes.items?.length;
+      if (nothingToApply) {
+        // Reenvio do mesmo lote sem nada novo: devolve como está, sem exigir
+        // lote editável (o webhook pode repetir depois do embarque).
+        const batch = await getBatch(admin, existing.batch.id);
+        return batch ? { ok: true, status: 200, data: batch } : fail(404, "Batch not found.");
+      }
+      return updateBatch(admin, existing.batch.id, changes);
+    }
+  }
+
   const fresh = await resolveNewItems(admin, input.items);
   if (!fresh.ok) return fresh;
   const incoming = await loadIncomingLines(admin, order.id, input.item_ids, null);
@@ -253,7 +329,7 @@ export async function createBatch(
   const twin = twinError([...incoming.lines, ...fresh.lines]);
   if (twin) return fail(409, twin);
 
-  let batchNumber = input.batch_number;
+  let batchNumber = requestedNumber;
   if (!batchNumber) {
     const next = await nextBatchNumber(admin, order.id);
     if (typeof next !== "string") return next;
@@ -262,12 +338,17 @@ export async function createBatch(
 
   const { data: batch, error } = await admin
     .from("batches")
-    .insert({ order_id: order.id, batch_number: batchNumber })
+    .insert({ order_id: order.id, batch_number: batchNumber, gss_id: input.gss_id ?? null })
     .select("id")
     .single();
   if (error || !batch) {
     if (error?.code === "23505") {
-      return fail(409, `batch_number '${batchNumber}' already exists in order ${order.po_number}.`);
+      return fail(
+        409,
+        input.gss_id
+          ? `batch_number '${batchNumber}' or gss_id '${input.gss_id}' already exists.`
+          : `batch_number '${batchNumber}' already exists in order ${order.po_number}.`
+      );
     }
     return fail(500, error?.message ?? "Failed to create batch.");
   }

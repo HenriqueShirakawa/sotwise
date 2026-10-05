@@ -682,6 +682,8 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          /** id do OrderBatch no GSS (o lote nasce lá — 20261005120000). */
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -692,6 +694,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["batches"]["Insert"]>;
         Relationships: [];
@@ -885,6 +888,8 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           created_by: UUID | null;
+          /** id do Shipment no GSS (1 por PL; espelhado em shipments.gss_id). */
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -901,6 +906,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           created_by?: UUID | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["pre_loadings"]["Insert"]>;
         Relationships: [];
@@ -920,6 +926,8 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           created_by: UUID | null;
+          /** Herdado do PL por trigger (o registro do GSS é PL + embarque). */
+          gss_id: string | null;
         };
         Insert: {
           id?: UUID;
@@ -935,6 +943,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           created_by?: UUID | null;
+          gss_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["shipments"]["Insert"]>;
         Relationships: [];

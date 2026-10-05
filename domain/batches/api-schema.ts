@@ -67,13 +67,24 @@ const newItemSchema = z.object({
 
 export type NewBatchItemInput = z.infer<typeof newItemSchema>;
 
+/** Id do GSS: eles mandam inteiro; guardamos como texto (padrão dos `gss_id`). */
+const gssRef = z
+  .union([z.string().trim().min(1), z.number().int().nonnegative()])
+  .transform((v) => String(v));
+
 const itemIds = z.array(uuid).max(MAX_ITEMS, `At most ${MAX_ITEMS} items per request.`);
 const newItems = z.array(newItemSchema).max(MAX_ITEMS, `At most ${MAX_ITEMS} items per request.`);
 
-/** `POST /api/batches`. Campos desconhecidos → 400 (evita "mandei status e nada aconteceu"). */
+/**
+ * `POST /api/batches`. Campos desconhecidos → 400 (evita "mandei status e nada
+ * aconteceu"). É também o WEBHOOK do GSS (decisão de 05/10: o lote nasce lá):
+ * com `gss_id`, o POST é idempotente — reenvio do mesmo lote atualiza em vez de
+ * duplicar (ver `createBatch`).
+ */
 export const createBatchSchema = z
   .strictObject({
-    order_gss_id: z.string().trim().min(1).optional(),
+    gss_id: gssRef.optional(),
+    order_gss_id: gssRef.optional(),
     po_number: z.string().trim().min(1).optional(),
     batch_number: batchNumber.optional(),
     item_ids: itemIds.optional(),
@@ -110,6 +121,7 @@ export type UpdateBatchInput = z.infer<typeof updateBatchSchema>;
 
 /** Query do `GET /api/batches`. Tudo opcional; sem filtro = página mais recente. */
 export const batchQuerySchema = z.object({
+  gss_id: z.string().trim().min(1).optional(),
   order_gss_id: z.string().trim().min(1).optional(),
   po_number: z.string().trim().min(1).optional(),
   status: z.enum(BATCH_STATUSES).optional(),
@@ -122,6 +134,7 @@ export const batchQuerySchema = z.object({
 export type BatchQuery = z.infer<typeof batchQuerySchema>;
 
 const QUERY_KEYS = [
+  "gss_id",
   "order_gss_id",
   "po_number",
   "status",
