@@ -35,6 +35,8 @@ export type BatchReadItem = {
 
 export type BatchRead = {
   id: UUID;
+  /** id do OrderBatch no GSS (o lote nasce lá); null nos lotes só do SOTWISE. */
+  gss_id: string | null;
   batch_number: string;
   /** `po_number` + `batch_number` quando o número é o sufixo ".NN" (ex.: "1439.04"). */
   full_number: string;
@@ -49,6 +51,7 @@ export type BatchRead = {
 
 type BatchRow = {
   id: UUID;
+  gss_id: string | null;
   order_id: UUID;
   batch_number: string;
   status: BatchStatus;
@@ -57,7 +60,7 @@ type BatchRow = {
   updated_at: string;
 };
 
-const BATCH_COLUMNS = "id, order_id, batch_number, status, split_from_batch_id, created_at, updated_at";
+const BATCH_COLUMNS = "id, gss_id, order_id, batch_number, status, split_from_batch_id, created_at, updated_at";
 
 /** O `.in()` vai na URL — pedaços pequenos evitam URL gigante com muitos lotes. */
 const IN_CHUNK = 150;
@@ -201,6 +204,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
     const order = orders.get(r.order_id) ?? { id: r.order_id, gss_id: null, po_number: "" };
     return {
       id: r.id,
+      gss_id: r.gss_id,
       batch_number: r.batch_number,
       full_number: r.batch_number.startsWith(".")
         ? `${order.po_number}${r.batch_number}`
@@ -219,16 +223,43 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
 /**
  * Order apontada por `order_gss_id`/`po_number`. `undefined` = sem filtro de
  * order; `null` = filtro informado mas a order não existe.
+ *
+ * `order_gss_id` casa primeiro por `orders.gss_id`. Sem match, cai no
+ * `po_number` igual ao id do GSS (a regra do de-para: GSS.id = po_number, ver
+ * scripts/sync-gss/orders-link-po.ts) — só se essa order ainda não estiver
+ * ligada a OUTRO id do GSS. Cobre orders novas que ainda não ganharam gss_id
+ * (ex.: 1667, cujos lotes o GSS criou antes do vínculo).
  */
 export async function findOrderRef(
   admin: AdminClient,
   ref: { order_gss_id?: string; po_number?: string }
 ): Promise<{ id: UUID; po_number: string } | null | undefined> {
   if (!ref.order_gss_id && !ref.po_number) return undefined;
-  let query = admin.from("orders").select("id, po_number");
-  if (ref.order_gss_id) query = query.eq("gss_id", ref.order_gss_id);
-  if (ref.po_number) query = query.eq("po_number", ref.po_number);
-  const { data, error } = await query.maybeSingle();
+
+  if (ref.order_gss_id) {
+    const { data, error } = await admin
+      .from("orders")
+      .select("id, po_number")
+      .eq("gss_id", ref.order_gss_id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) return data;
+
+    const { data: byPo, error: poError } = await admin
+      .from("orders")
+      .select("id, po_number")
+      .eq("po_number", ref.order_gss_id)
+      .is("gss_id", null)
+      .maybeSingle();
+    if (poError) throw new Error(poError.message);
+    return byPo ?? null;
+  }
+
+  const { data, error } = await admin
+    .from("orders")
+    .select("id, po_number")
+    .eq("po_number", ref.po_number!)
+    .maybeSingle();
   if (error) throw new Error(error.message);
   return data ?? null;
 }
@@ -243,6 +274,7 @@ export async function listBatches(
   const ascending = query.order === "asc";
   let q = admin.from("batches").select(BATCH_COLUMNS, { count: "exact" });
   if (order) q = q.eq("order_id", order.id);
+  if (query.gss_id) q = q.eq("gss_id", query.gss_id);
   if (query.status) q = q.eq("status", query.status);
   if (query.updated_since) q = q.gte("updated_at", query.updated_since);
 

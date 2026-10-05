@@ -204,6 +204,7 @@ export async function pushPlShipment(
 
   const patched = await gssRequest(patch.method, patch.path, patch.body);
   if (!(patched.kind === "permanent" && patched.status === 404)) {
+    await rememberGssId(db, preLoadingId, patched);
     return { outcome: "called", call: patch, result: patched, created: false };
   }
 
@@ -220,7 +221,28 @@ export async function pushPlShipment(
   // Corrida: outro disparo criou entre o 404 e o POST → vale o PATCH.
   if (isPlNumberConflict(created)) {
     const again = await gssRequest(patch.method, patch.path, patch.body);
+    await rememberGssId(db, preLoadingId, again);
     return { outcome: "called", call: patch, result: again, created: false };
   }
+  await rememberGssId(db, preLoadingId, created);
   return { outcome: "called", call: create, result: created, created: created.kind === "ok" };
+}
+
+/**
+ * Guarda o id do Shipment do GSS (o `id` da resposta do PATCH/POST) em
+ * `pre_loadings.gss_id`; o trigger da migration 20261005120000 leva para
+ * `shipments.gss_id`. Só grava se mudou. Falha aqui não derruba o envio — o
+ * dado no GSS já foi gravado; o vínculo se refaz no próximo envio.
+ */
+async function rememberGssId(db: DB, preLoadingId: string, result: GssWriteResult): Promise<void> {
+  if (result.kind !== "ok") return;
+  const id = (result.data as { id?: unknown } | null)?.id;
+  if (typeof id !== "number" && typeof id !== "string") return;
+  const gssId = String(id);
+  const { error } = await db
+    .from("pre_loadings")
+    .update({ gss_id: gssId })
+    .eq("id", preLoadingId)
+    .or(`gss_id.is.null,gss_id.neq.${gssId}`);
+  if (error) console.warn(`[gss] gss_id do PL ${preLoadingId} não gravado: ${error.message}`);
 }
