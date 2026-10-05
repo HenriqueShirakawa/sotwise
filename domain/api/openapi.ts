@@ -54,6 +54,7 @@ const batchIdParam = {
 
 const exampleBatch = {
   id: "7b0f7f43-3c0a-4a43-9a0e-0d3f4f6f2b11",
+  gss_id: "37",
   batch_number: ".02",
   full_number: "1680.02",
   status: "in_negotiation",
@@ -118,6 +119,7 @@ export const openApiSpec = {
           "Incremental sync: keep the highest `updated_at` seen and send it back as `updated_since` with `order=asc`. " +
           "⚠️ `updated_at` is the batch's own: moving/creating items does not change it.",
         parameters: [
+          { name: "gss_id", in: "query", schema: { type: "string" }, description: "GSS OrderBatch id — the batch created in GSS." },
           { name: "order_gss_id", in: "query", schema: { type: "string" }, description: "Order `gss_id` (the GSS order id)." },
           { name: "po_number", in: "query", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: [...BATCH_STATUSES] } },
@@ -160,17 +162,27 @@ export const openApiSpec = {
       post: {
         tags: ["Batches"],
         operationId: "createBatch",
-        summary: "Create a batch",
+        summary: "Create a batch (also the GSS webhook)",
         description:
           "Creates a batch in an order, optionally already filled. It starts `in_negotiation` " +
           "(or `in_production` if the order's Deposit Payment is settled and the batch has items). " +
-          "Use `PATCH` to change the status.",
+          "Use `PATCH` to change the status.\n\n" +
+          "**Webhook from GSS** — batches are created in GSS and pushed here with the GSS OrderBatch id in `gss_id`. " +
+          "With `gss_id` the call is idempotent:\n" +
+          "- `gss_id` already known → **200**, the batch is returned (and `batch_number`/`items`/`item_ids`, if sent, are applied like a PATCH);\n" +
+          "- a batch with the same `batch_number` already exists in the order without `gss_id` → it is linked to this `gss_id` (**200**);\n" +
+          "- otherwise → **201**, created.\n\n" +
+          "`batch_number` accepts the GSS `batch_code` (`1680.02`) as well as the suffix (`.02`).",
         requestBody: {
           required: true,
           content: {
             "application/json": {
               schema: ref("BatchCreate"),
               examples: {
+                webhook: {
+                  summary: "GSS webhook (batch created in GSS)",
+                  value: { gss_id: 37, order_gss_id: 1680, batch_number: "1680.02" },
+                },
                 empty: {
                   summary: "Empty batch (next number automatically)",
                   value: { order_gss_id: "1680" },
@@ -195,6 +207,10 @@ export const openApiSpec = {
           },
         },
         responses: {
+          200: {
+            description: "`gss_id` already known (or linked to an existing batch with the same number) — the batch as it is now.",
+            content: { "application/json": { schema: ref("BatchEnvelope"), example: { data: exampleBatch } } },
+          },
           201: {
             description: "Batch created.",
             content: { "application/json": { schema: ref("BatchEnvelope"), example: { data: exampleBatch } } },
@@ -364,6 +380,7 @@ export const openApiSpec = {
         type: "object",
         required: [
           "id",
+          "gss_id",
           "batch_number",
           "full_number",
           "status",
@@ -376,6 +393,7 @@ export const openApiSpec = {
         ],
         properties: {
           id: { type: "string", format: "uuid" },
+          gss_id: { type: ["string", "null"], description: "GSS OrderBatch id; null for batches that exist only in SOTWISE." },
           batch_number: { type: "string", description: "Suffix inside the order, usually `.NN` (e.g. `.02`)." },
           full_number: { type: "string", description: "`po_number` + `batch_number` (e.g. `1680.02`)." },
           status: { type: "string", enum: [...BATCH_STATUSES] },
@@ -426,12 +444,20 @@ export const openApiSpec = {
         additionalProperties: false,
         description: "Send exactly one of `order_gss_id` / `po_number`. Unknown fields → 400.",
         properties: {
-          order_gss_id: { type: "string", description: "Order `gss_id`." },
+          gss_id: {
+            type: ["integer", "string"],
+            description: "GSS OrderBatch id. Makes the call idempotent (see the operation description). Stored as text.",
+          },
+          order_gss_id: {
+            type: ["integer", "string"],
+            description: "GSS order id. Matches `orders.gss_id`; if no order has it, the order whose `po_number` equals it (and has no `gss_id` yet).",
+          },
           po_number: { type: "string" },
           batch_number: {
             type: "string",
             maxLength: 20,
-            description: "Optional. Default: next free `.NN` of the order. Must be unique inside the order.",
+            description:
+              "Optional. `.NN` or the GSS `batch_code` (`1680.02` → `.02`). Default: next free `.NN` of the order. Must be unique inside the order.",
           },
           item_ids: {
             type: "array",
