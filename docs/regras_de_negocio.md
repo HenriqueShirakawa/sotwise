@@ -2117,11 +2117,11 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 📤 **O GSS abriu `/v1/shipments/`** (um registro por PL, chave = `pl_number` inteiro; junta PL e Shipment) e o usuário definiu a lista. Regras:
 
 - **Create PL cria o PL no GSS.** E antes de atualizar, valida: se o PL não existe lá (PL antigo, de antes da integração), cria na hora e então atualiza. Na criação vão `pl_number`, `status`, `customer_reference` (client reference) e `pod` (se o POD tiver `gss_id`).
-- **Cada data é a data CONCLUÍDA (`completed_on`) da etapa do checklist do PL** — quando a etapa é concluída (ou reaberta, que limpa lá), o GSS recebe:
+- **Cada data é a data CONCLUÍDA (`completed_on`) da etapa do checklist do PL** — quando a etapa é concluída (ou reaberta, que limpa lá), o GSS recebe (todas em Unix segundos às 12:00Z desde 05/10 — §6.7):
 
 | Lista do usuário | Etapa | Campo no GSS |
 |---|---|---|
-| loading_date | Loading date (#17) | `loading_date` (datetime — vai às 12:00Z, mesmo dia no Brasil e na China) |
+| loading_date | Loading date (#17) | `loading_date` |
 | shipping_date | Shipping date (#18) | `shipping_date` |
 | ETA_Brazil | ETA Brazil (#22) | `eta_destination` |
 | ATA_Brazil | ATA Brazil (#23) | `ata_destination` |
