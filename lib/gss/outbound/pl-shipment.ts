@@ -9,8 +9,8 @@
  * Regra do usuário (2026-10-02): cada data vem da data CONCLUÍDA
  * (`completed_on`) da etapa do checklist —
  *
- *   Loading date  → loading_date      (datetime no GSS: vai às 12:00Z, que cai
- *                                      no mesmo dia no Brasil e na China)
+ *   Loading date  → loading_date      (todas em Unix segundos, às 12:00Z —
+ *                                      mesmo dia no Brasil e na China; ver toGssUnix)
  *   Shipping date → shipping_date
  *   ETA Brazil    → eta_destination
  *   ATA Brazil    → ata_destination
@@ -118,16 +118,28 @@ export async function loadPlShipmentState(
   };
 }
 
-/** As 5 datas no formato do GSS. Etapa sem data concluída vai `null`, que no
- *  GSS limpa o campo — reabrir a etapa aqui reabre lá. */
-export function datesBody(state: PlShipmentState): Record<string, string | null> {
-  const loading = state.completedOn.loading_date;
+/**
+ * Data do checklist ("YYYY-MM-DD") → Unix em segundos, às 12:00 UTC. O GSS
+ * passou a usar Unix (ISO ficou só como legado de entrada) e a decisão de
+ * 05/10 é mandar só Unix. Meio-dia UTC cai no mesmo dia no Brasil (UTC-3) e na
+ * China (UTC+8); meia-noite UTC — o que um "YYYY-MM-DD" puro vira lá — aparece
+ * como o dia ANTERIOR no Brasil.
+ */
+export function toGssUnix(date: DateStr | null): number | null {
+  if (!date) return null;
+  const ms = Date.parse(`${date}T12:00:00Z`);
+  return Number.isFinite(ms) ? ms / 1000 : null;
+}
+
+/** As 5 datas no formato do GSS (Unix s). Etapa sem data concluída vai `null`,
+ *  que no GSS limpa o campo — reabrir a etapa aqui reabre lá. */
+export function datesBody(state: PlShipmentState): Record<string, number | null> {
   return {
-    loading_date: loading ? `${loading}T12:00:00Z` : null,
-    shipping_date: state.completedOn.shipping_date,
-    eta_destination: state.completedOn.eta_brazil,
-    ata_destination: state.completedOn.ata_brazil,
-    delivered_date: state.completedOn.delivered,
+    loading_date: toGssUnix(state.completedOn.loading_date),
+    shipping_date: toGssUnix(state.completedOn.shipping_date),
+    eta_destination: toGssUnix(state.completedOn.eta_brazil),
+    ata_destination: toGssUnix(state.completedOn.ata_brazil),
+    delivered_date: toGssUnix(state.completedOn.delivered),
   };
 }
 
