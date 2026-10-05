@@ -2134,6 +2134,19 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **O `GET /api/pre-loadings` (§6.2) não mudou** — segue com `ETD`/`ETA_Brazil` pela data estimada. Diverge desta regra; alinhar se o GSS for usar as duas vias.
 - PL 1306 criado à mão no GSS em 02/10 (id 1, primeiro shipment de lá) para validar o contrato; o envio automático foi testado contra ele (PATCH 200).
 
+### 6.6 API REST de lotes para o GSS + Swagger (2026-10-05)
+
+📦 **O GSS ganhou CRUD completo de lotes**: `GET/POST /api/batches` e `GET/PATCH/DELETE /api/batches/{id}`, mesmo `API_TOKEN` do resto. Contrato em OpenAPI 3.1 (`/api/openapi.json`) com **Swagger UI em `/api/docs`** — primeira parte da API documentada assim; as demais seguem no `docs/SOTWISE-API-para-GSS.md` até migrarem.
+
+- **Mesmas travas da tela da Order** (`orders/[id]/actions.ts`): lote editável só em In Negotiation/In Production; `status` só entre esses dois; sem gêmeas (mesma Category + Factory no lote); lote In Production nunca vazio; Deposit Payment resolvido promove o lote que ganha a 1ª linha (§3.7.2), salvo se o PATCH mandar `status`; rollup de status da Order após toda escrita.
+- **Mais estrita que a tela num ponto:** ao mover uma linha, o lote de ORIGEM também precisa ser editável (a tela só checa o destino). Mover linha de lote em Pre-Loading pela API → 409.
+- **Order** apontada por `order_gss_id` ou `po_number` (exatamente um). **Linhas:** `items` cria linha nova por `supplier_category_gss_id` (como o POST de orders); `item_ids` move linha existente (id do `GET /api/orders?include=items`); `remove_item_ids` tira do lote (a linha fica na order sem lote).
+- **DELETE** igual à lixeira da tela: as linhas sobrevivem sem lote (FK `on delete set null`) e voltam em `released_item_ids`.
+- `batch_number` default = maior sufixo `.NN` da order + 1 (a tela usa contagem + 1, que pode colidir depois de apagar um lote).
+- Token `po_read` (§6.3) **não** alcança lotes — 403 explícito.
+- Sem PUT: o PATCH já é parcial. Sem transação (PostgREST): tudo é validado antes da 1ª escrita.
+- Código: `domain/batches/api-{schema,read,write}.ts`, rotas em `app/api/batches/`, spec em `domain/api/openapi.ts` (escrita à mão — atualizar junto com o schema).
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente
