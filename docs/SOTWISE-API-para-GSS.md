@@ -6,6 +6,7 @@ Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 2. **API de Bibliotecas (cadastros)** — CRUD dos cadastros de referência.
 3. **Pre-loadings (PL)** — leitura do estado do PL/embarque: loading, ETD, ETA/ATA, entrega (`GET`, pull — Parte 3).
 4. **ETD Factories** — leitura das entradas Factory × Category com a data de ETD (`GET`, pull — Parte 4).
+5. **Batches (lotes)** — CRUD completo dos lotes de uma order (`GET`/`POST`/`PATCH`/`DELETE` — Parte 5). Contrato interativo no **Swagger: `https://sot.gssdatahub.com/api/docs`**.
 
 - **Base URL:** `https://sot.gssdatahub.com` — o endereço antigo `https://sotwise.vercel.app` continua atendendo o mesmo app, mas use o domínio acima.
 - **Formato:** JSON em todas as requisições e respostas (`Content-Type: application/json`)
@@ -37,7 +38,7 @@ Todo código usado nas duas áreas desta API (Orders e Bibliotecas), com o que e
 | **401** Unauthorized | Não autenticado | Faltou o header `Authorization`, o token está errado, ou faltou o prefixo `Bearer `. |
 | **403** Forbidden | Acesso negado | Autenticado, mas sem permissão — só se aplica a sessão de usuário (conta bloqueada). Não deve acontecer com o token de integração. |
 | **404** Not Found | Não encontrado | A URL não corresponde a nenhum recurso, ou o `{id}` de um `PATCH` não existe (ou já foi excluído). |
-| **409** Conflict | Conflito de dados | O que foi enviado colide com algo que já existe — hoje isso é só o `po_number` de uma order duplicado. |
+| **409** Conflict | Conflito de dados | O que foi enviado colide com algo que já existe ou com o estado atual — `po_number` de order duplicado; nos lotes (Parte 5), lote fora de edição, `batch_number` repetido, mesma Category + Factory duas vezes, lote In Production que ficaria vazio. |
 | **500** Internal Server Error | Erro interno | Falha inesperada do lado do SOTWISE (ex.: erro de banco). Não é problema do payload — se persistir, reportar ao time do SOTWISE com a mensagem recebida. |
 
 > Regra geral: **4xx** = revise o que foi enviado; **5xx** = problema do lado do SOTWISE, não repita a chamada indefinidamente sem avisar o time.
@@ -582,6 +583,42 @@ Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issue
 | `500` | Erro inesperado do lado do SOTWISE |
 
 > Entradas de orders excluídas (soft delete) não aparecem.
+
+---
+
+# Parte 5 — Batches (lotes)
+
+CRUD completo dos lotes de uma order. **A referência completa, com schemas, exemplos e "Try it out", é o Swagger:**
+
+- Swagger UI: `https://sot.gssdatahub.com/api/docs` (botão **Authorize** → cole o `API_TOKEN`)
+- Contrato OpenAPI 3.1 (importável no Postman/Insomnia/gerador de client): `https://sot.gssdatahub.com/api/openapi.json`
+
+> ⚠️ O "Try it out" do Swagger chama a API **de verdade** — escreve no banco.
+
+| Método | Path | O quê |
+|---|---|---|
+| `GET` | `/api/batches?order_gss_id=&po_number=&status=&updated_since=&order=&limit=&offset=` | Lista (sempre lista; order inexistente → `data: []`) |
+| `POST` | `/api/batches` | Cria um lote numa order (`order_gss_id` **ou** `po_number`), vazio ou já com linhas |
+| `GET` | `/api/batches/{id}` | Um lote |
+| `PATCH` | `/api/batches/{id}` | Parcial: `batch_number`, `status`, `items` (linhas novas), `item_ids` (mover linhas existentes), `remove_item_ids` |
+| `DELETE` | `/api/batches/{id}` | Apaga o lote; as linhas **ficam na order sem lote** (`released_item_ids`) |
+
+Cada lote volta com a order (`id`, `gss_id`, `po_number`), `full_number` (ex.: `1680.02`), `status`, as linhas (`items`, com `supplier_category_gss_id`, factory e category com `gss_id`) e os PLs em que entrou.
+
+**Linhas no lote — dois jeitos:**
+- `items: [{ supplier_category_gss_id, ship_requirement }]` → linha **nova**, mesmo formato do `items[]` do `POST /api/orders`;
+- `item_ids: [uuid]` → linha que **já existe** na order (o `items[].id` do `GET /api/orders?include=items`) é **movida** para o lote.
+
+**Regras (as mesmas da tela do SOTWISE):**
+- Lote só muda ou é apagado em `in_negotiation`/`in_production` → senão **409**. Daí pra frente quem move o lote é o fluxo de Pre-loading/Shipment.
+- `status` só aceita `in_negotiation` e `in_production` (outro valor → **400**).
+- A mesma Category + Factory não repete no lote → **409**.
+- Lote `in_production` nunca fica sem linha — nem o lote, nem o lote de onde uma linha sai → **409**.
+- Lote novo nasce `in_negotiation`; vai para `in_production` pelo `PATCH` com `status`.
+- `batch_number` omitido no POST = próximo `.NN` livre da order; repetido na order → **409**.
+- Campo desconhecido no corpo → **400** (ex.: mandar `status` no POST — use o PATCH).
+- O status da order é recalculado a partir dos lotes depois de toda escrita.
+- `updated_since` olha o `updated_at` do **lote**: mexer só nas linhas não o altera.
 
 ---
 

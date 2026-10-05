@@ -2034,6 +2034,20 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - ⚠️ **`updated_since` não pega mudança só de linha.** `orders.updated_at` só muda com UPDATE na própria order (inclusive o rollup de status); lote atribuído, `loading_status`, linha nova etc. só tocam `order_factory_category.updated_at`/`batches.updated_at`. O doc orienta um refresh periódico das linhas. Se virar problema, a correção é um trigger que "toca" `orders.updated_at` quando linha ou lote mudam, mas isso também afeta o GSS e o realtime da lista.
 - Doc para o consumidor (em inglês): `docs/SOTWISE-API-Purchase-Orders.md` + `.pdf`.
 
+### 6.6 API REST de lotes para o GSS + Swagger (2026-10-05)
+
+📦 **O GSS ganhou CRUD completo de lotes**: `GET/POST /api/batches` e `GET/PATCH/DELETE /api/batches/{id}`, mesmo `API_TOKEN` do resto. Contrato em OpenAPI 3.1 (`/api/openapi.json`) com **Swagger UI em `/api/docs`** — primeira parte da API documentada assim; as demais seguem no `docs/SOTWISE-API-para-GSS.md` até migrarem.
+
+- **Mesmas travas da tela da Order** (`orders/[id]/actions.ts`): lote editável só em In Negotiation/In Production; `status` só entre esses dois; sem gêmeas (mesma Category + Factory no lote); lote In Production nunca vazio; rollup de status da Order após toda escrita.
+- **Mais estrita que a tela da main em dois pontos:** (1) ao mover uma linha, o lote de ORIGEM também precisa ser editável (a tela só checa o destino) — mover linha de lote em Pre-Loading pela API → 409; (2) lote In Production nunca fica vazio também ao remover/mover a última linha (na main a tela só barra a troca de status de lote vazio).
+- **Sem promoção automática pelo Deposit Payment** na main (a regra vive só na dev, `lib/deposit-production.ts`): o lote criado pela API nasce In Negotiation e só muda pelo `status` do PATCH. Numeração §6.6 mantida igual à da dev (§6.4/6.5 são só da dev).
+- **Order** apontada por `order_gss_id` ou `po_number` (exatamente um). **Linhas:** `items` cria linha nova por `supplier_category_gss_id` (como o POST de orders); `item_ids` move linha existente (id do `GET /api/orders?include=items`); `remove_item_ids` tira do lote (a linha fica na order sem lote).
+- **DELETE** igual à lixeira da tela: as linhas sobrevivem sem lote (FK `on delete set null`) e voltam em `released_item_ids`.
+- `batch_number` default = maior sufixo `.NN` da order + 1 (a tela usa contagem + 1, que pode colidir depois de apagar um lote).
+- Token `po_read` (§6.3) **não** alcança lotes — 403 explícito.
+- Sem PUT: o PATCH já é parcial. Sem transação (PostgREST): tudo é validado antes da 1ª escrita.
+- Código: `domain/batches/api-{schema,read,write}.ts`, rotas em `app/api/batches/`, spec em `domain/api/openapi.ts` (escrita à mão — atualizar junto com o schema).
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente
