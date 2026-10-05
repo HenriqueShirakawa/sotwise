@@ -605,6 +605,14 @@ CRUD completo dos lotes de uma order. **A referência completa, com schemas, exe
 
 Cada lote volta com a order (`id`, `gss_id`, `po_number`), `full_number` (ex.: `1680.02`), `status`, as linhas (`items`, com `supplier_category_gss_id`, factory e category com `gss_id`) e os PLs em que entrou.
 
+**Webhook — lote criado no GSS:** quando um OrderBatch nasce no GSS, chamem `POST /api/batches` com o id dele em `gss_id`, a order em `order_gss_id` e o `batch_code` em `batch_number`:
+
+```json
+{ "gss_id": 37, "order_gss_id": 1680, "batch_number": "1680.02" }
+```
+
+Com `gss_id` a chamada é **idempotente**: reenviar o mesmo lote responde `200` com o lote (sem duplicar); lote que já existia aqui com o mesmo número é ligado ao `gss_id` (`200`); senão é criado (`201`). Cada lote volta com o `gss_id`, e `GET /api/batches?gss_id=37` acha o lote pelo id do GSS.
+
 **Linhas no lote — dois jeitos:**
 - `items: [{ supplier_category_gss_id, ship_requirement }]` → linha **nova**, mesmo formato do `items[]` do `POST /api/orders`;
 - `item_ids: [uuid]` → linha que **já existe** na order (o `items[].id` do `GET /api/orders?include=items`) é **movida** para o lote.
