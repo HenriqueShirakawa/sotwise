@@ -1,10 +1,9 @@
 import { z } from "zod";
 
-/** "YYYY-MM-DD" ou omitido/null. */
-const optionalDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD.")
-  .nullish();
+import { apiDay } from "@/lib/api-dates";
+
+/** Unix (s) ou "YYYY-MM-DD" (legado) → "YYYY-MM-DD"; omitido/null passam. */
+const optionalDate = apiDay.nullish();
 
 /** gss_id de uma biblioteca (traduzido para o UUID interno no endpoint). */
 const optionalGssRef = z.string().trim().min(1).nullish();
@@ -20,9 +19,7 @@ const gssOrderItemSchema = z.object({
     .string()
     .trim()
     .min(1, "supplier_category_gss_id is required."),
-  ship_requirement: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "ship_requirement must be YYYY-MM-DD."),
+  ship_requirement: apiDay,
 });
 
 export type GssOrderItemInput = z.infer<typeof gssOrderItemSchema>;
