@@ -2158,6 +2158,12 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 
 🕛 **Toda data que o SOTWISE manda ao GSS vai em Unix (segundos), às 12:00 UTC** — decisão do usuário ("nossas datas como unix apenas"). O GSS passou a responder em Unix e aceita ISO só como legado. Meio-dia UTC cai no mesmo dia no Brasil e na China; antes só `loading_date` ia às 12:00Z e as outras quatro iam como `YYYY-MM-DD`, que o GSS lê como meia-noite UTC — no Brasil, o dia anterior. Conversão em `toGssUnix` (`lib/gss/outbound/pl-shipment.ts`). Testado no PL 1306 (PATCH 200, valores devolvidos iguais).
 
+- **06/10/2026 — a NOSSA API também passou a Unix, na entrada e na saída** (decisão do usuário, opção "Unix na entrada e na saída", para todos os tokens). Vale para `/api/orders` (GET e POST), `/api/pre-loadings`, `/api/etd-factories` e `/api/batches`; bibliotecas não têm data.
+  - **Dia** (coluna `date`) → Unix às 12:00 UTC; **momento** (`timestamptz`: `created_at`/`updated_at`) → Unix com fração; `updated_since` aceita Unix.
+  - **Entrada aceita o legado** (`YYYY-MM-DD`; ISO no `updated_since`). Unix recebido como dia vira o dia do calendário UTC. Valor > ano 2200 é tratado como milissegundos por engano → 400.
+  - Helper único: `lib/api-dates.ts` (`dayToUnix`, `timestampToUnix`, `apiDay`, `apiInstantQuery`); `toGssUnix` passou a usá-lo. As telas do app não mudam — só a camada da API.
+  - ⚠️ **Quebra o consumidor do token só-leitura de PO** (§6.3): a resposta dele mudou de string para número. Doc em inglês atualizada (`docs/SOTWISE-API-Purchase-Orders.md`, aviso no topo); o `.pdf` dela **não** foi regerado.
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente

@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { dayToUnix } from "@/lib/api-dates";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus } from "@/types/database";
 
@@ -76,8 +77,9 @@ export type GssEtdRead = {
   lote: string;
   FACTORY: string | null;
   category: string | null;
-  initial_date: DateStr | null;
-  current_date: DateStr | null;
+  /** Unix (s) às 12:00 UTC — lib/api-dates.ts. */
+  initial_date: number | null;
+  current_date: number | null;
   ready_parts: boolean;
 };
 
@@ -152,8 +154,8 @@ export async function listGssEtdEntries(
       lote: batch?.batch_number ?? "",
       FACTORY: factories.get(row.factory_id) ?? null,
       category: categories.get(row.category_id) ?? null,
-      initial_date: etd?.initial_date ?? null,
-      current_date: etd?.current_date ?? null,
+      initial_date: dayToUnix(etd?.initial_date),
+      current_date: dayToUnix(etd?.current_date),
       ready_parts: etd?.ready ?? false,
     };
   });

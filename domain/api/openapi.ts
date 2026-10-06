@@ -5,6 +5,8 @@ import {
   MAX_LIMIT,
 } from "@/domain/batches/api-schema";
 
+import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
+
 import { integrationPaths, integrationSchemas, integrationTags } from "./openapi-integration";
 
 /**
@@ -66,13 +68,13 @@ const exampleBatch = {
       supplier_category_gss_id: "4521",
       factory: { id: "2b7d6c1e-0a4f-4e8b-9c3d-5f6a7b8c9d01", gss_id: "312", name: "Zenchum" },
       category: { id: "8e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a45", gss_id: "88", name: "Brake Pads" },
-      ship_requirement: "2026-11-30",
+      ship_requirement: dayToUnix("2026-11-30"),
       loading_status: null,
     },
   ],
   pre_loadings: [],
-  created_at: "2026-10-05T14:02:11.120Z",
-  updated_at: "2026-10-05T14:02:11.120Z",
+  created_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
+  updated_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
 };
 
 export const openApiSpec = {
@@ -89,7 +91,7 @@ export const openApiSpec = {
       "",
       "**Status codes** — 4xx: review what was sent; 5xx: problem on the SOTWISE side (report it with the message, do not retry forever).",
       "",
-      "**Dates** — `YYYY-MM-DD`; timestamps in ISO 8601 with offset.",
+      "**Dates** — always **Unix timestamps in seconds**, in and out (same as GSS). A calendar day (e.g. `ship_requirement`) is sent as 12:00 UTC of that day, so it is the same day in Brazil and China; created/updated moments carry a fraction. Input still accepts the legacy formats (`YYYY-MM-DD` for days, ISO 8601 with offset for `updated_since`). Send seconds, not milliseconds.",
       "",
       "**Batches** belong to one order and group its Factory × Category lines (the `items`).",
       "A line enters a batch in two ways: `item_ids` (a line that already exists in the order is *moved* — its id comes from `GET /api/orders?include=items`)",
@@ -126,8 +128,8 @@ export const openApiSpec = {
           {
             name: "updated_since",
             in: "query",
-            schema: { type: "string", format: "date-time" },
-            description: "ISO 8601 with offset, e.g. `2026-10-01T00:00:00Z`.",
+            schema: { oneOf: [{ type: "number" }, { type: "string", format: "date-time" }] },
+            description: "Unix seconds (e.g. `1790812800`); ISO 8601 with offset is still accepted (legacy).",
           },
           { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" }, description: "Sort by `updated_at`." },
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: MAX_LIMIT, default: DEFAULT_LIMIT } },
@@ -192,7 +194,7 @@ export const openApiSpec = {
                   value: {
                     order_gss_id: "1680",
                     batch_number: ".02",
-                    items: [{ supplier_category_gss_id: "4521", ship_requirement: "2026-11-30" }],
+                    items: [{ supplier_category_gss_id: "4521", ship_requirement: dayToUnix("2026-11-30") }],
                   },
                 },
                 moveItems: {
@@ -258,7 +260,7 @@ export const openApiSpec = {
                 items: {
                   summary: "Add, move and remove items",
                   value: {
-                    items: [{ supplier_category_gss_id: "4521", ship_requirement: "2026-11-30" }],
+                    items: [{ supplier_category_gss_id: "4521", ship_requirement: dayToUnix("2026-11-30") }],
                     item_ids: ["0e5b5f0e-1d7c-4a8e-bb8e-6f1b1b2b9c33"],
                     remove_item_ids: ["5d2c9a77-8f4e-4c55-9a1b-3e2f6c7d8e99"],
                   },
@@ -368,7 +370,7 @@ export const openApiSpec = {
           supplier_category_gss_id: { type: ["string", "null"] },
           factory: ref("LibraryRef"),
           category: ref("LibraryRef"),
-          ship_requirement: { type: "string", format: "date" },
+          ship_requirement: { type: ["number", "null"], description: "Unix seconds (12:00 UTC of the day)." },
           loading_status: {
             type: ["string", "null"],
             enum: ["total", "partial", "none", null],
@@ -421,8 +423,8 @@ export const openApiSpec = {
               properties: { id: { type: "string", format: "uuid" }, pl_number: { type: "string" } },
             },
           },
-          created_at: { type: "string", format: "date-time" },
-          updated_at: { type: "string", format: "date-time" },
+          created_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
+          updated_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
         },
       },
       BatchEnvelope: {
@@ -436,7 +438,12 @@ export const openApiSpec = {
         required: ["supplier_category_gss_id", "ship_requirement"],
         properties: {
           supplier_category_gss_id: { type: "string", description: "GSS supplier-category id (gives factory + category)." },
-          ship_requirement: { type: "string", format: "date", description: "YYYY-MM-DD." },
+          ship_requirement: {
+            oneOf: [
+              { type: "number", description: "Unix seconds — the UTC calendar day is used (send 12:00 UTC to be safe)." },
+              { type: "string", format: "date", description: "Legacy: YYYY-MM-DD." },
+            ],
+          },
         },
       },
       BatchCreate: {
