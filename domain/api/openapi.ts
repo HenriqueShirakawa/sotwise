@@ -8,6 +8,7 @@ import {
 import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
 
 import { integrationPaths, integrationSchemas, integrationTags } from "./openapi-integration";
+import { restPaths, restSchemas, restTags } from "./openapi-rest";
 
 /**
  * Contrato OpenAPI 3.1 da API do SOTWISE para integradores (GSS).
@@ -50,8 +51,9 @@ const batchIdParam = {
   name: "id",
   in: "path",
   required: true,
-  description: "Batch UUID (`data.id` from the list, from the POST, or `items[].batch.id` from `GET /api/orders?include=items`).",
-  schema: { type: "string", format: "uuid" },
+  description:
+    "Batch UUID (`data.id` from the list, from the POST, or `items[].batch.id` from `GET /api/orders?include=items`) **or** its `full_number` (`1230.02` — the GSS `batch_code`).",
+  schema: { type: "string" },
 };
 
 const exampleBatch = {
@@ -93,6 +95,11 @@ export const openApiSpec = {
       "",
       "**Dates** — always **Unix timestamps in seconds**, in and out (same as GSS). A calendar day (e.g. `ship_requirement`) is sent as 12:00 UTC of that day, so it is the same day in Brazil and China; created/updated moments carry a fraction. Input still accepts the legacy formats (`YYYY-MM-DD` for days, ISO 8601 with offset for `updated_since`). Send seconds, not milliseconds.",
       "",
+      "**Resources** — REST (`GET`, `POST`, `PATCH`, `DELETE`) on the five main ones: **Orders**, **Batches**, **Order items** (Factory × Category lines), **ETD Factories** (the ETD of a line) and **Shipments** (Pre-loading + its shipment, one record keyed by `pl_number`).",
+      "The `{id}` of an item route takes the UUID **or** the business number: `/api/orders/1230`, `/api/batches/1230.02`, `/api/shipments/1306`. " +
+        "References to registers take the SOTWISE id or the `gss_id`; people are sent by e-mail. Every write runs the same rules as the SOTWISE screens. " +
+        "What GSS writes here is not sent back to GSS.",
+      "",
       "**Batches** belong to one order and group its Factory × Category lines (the `items`).",
       "A line enters a batch in two ways: `item_ids` (a line that already exists in the order is *moved* — its id comes from `GET /api/orders?include=items`)",
       "or `items` (a *new* line, identified by `supplier_category_gss_id`, same as `items[]` of `POST /api/orders`).",
@@ -107,9 +114,15 @@ export const openApiSpec = {
   },
   servers: [{ url: "/", description: "This environment" }],
   security: [{ bearerAuth: [] }],
-  tags: [...integrationTags, { name: "Batches", description: "Order batches (lotes) — full CRUD." }],
+  tags: [
+    integrationTags[0],
+    { name: "Batches", description: "Order batches (lotes) — full CRUD." },
+    ...restTags,
+    ...integrationTags.slice(1),
+  ],
   paths: {
     ...integrationPaths,
+    ...restPaths,
     "/api/batches": {
       get: {
         tags: ["Batches"],
@@ -332,6 +345,7 @@ export const openApiSpec = {
     },
     schemas: {
       ...integrationSchemas,
+      ...restSchemas,
       Error: {
         type: "object",
         required: ["error"],
