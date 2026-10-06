@@ -9,6 +9,7 @@ import type {
   OrderStatus,
 } from "@/types/database";
 import { ORDER_STEPS } from "@/lib/checklist";
+import { apiInstantQuery, dayToUnix, timestampToUnix } from "@/lib/api-dates";
 
 /**
  * Leitura GSS → SOTWISE de ORDERS (o pull do lado do GSS).
@@ -60,7 +61,8 @@ export const gssOrderQuerySchema = z.object({
   gss_id: z.string().trim().min(1).optional(),
   po_number: z.string().trim().min(1).optional(),
   status: z.enum(ORDER_STATUSES).optional(),
-  updated_since: z.iso.datetime({ offset: true }).optional(),
+  // Unix (s) ou ISO 8601 com fuso → ISO para o filtro (lib/api-dates.ts).
+  updated_since: apiInstantQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
@@ -130,11 +132,14 @@ const ORDER_COLUMNS =
   "order_type_id, client_id, business_unit_id, exporter_id, leader_id, requester_id, " +
   "created_at, updated_at";
 
+/** Datas da resposta em Unix segundos (dia às 12:00 UTC) — lib/api-dates.ts. */
+type Unix = number;
+
 export type GssOrderReadItem = {
   id: UUID;
   factory: LibraryRef | null;
   category: LibraryRef | null;
-  ship_requirement: DateStr;
+  ship_requirement: Unix | null;
   loading_status: LoadingStatus | null;
   batch: { id: UUID; batch_number: string; status: string } | null;
 };
@@ -143,8 +148,8 @@ export type GssOrderReadStep = {
   step: ChecklistStep;
   enabled: boolean;
   done: boolean;
-  estimated_date: DateStr | null;
-  completed_on: DateStr | null;
+  estimated_date: Unix | null;
+  completed_on: Unix | null;
 };
 
 export type GssOrderRead = {
@@ -153,17 +158,17 @@ export type GssOrderRead = {
   po_number: string;
   status: OrderStatus;
   asap: boolean;
-  schedule_requested: DateStr | null;
+  schedule_requested: Unix | null;
   client_reference: string | null;
-  date_po: DateStr | null;
+  date_po: Unix | null;
   order_type: LibraryRef | null;
   client: LibraryRef | null;
   business_unit: LibraryRef | null;
   exporter: LibraryRef | null;
   leader: PersonRef | null;
   requester: PersonRef | null;
-  created_at: Timestamp;
-  updated_at: Timestamp;
+  created_at: Unix | null;
+  updated_at: Unix | null;
   items?: GssOrderReadItem[];
   checklist?: GssOrderReadStep[];
 };
@@ -255,7 +260,7 @@ async function loadItems(
       id: row.id,
       factory: factories.get(row.factory_id) ?? null,
       category: categories.get(row.category_id) ?? null,
-      ship_requirement: row.ship_requirement,
+      ship_requirement: dayToUnix(row.ship_requirement),
       loading_status: row.loading_status,
       batch: row.batch_id ? batchMap.get(row.batch_id) ?? null : null,
     });
@@ -287,7 +292,11 @@ async function loadChecklist(
   const byOrder = new Map<UUID, GssOrderReadStep[]>();
   if (orderIds.length === 0) return byOrder;
 
-  type StepRow = GssOrderReadStep & { order_id: UUID };
+  type StepRow = Omit<GssOrderReadStep, "estimated_date" | "completed_on"> & {
+    order_id: UUID;
+    estimated_date: DateStr | null;
+    completed_on: DateStr | null;
+  };
   const { data, error } = await admin
     .from("order_checklist_steps")
     .select("order_id, step, enabled, done, estimated_date, completed_on")
@@ -301,8 +310,8 @@ async function loadChecklist(
       step: row.step,
       enabled: row.enabled,
       done: row.done,
-      estimated_date: row.estimated_date,
-      completed_on: row.completed_on,
+      estimated_date: dayToUnix(row.estimated_date),
+      completed_on: dayToUnix(row.completed_on),
     });
     byOrder.set(row.order_id, list);
   }
@@ -366,9 +375,9 @@ export async function listGssOrders(
       po_number: row.po_number,
       status: row.status,
       asap: row.asap,
-      schedule_requested: row.schedule_requested,
+      schedule_requested: dayToUnix(row.schedule_requested),
       client_reference: row.client_reference,
-      date_po: row.date_po,
+      date_po: dayToUnix(row.date_po),
       order_type: row.order_type_id ? orderTypes.get(row.order_type_id) ?? null : null,
       client: row.client_id ? clients.get(row.client_id) ?? null : null,
       business_unit: row.business_unit_id
@@ -377,8 +386,8 @@ export async function listGssOrders(
       exporter: row.exporter_id ? exporters.get(row.exporter_id) ?? null : null,
       leader: row.leader_id ? people.get(row.leader_id) ?? null : null,
       requester: row.requester_id ? people.get(row.requester_id) ?? null : null,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      created_at: timestampToUnix(row.created_at),
+      updated_at: timestampToUnix(row.updated_at),
     };
     if (wants("items")) order.items = items.get(row.id) ?? [];
     if (wants("checklist")) order.checklist = checklist.get(row.id) ?? [];

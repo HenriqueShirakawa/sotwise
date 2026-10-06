@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { apiDay, apiInstantQuery } from "@/lib/api-dates";
 import type { BatchStatus } from "@/types/database";
 
 /**
@@ -62,7 +63,7 @@ const editableStatus = z.enum(EDITABLE_BATCH_STATUSES, {
 /** Linha Factory×Category NOVA — mesmo formato do `items[]` do POST /api/orders. */
 const newItemSchema = z.object({
   supplier_category_gss_id: z.string().trim().min(1, "supplier_category_gss_id is required."),
-  ship_requirement: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "ship_requirement must be YYYY-MM-DD."),
+  ship_requirement: apiDay,
 });
 
 export type NewBatchItemInput = z.infer<typeof newItemSchema>;
@@ -125,7 +126,7 @@ export const batchQuerySchema = z.object({
   order_gss_id: z.string().trim().min(1).optional(),
   po_number: z.string().trim().min(1).optional(),
   status: z.enum(BATCH_STATUSES).optional(),
-  updated_since: z.iso.datetime({ offset: true }).optional(),
+  updated_since: apiInstantQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),

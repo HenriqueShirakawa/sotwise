@@ -14,6 +14,18 @@ Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 
 ---
 
+## 0. Datas — Unix timestamp (desde 06/10/2026)
+
+**Toda data da API é Unix timestamp em segundos, na entrada e na saída** — o mesmo formato do GSS.
+
+- **Dia** (`ship_requirement`, `schedule_requested`, `date_po`, datas do checklist, do PL e do ETD) → Unix às **12:00 UTC** daquele dia (cai no mesmo dia no Brasil e na China). Ex.: `2026-08-24` = `1787572800`.
+- **Momento** (`created_at`, `updated_at`) → Unix em segundos, com fração.
+- **Filtro `updated_since`** → Unix em segundos (ex.: `?updated_since=1788220800`).
+- **Entrada aceita o formato antigo** por compatibilidade: `YYYY-MM-DD` nos dias, ISO 8601 com fuso no `updated_since`. Valor em **milissegundos** é recusado com 400.
+
+> ⚠️ Os exemplos de JSON mais abaixo neste documento ainda mostram o formato antigo (string). **A referência atualizada, com exemplos em Unix, é o Swagger: `https://sot.gssdatahub.com/api/docs`.**
+
+---
 ## 1. Autenticação
 
 **Um único token para a API inteira** — Orders e Bibliotecas usam o mesmo header, no formato `Bearer <token>` (o prefixo `Bearer ` com espaço é obrigatório). O valor é combinado fora de banda — peça ao responsável pelo ambiente.

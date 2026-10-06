@@ -13,6 +13,8 @@ This integration is **read-only**. Your token can only **read** purchase orders.
 
 ---
 
+> **Change on 2026-10-06 — dates are now Unix timestamps (seconds).** Every date and timestamp in the response is a number (Unix seconds); `updated_since` takes Unix seconds too (ISO 8601 still accepted). Until 2026-10-05 dates were `YYYY-MM-DD` strings and timestamps ISO 8601 strings — see §3.3.
+
 ## 1. Authentication
 
 Send your token in the `Authorization` header on every request. It must start with `Bearer` followed by a space:
@@ -42,7 +44,7 @@ The response is **always a list**, even when you filter down to one order, so th
 |---|---|---|---|
 | `po_number` | PO number (exact) | — | Read one specific order |
 | `status` | see [§3.1](#31-order-status) | — | Filter by order phase |
-| `updated_since` | ISO 8601 with timezone, e.g. `2026-09-01T00:00:00Z` | — | Only orders changed since that moment (incremental sync) |
+| `updated_since` | Unix timestamp in seconds, e.g. `1788220800` (ISO 8601 with timezone is still accepted) | — | Only orders changed since that moment (incremental sync) |
 | `order` | `asc` \| `desc` (sorted by `updated_at`) | `desc` | Use `asc` to walk forward in time |
 | `limit` | 1–200 | 50 | Page size |
 | `offset` | ≥ 0 | 0 | Page offset |
@@ -81,17 +83,17 @@ Please keep polling reasonable. Every 15–30 minutes is plenty for this data.
       "po_number": "1530",
       "status": "partially_shipped",
       "asap": false,
-      "schedule_requested": "2026-08-24",
+      "schedule_requested": 1787572800,
       "client_reference": "113-26",
-      "date_po": "2026-08-03",
+      "date_po": 1785758400,
       "order_type":    { "id": "1364838b-…", "name": "Sales",      "gss_id": "1"  },
       "client":        { "id": "d23e27e0-…", "name": "Impacto",    "gss_id": "28" },
       "business_unit": { "id": "f706396a-…", "name": "Moto Parts", "gss_id": "4"  },
       "exporter":      { "id": "bb07d9fa-…", "name": "Zenya",      "gss_id": "4"  },
       "leader":    { "id": "4b2b1608-…", "name": "Leonardo Pacce" },
       "requester": { "id": "4b2b1608-…", "name": "Leonardo Pacce" },
-      "created_at": "2026-08-03T05:39:27.561+00:00",
-      "updated_at": "2026-09-17T18:45:00.771298+00:00"
+      "created_at": 1785735567.561,
+      "updated_at": 1789670700.771
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "returned": 1, "total": 71 }
@@ -107,17 +109,17 @@ Please keep polling reasonable. Every 15–30 minutes is plenty for this data.
 | `po_number` | string | Purchase order number. Unique in SOTWISE. |
 | `status` | enum | Current phase of the order. See [§3.1](#31-order-status). |
 | `asap` | boolean | Urgency flag ("as soon as possible"). |
-| `schedule_requested` | date \| null | Requested schedule date. |
+| `schedule_requested` | date (Unix) \| null | Requested schedule date. |
 | `client_reference` | string \| null | Customer's own reference for the order. |
-| `date_po` | date \| null | PO issue date. |
+| `date_po` | date (Unix) \| null | PO issue date. |
 | `order_type` | object \| null | `{ id, name, gss_id }`, e.g. Sales. |
 | `client` | object \| null | `{ id, name, gss_id }`, the customer. |
 | `business_unit` | object \| null | `{ id, name, gss_id }` |
 | `exporter` | object \| null | `{ id, name, gss_id }` |
 | `leader` | object \| null | `{ id, name }`, the SOTWISE user who leads the order. |
 | `requester` | object \| null | `{ id, name }`, the SOTWISE user who requested it. |
-| `created_at` | timestamp | When the order was created in SOTWISE (ISO 8601, UTC). |
-| `updated_at` | timestamp | Last change to the order. This is the field `updated_since` filters on. |
+| `created_at` | timestamp (Unix) | When the order was created in SOTWISE. |
+| `updated_at` | timestamp (Unix) | Last change to the order. This is the field `updated_since` filters on. |
 
 - Master-data objects (`order_type`, `client`, `business_unit`, `exporter`, and `factory`/`category` in the lines) carry the SOTWISE `id`, the display `name` and the `gss_id`. `gss_id: null` means that record is not linked to GSS yet.
 - Any field can be `null` when it has not been filled in.
@@ -133,7 +135,7 @@ Please keep polling reasonable. Every 15–30 minutes is plenty for this data.
     "id": "18bd96d0-dd15-41a3-9f87-983603eeb8e3",
     "factory":  { "id": "a40b67d9-…", "name": "Pengjie", "gss_id": "453" },
     "category": { "id": "28a8872e-…", "name": "Sealing", "gss_id": "34"  },
-    "ship_requirement": "2026-08-24",
+    "ship_requirement": 1787572800,
     "loading_status": null,
     "batch": { "id": "0a69b3c4-…", "batch_number": ".02", "status": "in_production" }
   }
@@ -145,7 +147,7 @@ Please keep polling reasonable. Every 15–30 minutes is plenty for this data.
 | `id` | UUID | Line id. |
 | `factory` | object \| null | `{ id, name, gss_id }`, the supplier factory. |
 | `category` | object \| null | `{ id, name, gss_id }`, the product category. |
-| `ship_requirement` | date \| null | Required ship date for this line. |
+| `ship_requirement` | date (Unix) \| null | Required ship date for this line. |
 | `loading_status` | enum \| null | How much of the line was loaded: `total`, `partial`, `none`, or `null` (not informed yet). |
 | `batch` | object \| null | The batch the line was grouped into: `{ id, batch_number, status }`. `null` means no batch yet. See [§3.2](#32-batch-status). |
 
@@ -189,8 +191,8 @@ The order status is derived from the statuses of its batches.
 
 | Kind | Format | Example |
 |---|---|---|
-| Date | `YYYY-MM-DD` | `2026-08-24` |
-| Timestamp | ISO 8601 with offset (UTC) | `2026-09-17T18:45:00.771298+00:00` |
+| Date | Unix timestamp in seconds, at 12:00 UTC of the day (same calendar day in Brazil and China) | `1787572800` (= 2026-08-24) |
+| Timestamp | Unix timestamp in seconds, with fraction | `1789670700.771` |
 | Id | UUID v4 | `93cc8b37-1ace-43ca-a391-009e0640ffd0` |
 
 ---
@@ -202,7 +204,7 @@ Every error returns a JSON body `{ "error": "message" }`. Validation errors also
 | Code | When | What to do |
 |---|---|---|
 | `200` | Success, including when nothing matches (`data: []`, `total: 0`). There is no `404` for an empty filter. | — |
-| `400` | Invalid query parameter: `status` not in the list, unknown `include`, `limit > 200`, `updated_since` not ISO 8601, etc. | Fix the request. |
+| `400` | Invalid query parameter: `status` not in the list, unknown `include`, `limit > 200`, `updated_since` not a Unix timestamp in seconds (or ISO 8601), etc. | Fix the request. |
 | `401` | Missing token, wrong token, or missing `Bearer ` prefix. | Check the header. |
 | `403` | Your token is valid but not allowed to do this, e.g. `include=checklist`, a `POST`, or any endpoint other than `GET /api/orders`. | Stick to the scope of this document. |
 | `500` | Unexpected error on the SOTWISE side. | Retry later with backoff. If it keeps happening, report it to the SOTWISE team with the `error` message. |
@@ -236,7 +238,7 @@ curl -s "https://sot.gssdatahub.com/api/orders?po_number=1530&include=items" \
   -H "Authorization: Bearer $SOTWISE_TOKEN"
 
 # Incremental: what changed since a given moment
-curl -s "https://sot.gssdatahub.com/api/orders?updated_since=2026-09-01T00:00:00Z&order=asc&limit=200" \
+curl -s "https://sot.gssdatahub.com/api/orders?updated_since=1788220800&order=asc&limit=200" \
   -H "Authorization: Bearer $SOTWISE_TOKEN"
 ```
 

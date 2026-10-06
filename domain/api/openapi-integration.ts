@@ -13,7 +13,13 @@
  * ficam de fora de propósito — não são para integrador.
  */
 
+import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
+
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+
+/** Exemplos escritos como data legível e convertidos para o Unix da resposta. */
+const du = (day: string) => dayToUnix(day);
+const ts = (iso: string) => timestampToUnix(iso);
 
 const err = (description: string, example: string) => ({
   description,
@@ -78,8 +84,25 @@ const ORDER_STEPS = [
 
 const BATCH_STATUSES = ["in_negotiation", "in_production", "preloading", "in_transit", "delivered", "canceled"];
 
-const date = { type: "string", format: "date", description: "YYYY-MM-DD." };
-const nullableDate = { type: ["string", "null"], format: "date" };
+/** SAÍDA — dia em Unix (s) às 12:00 UTC (lib/api-dates.ts). */
+const date = { type: "number", description: "Unix seconds (12:00 UTC of the day)." };
+const nullableDate = { type: ["number", "null"], description: "Unix seconds (12:00 UTC of the day)." };
+/** SAÍDA — momento em Unix (s), com fração. */
+const instant = { type: ["number", "null"], description: "Unix seconds (fractional)." };
+/** ENTRADA — dia: Unix (s) ou, legado, "YYYY-MM-DD". */
+const inDay = {
+  oneOf: [
+    { type: "number", description: "Unix seconds — the UTC calendar day is used (send 12:00 UTC to be safe)." },
+    { type: "string", format: "date", description: "Legacy: YYYY-MM-DD." },
+  ],
+};
+const inDayNullable = { oneOf: [...inDay.oneOf, { type: "null" }] };
+const updatedSinceParam = {
+  name: "updated_since",
+  in: "query",
+  schema: { oneOf: [{ type: "number" }, { type: "string", format: "date-time" }] },
+  description: "Unix seconds (e.g. `1790812800`); ISO 8601 with offset is still accepted (legacy).",
+};
 const uuid = { type: "string", format: "uuid" };
 
 /* -------------------------------------------------------------------------- */
@@ -346,17 +369,17 @@ const exampleOrder = {
   po_number: "1601",
   status: "partially_shipped",
   asap: false,
-  schedule_requested: "2026-08-28",
+  schedule_requested: du("2026-08-28"),
   client_reference: "Tester 28/08",
-  date_po: "2026-08-28",
+  date_po: du("2026-08-28"),
   order_type: { id: "1364838b-0000-4000-8000-000000000001", name: "Sales", gss_id: "1" },
   client: { id: "1468aa94-4987-442d-acc4-f2ae59f92d06", name: "AGK", gss_id: "1" },
   business_unit: { id: "8ed55e47-0000-4000-8000-000000000002", name: "Other", gss_id: "6" },
   exporter: { id: "2770eb04-0000-4000-8000-000000000003", name: "AGK", gss_id: "3" },
   leader: { id: "46c4eb13-0000-4000-8000-000000000004", name: "André Mazzuchelli" },
   requester: { id: "45b0bc3e-0000-4000-8000-000000000005", name: "Amy" },
-  created_at: "2026-08-28T20:40:41.406099+00:00",
-  updated_at: "2026-08-28T20:50:36.391853+00:00",
+  created_at: ts("2026-08-28T20:40:41.406099+00:00"),
+  updated_at: ts("2026-08-28T20:50:36.391853+00:00"),
 };
 
 export const integrationTags = [
@@ -388,12 +411,7 @@ export const integrationPaths = {
         { name: "gss_id", in: "query", schema: { type: "string" }, description: "GSS order id — read one specific order." },
         { name: "po_number", in: "query", schema: { type: "string" } },
         { name: "status", in: "query", schema: { type: "string", enum: ORDER_STATUSES } },
-        {
-          name: "updated_since",
-          in: "query",
-          schema: { type: "string", format: "date-time" },
-          description: "ISO 8601 with offset, e.g. `2026-09-01T00:00:00Z`.",
-        },
+        updatedSinceParam,
         orderParam("updated_at"),
         limitParam(200, 50),
         offsetParam,
@@ -445,7 +463,7 @@ export const integrationPaths = {
                 value: {
                   gss_id: "1001",
                   po_number: "1001",
-                  schedule_requested: "2026-09-15",
+                  schedule_requested: du("2026-09-15"),
                   client_reference: "REPLACEMENT",
                   client_gss_id: "9",
                   order_type_gss_id: "3",
@@ -460,8 +478,8 @@ export const integrationPaths = {
                 value: {
                   gss_id: "1001",
                   items: [
-                    { supplier_category_gss_id: "11", ship_requirement: "2026-09-10" },
-                    { supplier_category_gss_id: "593", ship_requirement: "2026-09-20" },
+                    { supplier_category_gss_id: "11", ship_requirement: du("2026-09-10") },
+                    { supplier_category_gss_id: "593", ship_requirement: du("2026-09-20") },
                   ],
                 },
               },
@@ -511,13 +529,13 @@ export const integrationPaths = {
             data: [
               {
                 pl_number: 1306,
-                estimated_loading_date: "2026-07-08",
-                loading_date: "2026-07-10",
-                ETD: "2026-07-18",
-                ETA_Brazil: "2026-09-05",
-                ATA_Brazil: "2026-10-05",
-                DELIVERED_DATE: "2026-09-15",
-                shipping_date: "2026-07-19",
+                estimated_loading_date: du("2026-07-08"),
+                loading_date: du("2026-07-10"),
+                ETD: du("2026-07-18"),
+                ETA_Brazil: du("2026-09-05"),
+                ATA_Brazil: du("2026-10-05"),
+                DELIVERED_DATE: du("2026-09-15"),
+                shipping_date: du("2026-07-19"),
               },
             ],
             pagination: { limit: 50, offset: 0, returned: 1, total: 1460 },
@@ -562,8 +580,8 @@ export const integrationPaths = {
                 lote: ".02",
                 FACTORY: "Aok",
                 category: "Absorber",
-                initial_date: "2026-08-20",
-                current_date: "2026-08-22",
+                initial_date: du("2026-08-20"),
+                current_date: du("2026-08-22"),
                 ready_parts: false,
               },
             ],
@@ -635,8 +653,8 @@ export const integrationSchemas = {
       exporter: ref("LibraryRefNamed"),
       leader: ref("PersonRef"),
       requester: ref("PersonRef"),
-      created_at: { type: "string", format: "date-time" },
-      updated_at: { type: "string", format: "date-time" },
+      created_at: instant,
+      updated_at: instant,
       items: { type: "array", items: ref("OrderItem"), description: "Only with `include=items`." },
       checklist: {
         type: "array",
@@ -650,7 +668,7 @@ export const integrationSchemas = {
     required: ["supplier_category_gss_id", "ship_requirement"],
     properties: {
       supplier_category_gss_id: { type: "string", description: "GSS supplier-category id (gives factory + category)." },
-      ship_requirement: date,
+      ship_requirement: inDay,
     },
   },
   OrderUpsert: {
@@ -659,9 +677,9 @@ export const integrationSchemas = {
     properties: {
       gss_id: { type: "string", description: "GSS order id — idempotency key." },
       po_number: { type: "string", maxLength: 50, description: "Required to create; unique." },
-      schedule_requested: { ...nullableDate, description: "YYYY-MM-DD." },
+      schedule_requested: inDayNullable,
       client_reference: { type: ["string", "null"], maxLength: 200 },
-      date_po: { ...nullableDate, description: "YYYY-MM-DD. Default: today (creation only)." },
+      date_po: { ...inDayNullable, description: "Default: today (creation only)." },
       client_gss_id: { type: ["string", "null"] },
       order_type_gss_id: { type: ["string", "null"] },
       business_unit_gss_id: { type: ["string", "null"] },

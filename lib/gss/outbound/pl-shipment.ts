@@ -28,6 +28,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../../../types/database";
+import { dayToUnix } from "../../api-dates";
 import { gssRequest, type GssWriteResult } from "../client";
 
 type DB = SupabaseClient<Database>;
@@ -126,9 +127,7 @@ export async function loadPlShipmentState(
  * como o dia ANTERIOR no Brasil.
  */
 export function toGssUnix(date: DateStr | null): number | null {
-  if (!date) return null;
-  const ms = Date.parse(`${date}T12:00:00Z`);
-  return Number.isFinite(ms) ? ms / 1000 : null;
+  return dayToUnix(date);
 }
 
 /** As 5 datas no formato do GSS (Unix s). Etapa sem data concluída vai `null`,
