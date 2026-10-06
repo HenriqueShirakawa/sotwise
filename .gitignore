@@ -61,3 +61,6 @@ dup-report.xlsx
 /destino-contagens.txt
 
 .vercel
+
+# Postman: collection gerada por scripts/postman/build-swagger-collection.ts
+docs/postman/SOTWISE-x-GSS-Swagger.postman_collection.json

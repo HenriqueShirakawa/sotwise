@@ -50,3 +50,26 @@ Cada order criada **grava no banco de produção** e dispara o trigger `trg_orde
 > O `GET` é read-only: dá para rodar as requisições 9–12 contra produção à vontade, sem gravar nada.
 
 Referência do endpoint: `app/api/orders/route.ts` · schema do POST: `domain/orders/gss-schema.ts` · leitura do GET: `domain/orders/gss-read.ts`.
+
+---
+
+# Collection completa — `SOTWISE-x-GSS-Swagger.postman_collection.json`
+
+**Todas** as chamadas dos dois Swaggers numa collection só, gerada por script (não editar à mão):
+
+```bash
+npx tsx scripts/postman/build-swagger-collection.ts
+```
+
+O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do `.env.local`) e lê o nosso `domain/api/openapi.ts`. Rode de novo sempre que algum dos dois specs mudar.
+
+| Folder | Fonte | Base | Auth |
+|---|---|---|---|
+| `1. GSS` | Swagger do GSS (140 operações) | `{{gss_base}}` = `https://api.gssdatahub.com/v1` | CF Access (`gss_cf_client_id`/`gss_cf_client_secret`) + `Bearer {{gss_access}}` |
+| `2. SOTWISE` | `/api/openapi.json` (51 operações; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
+
+**Token do GSS é automático:** o pre-request do folder GSS renova `gss_access` (refresh → login com `gss_username`/`gss_password`) quando falta ou está para expirar. Basta preencher as 4 variáveis `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` no environment (valores = `GSS_CF_ACCESS_CLIENT_ID`, `GSS_CF_ACCESS_CLIENT_SECRET`, `GSS_USERNAME`, `GSS_PASSWORD`).
+
+**Corpos:** exemplo do spec quando existe; senão só os obrigatórios. PATCH vem `{}` de propósito (Send sem querer não zera nada). A aba **Docs** de cada request lista todos os campos do body e as respostas. Query params vêm desmarcados; path vars (`:id`, `:pl_number`) vêm vazias.
+
+> ⚠️ As duas bases apontam para **produção**. Rotas do GSS terminam com `/` — sem a barra o Django devolve 301 e o Postman refaz como GET (volta a lista com 200 e parece que deu certo).
