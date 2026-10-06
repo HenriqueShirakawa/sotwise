@@ -73,6 +73,8 @@ export function parseGssEtdQuery(params: URLSearchParams) {
 }
 
 export type GssEtdRead = {
+  /** id da linha Factory×Category — o {id} do PATCH /api/etd-factories/{id}. */
+  id: UUID;
   po_number: string | null;
   lote: string;
   FACTORY: string | null;
@@ -87,6 +89,7 @@ type Embed<T> = T | T[] | null;
 const one = <T,>(v: Embed<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
 
 type OfcRow = {
+  id: UUID;
   factory_id: UUID;
   category_id: UUID;
   batches: Embed<{ batch_number: string }>;
@@ -117,24 +120,28 @@ async function nameMap(
  */
 export async function listGssEtdEntries(
   admin: AdminClient,
-  query: GssEtdQuery
+  query: GssEtdQuery & { id?: UUID }
 ): Promise<{ data: GssEtdRead[]; total: number }> {
+  // A lista é por lote (linha sem lote não entra); a leitura de UMA linha
+  // (getGssEtdEntry, resposta do PATCH) traz a linha mesmo sem lote.
+  const batchJoin = query.id ? "batches" : "batches!inner";
   let select = admin
     .from("order_factory_category")
     .select(
-      "factory_id, category_id, created_at, batches!inner(batch_number, status), " +
+      `id, factory_id, category_id, created_at, ${batchJoin}(batch_number, status), ` +
         "orders!inner(po_number), etd_info(initial_date, current_date, ready)",
       { count: "exact" }
     )
     .is("orders.deleted_at", null);
 
+  if (query.id) select = select.eq("id", query.id);
   if (query.po_number) select = select.ilike("orders.po_number", `%${query.po_number}%`);
   if (query.batch_status.length > 0) select = select.in("batches.status", query.batch_status);
 
   const { data, error, count } = await select
-    // `id`-like tiebreak não existe aqui (linha não tem id no select) — usa
-    // created_at, único o bastante pro universo de Factory×Category.
+    // `id` desempata linhas com o mesmo created_at entre páginas.
     .order("created_at", { ascending: query.order === "asc" })
+    .order("id", { ascending: true })
     .range(query.offset, query.offset + query.limit - 1)
     .returns<OfcRow[]>();
   if (error) throw new Error(error.message);
@@ -150,6 +157,7 @@ export async function listGssEtdEntries(
     const order = one(row.orders);
     const etd = one(row.etd_info);
     return {
+      id: row.id,
       po_number: order?.po_number ?? null,
       lote: batch?.batch_number ?? "",
       FACTORY: factories.get(row.factory_id) ?? null,
@@ -161,4 +169,16 @@ export async function listGssEtdEntries(
   });
 
   return { data: out, total: count ?? out.length };
+}
+
+/** Uma linha (GET/PATCH /api/etd-factories/{id}); `null` se não existe. */
+export async function getGssEtdEntry(admin: AdminClient, id: UUID): Promise<GssEtdRead | null> {
+  const { data } = await listGssEtdEntries(admin, {
+    id,
+    batch_status: [],
+    order: "desc",
+    limit: 1,
+    offset: 0,
+  });
+  return data[0] ?? null;
 }
