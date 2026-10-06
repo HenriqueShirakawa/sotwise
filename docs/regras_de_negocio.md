@@ -2084,6 +2084,8 @@ As ferramentas nasceram espelhando **uma tela cada**, e por isso o copilot enxer
 
 ### 6.2 Leitura de PL e ETD pelo GSS (2026-09-22)
 
+> ⚠️ **Superado em 06/10/2026 (§6.8):** PL/Shipment e ETD passaram a aceitar escrita pela API. As duas views abaixo continuam valendo como leitura.
+
 📥 **`GET /api/pre-loadings` e `GET /api/etd-factories`** — dois endpoints novos de **só leitura** para o GSS, no mesmo padrão que `GET /api/orders` já fixou em 2026-09-10: mesmo path-pattern (`/api/{recurso}`), mesmo `Authorization: Bearer $API_TOKEN` (`requireApiSession()`, `lib/api-auth.ts`), mesmo envelope `{ data, pagination }`. Gate por feature já existente (`pre_loading`/`etd_factories`, `view`) — nenhum RBAC novo. Não existe `POST`/`PATCH`: PL e ETD nascem inteiramente dentro do SOTWISE (usuário preenche o checklist), o GSS só consulta. Código: `domain/pre-loadings/gss-read.ts` + `app/api/pre-loadings/route.ts`; `domain/etd-factories/gss-read.ts` + `app/api/etd-factories/route.ts`. Doc para o time do GSS: `docs/SOTWISE-API-para-GSS.md` §Parte 3/4.
 
 Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o schema existente (igual ao que a tela ETD Factories e os tools de copilot `list_etd_entries`/`list_pre_loadings` já fazem). Duas leituras que não tinham dado 100% direto no banco, resolvidas assim:
@@ -2163,6 +2165,33 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
   - **Entrada aceita o legado** (`YYYY-MM-DD`; ISO no `updated_since`). Unix recebido como dia vira o dia do calendário UTC. Valor > ano 2200 é tratado como milissegundos por engano → 400.
   - Helper único: `lib/api-dates.ts` (`dayToUnix`, `timestampToUnix`, `apiDay`, `apiInstantQuery`); `toGssUnix` passou a usá-lo. As telas do app não mudam — só a camada da API.
   - ⚠️ **Quebra o consumidor do token só-leitura de PO** (§6.3): a resposta dele mudou de string para número. Doc em inglês atualizada (`docs/SOTWISE-API-Purchase-Orders.md`, aviso no topo); o `.pdf` dela **não** foi regerado.
+
+### 6.8 REST completo na API: Orders, Lotes, F×C, ETD e PL+Ship (2026-10-06)
+
+🔁 **Pedido do usuário: padrão REST (GET, POST, PATCH, DELETE) nos 5 recursos importantes** — orders, lotes, factory×category, PL e Ship. **Reverte o "só leitura" de PL/ETD do §6.2.** Tudo no Swagger (`/api/docs`); mesmo `API_TOKEN`; token `po_read` (§6.3) só lê orders (403 no resto).
+
+| Recurso | Rotas | O que é novo |
+|---|---|---|
+| Orders | `/api/orders`, `/api/orders/{id}` | GET/PATCH/DELETE do item. PATCH = cabeçalho parcial (refs por `gss_id`, pessoas por e-mail, inclui `operational_responsible_email`); DELETE = mesmas travas da lixeira |
+| Lotes | `/api/batches`, `/api/batches/{id}` | já era completo (§6.6); `{id}` aceita também o `full_number` (`1230.02`) |
+| Factory × Category | `/api/order-items`, `/api/order-items/{id}` | CRUD da linha. Mover de lote passa pela escrita de lotes (mesmas travas). `loading_status` só leitura |
+| ETD | `/api/etd-factories`, `/api/etd-factories/{id}` | a view ganhou o `id` da linha; PATCH do ETD |
+| PL + Ship | `/api/shipments`, `/api/shipments/{id}`, `.../steps/{step}` | recurso NOVO, um registro só (como o `/v1/shipments/` do GSS) |
+
+**Decisões do usuário (06/10):**
+- **PL + Ship = um recurso só**, chaveado por `pl_number`. `POST` = Create PL; `PATCH status "in_transit"` + `confirm` = **Confirm Shipping**; `PATCH status "preloading"` = desfaz o embarque (RPC `delete_shipment`); `delivered` vem da etapa Delivered. Etapas do checklist por `PATCH .../steps/{step}`.
+- **Leitura enxuta**: PL/Ship e ETD mantêm a view PLANA que já existia (sem `steps[]`/objetos aninhados) — só ganharam `id`, `gss_id`, `status` e, no PL, `batches: [{ order, batch }]` (lista dentro do PL). O `GET /api/pre-loadings` legado também ganhou `batches`.
+- **`{id}` aceita UUID ou número**: `/api/orders/1230`, `/api/shipments/1306`, `/api/batches/1230.02`.
+- **Mesmas regras das telas** em toda escrita, inclusive no Confirm Shipping (7 etapas completas — incl. o anexo de Shipping Docs, que só sobe pela tela —, toda linha com status, lote nunca todo None, split pela RPC).
+- **Sem eco:** o que chega pela API não é reenviado ao GSS (`sendPlShipmentToGss` só roda nas telas).
+
+**Regras do ETD pela API** (as das duas edições da tela): `initial_date` só grava se vazia (409 depois); o 1º valor copia para `current_date`; `ready_parts` false→true livre; **correção** (mudar `current_date` já preenchida ou desmarcar `ready_parts`) exige `remarks`; `current_date` não muda com lote embarcado; histórico em `etd_history` com `source: "api"` (a tela mostra "API (GSS)").
+
+**Travas novas no servidor** (antes só a tela garantia): lote que entra num PL tem de estar In Production, com ≥1 linha e fora de outro PL; PL embarcado não muda cabeçalho/lotes nem é apagado; etapas do Shipment só depois do Confirm; linha já carregada num shipment não é apagada (o cascade levaria o snapshot do `delete_shipment`).
+
+**Código compartilhado tela ↔ API** (extraído das actions, sem mudar as telas): `domain/orders/delete-rules.ts`, `lib/etd-history.ts`, `domain/pre-loadings/write.ts` (criar/editar/apagar PL), `domain/shipments/confirm.ts` (Confirm Shipping), `domain/shipments/delivered.ts`. API: `domain/{orders,order-items,etd-factories,shipments}/api-*.ts`, rotas em `app/api/`, spec em `domain/api/openapi-rest.ts`.
+
+**Testado (06/10, local contra o AGK, só registros `GSS-TEST-*` apagados no fim):** 90 verificações — order → linhas → lote → ETD → PL → 7 etapas → Confirm (split) → Delivered → reabrir → desfazer → apagar, mais os 400/401/404/409 de cada regra.
 
 ---
 
