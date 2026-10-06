@@ -119,7 +119,7 @@ export async function loadPlDates(admin: AdminClient, ids: UUID[]): Promise<Map<
 /** `po_number` como número quando é numérico (o GSS usa id inteiro = po_number). */
 function poRef(po: string | null | undefined): number | string | null {
   if (!po) return null;
-  return /^d+$/.test(po) ? Number(po) : po;
+  return /^\d+$/.test(po) ? Number(po) : po;
 }
 
 type Embed<T> = T | T[] | null;
