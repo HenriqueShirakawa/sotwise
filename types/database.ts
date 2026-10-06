@@ -1334,7 +1334,7 @@ export type Database = {
           p_carrier_id: string;
           p_shipment_model_id: string;
           p_signer_id: string;
-          p_created_by: string;
+          p_created_by: string | null;
           p_statuses: { ofc_id: string; status: LoadingStatus }[];
         };
         Returns: { shipment_id: string; changed_order_ids: string[] };
