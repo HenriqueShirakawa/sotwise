@@ -2083,7 +2083,7 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **PL + Ship = um recurso só**, chaveado por `pl_number`. `POST` = Create PL; `PATCH status "in_transit"` + `confirm` = **Confirm Shipping**; `PATCH status "preloading"` = desfaz o embarque (RPC `delete_shipment`); `delivered` vem da etapa Delivered. Etapas do checklist por `PATCH .../steps/{step}`.
 - **Leitura enxuta**: PL/Ship e ETD mantêm a view PLANA que já existia (sem `steps[]`/objetos aninhados) — só ganharam `id`, `gss_id`, `status` e, no PL, `batches: [{ order, batch }]` (lista dentro do PL). O `GET /api/pre-loadings` legado também ganhou `batches`.
 - **`{id}` aceita UUID ou número**: `/api/orders/1230`, `/api/shipments/1306`, `/api/batches/1230.02`.
-- **Mesmas regras das telas** em toda escrita, inclusive no Confirm Shipping (7 etapas completas — incl. o anexo de Shipping Docs, que só sobe pela tela —, toda linha com status, lote nunca todo None, split pela RPC).
+- **Mesmas regras das telas** em toda escrita, inclusive no Confirm Shipping (7 etapas completas — incl. o anexo de Shipping Docs, que só sobe pela tela —, toda linha com status, split pela RPC). Na `main` sem a trava "lote nunca todo None" nem a auto-conclusão de etapa — regras que só existem na `dev`.
 - **Sem eco:** o que chega pela API não é reenviado ao GSS (`sendPlShipmentToGss` só roda nas telas).
 
 **Regras do ETD pela API** (as das duas edições da tela): `initial_date` só grava se vazia (409 depois); o 1º valor copia para `current_date`; `ready_parts` false→true livre; **correção** (mudar `current_date` já preenchida ou desmarcar `ready_parts`) exige `remarks`; `current_date` não muda com lote embarcado; histórico em `etd_history` com `source: "api"` (a tela mostra "API (GSS)").
