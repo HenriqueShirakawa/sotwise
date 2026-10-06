@@ -123,6 +123,7 @@ type OrderRow = {
   exporter_id: UUID | null;
   leader_id: UUID | null;
   requester_id: UUID | null;
+  operational_responsible_id: UUID | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 };
@@ -130,6 +131,7 @@ type OrderRow = {
 const ORDER_COLUMNS =
   "id, gss_id, po_number, status, asap, schedule_requested, client_reference, date_po, " +
   "order_type_id, client_id, business_unit_id, exporter_id, leader_id, requester_id, " +
+  "operational_responsible_id, " +
   "created_at, updated_at";
 
 /** Datas da resposta em Unix segundos (dia às 12:00 UTC) — lib/api-dates.ts. */
@@ -167,6 +169,7 @@ export type GssOrderRead = {
   exporter: LibraryRef | null;
   leader: PersonRef | null;
   requester: PersonRef | null;
+  operational_responsible: PersonRef | null;
   created_at: Unix | null;
   updated_at: Unix | null;
   items?: GssOrderReadItem[];
@@ -323,18 +326,38 @@ async function loadChecklist(
 }
 
 /**
+ * Uma order (GET /api/orders/{id}) no mesmo formato da lista; `null` se não
+ * existe. `include` como no GET da coleção.
+ */
+export async function getGssOrder(
+  admin: AdminClient,
+  id: UUID,
+  include: GssOrderQuery["include"]
+): Promise<GssOrderRead | null> {
+  const { data } = await listGssOrders(admin, {
+    id,
+    include,
+    order: "desc",
+    limit: 1,
+    offset: 0,
+  });
+  return data[0] ?? null;
+}
+
+/**
  * Uma página de orders no formato do GSS. `total` é a contagem do filtro (sem
  * paginação), para o GSS saber quantas páginas ainda faltam.
  */
 export async function listGssOrders(
   admin: AdminClient,
-  query: GssOrderQuery
+  query: GssOrderQuery & { id?: UUID }
 ): Promise<{ data: GssOrderRead[]; total: number }> {
   let select = admin
     .from("orders")
     .select(ORDER_COLUMNS, { count: "exact" })
     .is("deleted_at", null);
 
+  if (query.id) select = select.eq("id", query.id);
   if (query.gss_id) select = select.eq("gss_id", query.gss_id);
   if (query.po_number) select = select.eq("po_number", query.po_number);
   if (query.status) select = select.eq("status", query.status);
@@ -359,7 +382,11 @@ export async function listGssOrders(
       libraryMap(admin, "clients", idsOf(rows, "client_id")),
       libraryMap(admin, "business_units", idsOf(rows, "business_unit_id")),
       libraryMap(admin, "exporters", idsOf(rows, "exporter_id")),
-      profileMap(admin, [...idsOf(rows, "leader_id"), ...idsOf(rows, "requester_id")]),
+      profileMap(admin, [
+        ...idsOf(rows, "leader_id"),
+        ...idsOf(rows, "requester_id"),
+        ...idsOf(rows, "operational_responsible_id"),
+      ]),
       wants("items")
         ? loadItems(admin, orderIds)
         : Promise.resolve(new Map<UUID, GssOrderReadItem[]>()),
@@ -386,6 +413,9 @@ export async function listGssOrders(
       exporter: row.exporter_id ? exporters.get(row.exporter_id) ?? null : null,
       leader: row.leader_id ? people.get(row.leader_id) ?? null : null,
       requester: row.requester_id ? people.get(row.requester_id) ?? null : null,
+      operational_responsible: row.operational_responsible_id
+        ? people.get(row.operational_responsible_id) ?? null
+        : null,
       created_at: timestampToUnix(row.created_at),
       updated_at: timestampToUnix(row.updated_at),
     };

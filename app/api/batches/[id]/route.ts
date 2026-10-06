@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 
 import { requireApiFeature, requireApiSession, type ApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getBatch } from "@/domain/batches/api-read";
-import { isUuid, updateBatchSchema } from "@/domain/batches/api-schema";
+import { getBatch, resolveBatchKey } from "@/domain/batches/api-read";
+import { updateBatchSchema } from "@/domain/batches/api-schema";
 import { deleteBatch, updateBatch } from "@/domain/batches/api-write";
 
 /**
@@ -13,7 +13,8 @@ import { deleteBatch, updateBatch } from "@/domain/batches/api-write";
  *   PATCH  /api/batches/{id}   → número, status e linhas (parcial)
  *   DELETE /api/batches/{id}   → apaga; as linhas ficam na order sem lote
  *
- * `{id}` é o UUID do lote (vem no GET da coleção, no POST e no
+ * `{id}` é o UUID do lote ou o `full_number` ("1230.02" — o batch_code do GSS).
+ * O UUID vem no GET da coleção, no POST e no
  * GET /api/orders?include=items). Não há PUT: o PATCH já é parcial e o lote
  * não tem campos que justifiquem substituição total. Ver app/api/batches/route.ts.
  */
@@ -45,9 +46,8 @@ export async function GET(_request: NextRequest, ctx: Ctx): Promise<Response> {
   const auth = await authorize("view");
   if (!auth.ok) return auth.response;
 
-  const { id } = await ctx.params;
-  // Id malformado nunca casa — 404 antes de o Postgres responder 22P02 (500).
-  if (!isUuid(id)) return NOT_FOUND();
+  const id = await resolveBatchKey(createAdminClient(), (await ctx.params).id).catch(() => null);
+  if (!id) return NOT_FOUND();
 
   try {
     const batch = await getBatch(createAdminClient(), id);
@@ -61,8 +61,8 @@ export async function PATCH(request: NextRequest, ctx: Ctx): Promise<Response> {
   const auth = await authorize("edit");
   if (!auth.ok) return auth.response;
 
-  const { id } = await ctx.params;
-  if (!isUuid(id)) return NOT_FOUND();
+  const id = await resolveBatchKey(createAdminClient(), (await ctx.params).id).catch(() => null);
+  if (!id) return NOT_FOUND();
 
   const body = await request.json().catch(() => null);
   const parsed = updateBatchSchema.safeParse(body);
@@ -87,8 +87,8 @@ export async function DELETE(_request: NextRequest, ctx: Ctx): Promise<Response>
   const auth = await authorize("edit");
   if (!auth.ok) return auth.response;
 
-  const { id } = await ctx.params;
-  if (!isUuid(id)) return NOT_FOUND();
+  const id = await resolveBatchKey(createAdminClient(), (await ctx.params).id).catch(() => null);
+  if (!id) return NOT_FOUND();
 
   try {
     const result = await deleteBatch(createAdminClient(), id);

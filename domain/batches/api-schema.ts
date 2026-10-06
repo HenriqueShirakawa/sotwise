@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiDay, apiInstantQuery } from "@/lib/api-dates";
+import { isUuid } from "@/domain/api/write-result";
 import type { BatchStatus } from "@/types/database";
 
 /**
@@ -40,13 +41,9 @@ export const DEFAULT_LIMIT = 50;
 /** Teto de linhas por chamada de escrita — protege o request de virar lote de importação. */
 const MAX_ITEMS = 500;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export { isUuid };
 
-export function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
-}
-
-const uuid = z.string().regex(UUID_RE, "Must be a UUID.");
+const uuid = z.string().refine(isUuid, "Must be a UUID.");
 
 const batchNumber = z
   .string()
