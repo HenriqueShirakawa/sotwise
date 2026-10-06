@@ -138,14 +138,14 @@ function RemarksCell({ remarks }: { remarks: string | null }) {
  * motivo, então a origem é o único contexto que o histórico guarda dela — sem
  * isso as duas ficam indistinguíveis na auditoria.
  */
-function ChangedCell({ field, source }: { field: string; source?: "modal" | "row" }) {
+function ChangedCell({ field, source }: { field: string; source?: "modal" | "row" | "api" }) {
   return (
     <div className="min-w-0">
       <span className="font-medium whitespace-nowrap text-slate-800">
         {HISTORY_FIELD_LABELS[field] ?? field}
       </span>
       <span className="block text-[11px] whitespace-nowrap text-slate-400">
-        {source === "row" ? "in-row edit" : "ETD update"}
+        {source === "row" ? "in-row edit" : source === "api" ? "API (GSS)" : "ETD update"}
       </span>
     </div>
   );
