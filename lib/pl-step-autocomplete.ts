@@ -27,7 +27,7 @@ export async function autoCompletePlStep(
   admin: Admin,
   preLoadingId: string,
   step: ChecklistStep,
-  userId: string
+  userId: string | null
 ): Promise<boolean> {
   if (!hasExtraRequirements(step, { completedOn: null })) return false;
 

@@ -48,9 +48,8 @@ export function parseGssPreLoadingQuery(params: URLSearchParams) {
   return gssPreLoadingQuerySchema.safeParse(raw);
 }
 
-export type GssPreLoadingRead = {
-  pl_number: number | null;
-  /** Todas em Unix (s) às 12:00 UTC — lib/api-dates.ts. */
+/** As 7 datas do feed — todas em Unix (s) às 12:00 UTC (lib/api-dates.ts). */
+export type PlDates = {
   estimated_loading_date: number | null;
   loading_date: number | null;
   ETD: number | null;
@@ -58,6 +57,13 @@ export type GssPreLoadingRead = {
   ATA_Brazil: number | null;
   DELIVERED_DATE: number | null;
   shipping_date: number | null;
+};
+
+/** Lote do PL: order (po_number, número quando numérico) + sufixo do lote. */
+export type PlBatchRef = { order: number | string | null; batch: string };
+
+export type GssPreLoadingRead = { pl_number: number | null } & PlDates & {
+  batches: PlBatchRef[];
 };
 
 /** As 5 etapas (do checklist único do PL) que alimentam as datas do feed. */
@@ -77,8 +83,77 @@ type StepRow = {
   completed_on: DateStr | null;
 };
 
+/** Datas do feed a partir das etapas rastreadas de um PL. */
+function datesFromSteps(steps: Partial<Record<TrackedStep, StepRow>>): PlDates {
+  return {
+    estimated_loading_date: dayToUnix(steps.loading_date?.estimated_date),
+    loading_date: dayToUnix(steps.loading_date?.completed_on),
+    ETD: dayToUnix(steps.shipping_date?.estimated_date),
+    ETA_Brazil: dayToUnix(steps.eta_brazil?.estimated_date),
+    ATA_Brazil: dayToUnix(steps.ata_brazil?.completed_on),
+    DELIVERED_DATE: dayToUnix(steps.delivered?.completed_on),
+    shipping_date: dayToUnix(steps.shipping_date?.completed_on),
+  };
+}
+
+/** As datas do feed de cada PL (as 5 etapas rastreadas do checklist). */
+export async function loadPlDates(admin: AdminClient, ids: UUID[]): Promise<Map<UUID, PlDates>> {
+  const stepsByPl = new Map<UUID, Partial<Record<TrackedStep, StepRow>>>();
+  if (ids.length > 0) {
+    const { data: steps, error: stepsError } = await admin
+      .from("pre_loading_checklist_steps")
+      .select("pre_loading_id, step, estimated_date, completed_on")
+      .in("pre_loading_id", ids)
+      .in("step", TRACKED_STEPS)
+      .returns<StepRow[]>();
+    if (stepsError) throw new Error(stepsError.message);
+    for (const row of steps ?? []) {
+      const byStep = stepsByPl.get(row.pre_loading_id) ?? {};
+      byStep[row.step] = row;
+      stepsByPl.set(row.pre_loading_id, byStep);
+    }
+  }
+  return new Map(ids.map((id) => [id, datesFromSteps(stepsByPl.get(id) ?? {})]));
+}
+
+/** `po_number` como número quando é numérico (o GSS usa id inteiro = po_number). */
+function poRef(po: string | null | undefined): number | string | null {
+  if (!po) return null;
+  return /^d+$/.test(po) ? Number(po) : po;
+}
+
+type Embed<T> = T | T[] | null;
+const one = <T,>(v: Embed<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
+
+/** Lotes de cada PL, como `{ order, batch }` (ex.: { order: 1230, batch: ".02" }). */
+export async function loadPlBatches(admin: AdminClient, ids: UUID[]): Promise<Map<UUID, PlBatchRef[]>> {
+  const out = new Map<UUID, PlBatchRef[]>();
+  if (ids.length === 0) return out;
+  type LinkRow = {
+    pre_loading_id: UUID;
+    batches: Embed<{ batch_number: string; orders: Embed<{ po_number: string }> }>;
+  };
+  const { data, error } = await admin
+    .from("pre_loading_batches")
+    .select("pre_loading_id, batches(batch_number, orders(po_number))")
+    .in("pre_loading_id", ids)
+    .returns<LinkRow[]>();
+  if (error) throw new Error(error.message);
+  for (const link of data ?? []) {
+    const batch = one(link.batches);
+    if (!batch) continue;
+    const list = out.get(link.pre_loading_id) ?? [];
+    list.push({ order: poRef(one(batch.orders)?.po_number), batch: batch.batch_number });
+    out.set(link.pre_loading_id, list);
+  }
+  for (const list of out.values()) {
+    list.sort((x, y) => String(x.order).localeCompare(String(y.order)) || x.batch.localeCompare(y.batch));
+  }
+  return out;
+}
+
 /** Ids de PL que carregam pelo menos um lote da order (po_number). */
-async function plIdsForPoNumber(admin: AdminClient, poNumber: string): Promise<UUID[]> {
+export async function plIdsForPoNumber(admin: AdminClient, poNumber: string): Promise<UUID[]> {
   type BatchRow = { id: UUID };
   const { data: batches, error: batchesError } = await admin
     .from("batches")
@@ -134,35 +209,13 @@ export async function listGssPreLoadings(
   const rows = data ?? [];
   const ids = rows.map((r) => r.id);
 
-  const stepsByPl = new Map<UUID, Partial<Record<TrackedStep, StepRow>>>();
-  if (ids.length > 0) {
-    const { data: steps, error: stepsError } = await admin
-      .from("pre_loading_checklist_steps")
-      .select("pre_loading_id, step, estimated_date, completed_on")
-      .in("pre_loading_id", ids)
-      .in("step", TRACKED_STEPS)
-      .returns<StepRow[]>();
-    if (stepsError) throw new Error(stepsError.message);
-    for (const row of steps ?? []) {
-      const byStep = stepsByPl.get(row.pre_loading_id) ?? {};
-      byStep[row.step] = row;
-      stepsByPl.set(row.pre_loading_id, byStep);
-    }
-  }
+  const [dates, batches] = await Promise.all([loadPlDates(admin, ids), loadPlBatches(admin, ids)]);
 
-  const out: GssPreLoadingRead[] = rows.map((row) => {
-    const steps = stepsByPl.get(row.id) ?? {};
-    return {
-      pl_number: numericPlNumber(row.pl_number),
-      estimated_loading_date: dayToUnix(steps.loading_date?.estimated_date),
-      loading_date: dayToUnix(steps.loading_date?.completed_on),
-      ETD: dayToUnix(steps.shipping_date?.estimated_date),
-      ETA_Brazil: dayToUnix(steps.eta_brazil?.estimated_date),
-      ATA_Brazil: dayToUnix(steps.ata_brazil?.completed_on),
-      DELIVERED_DATE: dayToUnix(steps.delivered?.completed_on),
-      shipping_date: dayToUnix(steps.shipping_date?.completed_on),
-    };
-  });
+  const out: GssPreLoadingRead[] = rows.map((row) => ({
+    pl_number: numericPlNumber(row.pl_number),
+    ...dates.get(row.id)!,
+    batches: batches.get(row.id) ?? [],
+  }));
 
   return { data: out, total: count ?? out.length };
 }
