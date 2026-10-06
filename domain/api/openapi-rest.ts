@@ -432,8 +432,8 @@ export const restPaths = {
         "Three uses — `status` goes in its own request:",
         "1. **Header / batches** (`clients`, `client_reference`, `pod`, people, `batch_ids` = the full set, `gss_id`) — only while not shipped (409 after).",
         "2. **`status: \"in_transit\"` + `confirm`** = Confirm Shipping, same rules as the screen: the 7 Pre-loading steps complete " +
-          "(incl. the Shipping Docs attachment, uploaded in SOTWISE), a `loading_status` for **every** line of the PL's batches, " +
-          "and no batch with every line `none`. `none`/`partial` lines move to the next open batch of the order (or a new one).",
+          "(incl. the Shipping Docs attachment, uploaded in SOTWISE), a `loading_status` for **every** line of the PL's batches. " +
+          "`none`/`partial` lines move to the next open batch of the order (or a new one).",
         "3. **`status: \"preloading\"`** = undo the shipment (reverts the split). Refused for a delivered shipment or when the split batches already moved on.",
         "",
         "`delivered` is not set here — complete the `delivered` step.",
@@ -477,7 +477,7 @@ export const restPaths = {
         403: R403,
         404: R404("Pre-loading"),
         409: R409(
-          "Already shipped / not shipped, checklist steps still open, every line `none` in a batch, or the undo is not possible.",
+          "Already shipped / not shipped, checklist steps still open, or the undo is not possible.",
           "Complete all checklist steps before shipping — still open: Shipping docs."
         ),
         500: R500,
@@ -518,7 +518,6 @@ export const restPaths = {
         "- `completed_on` is never in the future and needs `estimated_date`.",
         "- Step-specific fields are only accepted on their step: `consolidation_point` (consolidation_point), `city` (city), `pol` (port_of_loading), " +
           "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (booking).",
-        "- A step that gets everything it needs (+ an estimated date) closes by itself.",
         "- Completing `delivered` sets the shipment and its batches to `delivered`; clearing it reopens them (`in_transit`).",
         "- Attachments (Shipping Docs, BL, Original Docs) are uploaded in SOTWISE only.",
         "",
