@@ -3,6 +3,7 @@ import "server-only";
 import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
 import { fetchAll } from "@/lib/fetch-all";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { isUuid } from "@/domain/api/write-result";
 import type { BatchStatus, LoadingStatus } from "@/types/database";
 
 import type { BatchQuery } from "./api-schema";
@@ -289,6 +290,25 @@ export async function listBatches(
   if (error) throw new Error(error.message);
 
   return { data: await hydrate(admin, data ?? []), total: count ?? 0 };
+}
+
+/**
+ * `{id}` das rotas de lote: UUID ou o `full_number` (ex.: "1230.02" = order
+ * 1230, lote ".02" — o mesmo `batch_code` do GSS). `null` quando não casa.
+ */
+export async function resolveBatchKey(admin: AdminClient, key: string): Promise<UUID | null> {
+  if (isUuid(key)) return key;
+  const m = /^(.+)(\.\d+)$/.exec(key.trim());
+  if (!m) return null;
+  const [, poNumber, batchNumber] = m;
+  const { data, error } = await admin
+    .from("batches")
+    .select("id, orders!inner(po_number)")
+    .eq("batch_number", batchNumber)
+    .eq("orders.po_number", poNumber)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ?? null;
 }
 
 /** Um lote pelo UUID; `null` quando não existe. */

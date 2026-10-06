@@ -55,9 +55,28 @@ export const gssOrderSchema = z.object({
   // endpoint via public.profile_id_by_email().
   leader_email: z.email("Invalid leader e-mail.").nullish(),
   requester_email: z.email("Invalid requester e-mail.").nullish(),
+  operational_responsible_email: z.email("Invalid operational responsible e-mail.").nullish(),
   // Linhas Factory×Category da order (order_factory_category). Opcional: pode
   // vir vazio ou omitido. Ver gssOrderItemSchema.
   items: z.array(gssOrderItemSchema).nullish(),
 });
 
 export type GssOrderInput = z.infer<typeof gssOrderSchema>;
+
+/**
+ * `PATCH /api/orders/{id}` — só o cabeçalho, parcial (o que vier é aplicado;
+ * `null` limpa). `po_number`, `gss_id` e `status` não mudam por aqui (número
+ * imutável, chave do GSS, status é rollup dos lotes); linhas têm recurso
+ * próprio (/api/order-items). Campo desconhecido → 400.
+ */
+export const gssOrderPatchSchema = gssOrderSchema
+  .omit({ gss_id: true, po_number: true, items: true })
+  .strict()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "No fields to update.",
+  });
+
+export type GssOrderPatchInput = z.infer<typeof gssOrderPatchSchema>;
+
+/** Campos de cabeçalho comuns ao POST (upsert) e ao PATCH. */
+export type GssOrderHeaderInput = Omit<GssOrderInput, "gss_id" | "po_number" | "items">;
