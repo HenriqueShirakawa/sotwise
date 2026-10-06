@@ -642,10 +642,35 @@ Com `gss_id` a chamada é **idempotente**: reenviar o mesmo lote responde `200` 
 
 ---
 
+# Parte 6 — REST completo (06/10/2026): Orders, Factory × Category, ETD e PL + Shipment
+
+GET, POST, PATCH e DELETE nos recursos principais. **Referência completa no Swagger** (`/api/docs`). Em toda rota de item, o `{id}` aceita o UUID **ou** o número de negócio: `/api/orders/1230`, `/api/batches/1230.02`, `/api/shipments/1306`. Referências de cadastro aceitam o UUID do SOTWISE **ou** o `gss_id`; pessoas vão por e-mail. Toda escrita aplica as mesmas regras das telas. O que vocês gravam aqui **não volta** para o GSS.
+
+| Recurso | Métodos | Observação |
+|---|---|---|
+| `/api/orders/{id}` | GET · PATCH · DELETE | PATCH = cabeçalho parcial (`null` limpa). Criar continua no `POST /api/orders` |
+| `/api/order-items` (+`/{id}`) | GET · POST · PATCH · DELETE | Linha Factory × Category. POST por `supplier_category_gss_id`, com `batch_id` opcional. PATCH move de lote (`batch_id`, `null` tira do lote) e muda `ship_requirement` |
+| `/api/etd-factories/{id}` | GET · PATCH | ETD de uma linha (o `id` vem no `GET /api/etd-factories`). `initial_date` só uma vez; corrigir `current_date` ou desmarcar `ready_parts` exige `remarks` |
+| `/api/shipments` (+`/{id}`) | GET · POST · PATCH · DELETE | **PL + embarque, um registro só** (como o `/v1/shipments/` de vocês). POST = cria o PL. PATCH `status: "in_transit"` + `confirm` = Confirm Shipping; `status: "preloading"` desfaz. DELETE só antes de embarcar |
+| `/api/shipments/{id}/steps/{step}` | PATCH | Datas e campos de uma etapa do checklist. Concluir `delivered` entrega lotes e embarque |
+
+O registro de `/api/shipments` é a mesma view plana da Parte 3, com `id`, `gss_id`, `status` e os lotes:
+
+```json
+{ "id": "…", "gss_id": "1", "pl_number": 1306, "status": "in_transit",
+  "batches": [ { "order": 1230, "batch": ".02" }, { "order": 1324, "batch": ".03" } ],
+  "estimated_loading_date": 1791115200, "loading_date": 1791201600, "ETD": null, "ETA_Brazil": null,
+  "ATA_Brazil": null, "DELIVERED_DATE": null, "shipping_date": null }
+```
+
+> ⚠️ Confirm Shipping exige as 7 etapas do Pre-loading completas, inclusive o **anexo** de Shipping Docs — anexo só sobe pela tela do SOTWISE.
+
+---
+
 ## Observações da integração (contexto)
 
 - **Bibliotecas:** o GSS é a **fonte** delas; o SOTWISE normalmente **puxa** (pull). A API acima permite escrita, mas o pareamento SOTWISE↔GSS é por `gss_id` (não exposto nesta API de cadastros).
 - **Orders:** o `POST` (Parte 1) é a direção **push** (GSS → SOTWISE); o `GET` (§1.5) é o **pull** de volta, para o GSS ver status, lote e checklist.
-- **Pre-loadings e ETD Factories (Partes 3 e 4):** só **pull** — não existe `POST`/`PATCH`. Esses dados nascem inteiramente no SOTWISE (checklist preenchido pelo usuário); o GSS só lê. Nenhuma das tabelas por trás (`pre_loadings`, `batches`, `order_factory_category`, `etd_info`) tem `gss_id` próprio — a correlação com o pedido do GSS é sempre por `po_number` (ou, para Pre-loadings, pelo filtro `po_number` do endpoint).
+- **Pre-loadings e ETD Factories (Partes 3 e 4):** ⚠️ desde 06/10 têm escrita — ver Parte 6 (`/api/shipments`, `PATCH /api/etd-factories/{id}`). Texto original: só **pull** — não existe `POST`/`PATCH`. Esses dados nascem inteiramente no SOTWISE (checklist preenchido pelo usuário); o GSS só lê. Nenhuma das tabelas por trás (`pre_loadings`, `batches`, `order_factory_category`, `etd_info`) tem `gss_id` próprio — a correlação com o pedido do GSS é sempre por `po_number` (ou, para Pre-loadings, pelo filtro `po_number` do endpoint).
 - **Factory × Category:** no GSS correspondem aos registros de **supplier-category**; o `supplier_category_gss_id` de cada `item` é o id desse registro.
 - **Auth unificada (2026-09-10):** Orders e Bibliotecas usam o mesmo `API_TOKEN` e o mesmo mecanismo de autenticação — antes Orders vivia num path (`/api/gss/orders`) e secret (`GSS_INBOUND_SECRET`) dedicados. Pre-loadings e ETD Factories (2026-09-22) já nasceram nesse padrão único.
