@@ -7,6 +7,7 @@ import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { syncOrderStatus } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus } from "@/types/database";
+import { fail, type Fail, type WriteResult } from "@/domain/api/write-result";
 
 import { findOrderRef, getBatch, type BatchRead } from "./api-read";
 import {
@@ -38,13 +39,7 @@ import {
 type AdminClient = ReturnType<typeof createAdminClient>;
 type UUID = string;
 
-export type WriteResult<T> =
-  | { ok: true; status: 200 | 201; data: T }
-  | { ok: false; status: 400 | 404 | 409 | 500; error: string };
-
-type Fail = Extract<WriteResult<never>, { ok: false }>;
-
-const fail = (status: Fail["status"], error: string): Fail => ({ ok: false, status, error });
+export type { WriteResult };
 
 const isEditable = (status: BatchStatus) =>
   (EDITABLE_BATCH_STATUSES as readonly BatchStatus[]).includes(status);
