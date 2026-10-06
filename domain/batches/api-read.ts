@@ -1,5 +1,6 @@
 import "server-only";
 
+import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
 import { fetchAll } from "@/lib/fetch-all";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, LoadingStatus } from "@/types/database";
@@ -29,7 +30,8 @@ export type BatchReadItem = {
   supplier_category_gss_id: string | null;
   factory: LibraryRef | null;
   category: LibraryRef | null;
-  ship_requirement: string;
+  /** Unix (s) às 12:00 UTC — lib/api-dates.ts. */
+  ship_requirement: number | null;
   loading_status: LoadingStatus | null;
 };
 
@@ -45,8 +47,9 @@ export type BatchRead = {
   order: { id: UUID; gss_id: string | null; po_number: string };
   items: BatchReadItem[];
   pre_loadings: { id: UUID; pl_number: string }[];
-  created_at: string;
-  updated_at: string;
+  /** Unix (s), com fração. */
+  created_at: number | null;
+  updated_at: number | null;
 };
 
 type BatchRow = {
@@ -186,7 +189,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
       supplier_category_gss_id: supplierCategories.get(`${l.factory_id}|${l.category_id}`) ?? null,
       factory: factories.get(l.factory_id) ?? null,
       category: categories.get(l.category_id) ?? null,
-      ship_requirement: l.ship_requirement,
+      ship_requirement: dayToUnix(l.ship_requirement),
       loading_status: l.loading_status,
     });
     itemsByBatch.set(l.batch_id, list);
@@ -214,8 +217,8 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
       order,
       items: itemsByBatch.get(r.id) ?? [],
       pre_loadings: plsByBatch.get(r.id) ?? [],
-      created_at: r.created_at,
-      updated_at: r.updated_at,
+      created_at: timestampToUnix(r.created_at),
+      updated_at: timestampToUnix(r.updated_at),
     };
   });
 }

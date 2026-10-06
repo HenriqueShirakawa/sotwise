@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { dayToUnix } from "@/lib/api-dates";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -48,13 +49,14 @@ export function parseGssPreLoadingQuery(params: URLSearchParams) {
 
 export type GssPreLoadingRead = {
   pl_number: number | null;
-  estimated_loading_date: DateStr | null;
-  loading_date: DateStr | null;
-  ETD: DateStr | null;
-  ETA_Brazil: DateStr | null;
-  ATA_Brazil: DateStr | null;
-  DELIVERED_DATE: DateStr | null;
-  shipping_date: DateStr | null;
+  /** Todas em Unix (s) às 12:00 UTC — lib/api-dates.ts. */
+  estimated_loading_date: number | null;
+  loading_date: number | null;
+  ETD: number | null;
+  ETA_Brazil: number | null;
+  ATA_Brazil: number | null;
+  DELIVERED_DATE: number | null;
+  shipping_date: number | null;
 };
 
 /** As 5 etapas (do checklist único do PL) que alimentam as datas do feed. */
@@ -157,13 +159,13 @@ export async function listGssPreLoadings(
     const steps = stepsByPl.get(row.id) ?? {};
     return {
       pl_number: numericPlNumber(row.pl_number),
-      estimated_loading_date: steps.loading_date?.estimated_date ?? null,
-      loading_date: steps.loading_date?.completed_on ?? null,
-      ETD: steps.shipping_date?.estimated_date ?? null,
-      ETA_Brazil: steps.eta_brazil?.estimated_date ?? null,
-      ATA_Brazil: steps.ata_brazil?.completed_on ?? null,
-      DELIVERED_DATE: steps.delivered?.completed_on ?? null,
-      shipping_date: steps.shipping_date?.completed_on ?? null,
+      estimated_loading_date: dayToUnix(steps.loading_date?.estimated_date),
+      loading_date: dayToUnix(steps.loading_date?.completed_on),
+      ETD: dayToUnix(steps.shipping_date?.estimated_date),
+      ETA_Brazil: dayToUnix(steps.eta_brazil?.estimated_date),
+      ATA_Brazil: dayToUnix(steps.ata_brazil?.completed_on),
+      DELIVERED_DATE: dayToUnix(steps.delivered?.completed_on),
+      shipping_date: dayToUnix(steps.shipping_date?.completed_on),
     };
   });
 
