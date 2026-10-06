@@ -15,40 +15,40 @@
 
 import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
 
-const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+export const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 
 /** Exemplos escritos como data legível e convertidos para o Unix da resposta. */
-const du = (day: string) => dayToUnix(day);
+export const du = (day: string) => dayToUnix(day);
 const ts = (iso: string) => timestampToUnix(iso);
 
-const err = (description: string, example: string) => ({
+export const err = (description: string, example: string) => ({
   description,
   content: { "application/json": { schema: ref("Error"), example: { error: example } } },
 });
 
-const R401 = err("Missing or invalid token.", "Invalid token");
-const R403 = err("The token has no access to this resource.", "Forbidden");
-const R500 = err("Unexpected error on the SOTWISE side — report it with the message.", "<internal message>");
-const R400Query = err("Invalid query parameter (`issues` points to the field).", "Invalid 'limit': Too big: expected number to be <=200");
+export const R401 = err("Missing or invalid token.", "Invalid token");
+export const R403 = err("The token has no access to this resource.", "Forbidden");
+export const R500 = err("Unexpected error on the SOTWISE side — report it with the message.", "<internal message>");
+export const R400Query = err("Invalid query parameter (`issues` points to the field).", "Invalid 'limit': Too big: expected number to be <=200");
 
-const listEnvelope = (item: string) => ({
+export const listEnvelope = (item: string) => ({
   type: "object",
   required: ["data", "pagination"],
   properties: { data: { type: "array", items: ref(item) }, pagination: ref("Pagination") },
 });
 
-const json = (schema: unknown, example?: unknown) => ({
+export const json = (schema: unknown, example?: unknown) => ({
   "application/json": example === undefined ? { schema } : { schema, example },
 });
 
-const limitParam = (max: number, def: number) => ({
+export const limitParam = (max: number, def: number) => ({
   name: "limit",
   in: "query",
   schema: { type: "integer", minimum: 1, maximum: max, default: def },
   description: "Page size.",
 });
-const offsetParam = { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } };
-const orderParam = (by: string) => ({
+export const offsetParam = { name: "offset", in: "query", schema: { type: "integer", minimum: 0, default: 0 } };
+export const orderParam = (by: string) => ({
   name: "order",
   in: "query",
   schema: { type: "string", enum: ["asc", "desc"], default: "desc" },
@@ -82,28 +82,28 @@ const ORDER_STEPS = [
   "pre_loading",
 ];
 
-const BATCH_STATUSES = ["in_negotiation", "in_production", "preloading", "in_transit", "delivered", "canceled"];
+export const BATCH_STATUSES = ["in_negotiation", "in_production", "preloading", "in_transit", "delivered", "canceled"];
 
 /** SAÍDA — dia em Unix (s) às 12:00 UTC (lib/api-dates.ts). */
-const date = { type: "number", description: "Unix seconds (12:00 UTC of the day)." };
-const nullableDate = { type: ["number", "null"], description: "Unix seconds (12:00 UTC of the day)." };
+export const date = { type: "number", description: "Unix seconds (12:00 UTC of the day)." };
+export const nullableDate = { type: ["number", "null"], description: "Unix seconds (12:00 UTC of the day)." };
 /** SAÍDA — momento em Unix (s), com fração. */
-const instant = { type: ["number", "null"], description: "Unix seconds (fractional)." };
+export const instant = { type: ["number", "null"], description: "Unix seconds (fractional)." };
 /** ENTRADA — dia: Unix (s) ou, legado, "YYYY-MM-DD". */
-const inDay = {
+export const inDay = {
   oneOf: [
     { type: "number", description: "Unix seconds — the UTC calendar day is used (send 12:00 UTC to be safe)." },
     { type: "string", format: "date", description: "Legacy: YYYY-MM-DD." },
   ],
 };
-const inDayNullable = { oneOf: [...inDay.oneOf, { type: "null" }] };
-const updatedSinceParam = {
+export const inDayNullable = { oneOf: [...inDay.oneOf, { type: "null" }] };
+export const updatedSinceParam = {
   name: "updated_since",
   in: "query",
   schema: { oneOf: [{ type: "number" }, { type: "string", format: "date-time" }] },
   description: "Unix seconds (e.g. `1790812800`); ISO 8601 with offset is still accepted (legacy).",
 };
-const uuid = { type: "string", format: "uuid" };
+export const uuid = { type: "string", format: "uuid" };
 
 /* -------------------------------------------------------------------------- */
 /* Bibliotecas (cadastros) — uma entrada por recurso de domain/api/registry.ts */
@@ -387,8 +387,16 @@ export const integrationTags = [
     name: "Orders",
     description: "GSS creates/updates orders (`POST`, push) and reads their state back (`GET`, pull).",
   },
-  { name: "Pre-loadings", description: "Read-only: PL / shipping dates (loading, ETD, ETA/ATA, delivered)." },
-  { name: "ETD Factories", description: "Read-only: Factory × Category entries with the ETD dates." },
+  {
+    name: "Pre-loadings",
+    description:
+      "Legacy read view of PLs (dates + batches). The full resource (create, change, Confirm Shipping, checklist steps) is **Shipments**.",
+  },
+  {
+    name: "ETD Factories",
+    description:
+      "Factory × Category entries with the ETD dates. The ETD of one line is changed with `PATCH /api/etd-factories/{id}`.",
+  },
   {
     name: "Libraries",
     description: "Reference registers (cadastros): list, create, update. No PUT/DELETE — soft delete belongs to the app.",
@@ -513,7 +521,7 @@ export const integrationPaths = {
       operationId: "listPreLoadings",
       summary: "List pre-loadings (PL)",
       description:
-        "One row per PL. Dates come from the PL checklist: *estimated* (`estimated_date`) or *actual* (`completed_on`) of each step — see each field. " +
+        "Legacy view — prefer `GET /api/shipments` (same fields + id, gss_id, status). One row per PL. Dates come from the PL checklist: *estimated* (`estimated_date`) or *actual* (`completed_on`) of each step — see each field. " +
         "Fields stay `null` until the step is filled. Deleted PLs never appear.",
       parameters: [
         { name: "pl_number", in: "query", schema: { type: "string" }, description: "Partial match on the PL number." },
@@ -536,6 +544,10 @@ export const integrationPaths = {
                 ATA_Brazil: du("2026-10-05"),
                 DELIVERED_DATE: du("2026-09-15"),
                 shipping_date: du("2026-07-19"),
+                batches: [
+                  { order: 1230, batch: ".02" },
+                  { order: 1324, batch: ".03" },
+                ],
               },
             ],
             pagination: { limit: 50, offset: 0, returned: 1, total: 1460 },
@@ -576,6 +588,7 @@ export const integrationPaths = {
           content: json(listEnvelope("EtdFactory"), {
             data: [
               {
+                id: "0e5b5f0e-1d7c-4a8e-bb8e-6f1b1b2b9c33",
                 po_number: "1488",
                 lote: ".02",
                 FACTORY: "Aok",
@@ -653,6 +666,7 @@ export const integrationSchemas = {
       exporter: ref("LibraryRefNamed"),
       leader: ref("PersonRef"),
       requester: ref("PersonRef"),
+      operational_responsible: ref("PersonRef"),
       created_at: instant,
       updated_at: instant,
       items: { type: "array", items: ref("OrderItem"), description: "Only with `include=items`." },
@@ -686,6 +700,7 @@ export const integrationSchemas = {
       exporter_gss_id: { type: ["string", "null"] },
       leader_email: { type: ["string", "null"], format: "email" },
       requester_email: { type: ["string", "null"], format: "email" },
+      operational_responsible_email: { type: ["string", "null"], format: "email" },
       items: { type: ["array", "null"], items: ref("OrderUpsertItem") },
     },
   },
@@ -708,11 +723,21 @@ export const integrationSchemas = {
       ATA_Brazil: { ...nullableDate, description: "Actual date of the ATA Brazil step." },
       DELIVERED_DATE: { ...nullableDate, description: "Actual date of the Delivered step." },
       shipping_date: { ...nullableDate, description: "Actual date of the Shipping Date step." },
+      batches: { type: "array", items: ref("PlBatchRef"), description: "Batches in the PL." },
+    },
+  },
+  PlBatchRef: {
+    type: "object",
+    required: ["order", "batch"],
+    properties: {
+      order: { type: ["integer", "string", "null"], description: "po_number (a number when numeric)." },
+      batch: { type: "string", description: "Batch number inside the order (`.NN`)." },
     },
   },
   EtdFactory: {
     type: "object",
     properties: {
+      id: { ...uuid, description: "Factory × Category line id — the `{id}` of `PATCH /api/etd-factories/{id}`." },
       po_number: { type: ["string", "null"] },
       lote: { type: "string", description: "Batch number inside the order (`.NN`)." },
       FACTORY: { type: ["string", "null"] },
