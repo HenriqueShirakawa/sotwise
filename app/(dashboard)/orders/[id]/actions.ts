@@ -563,7 +563,6 @@ export async function upsertEtdInfo(
   return { ok: true };
 }
 
-export type { EtdHistorySnapshot };
 
 export type EtdHistoryEntry = EtdHistorySnapshot & {
   id: string;

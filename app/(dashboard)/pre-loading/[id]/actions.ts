@@ -216,7 +216,6 @@ export async function deletePreLoadingStepAttachment(
   return { ok: true };
 }
 
-export type { ConfirmShippingInput };
 
 /**
  * "Confirm Shipping" do botão da tela. Validação + RPC atômica + gêmeas do split
