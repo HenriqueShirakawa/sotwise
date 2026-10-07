@@ -2193,6 +2193,17 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 
 **Testado (06/10, local contra o AGK, só registros `GSS-TEST-*` apagados no fim):** 90 verificações — order → linhas → lote → ETD → PL → 7 etapas → Confirm (split) → Delivered → reabrir → desfazer → apagar, mais os 400/401/404/409 de cada regra.
 
+### 6.9 Carga dos PLs no GSS + vínculo com os lotes (2026-10-07)
+
+📤 Todos os PLs do SOTWISE foram mandados ao `/v1/shipments/` do GSS (`scripts/sync-gss/push-pl-shipments.ts`, dry por padrão, `--commit` envia, `--only` filtra). Decisões do usuário:
+
+- **POST de todos os PLs** com o status atual (`preloading`/`in_transit`/`delivered`, inclusive os ~1.300 já entregues) — o aviso de regras financeiras do GSS foi aceito ("não tem problema").
+- **PL que já existe lá → PATCH** (datas, POD, e-mails, lotes); status não muda.
+- **Leader/signer por e-mail** (os do embarque; antes do Confirm, os do PL). E-mail sem usuário no GSS **vai null** e fica no relatório CSV para análise caso a caso.
+- **Lotes (`batch_ids`)**: só os que **já existem no GSS** (casados por `batch_code` = nosso `full_number`). O GSS cria os lotes; quando criar mais, **rodar o script de novo** completa os vínculos (o PATCH substitui a lista inteira).
+- **Lote em 2 PLs** (legado Bubble, ~10 casos) é aceito: o GSS recusa o 2º vínculo (`batch_already_linked`), o lote fica no PL de número menor e a recusa vai para o relatório.
+- O id devolvido pelo GSS é gravado em `pre_loadings.gss_id` (o trigger leva para `shipments.gss_id`).
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente
