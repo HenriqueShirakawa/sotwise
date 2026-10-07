@@ -1,5 +1,10 @@
-/** Helpers de escrita no Supabase (service_role) + resolução de FK por bubble_id. */
+/**
+ * Helpers de escrita no Supabase (service_role) + resolução de FK por bubble_id.
+ * Com `MIGRATE_DRY_RUN=1` nada é gravado: cada escrita vira comparação com o
+ * banco (scripts/migrate/dry-run.ts).
+ */
 import { supabaseAdmin } from "./client";
+import { DRY_RUN, dryDiff, fakeIdMap } from "./dry-run";
 
 type Row = Record<string, unknown>;
 
@@ -7,6 +12,7 @@ type Row = Record<string, unknown>;
 export async function upsertByBubbleId(table: string, rows: Row[]): Promise<number> {
   const clean = rows.filter(Boolean);
   if (clean.length === 0) return 0;
+  if (DRY_RUN) return dryDiff(table, clean, ["bubble_id"]);
   const BATCH = 500;
   let n = 0;
   for (let i = 0; i < clean.length; i += BATCH) {
@@ -29,6 +35,7 @@ export async function upsertByBubbleId(table: string, rows: Row[]): Promise<numb
 export async function upsertByKey(table: string, rows: Row[], onConflict: string): Promise<number> {
   const clean = rows.filter(Boolean);
   if (clean.length === 0) return 0;
+  if (DRY_RUN) return dryDiff(table, clean, onConflict.split(","));
   const BATCH = 500;
   let n = 0;
   for (let i = 0; i < clean.length; i += BATCH) {
@@ -43,6 +50,7 @@ export async function upsertByKey(table: string, rows: Row[], onConflict: string
 /** Upsert de tabela de junção (sem bubble_id) — ON CONFLICT na PK composta, DO NOTHING. */
 export async function upsertJunction(table: string, rows: Row[], onConflict: string): Promise<number> {
   if (rows.length === 0) return 0;
+  if (DRY_RUN) return dryDiff(table, rows, onConflict.split(","), { junction: true });
   const BATCH = 500;
   let n = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
@@ -63,12 +71,16 @@ export async function loadIdMap(table: string): Promise<Map<string, string>> {
       .from(table)
       .select("id, bubble_id")
       .not("bubble_id", "is", null)
+      .order("id")
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`loadIdMap ${table}: ${error.message}`);
     if (!data || data.length === 0) break;
     for (const r of data as { id: string; bubble_id: string }[]) map.set(r.bubble_id, r.id);
     if (data.length < PAGE) break;
   }
+  // Dry-run: as linhas que seriam criadas entram com id fictício, para as
+  // camadas seguintes (lotes de order nova etc.) também serem contadas.
+  if (DRY_RUN) for (const [bid, fake] of fakeIdMap(table)) if (!map.has(bid)) map.set(bid, fake);
   return map;
 }
 
