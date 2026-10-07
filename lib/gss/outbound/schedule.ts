@@ -24,6 +24,9 @@ export function isGssShipmentStep(step: ChecklistStep): boolean {
  * retentativa.
  */
 export function sendPlShipmentToGss(preLoadingId: string): void {
+  // DESLIGADO em 07/10 a pedido do usuário (saves de data davam erro). Religa
+  // com GSS_PL_PUSH_ENABLED=true na Vercel, sem mudar código.
+  if (process.env.GSS_PL_PUSH_ENABLED !== "true") return;
   try {
     after(async () => {
       try {
