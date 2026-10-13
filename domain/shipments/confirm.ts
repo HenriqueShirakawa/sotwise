@@ -9,15 +9,14 @@ import type { ChecklistStep } from "@/types/database";
  * (app/(dashboard)/pre-loading/[id]/actions.ts → confirmShipping) e pelo
  * PATCH /api/shipments/{id} com `status: "in_transit"`.
  *
- * Cria o shipment 1:1, grava o loading_status de cada entrada Factory×Category
- * (e o snapshot do que este embarque carregou, em shipment_loaded_lines) e leva
- * todos os lotes do PL para `in_transit`. SEM split (13/10/2026): o SOT não
- * cria lote — a entrada Partial/None fica no lote que embarcou, com o status
- * gravado. Quem decide se existe um lote seguinte é o GSS, que enxerga o nível
- * produto (quantidade) e cria o lote pela API (POST /api/batches).
+ * Cria o shipment 1:1 e leva todos os lotes do PL para `in_transit`. Desde
+ * 13/10/2026 (confirmado com o Gustavo, do GSS): sem Total/Partial/None por
+ * entrada e SEM split — o SOT não cria lote. Quem sabe o que embarcou (nível
+ * produto, com quantidade) e decide se existe um lote seguinte é o GSS, que
+ * cria o lote pela API (POST /api/batches).
  * Por fim marca o PL como confirmado (sai da lista de Pre-loading).
  *
- * A validação (campos, checklist, cobertura de status) roda aqui; a escrita em
+ * A validação (campos, checklist, lotes com linhas) roda aqui; a escrita em
  * si é uma chamada RPC atômica — `confirm_shipping_no_split`, ver
  * supabase/migrations/20261013120000_confirm_shipping_no_split.sql. Uma falha
  * no meio desfaz tudo.
@@ -46,8 +45,6 @@ export type ConfirmShippingInput = {
   carrier_id: string;
   shipment_model_id: string;
   signer_id: string;
-  /** loading_status por entrada order_factory_category (None/Partial/Total). */
-  statuses: { ofc_id: string; status: "none" | "partial" | "total" }[];
 };
 
 export type ConfirmShippingResult =
@@ -73,10 +70,6 @@ export async function confirmShippingRecord(
   ];
   if (required.some((v) => !v || !String(v).trim())) {
     return { ok: false, status: 400, error: "Fill in all required fields." };
-  }
-  const VALID = new Set(["none", "partial", "total"]);
-  if (input.statuses.some((s) => !VALID.has(s.status))) {
-    return { ok: false, status: 400, error: "Each line must be None, Partial or Total." };
   }
 
   const { data: pl, error: plErr } = await admin
@@ -159,37 +152,18 @@ export async function confirmShippingRecord(
     return { ok: false, status: 409, error: "This Pre-loading has no batches." };
   }
 
-  const { data: ofcRows } = await admin
+  // As Factory × Category dos lotes que o GSS amarrou no PL — o popup lista só
+  // elas; sem nenhuma, não há o que embarcar.
+  const { count: lineCount, error: linesError } = await admin
     .from("order_factory_category")
-    .select("id, batch_id, order_id")
+    .select("id", { count: "exact", head: true })
     .in("batch_id", batchIds);
-
-  const statusByOfc = new Map(input.statuses.map((s) => [s.ofc_id, s.status]));
-  if ((ofcRows ?? []).some((o) => !statusByOfc.has(o.id))) {
-    return { ok: false, status: 400, error: "Set the loading status for every line." };
+  if (linesError) return { ok: false, status: 500, error: linesError.message };
+  if (!lineCount) {
+    return { ok: false, status: 409, error: "This Pre-loading has no Factory x Category lines." };
   }
 
-  // Lote nunca sai com TODAS as entradas None — nada embarcou dele (regra do
-  // usuário, 30/09/2026; o popup já esconde/trava o None). Sem isto o lote vazio
-  // ia para In Transit e a Order virava Partially Shipped sem nada a bordo.
-  const statusesByBatch = new Map<string, string[]>();
-  for (const o of ofcRows ?? []) {
-    if (!o.batch_id) continue;
-    statusesByBatch.set(o.batch_id, [
-      ...(statusesByBatch.get(o.batch_id) ?? []),
-      statusByOfc.get(o.id)!,
-    ]);
-  }
-  if ([...statusesByBatch.values()].some((list) => list.every((s) => s === "none"))) {
-    return {
-      ok: false,
-      status: 409,
-      error: "A batch can't ship with every line as None — set at least one line to Partial or Total.",
-    };
-  }
-
-  // Shipment + loading_status + snapshot + lotes em in_transit + completed_on
-  // do checklist + confirma o PL — tudo numa função de banco (RPC), rodando
+  // Shipment + lotes em in_transit + completed_on do checklist + confirma o PL — tudo numa função de banco (RPC), rodando
   // como uma única transação: uma falha no meio desfaz tudo, em vez de deixar
   // o shipment órfão. Ver
   // supabase/migrations/20261013120000_confirm_shipping_no_split.sql.
@@ -205,7 +179,6 @@ export async function confirmShippingRecord(
     p_shipment_model_id: input.shipment_model_id,
     p_signer_id: input.signer_id,
     p_created_by: createdBy,
-    p_statuses: input.statuses,
   });
   if (rpcError) return { ok: false, status: 409, error: rpcError.message };
 

@@ -432,8 +432,8 @@ export const restPaths = {
         "Three uses — `status` goes in its own request:",
         "1. **Header / batches** (`clients`, `client_reference`, `pod`, people, `batch_ids` = the full set, `gss_id`) — only while not shipped (409 after).",
         "2. **`status: \"in_transit\"` + `confirm`** = Confirm Shipping, same rules as the screen: the 7 Pre-loading steps complete " +
-          "(incl. the Shipping Docs attachment, uploaded in SOTWISE), a `loading_status` for **every** line of the PL's batches, " +
-          "and no batch with every line `none`. Every line stays in the batch that shipped, with its status — SOTWISE does not split or create batches; a follow-up batch for the remainder comes from the GSS (`POST /api/batches`).",
+          "(incl. the Shipping Docs attachment, uploaded in SOTWISE) and at least one Factory × Category line in the PL's batches. " +
+          "No per-line loading status any more (the GSS knows what shipped, at product level): every batch of the PL goes to `in_transit` with all its lines — SOTWISE does not split or create batches; a follow-up batch for the remainder comes from the GSS (`POST /api/batches`).",
         "3. **`status: \"preloading\"`** = undo the shipment (also reverts a legacy split). Refused for a delivered shipment or when the split batches already moved on.",
         "",
         "`delivered` is not set here — complete the `delivered` step.",
@@ -458,10 +458,6 @@ export const restPaths = {
                     shipment_model: "027d1f3c-3ac9-400c-967e-bda0248daa89",
                     shipment_leader_email: "leader@example.com",
                     signer_email: "signer@example.com",
-                    lines: [
-                      { item_id: "0e5b5f0e-1d7c-4a8e-bb8e-6f1b1b2b9c33", loading_status: "total" },
-                      { item_id: "1a2b3c4d-1d7c-4a8e-bb8e-6f1b1b2b9c34", loading_status: "partial" },
-                    ],
                   },
                 },
               },
@@ -659,7 +655,6 @@ export const restSchemas = {
       "shipment_model",
       "shipment_leader_email",
       "signer_email",
-      "lines",
     ],
     properties: {
       container_number: { type: "string" },
@@ -673,7 +668,8 @@ export const restSchemas = {
       preloading_leader_email: { ...emailIn, description: "Default: the PL leader." },
       lines: {
         type: "array",
-        description: "One entry per line of the PL's batches.",
+        deprecated: true,
+        description: "Deprecated and ignored since 2026-10-13 — SOTWISE no longer records a loading status per line. Still accepted so older callers don't break.",
         items: {
           type: "object",
           required: ["item_id", "loading_status"],

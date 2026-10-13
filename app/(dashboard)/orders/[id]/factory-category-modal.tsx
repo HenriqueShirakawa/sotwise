@@ -14,8 +14,6 @@ import { toast } from "sonner";
 import { formatDateNumeric } from "@/lib/format";
 import {
   BATCH_STATUS_LABELS,
-  LOADING_STATUS_LABELS,
-  LOADING_STATUS_STYLES,
   STATUS_COLORS,
 } from "@/lib/status-colors";
 import { Button } from "@/components/ui/button";
@@ -872,12 +870,11 @@ export function FactoryCategoryModal({
             </Button>
 
             <div className="overflow-hidden rounded-lg border">
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_100px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span>Status</span>
                 <span />
               </div>
               {pageRows.length === 0 ? (
@@ -886,7 +883,7 @@ export function FactoryCategoryModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-[1fr_1fr_1fr_1fr_100px_40px] items-center gap-2 border-t px-3 py-2 text-sm"
+                    className="grid grid-cols-[1fr_1fr_1fr_1fr_40px] items-center gap-2 border-t px-3 py-2 text-sm"
                   >
                     <span className="truncate text-slate-700">{r.category_name}</span>
                     <span className="truncate text-slate-700">{r.factory_name}</span>
@@ -900,17 +897,6 @@ export function FactoryCategoryModal({
                         onBatchesChanged={onChanged}
                         disabled={pending}
                       />
-                    </div>
-                    <div>
-                      {r.loading_status ? (
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${LOADING_STATUS_STYLES[r.loading_status]}`}
-                        >
-                          {LOADING_STATUS_LABELS[r.loading_status]}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-300">—</span>
-                      )}
                     </div>
                     <Button
                       type="button"

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, SquareArrowOutUpRight } from "lucide-react";
 
-import type { LoadingStatus } from "@/types/database";
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,20 +24,8 @@ export type PartRow = {
   order_id: string;
   factory: string;
   category: string;
-  loading_status: LoadingStatus | null;
   /** ETD initial date da entrada; o ↗ abre o ETD completo + histórico. */
   etd_initial: string | null;
-  /**
-   * Lote para onde a entrada migrou no split (Partial/None). Null = a entrada
-   * segue no lote que embarcou (Total).
-   */
-  moved_to: string | null;
-};
-
-const STATUS_LABELS: Record<LoadingStatus, string> = {
-  total: "Total",
-  partial: "Partial",
-  none: "None",
 };
 
 const ROWS_PER_PAGE = 8;
@@ -56,10 +43,10 @@ function PartField({ label, children }: { label: string; children: React.ReactNo
 }
 
 /**
- * "View parts": o que foi carregado por entrada Factory × Category do lote.
- * SOMENTE LEITURA — o status Total/Partial/None é definido no Confirm Shipping
- * e não se edita depois. (O Bubble deixava editar, mas mudar aqui bagunçaria o
- * split de lotes já feito na confirmação — ver docs §3.7.2/§3.10.3.)
+ * "View parts": as entradas Factory × Category do lote embarcado. SOMENTE
+ * LEITURA. Sem a coluna Total/Partial/None desde 13/10/2026 (confirmado com o
+ * Gustavo, do GSS): o SOT não registra mais o status por entrada — quem sabe o
+ * que embarcou, no nível produto, é o GSS.
  */
 export function ViewPartsModal({
   open,
@@ -128,21 +115,6 @@ export function ViewPartsModal({
                     </div>
                     <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
                       <PartField label="Category">{p.category}</PartField>
-                      <PartField label="Part">
-                        {p.loading_status ? (
-                          STATUS_LABELS[p.loading_status]
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                        {p.moved_to && (
-                          <span
-                            className="ml-1 text-xs text-slate-400"
-                            title={`O saldo não carregado foi para o lote ${p.moved_to}`}
-                          >
-                            → {p.moved_to}
-                          </span>
-                        )}
-                      </PartField>
                       <PartField label="ETD">
                         {p.etd_initial ? (
                           formatDateNumeric(p.etd_initial)
@@ -162,14 +134,13 @@ export function ViewPartsModal({
                   <tr className="bg-slate-50/80 text-xs font-semibold text-slate-500">
                     <th className="px-4 py-3 text-left font-semibold">Factory</th>
                     <th className="px-4 py-3 text-left font-semibold">Category</th>
-                    <th className="px-4 py-3 text-left font-semibold">Part</th>
                     <th className="px-4 py-3 text-left font-semibold">ETD</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pageRows.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="h-20 text-center text-muted-foreground">
+                      <td colSpan={3} className="h-20 text-center text-muted-foreground">
                         No Factory × Category entries for this batch.
                       </td>
                     </tr>
@@ -178,21 +149,6 @@ export function ViewPartsModal({
                       <tr key={p.id} className="border-t">
                         <td className="px-4 py-3">{p.factory}</td>
                         <td className="px-4 py-3">{p.category}</td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {p.loading_status ? (
-                            STATUS_LABELS[p.loading_status]
-                          ) : (
-                            <span className="text-slate-300">—</span>
-                          )}
-                          {p.moved_to && (
-                            <span
-                              className="ml-1 text-xs text-slate-400"
-                              title={`O saldo não carregado foi para o lote ${p.moved_to}`}
-                            >
-                              → {p.moved_to}
-                            </span>
-                          )}
-                        </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 whitespace-nowrap text-slate-600">
                             {p.etd_initial ? (

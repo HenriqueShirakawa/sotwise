@@ -31,8 +31,6 @@ import {
 } from "@/lib/checklist-completion";
 import {
   BATCH_STATUS_LABELS,
-  LOADING_STATUS_LABELS,
-  LOADING_STATUS_STYLES,
   ORDER_STATUS_LABELS,
   STATUS_COLORS,
 } from "@/lib/status-colors";
@@ -369,18 +367,6 @@ function RowsPagination({
   );
 }
 
-/** Chip Total/Partial/None de uma entrada Factory×Category ("—" quando vazio). */
-function LoadingStatusBadge({ status }: { status: LoadingStatus | null }) {
-  if (!status) return <span className="text-xs text-slate-300">—</span>;
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${LOADING_STATUS_STYLES[status]}`}
-    >
-      {LOADING_STATUS_LABELS[status]}
-    </span>
-  );
-}
-
 function ViewBatchModal({
   open,
   onOpenChange,
@@ -421,12 +407,11 @@ function ViewBatchModal({
           <div>
             <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
             <div className="overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-5 gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-4 gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span>Status</span>
               </div>
               {pageRows.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-muted-foreground">No entries for this batch.</p>
@@ -434,7 +419,7 @@ function ViewBatchModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-2 gap-x-3 gap-y-2 border-t px-3 py-2.5 text-sm sm:grid-cols-5 sm:gap-y-0"
+                    className="grid grid-cols-2 gap-x-3 gap-y-2 border-t px-3 py-2.5 text-sm sm:grid-cols-4 sm:gap-y-0"
                   >
                     <SmallField label="Category">
                       <span className="text-slate-700">{r.category_name}</span>
@@ -449,9 +434,6 @@ function ViewBatchModal({
                     </SmallField>
                     <SmallField label="Batch No.">
                       <span className="text-slate-700">{batch?.batch_number}</span>
-                    </SmallField>
-                    <SmallField label="Status">
-                      <LoadingStatusBadge status={r.loading_status} />
                     </SmallField>
                   </div>
                 ))
@@ -640,12 +622,11 @@ function EditBatchModal({
             </Button>
 
             <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
                 <span>Category</span>
                 <span>Factory</span>
                 <span>Ship req.</span>
                 <span>Batch No.</span>
-                <span>Status</span>
                 {/* Reserva a largura da lixeira das linhas (size-7), senão o
                     cabeçalho distribui as colunas numa medida e as linhas noutra. */}
                 <span className="w-7" />
@@ -656,7 +637,7 @@ function EditBatchModal({
                 pageRows.map((r) => (
                   <div
                     key={r.id}
-                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
+                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
                   >
                     <SmallField label="Category" className="max-sm:col-start-1">
                       <span className="block truncate text-slate-700">{r.category_name}</span>
@@ -671,11 +652,6 @@ function EditBatchModal({
                     </SmallField>
                     <SmallField label="Batch No." className="max-sm:col-start-1">
                       <span className="text-slate-700">{batch?.batch_number}</span>
-                    </SmallField>
-                    {/* Total/Partial só existe depois do embarque; antes disso o
-                        badge cai no traço. */}
-                    <SmallField label="Status" className="max-sm:col-start-1">
-                      <LoadingStatusBadge status={r.loading_status} />
                     </SmallField>
                     <Button
                       variant="ghost"

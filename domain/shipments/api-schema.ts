@@ -58,6 +58,8 @@ const confirmSchema = z.strictObject({
   signer_email: email("signer"),
   /** Default: o leader do PL. */
   preloading_leader_email: email("pre-loading leader").optional(),
+  /** Ignorado desde 13/10/2026 (sem status por linha no Confirm Shipping);
+   *  aceito só pra não quebrar quem ainda manda. */
   lines: z
     .array(
       z.strictObject({
@@ -65,7 +67,7 @@ const confirmSchema = z.strictObject({
         loading_status: z.enum(LOADING_STATUSES),
       })
     )
-    .min(1, "Send the loading status of every line."),
+    .optional(),
 });
 
 export type ConfirmInput = z.infer<typeof confirmSchema>;

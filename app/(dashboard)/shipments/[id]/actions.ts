@@ -294,6 +294,9 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   });
   if (rpcError) return { ok: false, error: rpcError.message };
 
+  // O PL volta a preloading — o GSS recebe a fase de volta.
+  if (rpcResult?.pre_loading_id) sendPlShipmentToGss(rpcResult.pre_loading_id);
+
   revalidatePath("/shipments");
   revalidatePath("/pre-loading");
   revalidatePath("/orders");

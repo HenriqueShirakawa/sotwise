@@ -18,8 +18,10 @@ export function isGssShipmentStep(step: ChecklistStep): boolean {
  * (`after` do Next 16): o usuário troca a data no checklist e o GSS recebe na
  * hora, sem o save esperar o GSS nem falhar por causa dele.
  *
- * Chamado por Create PL, pelos saves das etapas de data (Pre-loading e
- * Shipment) e pelo Confirm Shipping. Falha só vai pro log (`[gss]`); a fila
+ * Chamado por Create PL / edição do PL (lotes incluídos ou retirados), pelos
+ * saves das etapas de data (Pre-loading e Shipment — Delivered incluso), pelo
+ * Confirm Shipping e pelo desfazer embarque. Vai junto o status da fase e os
+ * lotes do PL (ver pl-shipment.ts). Falha só vai pro log (`[gss]`); a fila
  * `gss_outbound` (migration 20261002120000), quando aplicada, é a rede de
  * retentativa.
  */
@@ -30,8 +32,9 @@ export function sendPlShipmentToGss(preLoadingId: string): void {
   try {
     after(async () => {
       try {
-        // Só PATCH por enquanto (02/10): PL que não existe no GSS não é criado.
-        const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: false });
+        // PL que não existe no GSS é criado (13/10): o GSS precisa do PL pra
+        // receber os lotes amarrados nele. Antes era só PATCH (02/10).
+        const push = await pushPlShipment(createAdminClient(), preLoadingId);
         if (push.outcome === "skipped") {
           console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);
         } else if (push.outcome === "called") {
