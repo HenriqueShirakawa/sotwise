@@ -412,6 +412,8 @@ Content-Type: application/json
 
 `name` é obrigatório em todos (1–200 caracteres). Campos desconhecidos são **descartados em silêncio**.
 
+**`gss_id` em todos (desde 2026-10-13).** Mandem o id do registro no GSS (string ou inteiro) no POST — é a chave que o `POST /api/orders` usa em `client_gss_id`, `exporter_gss_id` etc. Com `gss_id` o POST é **idempotente**: se o registro já existe, é atualizado (`200`) em vez de duplicado. No PATCH, `{ "gss_id": "118" }` sozinho vincula um registro existente. O GET devolve o `gss_id` e aceita `?gss_id=` para buscar um registro pelo id do GSS.
+
 ## 2.3. Exemplos de body
 
 ### Só nome (`carriers`, `factories`, `categories`, `cities`, `pols`, `pods`, `countries`, `business-units`, `shipment-models`)

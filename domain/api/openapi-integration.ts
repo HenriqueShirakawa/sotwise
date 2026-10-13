@@ -121,8 +121,6 @@ type Lib = {
   create: Record<string, unknown>;
   required: string[];
   update: Record<string, unknown>;
-  /** PATCH dos recursos "só nome" exige `name`. */
-  updateRequired?: string[];
   note?: string;
   example: Record<string, unknown>;
 };
@@ -134,7 +132,6 @@ const NAME_ONLY = (key: string, label: string, extraOut: Record<string, unknown>
   create: { name },
   required: ["name"],
   update: { name },
-  updateRequired: ["name"],
   example: { name: "Shanghai" },
 });
 
@@ -283,6 +280,7 @@ function libPaths() {
         description: "Active records only (deleted ones never appear), sorted by `name`. No `pagination` block — page with `limit`/`offset`.",
         parameters: [
           { name: "q", in: "query", schema: { type: "string" }, description: "Case-insensitive partial match on `name`." },
+          { name: "gss_id", in: "query", schema: { type: "string" }, description: "Exact match on the GSS id." },
           limitParam(1000, 1000),
           offsetParam,
         ],
@@ -305,9 +303,20 @@ function libPaths() {
         tags: [tag],
         operationId: `create_${lib.key}`,
         summary: `Create ${lib.label.replace(/s$/, "")}`,
-        description: [lib.note, "Unknown fields are silently dropped."].filter(Boolean).join("\n\n"),
+        description: [
+          lib.note,
+          "Send `gss_id` to link the record to the GSS. With `gss_id` the call is idempotent: if a record " +
+            "with that `gss_id` already exists it is UPDATED with the body (200) instead of duplicated.",
+          "Unknown fields are silently dropped.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         requestBody: { required: true, content: json(ref(schemaName(lib, "Create")), lib.example) },
         responses: {
+          200: {
+            description: "Updated — a record with this `gss_id` already existed.",
+            content: json({ type: "object", required: ["data"], properties: { data: ref(item) } }),
+          },
           201: {
             description: "Created — the record with its new `id`.",
             content: json({ type: "object", required: ["data"], properties: { data: ref(item) } }),
@@ -315,6 +324,7 @@ function libPaths() {
           400: LIB_400,
           401: R401,
           403: R403,
+          409: err("`gss_id` belongs to a deleted record.", "gss_id '118' belongs to a deleted record."),
           500: R500,
         },
       },
@@ -325,7 +335,12 @@ function libPaths() {
         tags: [tag],
         operationId: `update_${lib.key}`,
         summary: `Update ${lib.label.replace(/s$/, "")}`,
-        description: ["Partial: only the fields sent change.", lib.note].filter(Boolean).join("\n\n"),
+        description: [
+          'Partial: only the fields sent change. `{ "gss_id": "118" }` alone links the record to the GSS.',
+          lib.note,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         requestBody: { required: true, content: json(ref(schemaName(lib, "Update"))) },
         responses: {
           200: {
@@ -336,6 +351,7 @@ function libPaths() {
           401: R401,
           403: R403,
           404: LIB_404,
+          409: err("`gss_id` already used by another record.", "gss_id '118' is already used by another record."),
           500: R500,
         },
       },
@@ -344,16 +360,32 @@ function libPaths() {
   return paths;
 }
 
+/** `gss_id` é comum a todas as bibliotecas (tratado no handler, não no schema). */
+const LIB_GSS_ID_OUT = {
+  type: ["string", "null"],
+  description: "Id of the record in the GSS (null = not linked to the GSS yet).",
+};
+const LIB_GSS_ID_IN = {
+  type: ["string", "integer", "null"],
+  description:
+    "Id of the record in the GSS (stored as text; unique per library). On POST it makes the call " +
+    "idempotent: an existing `gss_id` updates that record instead of creating a duplicate. On PATCH it can " +
+    "be sent alone to link the record; `null` unlinks it.",
+};
+
 function libSchemas() {
   const schemas: Record<string, unknown> = {};
   for (const lib of LIBS) {
-    schemas[schemaName(lib, "")] = { type: "object", properties: lib.out };
-    schemas[schemaName(lib, "Create")] = { type: "object", required: lib.required, properties: lib.create };
+    schemas[schemaName(lib, "")] = { type: "object", properties: { ...lib.out, gss_id: LIB_GSS_ID_OUT } };
+    schemas[schemaName(lib, "Create")] = {
+      type: "object",
+      required: lib.required,
+      properties: { ...lib.create, gss_id: LIB_GSS_ID_IN },
+    };
     schemas[schemaName(lib, "Update")] = {
       type: "object",
       minProperties: 1,
-      ...(lib.updateRequired ? { required: lib.updateRequired } : {}),
-      properties: lib.update,
+      properties: { ...lib.update, gss_id: LIB_GSS_ID_IN },
     };
   }
   return schemas;

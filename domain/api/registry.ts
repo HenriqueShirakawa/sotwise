@@ -55,7 +55,7 @@ export type ResourceSession = { userId: string | null };
 
 export interface ResourceConfig<I = unknown, U = unknown> {
   table: ResourceTable;
-  /** Colunas retornadas no GET. */
+  /** Colunas retornadas no GET (o handler acrescenta `gss_id`). */
   select: string;
   /** Validação do corpo do POST. */
   schema: z.ZodType<I>;
@@ -73,6 +73,33 @@ export interface ResourceConfig<I = unknown, U = unknown> {
   buildUpdate: (input: U) => Record<string, unknown>;
   /** Pós-update opcional (junção M-N). Só age quando o campo veio no corpo. */
   afterUpdate?: (id: string, input: U, admin: AdminClient) => Promise<string | null>;
+}
+
+/**
+ * `gss_id` (2026-10-13) é comum a todos os recursos — o id do registro no GSS,
+ * `unique` em toda biblioteca. Mora nos handlers, não em cada schema. Sem ele o
+ * cadastro que o GSS cria por aqui nascia sem vínculo e a order que vinha depois
+ * não achava o cliente ("No clients found for gss_id").
+ */
+export const GSS_ID_COLUMN = "gss_id";
+
+/**
+ * Lê `gss_id` do corpo: ausente → `undefined`; `null` → limpa; string não vazia
+ * ou inteiro ≥ 0 → texto (o GSS manda inteiro; guardamos texto, padrão da base).
+ */
+export function readGssId(
+  body: unknown
+): { ok: true; value: string | null | undefined } | { ok: false; error: string } {
+  if (!body || typeof body !== "object" || !("gss_id" in body)) {
+    return { ok: true, value: undefined };
+  }
+  const raw = (body as { gss_id: unknown }).gss_id;
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 0) {
+    return { ok: true, value: String(raw) };
+  }
+  if (typeof raw === "string" && raw.trim() !== "") return { ok: true, value: raw.trim() };
+  return { ok: false, error: "gss_id must be a non-empty string, a non-negative integer or null." };
 }
 
 /** Preserva a inferência de `I`/`U` por recurso, apagando-a no Record final. */
