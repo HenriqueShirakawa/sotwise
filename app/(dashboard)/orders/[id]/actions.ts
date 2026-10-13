@@ -155,55 +155,6 @@ export async function updateBatchNumber(
   return { ok: true };
 }
 
-export async function createBatch(
-  orderId: string,
-  input: {
-    batch_number: string;
-    rows: { category_id: string; factory_id: string; ship_requirement: string }[];
-  }
-): Promise<ActionResult> {
-  await requireFeature("orders", "edit");
-  const admin = createAdminClient();
-
-  const keys = input.rows.map((r) => `${r.category_id}|${r.factory_id}`);
-  if (new Set(keys).size !== keys.length) {
-    return { ok: false, error: "The same Category + Factory can only appear once per batch." };
-  }
-
-  const { data: batch, error } = await admin
-    .from("batches")
-    .insert({ order_id: orderId, batch_number: input.batch_number })
-    .select("id")
-    .single();
-  if (error || !batch) return { ok: false, error: error?.message ?? "Failed to create batch." };
-
-  if (input.rows.length > 0) {
-    const { error: rowsError } = await admin.from("order_factory_category").insert(
-      input.rows.map((r) => ({
-        order_id: orderId,
-        batch_id: batch.id,
-        category_id: r.category_id,
-        factory_id: r.factory_id,
-        ship_requirement: r.ship_requirement,
-      }))
-    );
-    if (rowsError) return { ok: false, error: rowsError.message };
-
-    // Deposit Payment já resolvido: lote novo com Factory x Category nasce
-    // In Production (docs §3.7.2, decisão 30/09/2026).
-    const promoteError = await promoteBatchesIfDepositSettled(admin, orderId, [batch.id]);
-    if (promoteError) return { ok: false, error: promoteError };
-  }
-
-  // Lote novo nasce In Negotiation (ou In Production, acima) e entra no rollup
-  // — pode puxar a Order de volta para In Negotiation, que é a regra.
-  const statusError = await syncOrderStatus(admin, [orderId]);
-  if (statusError) return { ok: false, error: statusError };
-
-  await revalidateBatchViews(orderId);
-  return { ok: true };
-}
-
 export async function deleteBatch(orderId: string, batchId: string): Promise<ActionResult> {
   await requireFeature("orders", "edit");
   const admin = createAdminClient();
@@ -268,8 +219,8 @@ export async function updateOrderFactoryCategoryBatch(
 /**
  * Bulk import do CSV "Factory x Category". Category/Factory já vêm validados
  * (ids resolvidos) pelo cliente antes do Insert — aqui só resta o Batch No.,
- * que segue a mesma mecânica do seletor manual: usa o lote existente (match
- * por número) ou cria um novo na hora.
+ * que tem que ser um lote que o pedido já tem (match por número). O SOT não
+ * cria lote (13/10/2026): lote novo só vem do GSS, pela API.
  */
 export async function bulkImportOrderFactoryCategory(
   orderId: string,
@@ -296,7 +247,7 @@ export async function bulkImportOrderFactoryCategory(
   );
 
   // Mesma Category + Factory não pode repetir no lote — nem contra o que o lote
-  // já tem, nem entre linhas do CSV. Valida antes de criar qualquer lote novo.
+  // já tem, nem entre linhas do CSV.
   const rowsByBatch = new Map<string, typeof rows>();
   for (const r of rows) {
     const n = r.batch_number.trim().toLowerCase();
@@ -305,30 +256,18 @@ export async function bulkImportOrderFactoryCategory(
   }
   for (const [n, batchRows] of rowsByBatch) {
     const existingId = batchIdByNumber.get(n);
-    if (existingId) {
-      const twinError = await findBatchTwinError(admin, existingId, batchRows);
-      if (twinError) return { ok: false, error: twinError };
-    } else {
-      const keys = batchRows.map((r) => `${r.category_id}|${r.factory_id}`);
-      if (new Set(keys).size !== keys.length) {
-        return {
-          ok: false,
-          error: `The same Category + Factory appears twice for batch ${batchRows[0].batch_number.trim()}.`,
-        };
-      }
+    if (!existingId) {
+      return {
+        ok: false,
+        error: `Batch ${batchRows[0].batch_number.trim()} doesn't exist in this order — new batches come from the GSS.`,
+      };
     }
+    const twinError = await findBatchTwinError(admin, existingId, batchRows);
+    if (twinError) return { ok: false, error: twinError };
   }
 
-  const newBatchNumbers = Array.from(
-    new Set(
-      rows
-        .map((r) => r.batch_number.trim())
-        .filter((n) => n && !batchIdByNumber.has(n.toLowerCase()))
-    )
-  );
-
-  // Lotes que ganham a 1ª Factory x Category nesta importação: os criados agora
-  // e os que já existiam vazios (promoção pelo Deposit Payment, abaixo).
+  // Lotes que ganham a 1ª Factory x Category nesta importação (promoção pelo
+  // Deposit Payment, abaixo).
   const existingTargetIds = [...rowsByBatch.keys()]
     .map((n) => batchIdByNumber.get(n))
     .filter((id): id is string => !!id);
@@ -343,18 +282,6 @@ export async function bulkImportOrderFactoryCategory(
     filledBatchIds.push(...existingTargetIds.filter((id) => !hasEntries.has(id)));
   }
 
-  if (newBatchNumbers.length > 0) {
-    const { data: createdBatches, error: createError } = await admin
-      .from("batches")
-      .insert(newBatchNumbers.map((batch_number) => ({ order_id: orderId, batch_number })))
-      .select("id, batch_number");
-    if (createError) return { ok: false, error: createError.message };
-    for (const b of createdBatches ?? []) {
-      batchIdByNumber.set(b.batch_number.trim().toLowerCase(), b.id);
-      filledBatchIds.push(b.id);
-    }
-  }
-
   const { error: insertError } = await admin.from("order_factory_category").insert(
     rows.map((r) => ({
       order_id: orderId,
@@ -366,8 +293,8 @@ export async function bulkImportOrderFactoryCategory(
   );
   if (insertError) return { ok: false, error: insertError.message };
 
-  // A importação pode ter criado lotes novos (In Negotiation, ou In Production
-  // com o Deposit resolvido) — refaz o rollup.
+  // Lote que estava vazio vira In Production com o Deposit resolvido — refaz o
+  // rollup.
   if (filledBatchIds.length > 0) {
     const statusError = await promoteFilledBatches(admin, orderId, filledBatchIds);
     if (statusError) return { ok: false, error: statusError };
