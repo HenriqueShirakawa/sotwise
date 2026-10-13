@@ -416,7 +416,7 @@ export const openApiSpec = {
           split_from_batch_id: {
             type: ["string", "null"],
             format: "uuid",
-            description: "Set when the batch was created by a partial shipping split.",
+            description: "Set when the batch was created by a partial shipping split (legacy — SOTWISE no longer splits batches since 2026-10-13).",
           },
           order: {
             type: "object",

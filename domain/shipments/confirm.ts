@@ -1,29 +1,26 @@
 import { STEP_LABELS } from "@/lib/checklist";
 import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
-import { keepSplitTwinsInOrigin } from "@/lib/ofc-twins";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
 /**
  * "Confirm Shipping": converte um Pre-loading concluído num Shipment (regra
- * 3.9.6 + split 3.7.2). Usado pelo botão da tela
+ * 3.9.6). Usado pelo botão da tela
  * (app/(dashboard)/pre-loading/[id]/actions.ts → confirmShipping) e pelo
  * PATCH /api/shipments/{id} com `status: "in_transit"`.
  *
  * Cria o shipment 1:1, grava o loading_status de cada entrada Factory×Category
- * (e o snapshot do que este embarque carregou, em shipment_loaded_lines), e
- * roda o split por lote:
- *   - entradas Total ficam no lote, que vai para `in_transit`;
- *   - entradas None/Partial migram para o próximo lote do pedido que já esteja
- *     aberto (in negotiation / in production) ou, se não houver, para um lote
- *     novo (nasce `in_production`).
+ * (e o snapshot do que este embarque carregou, em shipment_loaded_lines) e leva
+ * todos os lotes do PL para `in_transit`. SEM split (13/10/2026): o SOT não
+ * cria lote — a entrada Partial/None fica no lote que embarcou, com o status
+ * gravado. Quem decide se existe um lote seguinte é o GSS, que enxerga o nível
+ * produto (quantidade) e cria o lote pela API (POST /api/batches).
  * Por fim marca o PL como confirmado (sai da lista de Pre-loading).
  *
  * A validação (campos, checklist, cobertura de status) roda aqui; a escrita em
- * si (shipment -> split -> confirma o PL) é uma chamada RPC atômica —
- * `confirm_shipping`, ver supabase/migrations/20260917120000_shipping_atomic.sql.
- * Uma falha no meio desfaz tudo (era o ponto fraco desta função antes: shipment
- * criado mas split/PL pela metade — precisou de limpeza manual em 17/09/2026).
+ * si é uma chamada RPC atômica — `confirm_shipping_no_split`, ver
+ * supabase/migrations/20261013120000_confirm_shipping_no_split.sql. Uma falha
+ * no meio desfaz tudo.
  */
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -191,12 +188,12 @@ export async function confirmShippingRecord(
     };
   }
 
-  // Shipment + loading_status + snapshot + split + completed_on do checklist +
-  // confirma o PL — tudo numa função de banco (RPC), rodando como uma única
-  // transação: uma falha no meio desfaz tudo, em vez de deixar o shipment
-  // órfão. Ver supabase/migrations/20260917120000_shipping_atomic.sql e
-  // 20260917130000_confirm_shipping_loading_date.sql.
-  const { data: rpcResult, error: rpcError } = await admin.rpc("confirm_shipping", {
+  // Shipment + loading_status + snapshot + lotes em in_transit + completed_on
+  // do checklist + confirma o PL — tudo numa função de banco (RPC), rodando
+  // como uma única transação: uma falha no meio desfaz tudo, em vez de deixar
+  // o shipment órfão. Ver
+  // supabase/migrations/20261013120000_confirm_shipping_no_split.sql.
+  const { data: rpcResult, error: rpcError } = await admin.rpc("confirm_shipping_no_split", {
     p_pre_loading_id: preLoadingId,
     p_container_number: input.container_number.trim(),
     p_seal_number: input.seal_number.trim(),
@@ -211,15 +208,6 @@ export async function confirmShippingRecord(
     p_statuses: input.statuses,
   });
   if (rpcError) return { ok: false, status: 409, error: rpcError.message };
-
-  // Lotes espelhados: a linha Partial/None que o split levou para um lote que
-  // já tinha a mesma Category + Factory volta para o lote que embarcou (ver
-  // lib/ofc-twins). O embarque já está gravado — falha aqui só é registrada,
-  // não desfaz o Confirm Shipping.
-  if (rpcResult?.shipment_id) {
-    const twinError = await keepSplitTwinsInOrigin(admin, rpcResult.shipment_id);
-    if (twinError) console.error("[confirm-shipping] gêmeas do split:", twinError);
-  }
 
   return {
     ok: true,

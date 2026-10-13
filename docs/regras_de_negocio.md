@@ -771,7 +771,9 @@ create trigger trg_orders_updated_at before update on public.orders
 
 #### 3.7.2 batches (lotes)
 
-Lote do pedido. Criado no modal Factory × Category (select-or-create). **Regra do ciclo de vida e do split confirmada com o cliente** (ver detalhamento abaixo).
+Lote do pedido. **Regra do ciclo de vida e do split confirmada com o cliente** (ver detalhamento abaixo).
+
+> 🔴 **13/10/2026 — o SOT não cria mais lotes (só na `dev`).** Quem cria lote é o **GSS**, pela API (`POST /api/batches`, o webhook dele) — e é o GSS quem decide se existe um lote novo, porque ele enxerga o **nível produto** (abaixo de Factory × Category, com quantidade: Factory × Category → produtos) e sabe o que de fato embarcou. Saiu do SOT: o botão **Create batch** do detalhe da Order, o **Add batch** do seletor "Batch No." do modal Factory × Category, a criação de lote pelo **Bulk import CSV** (Batch No. desconhecido agora trava o Insert — só vale lote que o pedido já tem) e o **split do Confirm Shipping** (ver abaixo). Excluir lote continua possível. Antes era: criado no modal Factory × Category (select-or-create).
 
 ##### Enum de status do lote (diferente do status da Order — ver 3.7.1)
 
@@ -798,6 +800,8 @@ in_negotiation → in_production → preloading → in_transit → delivered
 - **Cancelamento:** só é possível enquanto o lote está em `in_negotiation` ou `in_production` (antes de entrar num Pre-loading). O usuário devolve o(s) lote(s) para um desses dois status e então cancela; um lote `canceled` **não é mais elegível** para nenhuma operação (não entra em Pre-loading, não conta no rollup da Order).
 
 ##### Split por carregamento parcial (Total / Partial / None)
+
+> 🔴 **13/10/2026 — split DESLIGADO no SOT (só na `dev`; a `main` segue com o split abaixo).** O Confirm Shipping continua pedindo Total/Partial/None por entrada e gravando o snapshot (`shipment_loaded_lines`), mas **nenhuma entrada migra de lote e nenhum lote é criado**: a linha Partial/None fica no lote que embarcou, com o status gravado, e todos os lotes do PL vão para `in_transit`. O lote seguinte pro saldo, se houver, vem do GSS (ver nota em 3.7.2). Implementação: RPC nova `confirm_shipping_no_split` (migration `20261013120000_confirm_shipping_no_split.sql`) — função nova, e não `create or replace` da `confirm_shipping`, porque `main` e `dev` usam o mesmo banco e a `main` ainda chama a antiga. A regra "lote nunca todo None" continua valendo. O texto abaixo descreve o comportamento anterior (e o dado legado com `split_from_batch_id`, que as telas continuam exibindo).
 
 Ao finalizar um Pre-loading (lote passando de `preloading` para `in_transit`), o sistema roda uma checagem **linha a linha** sobre cada entrada `order_factory_category` (Factory × Category) daquele lote, atribuindo manualmente **Total / Partial / None**:
 
