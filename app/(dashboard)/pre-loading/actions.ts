@@ -63,8 +63,8 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
   revalidatePath(PATH);
   revalidatePath("/orders"); // os lotes selecionados mudaram de fase
   await broadcastPreLoadingPing(); // lista Pre-loading aberta reflete o PL novo
-  // Create PL cria o PL no GSS, já com os lotes e status preloading (o trigger
-  // da fila também enfileira; a fila só age com migration + chave).
+  // Espelha no GSS (só PATCH — o SOT não cria PL lá; se o GSS ainda não tem
+  // este PL, o envio é pulado). A fila só age com migration + chave.
   sendPlShipmentToGss(created.id);
   await scheduleGssOutboundDispatch();
   return { ok: true, id: created.id, pl_number: created.pl_number };
