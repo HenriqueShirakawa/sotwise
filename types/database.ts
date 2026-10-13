@@ -1379,6 +1379,24 @@ export type Database = {
         };
         Returns: { shipment_id: string; changed_order_ids: string[] };
       };
+      // Mesma assinatura da confirm_shipping, sem split de lote (20261013120000).
+      confirm_shipping_no_split: {
+        Args: {
+          p_pre_loading_id: string;
+          p_container_number: string;
+          p_seal_number: string;
+          p_estimated_date: string;
+          p_loading_date_completed_on: string;
+          p_shipment_leader_id: string;
+          p_preloading_leader_id: string;
+          p_carrier_id: string;
+          p_shipment_model_id: string;
+          p_signer_id: string;
+          p_created_by: string | null;
+          p_statuses: { ofc_id: string; status: LoadingStatus }[];
+        };
+        Returns: { shipment_id: string; changed_order_ids: string[] };
+      };
       delete_shipment: {
         Args: { p_shipment_id: string };
         Returns: { pre_loading_id: string; changed_order_ids: string[] };

@@ -36,7 +36,6 @@ import {
 
 import {
   bulkImportOrderFactoryCategory,
-  createBatch,
   createOrderFactoryCategory,
   deleteBatch,
   deleteOrderFactoryCategory,
@@ -67,20 +66,11 @@ function BatchPickerPopover({
   const [pending, startTransition] = useTransition();
   const wheelRef = useWheelScroll<HTMLDivElement>();
   const selected = batches.find((b) => b.id === value);
-  const nextBatchNumber = `.${String(batches.length + 1).padStart(2, "0")}`;
   // Uma vez em Pre-Loading pra frente o lote não aceita mais entradas novas —
   // mas se a entrada já estiver nele (edição existente), mantém visível.
   const selectableBatches = batches.filter(
     (b) => EDITABLE_BATCH_STATUSES.includes(b.status) || b.id === value
   );
-
-  function addBatch() {
-    startTransition(async () => {
-      const res = await createBatch(orderId, { batch_number: nextBatchNumber, rows: [] });
-      if (res.ok) onBatchesChanged();
-      else toast.error(res.error);
-    });
-  }
 
   function removeBatch(id: string) {
     startTransition(async () => {
@@ -114,7 +104,7 @@ function BatchPickerPopover({
             <p className="px-2 py-2 text-sm text-muted-foreground">No batches yet.</p>
           ) : selectableBatches.length === 0 ? (
             <p className="px-2 py-2 text-sm text-muted-foreground">
-              No batches eligible for new entries — create one below.
+              No batches eligible for new entries.
             </p>
           ) : (
             selectableBatches.map((b) => {
@@ -157,18 +147,6 @@ function BatchPickerPopover({
               );
             })
           )}
-        </div>
-        <div className="border-t p-1">
-          <Button
-            type="button"
-            className="w-full"
-            size="sm"
-            disabled={pending}
-            onClick={addBatch}
-          >
-            <Plus className="size-3.5" />
-            Add batch
-          </Button>
         </div>
       </PopoverContent>
     </Popover>
@@ -452,6 +430,18 @@ function BulkImportPanel({
   // Batch No. é opcional (docs/regras_de_negocio.md §3.7): linha sem lote entra
   // com batch_id null. Só o Ship requirement segue obrigatório.
   const allComplete = parsedRows.every((r) => r.shipRequirement);
+  // O SOT não cria lote (13/10/2026 — lote novo só vem do GSS): Batch No. do CSV
+  // tem que ser um lote que o pedido já tem. Linha com lote desconhecido trava
+  // o Insert até escolher um lote existente no seletor (ou limpar a coluna).
+  const batchNumbers = useMemo(
+    () => new Set(batches.map((b) => b.batch_number.trim().toLowerCase())),
+    [batches]
+  );
+  const isUnknownBatch = (r: ParsedRow) => {
+    const n = r.batchNumberRaw.trim().toLowerCase();
+    return !!n && !batchNumbers.has(n);
+  };
+  const allBatchesKnown = !parsedRows.some(isUnknownBatch);
 
   // Mesma Category + Factory não repete no lote (lib/ofc-twins no servidor):
   // marca a linha que bate com uma entrada que o lote já tem, ou com uma linha
@@ -474,7 +464,7 @@ function BulkImportPanel({
     return dups;
   }, [parsedRows, batches, ofc]);
   const noDuplicates = duplicateKeys.size === 0;
-  const canInsert = allRegistered && allComplete && noDuplicates;
+  const canInsert = allRegistered && allComplete && allBatchesKnown && noDuplicates;
 
   function setRowBatch(key: string, batchId: string) {
     const batch = batches.find((b) => b.id === batchId);
@@ -570,7 +560,8 @@ function BulkImportPanel({
             {parsedRows.map((r) => {
               const ok = !!r.categoryId && !!r.factoryId;
               const duplicate = duplicateKeys.has(r.key);
-              const rowOk = ok && !!r.shipRequirement && !duplicate;
+              const unknownBatch = isUnknownBatch(r);
+              const rowOk = ok && !!r.shipRequirement && !duplicate && !unknownBatch;
               const matchedBatch = batches.find(
                 (b) => b.batch_number.trim().toLowerCase() === r.batchNumberRaw.trim().toLowerCase()
               );
@@ -606,7 +597,13 @@ function BulkImportPanel({
                     className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${
                       rowOk ? "bg-emerald-500" : "bg-rose-500"
                     }`}
-                    title={duplicate ? "Already in this batch" : undefined}
+                    title={
+                      duplicate
+                        ? "Already in this batch"
+                        : unknownBatch
+                          ? `Batch ${r.batchNumberRaw.trim()} doesn't exist in this order`
+                          : undefined
+                    }
                   >
                     {rowOk ? (
                       <Check className="size-3 text-white" />
@@ -624,7 +621,9 @@ function BulkImportPanel({
                 ? "Some rows have a Category or Factory that isn't registered — fix the CSV and re-upload, or register them first."
                 : !allComplete
                   ? "Fill in a valid Ship requirement for every row."
-                  : "Some rows repeat a Category + Factory that's already in that batch — each batch can have it only once."}
+                  : !allBatchesKnown
+                    ? "Some rows point to a Batch No. this order doesn't have — pick an existing batch for them. New batches come from the GSS."
+                    : "Some rows repeat a Category + Factory that's already in that batch — each batch can have it only once."}
             </p>
           )}
         </div>
