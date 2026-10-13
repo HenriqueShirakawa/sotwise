@@ -218,7 +218,7 @@ export async function deletePreLoadingStepAttachment(
 
 
 /**
- * "Confirm Shipping" do botão da tela. Validação + RPC atômica + gêmeas do split
+ * "Confirm Shipping" do botão da tela. Validação + RPC atômica (sem split)
  * moram em domain/shipments/confirm.ts (o PATCH /api/shipments/{id} com
  * `status: "in_transit"` usa o mesmo caminho); aqui ficam a autorização, a
  * revalidação das telas e o envio ao GSS.

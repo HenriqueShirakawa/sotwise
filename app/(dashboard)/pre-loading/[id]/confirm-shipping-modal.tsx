@@ -108,7 +108,8 @@ function SelectField({
 /**
  * Modal de "Confirm Shipping" — converte o PL num Shipment. Montado só quando
  * aberto (estado reseta a cada abertura). O status por linha é None/Partial/Total
- * (docs §3.9.6): Total fica no lote; Partial/None migram pro lote novo do split.
+ * (docs §3.9.6). Sem split desde 13/10/2026: toda linha fica no lote que
+ * embarcou — lote seguinte pro saldo só vem do GSS.
  */
 export function ConfirmShippingModal({
   onClose,
