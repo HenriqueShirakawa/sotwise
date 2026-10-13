@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { apiDay, apiInstantQuery } from "@/lib/api-dates";
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
+import { isActiveBody, isActiveQuery } from "@/domain/api/is-active";
 import type { ChecklistStep } from "@/types/database";
 
 /**
@@ -40,6 +41,7 @@ export const createShipmentSchema = z.strictObject({
   leader_email: email("leader"),
   responsible_signer_email: email("responsible signer").nullish(),
   batch_ids: batchKeys.default([]),
+  is_active: isActiveBody.optional(),
 });
 
 export type CreateShipmentInput = z.infer<typeof createShipmentSchema>;
@@ -80,12 +82,15 @@ const HEADER_KEYS = [
   "leader_email",
   "responsible_signer_email",
   "batch_ids",
+  // Não é cabeçalho, mas também não anda junto com uma transição de status.
+  "is_active",
 ] as const;
 
 /**
  * `PATCH /api/shipments/{id}`. Cabeçalho/lotes só enquanto o PL não embarcou;
  * `status` faz as transições: `in_transit` (+ `confirm`) = Confirm Shipping,
  * `preloading` = desfaz o embarque. `delivered` vem da etapa Delivered.
+ * `is_active` (SÓ uma marca, 13/10) muda a qualquer momento, mesmo embarcado.
  */
 export const patchShipmentSchema = z
   .strictObject({
@@ -96,6 +101,7 @@ export const patchShipmentSchema = z
     leader_email: email("leader").optional(),
     responsible_signer_email: email("responsible signer").nullable().optional(),
     batch_ids: batchKeys.optional(),
+    is_active: isActiveBody.optional(),
     status: z
       .enum(["in_transit", "preloading"], {
         error:
@@ -166,6 +172,7 @@ export const shipmentQuerySchema = z.object({
   pl_number: z.string().trim().min(1).optional(),
   po_number: z.string().trim().min(1).optional(),
   status: z.enum(SHIPMENT_STATUSES).optional(),
+  is_active: isActiveQuery.optional(),
   updated_since: apiInstantQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -174,7 +181,16 @@ export const shipmentQuerySchema = z.object({
 
 export type ShipmentQuery = z.infer<typeof shipmentQuerySchema>;
 
-const QUERY_KEYS = ["pl_number", "po_number", "status", "updated_since", "order", "limit", "offset"] as const;
+const QUERY_KEYS = [
+  "pl_number",
+  "po_number",
+  "status",
+  "is_active",
+  "updated_since",
+  "order",
+  "limit",
+  "offset",
+] as const;
 
 export function parseShipmentQuery(params: URLSearchParams) {
   const raw: Record<string, string> = {};

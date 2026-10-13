@@ -5,6 +5,7 @@ import { z } from "zod";
 import { dayToUnix } from "@/lib/api-dates";
 import { numericPlNumber } from "@/lib/gss/outbound/pl-shipment";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { isActiveQuery } from "@/domain/api/is-active";
 
 /**
  * Leitura GSS → SOTWISE de PL (Pre-loading/Shipment). Mesmo padrão de
@@ -29,6 +30,7 @@ const DEFAULT_LIMIT = 50;
 export const gssPreLoadingQuerySchema = z.object({
   pl_number: z.string().trim().min(1).optional(),
   po_number: z.string().trim().min(1).optional(),
+  is_active: isActiveQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
@@ -36,7 +38,7 @@ export const gssPreLoadingQuerySchema = z.object({
 
 export type GssPreLoadingQuery = z.infer<typeof gssPreLoadingQuerySchema>;
 
-const QUERY_KEYS = ["pl_number", "po_number", "order", "limit", "offset"] as const;
+const QUERY_KEYS = ["pl_number", "po_number", "is_active", "order", "limit", "offset"] as const;
 
 /** Só as chaves conhecidas viram query — o resto da query string é ignorado. */
 export function parseGssPreLoadingQuery(params: URLSearchParams) {
@@ -64,6 +66,8 @@ export type PlBatchRef = { order: number | string | null; batch: string };
 
 export type GssPreLoadingRead = { pl_number: number | null } & PlDates & {
   batches: PlBatchRef[];
+  /** `pre_loadings.is_active` — SÓ uma marca (13/10), não esconde nada. */
+  is_active: boolean;
 };
 
 /** As 5 etapas (do checklist único do PL) que alimentam as datas do feed. */
@@ -191,13 +195,14 @@ export async function listGssPreLoadings(
 
   let select = admin
     .from("pre_loadings")
-    .select("id, pl_number, created_at", { count: "exact" })
+    .select("id, pl_number, is_active, created_at", { count: "exact" })
     .is("deleted_at", null);
 
   if (query.pl_number) select = select.ilike("pl_number", `%${query.pl_number}%`);
   if (poFilterIds) select = select.in("id", poFilterIds);
+  if (query.is_active !== undefined) select = select.eq("is_active", query.is_active);
 
-  type PlRow = { id: UUID; pl_number: string; created_at: string };
+  type PlRow = { id: UUID; pl_number: string; is_active: boolean; created_at: string };
   const { data, error, count } = await select
     // `id` desempata: PLs com o mesmo created_at não pulam/repetem entre páginas.
     .order("created_at", { ascending: query.order === "asc" })
@@ -215,6 +220,7 @@ export async function listGssPreLoadings(
     pl_number: numericPlNumber(row.pl_number),
     ...dates.get(row.id)!,
     batches: batches.get(row.id) ?? [],
+    is_active: row.is_active,
   }));
 
   return { data: out, total: count ?? out.length };

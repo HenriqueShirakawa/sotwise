@@ -2216,6 +2216,17 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **Lote em 2 PLs** (legado Bubble, ~10 casos) é aceito: o GSS recusa o 2º vínculo (`batch_already_linked`), o lote fica no PL de número menor e a recusa vai para o relatório.
 - O id devolvido pelo GSS é gravado em `pre_loadings.gss_id` (o trigger leva para `shipments.gss_id`).
 
+### 6.10 `is_active` nos recursos da API (2026-10-13)
+
+🏷️ **Pedido do usuário: o GSS precisa marcar registro como ativo/inativo.** Coluna nova `is_active boolean not null default true` nas 20 tabelas do Swagger — as 14 bibliotecas (`/api/{recurso}`) e `orders`, `batches`, `order_factory_category`, `etd_info`, `pre_loadings`, `shipments` (migration `20261013130000_is_active_api_tables.sql`; o que já estava soft-deleted nasce `false`).
+
+**Decisões do usuário (13/10):**
+- **É SÓ uma marca.** Não esconde nada das telas do SOTWISE nem da API, não muda regra de negócio e **não substitui a exclusão**: bibliotecas seguem com soft delete (`deleted_at`, que a API continua escondendo); orders/lotes/linhas/PLs seguem com o `DELETE`.
+- **Saída:** todo objeto de topo traz `is_active`; as linhas Factory × Category embutidas (orders `include=items`, `items[]` do lote) também. Refs de biblioteca embutidas (`{ id, gss_id, name }`) não.
+- **Entrada:** POST e PATCH aceitam `is_active` opcional; omitido → não muda (novo nasce `true`). PATCH só com `{ "is_active": false }` é válido (no lote, vale em qualquer status — não passa pela trava de lote editável).
+- **Filtro:** GET de lista aceita `?is_active=true|false`; sem o parâmetro vêm os dois.
+- **ETD:** a marca é do registro de `etd_info` da linha. **PL/Ship:** é a do PL, espelhada no shipment.
+
 ### 6.11 `gss_id` na API de bibliotecas (2026-10-13)
 
 **Motivo:** o GSS criou o cliente 118 pelo `POST /api/clients` e a order 1696 voltou `No clients found for gss_id '118'` — a API de bibliotecas descartava o `gss_id` em silêncio, então o cadastro nascia sem vínculo (foi vinculado à mão: "GSS Update" = 118).

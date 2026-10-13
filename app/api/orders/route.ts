@@ -150,11 +150,11 @@ export async function POST(request: NextRequest): Promise<Response> {
             .from("orders")
             .update(updateRow as never)
             .eq("id", existing.id)
-            .select("id, po_number")
+            .select("id, po_number, is_active")
             .single()
         : await admin
             .from("orders")
-            .select("id, po_number")
+            .select("id, po_number, is_active")
             .eq("id", existing.id)
             .single();
     if (error) {
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("orders")
     .insert(createRow as never)
-    .select("id, po_number")
+    .select("id, po_number, is_active")
     .single();
   if (error) {
     // Já checamos que o gss_id não existia; um 23505 aqui é colisão de po_number
