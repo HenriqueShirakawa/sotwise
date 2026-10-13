@@ -9,7 +9,7 @@ import { createBatch } from "@/domain/batches/api-write";
 /**
  * API REST de LOTES (batches) — coleção.
  *
- *   GET  /api/batches?order_gss_id=&po_number=&status=&updated_since=&order=&limit=&offset=
+ *   GET  /api/batches?order_gss_id=&po_number=&status=&is_active=&updated_since=&order=&limit=&offset=
  *   POST /api/batches   → cria um lote numa order (opcionalmente já com linhas)
  *
  *   Authorization: Bearer $API_TOKEN

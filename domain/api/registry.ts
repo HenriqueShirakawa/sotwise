@@ -55,7 +55,7 @@ export type ResourceSession = { userId: string | null };
 
 export interface ResourceConfig<I = unknown, U = unknown> {
   table: ResourceTable;
-  /** Colunas retornadas no GET (o handler acrescenta `gss_id`). */
+  /** Colunas retornadas no GET (o handler acrescenta `gss_id` e `is_active`). */
   select: string;
   /** Validação do corpo do POST. */
   schema: z.ZodType<I>;
@@ -100,6 +100,26 @@ export function readGssId(
   }
   if (typeof raw === "string" && raw.trim() !== "") return { ok: true, value: raw.trim() };
   return { ok: false, error: "gss_id must be a non-empty string, a non-negative integer or null." };
+}
+
+/**
+ * `is_active` (2026-10-13) é comum a todos os recursos, então mora nos handlers
+ * e não em cada schema: o GET sempre devolve a coluna, POST/PATCH aceitam o
+ * campo. É SÓ uma marca — inativo continua listado; exclusão segue sendo o
+ * `deleted_at`.
+ */
+export const IS_ACTIVE_COLUMN = "is_active";
+
+/** Lê `is_active` do corpo: ausente → `undefined`; presente precisa ser boolean. */
+export function readIsActive(
+  body: unknown
+): { ok: true; value: boolean | undefined } | { ok: false; error: string } {
+  if (!body || typeof body !== "object" || !("is_active" in body)) {
+    return { ok: true, value: undefined };
+  }
+  const value = (body as { is_active: unknown }).is_active;
+  if (typeof value !== "boolean") return { ok: false, error: "is_active must be a boolean." };
+  return { ok: true, value };
 }
 
 /** Preserva a inferência de `I`/`U` por recurso, apagando-a no Record final. */

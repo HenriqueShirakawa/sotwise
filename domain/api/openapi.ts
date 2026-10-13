@@ -7,7 +7,14 @@ import {
 
 import { dayToUnix, timestampToUnix } from "@/lib/api-dates";
 
-import { integrationPaths, integrationSchemas, integrationTags } from "./openapi-integration";
+import {
+  integrationPaths,
+  integrationSchemas,
+  integrationTags,
+  isActiveIn,
+  isActiveOut,
+  isActiveParam,
+} from "./openapi-integration";
 import { restPaths, restSchemas, restTags } from "./openapi-rest";
 
 /**
@@ -72,9 +79,11 @@ const exampleBatch = {
       category: { id: "8e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a45", gss_id: "88", name: "Brake Pads" },
       ship_requirement: dayToUnix("2026-11-30"),
       loading_status: null,
+      is_active: true,
     },
   ],
   pre_loadings: [],
+  is_active: true,
   created_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
   updated_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
 };
@@ -105,13 +114,17 @@ export const openApiSpec = {
       "or `items` (a *new* line, identified by `supplier_category_gss_id`, same as `items[]` of `POST /api/orders`).",
       "",
       "Rules (same as the SOTWISE screen):",
-      "- A batch can only be changed or deleted while `in_negotiation` or `in_production`. After that the Pre-loading/Shipment flow drives it.",
+      "- A batch can only be changed or deleted while `in_negotiation` or `in_production`. After that the Pre-loading/Shipment flow drives it (the `is_active` flag alone can change in any status).",
       "- `status` can only be set to `in_negotiation` or `in_production`.",
       "- The same Category + Factory cannot appear twice in a batch.",
       "- A batch `in_production` always keeps at least one item (applies to the batch an item is moved *from* as well).",
       "- The first batch of an order starts `in_negotiation`. Once any batch of the order is `in_production` (or further), every other `in_negotiation` batch of the order — existing or created later — goes to `in_production` too, as soon as it has at least one item. Setting a batch to `in_production` (screen or `PATCH`) triggers this for the whole order.",
       "- Same automatic promotion when the order's Deposit Payment step is settled (unless the same PATCH sets `status`).",
       "- The order status is recalculated from its batches after every write.",
+      "",
+      "**`is_active`** — every resource (orders, batches, Factory × Category lines, ETD, shipments/PLs, libraries) carries an `is_active` boolean (default `true`). " +
+        "It is **only a flag**: inactive records still appear in SOTWISE and in this API, and no rule changes. Deleting is separate (libraries: soft delete in the app; orders/batches/lines/PLs: `DELETE`). " +
+        "POST/PATCH accept it (omitted → unchanged; `{ \"is_active\": false }` alone is a valid PATCH); collection GETs filter with `?is_active=true|false` (omitted → both).",
     ].join("\n"),
   },
   servers: [{ url: "/", description: "This environment" }],
@@ -139,6 +152,7 @@ export const openApiSpec = {
           { name: "order_gss_id", in: "query", schema: { type: "string" }, description: "Order `gss_id` (the GSS order id)." },
           { name: "po_number", in: "query", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: [...BATCH_STATUSES] } },
+          isActiveParam,
           {
             name: "updated_since",
             in: "query",
@@ -185,7 +199,7 @@ export const openApiSpec = {
           "Use `PATCH` to change the status.\n\n" +
           "**Webhook from GSS** — batches are created in GSS and pushed here with the GSS OrderBatch id in `gss_id`. " +
           "With `gss_id` the call is idempotent:\n" +
-          "- `gss_id` already known → **200**, the batch is returned (and `batch_number`/`items`/`item_ids`, if sent, are applied like a PATCH);\n" +
+          "- `gss_id` already known → **200**, the batch is returned (and `batch_number`/`items`/`item_ids`/`is_active`, if sent, are applied like a PATCH);\n" +
           "- a batch with the same `batch_number` already exists in the order without `gss_id` → it is linked to this `gss_id` (**200**);\n" +
           "- otherwise → **201**, created.\n\n" +
           "`batch_number` accepts the GSS `batch_code` (`1680.02`) as well as the suffix (`.02`).",
@@ -262,7 +276,8 @@ export const openApiSpec = {
         summary: "Update a batch",
         description:
           "Partial update — only the fields sent are applied. Everything is validated before anything is written. " +
-          "`remove_item_ids` takes lines out of the batch (they stay in the order, without batch).",
+          "`remove_item_ids` takes lines out of the batch (they stay in the order, without batch). " +
+          "A PATCH with only `is_active` is accepted in any status — it is only a flag and skips the editable-batch lock.",
         requestBody: {
           required: true,
           content: {
@@ -271,6 +286,7 @@ export const openApiSpec = {
               examples: {
                 status: { summary: "Move to production", value: { status: "in_production" } },
                 rename: { summary: "Change the number", value: { batch_number: ".03" } },
+                inactive: { summary: "Mark inactive (flag only)", value: { is_active: false } },
                 items: {
                   summary: "Add, move and remove items",
                   value: {
@@ -379,7 +395,7 @@ export const openApiSpec = {
       BatchItem: {
         type: "object",
         description: "A Factory × Category line of the order that is in this batch.",
-        required: ["id", "supplier_category_gss_id", "factory", "category", "ship_requirement", "loading_status"],
+        required: ["id", "supplier_category_gss_id", "factory", "category", "ship_requirement", "loading_status", "is_active"],
         properties: {
           id: { type: "string", format: "uuid", description: "Line id — use it in `item_ids` / `remove_item_ids`." },
           supplier_category_gss_id: { type: ["string", "null"] },
@@ -391,6 +407,7 @@ export const openApiSpec = {
             enum: ["total", "partial", "none", null],
             description: "Filled when the shipping is confirmed.",
           },
+          is_active: isActiveOut,
         },
       },
       Batch: {
@@ -405,6 +422,7 @@ export const openApiSpec = {
           "order",
           "items",
           "pre_loadings",
+          "is_active",
           "created_at",
           "updated_at",
         ],
@@ -438,6 +456,7 @@ export const openApiSpec = {
               properties: { id: { type: "string", format: "uuid" }, pl_number: { type: "string" } },
             },
           },
+          is_active: isActiveOut,
           created_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
           updated_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
         },
@@ -488,13 +507,14 @@ export const openApiSpec = {
             description: "Existing lines of the same order to move into the batch.",
           },
           items: { type: "array", maxItems: 500, items: ref("NewItem"), description: "New lines, created inside the batch." },
+          is_active: isActiveIn,
         },
       },
       BatchUpdate: {
         type: "object",
         additionalProperties: false,
         minProperties: 1,
-        description: "Partial. Unknown fields → 400.",
+        description: "Partial. Unknown fields → 400. `{ \"is_active\": false }` alone is valid.",
         properties: {
           batch_number: { type: "string", maxLength: 20 },
           status: { type: "string", enum: [...EDITABLE_BATCH_STATUSES] },
@@ -511,6 +531,7 @@ export const openApiSpec = {
             items: { type: "string", format: "uuid" },
             description: "Lines of this batch to take out (they stay in the order without batch).",
           },
+          is_active: isActiveIn,
         },
       },
     },

@@ -34,6 +34,8 @@ export type BatchReadItem = {
   /** Unix (s) às 12:00 UTC — lib/api-dates.ts. */
   ship_requirement: number | null;
   loading_status: LoadingStatus | null;
+  /** Marca da linha (`order_factory_category.is_active`) — não esconde nada. */
+  is_active: boolean;
 };
 
 export type BatchRead = {
@@ -44,6 +46,8 @@ export type BatchRead = {
   /** `po_number` + `batch_number` quando o número é o sufixo ".NN" (ex.: "1439.04"). */
   full_number: string;
   status: BatchStatus;
+  /** SÓ uma marca (13/10): lote inativo continua listado; exclusão é o DELETE. */
+  is_active: boolean;
   split_from_batch_id: UUID | null;
   order: { id: UUID; gss_id: string | null; po_number: string };
   items: BatchReadItem[];
@@ -59,12 +63,13 @@ type BatchRow = {
   order_id: UUID;
   batch_number: string;
   status: BatchStatus;
+  is_active: boolean;
   split_from_batch_id: UUID | null;
   created_at: string;
   updated_at: string;
 };
 
-const BATCH_COLUMNS = "id, gss_id, order_id, batch_number, status, split_from_batch_id, created_at, updated_at";
+const BATCH_COLUMNS = "id, gss_id, order_id, batch_number, status, is_active, split_from_batch_id, created_at, updated_at";
 
 /** O `.in()` vai na URL — pedaços pequenos evitam URL gigante com muitos lotes. */
 const IN_CHUNK = 150;
@@ -134,6 +139,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
     category_id: UUID;
     ship_requirement: string;
     loading_status: LoadingStatus | null;
+    is_active: boolean;
   };
   type PlLinkRow = { batch_id: UUID; pre_loadings: { id: UUID; pl_number: string } | null };
 
@@ -155,7 +161,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
       ...(await fetchAll<OfcRow>((from, to) =>
         admin
           .from("order_factory_category")
-          .select("id, batch_id, factory_id, category_id, ship_requirement, loading_status")
+          .select("id, batch_id, factory_id, category_id, ship_requirement, loading_status, is_active")
           .in("batch_id", part)
           .order("id")
           .range(from, to)
@@ -192,6 +198,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
       category: categories.get(l.category_id) ?? null,
       ship_requirement: dayToUnix(l.ship_requirement),
       loading_status: l.loading_status,
+      is_active: l.is_active,
     });
     itemsByBatch.set(l.batch_id, list);
   }
@@ -214,6 +221,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
         ? `${order.po_number}${r.batch_number}`
         : r.batch_number,
       status: r.status,
+      is_active: r.is_active,
       split_from_batch_id: r.split_from_batch_id,
       order,
       items: itemsByBatch.get(r.id) ?? [],
@@ -280,6 +288,7 @@ export async function listBatches(
   if (order) q = q.eq("order_id", order.id);
   if (query.gss_id) q = q.eq("gss_id", query.gss_id);
   if (query.status) q = q.eq("status", query.status);
+  if (query.is_active !== undefined) q = q.eq("is_active", query.is_active);
   if (query.updated_since) q = q.gte("updated_at", query.updated_since);
 
   const { data, count, error } = await q

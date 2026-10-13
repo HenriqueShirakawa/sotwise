@@ -11,7 +11,7 @@ import { deleteOrderItem, updateOrderItem } from "@/domain/order-items/api-write
  * API REST das linhas FACTORY × CATEGORY — item.
  *
  *   GET    /api/order-items/{id}
- *   PATCH  /api/order-items/{id}   → batch_id (mover; null = tirar do lote), ship_requirement
+ *   PATCH  /api/order-items/{id}   → batch_id (mover; null = tirar do lote), ship_requirement, is_active
  *   DELETE /api/order-items/{id}   → apaga (lote editável; lote In Production não fica vazio)
  *
  * `{id}` é o UUID da linha (o mesmo de GET /api/orders?include=items).

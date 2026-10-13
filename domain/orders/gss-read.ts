@@ -63,6 +63,11 @@ export const gssOrderQuerySchema = z.object({
   status: z.enum(ORDER_STATUSES).optional(),
   // Unix (s) ou ISO 8601 com fuso → ISO para o filtro (lib/api-dates.ts).
   updated_since: apiInstantQuery.optional(),
+  // Filtro opcional da marca `is_active`; sem ele vêm ativas e inativas.
+  is_active: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
@@ -88,6 +93,7 @@ const QUERY_KEYS = [
   "po_number",
   "status",
   "updated_since",
+  "is_active",
   "order",
   "limit",
   "offset",
@@ -117,6 +123,7 @@ type OrderRow = {
   schedule_requested: DateStr | null;
   client_reference: string | null;
   date_po: DateStr | null;
+  is_active: boolean;
   order_type_id: UUID | null;
   client_id: UUID | null;
   business_unit_id: UUID | null;
@@ -129,7 +136,7 @@ type OrderRow = {
 };
 
 const ORDER_COLUMNS =
-  "id, gss_id, po_number, status, asap, schedule_requested, client_reference, date_po, " +
+  "id, gss_id, po_number, status, asap, schedule_requested, client_reference, date_po, is_active, " +
   "order_type_id, client_id, business_unit_id, exporter_id, leader_id, requester_id, " +
   "operational_responsible_id, " +
   "created_at, updated_at";
@@ -143,6 +150,7 @@ export type GssOrderReadItem = {
   category: LibraryRef | null;
   ship_requirement: Unix | null;
   loading_status: LoadingStatus | null;
+  is_active: boolean;
   batch: { id: UUID; batch_number: string; status: string } | null;
 };
 
@@ -163,6 +171,7 @@ export type GssOrderRead = {
   schedule_requested: Unix | null;
   client_reference: string | null;
   date_po: Unix | null;
+  is_active: boolean;
   order_type: LibraryRef | null;
   client: LibraryRef | null;
   business_unit: LibraryRef | null;
@@ -239,10 +248,11 @@ async function loadItems(
     batch_id: UUID | null;
     ship_requirement: DateStr;
     loading_status: LoadingStatus | null;
+    is_active: boolean;
   };
   const { data, error } = await admin
     .from("order_factory_category")
-    .select("id, order_id, factory_id, category_id, batch_id, ship_requirement, loading_status")
+    .select("id, order_id, factory_id, category_id, batch_id, ship_requirement, loading_status, is_active")
     .in("order_id", orderIds)
     .returns<OfcRow[]>();
   if (error) throw new Error(error.message);
@@ -265,6 +275,7 @@ async function loadItems(
       category: categories.get(row.category_id) ?? null,
       ship_requirement: dayToUnix(row.ship_requirement),
       loading_status: row.loading_status,
+      is_active: row.is_active,
       batch: row.batch_id ? batchMap.get(row.batch_id) ?? null : null,
     });
     byOrder.set(row.order_id, list);
@@ -362,6 +373,7 @@ export async function listGssOrders(
   if (query.po_number) select = select.eq("po_number", query.po_number);
   if (query.status) select = select.eq("status", query.status);
   if (query.updated_since) select = select.gte("updated_at", query.updated_since);
+  if (query.is_active !== undefined) select = select.eq("is_active", query.is_active);
 
   const { data, error, count } = await select
     // `id` desempata: sem ele, orders com o mesmo updated_at podiam pular ou
@@ -405,6 +417,7 @@ export async function listGssOrders(
       schedule_requested: dayToUnix(row.schedule_requested),
       client_reference: row.client_reference,
       date_po: dayToUnix(row.date_po),
+      is_active: row.is_active,
       order_type: row.order_type_id ? orderTypes.get(row.order_type_id) ?? null : null,
       client: row.client_id ? clients.get(row.client_id) ?? null : null,
       business_unit: row.business_unit_id

@@ -10,7 +10,7 @@ import { deleteBatch, updateBatch } from "@/domain/batches/api-write";
  * API REST de LOTES (batches) — item.
  *
  *   GET    /api/batches/{id}   → o lote, com order, linhas e PLs
- *   PATCH  /api/batches/{id}   → número, status e linhas (parcial)
+ *   PATCH  /api/batches/{id}   → número, status, linhas e is_active (parcial)
  *   DELETE /api/batches/{id}   → apaga; as linhas ficam na order sem lote
  *
  * `{id}` é o UUID do lote ou o `full_number` ("1230.02" — o batch_code do GSS).

@@ -2,7 +2,13 @@ import type { NextRequest } from "next/server";
 
 import { requireApiFeature, requireApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { GSS_ID_COLUMN, RESOURCES, readGssId } from "@/domain/api/registry";
+import {
+  GSS_ID_COLUMN,
+  IS_ACTIVE_COLUMN,
+  RESOURCES,
+  readGssId,
+  readIsActive,
+} from "@/domain/api/registry";
 
 /**
  * PATCH /api/{resource}/{id} — atualiza 1 registro de cadastro de referência.
@@ -11,7 +17,7 @@ import { GSS_ID_COLUMN, RESOURCES, readGssId } from "@/domain/api/registry";
  * Não há PUT (substituição total) nem DELETE por decisão: o soft-delete é do
  * app/da origem. O corpo é um objeto JSON PARCIAL — só as colunas enviadas
  * mudam; campos desconhecidos são descartados pelo schema, como no POST.
- * `gss_id` vale para todo recurso e pode vir sozinho (vincular ao GSS).
+ * `gss_id` e `is_active` valem para todo recurso e podem vir sozinhos.
  *
  * Mesma allowlist (`RESOURCES`), mesma auth (`requireApiSession`) e mesma
  * feature (`registration`, agora na ação `edit`). Só registros ativos são
@@ -20,6 +26,9 @@ import { GSS_ID_COLUMN, RESOURCES, readGssId } from "@/domain/api/registry";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Campos comuns a todo recurso, tratados aqui e não no schema de cada um. */
+const COMMON_KEYS = new Set([GSS_ID_COLUMN, IS_ACTIVE_COLUMN]);
 
 function json(body: unknown, status: number): Response {
   return Response.json(body, { status });
@@ -53,17 +62,20 @@ export async function PATCH(
   const body = await request.json().catch(() => null);
   const gssId = readGssId(body);
   if (!gssId.ok) return json({ error: gssId.error }, 400);
+  const isActive = readIsActive(body);
+  if (!isActive.ok) return json({ error: isActive.error }, 400);
 
-  // `gss_id` é tratado aqui (comum a todos); o resto do corpo passa pelo schema
-  // do recurso. Um PATCH só com `{ gss_id }` não chama o schema — senão os
-  // recursos name-only exigiriam `name` para vincular.
+  // Um PATCH só com campos comuns (`{ gss_id }`, `{ is_active }`) não chama o
+  // schema do recurso — senão os recursos name-only exigiriam `name` para
+  // vincular ou desativar.
   const otherKeys = Object.keys(body && typeof body === "object" ? body : {}).filter(
-    (key) => key !== GSS_ID_COLUMN
+    (key) => !COMMON_KEYS.has(key)
   );
-  const onlyGssId = gssId.value !== undefined && otherKeys.length === 0;
+  const hasCommon = gssId.value !== undefined || isActive.value !== undefined;
+  const onlyCommon = hasCommon && otherKeys.length === 0;
 
   let input: unknown = {};
-  if (!onlyGssId) {
+  if (!onlyCommon) {
     const parsed = cfg.updateSchema.safeParse(body);
     if (!parsed.success) {
       return json(
@@ -76,14 +88,15 @@ export async function PATCH(
     }
     input = parsed.data;
   }
-  if (Object.keys(input as object).length === 0 && gssId.value === undefined) {
+  if (Object.keys(input as object).length === 0 && !hasCommon) {
     return json({ error: "No fields to update." }, 400);
   }
 
   const admin = createAdminClient();
-  const row: Record<string, unknown> = onlyGssId ? {} : cfg.buildUpdate(input);
+  const row: Record<string, unknown> = onlyCommon ? {} : cfg.buildUpdate(input);
   if (gssId.value !== undefined) row[GSS_ID_COLUMN] = gssId.value;
-  const select = `${cfg.select}, ${GSS_ID_COLUMN}`;
+  if (isActive.value !== undefined) row[IS_ACTIVE_COLUMN] = isActive.value;
+  const select = `${cfg.select}, ${GSS_ID_COLUMN}, ${IS_ACTIVE_COLUMN}`;
 
   // Se o corpo só mexe em junção (ex.: `contact_ids`), não há coluna para o SET —
   // então confere existência com um SELECT em vez de um UPDATE vazio.
@@ -111,7 +124,7 @@ export async function PATCH(
     return json({ error: error.message }, dbErrorStatus(error.code));
   }
 
-  if (cfg.afterUpdate && !onlyGssId) {
+  if (cfg.afterUpdate && !onlyCommon) {
     const linkError = await cfg.afterUpdate(id, input, admin);
     if (linkError) return json({ error: linkError }, 500);
   }

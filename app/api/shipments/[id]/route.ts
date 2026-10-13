@@ -13,7 +13,8 @@ import { deleteShipment, patchShipment } from "@/domain/shipments/api-write";
  *   GET    /api/shipments/{id}
  *   PATCH  /api/shipments/{id}   → cabeçalho/lotes (só antes de embarcar);
  *                                  status "in_transit" + confirm = Confirm Shipping;
- *                                  status "preloading" = desfaz o embarque
+ *                                  status "preloading" = desfaz o embarque;
+ *                                  is_active a qualquer momento (PL + embarque)
  *   DELETE /api/shipments/{id}   → apaga o PL (só não embarcado)
  *
  * Permissões como na tela: o PL é `pre_loading`; desfazer o embarque exige

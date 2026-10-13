@@ -9,7 +9,7 @@ import { listGssPreLoadings, parseGssPreLoadingQuery } from "@/domain/pre-loadin
  * e evolui inteiramente dentro do SOTWISE (checklist, confirmação de
  * embarque); o GSS só consulta o estado.
  *
- *   GET /api/pre-loadings?pl_number=&po_number=&order=&limit=&offset=
+ *   GET /api/pre-loadings?pl_number=&po_number=&is_active=&order=&limit=&offset=
  *   Authorization: Bearer $API_TOKEN
  *
  * Mesma auth de /api/orders (`requireApiSession()`, lib/api-auth.ts): token
