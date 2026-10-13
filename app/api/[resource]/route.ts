@@ -2,17 +2,21 @@ import type { NextRequest } from "next/server";
 
 import { requireApiFeature, requireApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { RESOURCES } from "@/domain/api/registry";
+import { GSS_ID_COLUMN, RESOURCES, readGssId } from "@/domain/api/registry";
 
 /**
  * API REST genérica para os cadastros de referência.
  *
- *   GET  /api/{resource}?q=&limit=&offset=   → lista (deleted_at IS NULL, order name)
- *   POST /api/{resource}                     → cria 1 registro
+ *   GET  /api/{resource}?q=&gss_id=&limit=&offset=   → lista (deleted_at IS NULL, order name)
+ *   POST /api/{resource}                             → cria 1 registro
  *
  * `{resource}` precisa existir em RESOURCES (allowlist). Autenticação por
  * sessão via requireApiSession() (401/403 JSON). Route handlers não são
  * cacheados por padrão — como tocam banco/cookies, ficam dinâmicos.
+ *
+ * `gss_id` (o id do registro no GSS) é aceito no POST e devolvido no GET. Com
+ * ele o POST é idempotente, como o de orders e lotes: reenvio de um `gss_id`
+ * que já existe ATUALIZA o registro (200) em vez de duplicar.
  */
 
 const MAX_LIMIT = 1000;
@@ -42,12 +46,17 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ resourc
 
   const params = request.nextUrl.searchParams;
   const q = params.get("q")?.trim();
+  const gssId = params.get("gss_id")?.trim();
   const limit = Math.min(Number(params.get("limit")) || MAX_LIMIT, MAX_LIMIT);
   const offset = Math.max(Number(params.get("offset")) || 0, 0);
 
   const admin = createAdminClient();
-  let query = admin.from(cfg.table).select(cfg.select).is("deleted_at", null);
+  let query = admin
+    .from(cfg.table)
+    .select(`${cfg.select}, ${GSS_ID_COLUMN}`)
+    .is("deleted_at", null);
   if (q) query = query.ilike("name", `%${q}%`);
+  if (gssId) query = query.eq(GSS_ID_COLUMN, gssId);
 
   const { data, error } = await query.order("name").range(offset, offset + limit - 1);
   if (error) return json({ error: error.message }, dbErrorStatus(error.code));
@@ -78,12 +87,50 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ resour
     );
   }
 
+  const gssId = readGssId(body);
+  if (!gssId.ok) return json({ error: gssId.error }, 400);
+
   const admin = createAdminClient();
+  const select = `${cfg.select}, ${GSS_ID_COLUMN}`;
   const row = cfg.buildRow(parsed.data, { userId: auth.session.userId });
+
+  // Idempotência por gss_id: já existe → atualiza (sem mexer em created_by).
+  if (gssId.value) {
+    const { data: existing, error: lookupError } = await admin
+      .from(cfg.table)
+      .select("id, deleted_at")
+      .eq(GSS_ID_COLUMN, gssId.value)
+      .maybeSingle();
+    if (lookupError) return json({ error: lookupError.message }, 500);
+
+    if (existing) {
+      const found = existing as unknown as { id: string; deleted_at: string | null };
+      if (found.deleted_at) {
+        return json({ error: `gss_id '${gssId.value}' belongs to a deleted record.` }, 409);
+      }
+      const update = { ...row };
+      delete update.created_by;
+      const { data, error } = await admin
+        .from(cfg.table)
+        .update(update as never)
+        .eq("id", found.id)
+        .select(select)
+        .single();
+      if (error) return json({ error: error.message }, dbErrorStatus(error.code));
+
+      if (cfg.afterInsert) {
+        const linkError = await cfg.afterInsert(found.id, parsed.data, admin);
+        if (linkError) return json({ error: linkError }, 500);
+      }
+      return json({ data }, 200);
+    }
+    row[GSS_ID_COLUMN] = gssId.value;
+  }
+
   const { data, error } = await admin
     .from(cfg.table)
     .insert(row as never)
-    .select(cfg.select)
+    .select(select)
     .single();
   if (error) return json({ error: error.message }, dbErrorStatus(error.code));
 

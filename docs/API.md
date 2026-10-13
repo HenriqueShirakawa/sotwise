@@ -111,6 +111,7 @@ Retorna os registros **ativos** (excluídos via soft-delete não aparecem), orde
 | Param | Tipo | Default | Descrição |
 |---|---|---|---|
 | `q` | string | — | Busca parcial por nome, sem diferenciar maiúsculas (`ILIKE %q%`). Só filtra a coluna `name` |
+| `gss_id` | string | — | Igualdade exata no id do GSS (0 ou 1 registro) |
 | `limit` | inteiro | `1000` | Teto de 1000. `0`, vazio ou texto não numérico caem no default. **Valor negativo causa `500`** |
 | `offset` | inteiro | `0` | Quantos registros pular — use junto com `limit` para paginar. Negativo é tratado como `0` |
 
@@ -138,14 +139,16 @@ curl -s -X POST "https://sot.gssdatahub.com/api/carriers" \
 
 ```jsonc
 // 201
-{ "data": { "id": "3f6d…", "name": "Maersk" } }
+{ "data": { "id": "3f6d…", "name": "Maersk", "gss_id": null } }
 ```
 
 Campos gerados pelo servidor: `id`, `created_at`, `updated_at`, `deleted_at`, `created_by`.
 
-> ⚠️ **Campos desconhecidos são descartados em silêncio, sem erro.** A validação remove tudo que não está documentado e devolve `201` normalmente. Ou seja: enviar `{"name":"Maersk","gss_id":"G1"}` cria o registro **sem** o `gss_id`, e a resposta não avisa nada. Não existe pareamento por id externo (`gss_id`/`bubble_id`) nesta API — nem no corpo aceito, nem no retorno.
+> **`gss_id` (desde 2026-10-13):** o id do registro no GSS (string ou inteiro; guardado como texto, único por biblioteca). Mande-o sempre que o registro vier do GSS — é a chave que o `POST /api/orders` usa para achar cliente, exporter, order type e business unit (`client_gss_id` etc.). Sem ele o cadastro nasce sem vínculo e a order depois falha com `No clients found for gss_id '…'`.
 
-> **Sem upsert:** cada POST é uma inserção nova. Repetir a mesma chamada cria um registro duplicado — nenhum campo exposto é único, então não há `409` para te proteger. A idempotência é responsabilidade do integrador.
+> **Idempotente com `gss_id`:** se já existe registro com aquele `gss_id`, o POST **atualiza** esse registro com o corpo e devolve `200` (em vez de `201`) — reenvio não duplica. Se o `gss_id` pertence a um registro excluído → `409`. **Sem `gss_id`** cada POST continua sendo uma inserção nova (repetir duplica).
+
+> ⚠️ **Outros campos desconhecidos são descartados em silêncio, sem erro** (ex.: `bubble_id`).
 
 ---
 
@@ -167,7 +170,8 @@ curl -s -X PATCH "https://sot.gssdatahub.com/api/carriers/3f6d…" \
 
 Regras:
 
-- **Só campos documentados.** Os campos aceitos são os mesmos do POST daquele recurso (§6), todos opcionais. Campos desconhecidos (incl. `gss_id`/`bubble_id`) são **descartados em silêncio**, igual ao POST.
+- **Só campos documentados.** Os campos aceitos são os mesmos do POST daquele recurso (§6), todos opcionais, mais o `gss_id`. Campos desconhecidos (ex.: `bubble_id`) são **descartados em silêncio**, igual ao POST.
+- **Vincular ao GSS:** `{ "gss_id": "118" }` sozinho é um PATCH válido (inclusive nos recursos só-nome); `null` desvincula. `gss_id` já usado por outro registro → `409`.
 - **Corpo vazio → `400`** (`{ "error": "No fields to update." }`). Não há PATCH "no-op".
 - **Id inexistente ou já excluído (soft-delete) → `404`** (`{ "error": "Record not found." }`). Só registros ativos são alcançáveis.
 - **Nada de `id`, `created_by`, `created_at`** é alterável por aqui.
