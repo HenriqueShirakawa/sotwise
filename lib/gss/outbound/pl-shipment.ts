@@ -26,7 +26,8 @@
  * dono dos lotes e quer saber, a cada mudança, a fase do PL — lote incluído num
  * PL = `preloading`, Confirm Shipping = `in_transit`, Delivered = `delivered`
  * — e quais lotes estão amarrados nele (`batch_ids` = `batches.gss_id`). Antes
- * o status só ia na criação.
+ * o status só ia na criação. O envio do app é só PATCH (`create: false`): o SOT
+ * espelha, quem cria é sempre o GSS.
  *
  * Sem `server-only` e com imports relativos: também roda no CLI
  * (scripts/sync-gss/push-outbound.ts).

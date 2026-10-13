@@ -32,9 +32,10 @@ export function sendPlShipmentToGss(preLoadingId: string): void {
   try {
     after(async () => {
       try {
-        // PL que não existe no GSS é criado (13/10): o GSS precisa do PL pra
-        // receber os lotes amarrados nele. Antes era só PATCH (02/10).
-        const push = await pushPlShipment(createAdminClient(), preLoadingId);
+        // Só PATCH: o SOT espelha no GSS o que já existe lá, NUNCA cria — toda
+        // criação é no GSS (decisão do usuário, reafirmada em 13/10). PL que não
+        // existe no GSS sai "skipped" no log.
+        const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: false });
         if (push.outcome === "skipped") {
           console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);
         } else if (push.outcome === "called") {
