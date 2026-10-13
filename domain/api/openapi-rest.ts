@@ -22,6 +22,9 @@ import {
   inDay,
   inDayNullable,
   instant,
+  isActiveIn,
+  isActiveOut,
+  isActiveParam,
   json,
   limitParam,
   listEnvelope,
@@ -96,6 +99,7 @@ const exampleItem = {
   supplier_category_gss_id: "4521",
   ship_requirement: du("2026-11-30"),
   loading_status: null,
+  is_active: true,
   created_at: 1791319187.185,
   updated_at: 1791319187.185,
 };
@@ -116,6 +120,7 @@ const exampleShipment = {
   ATA_Brazil: null,
   DELIVERED_DATE: null,
   shipping_date: du("2026-07-19"),
+  is_active: true,
   created_at: 1790947812.75,
   updated_at: 1791233008.1,
 };
@@ -174,7 +179,7 @@ export const restPaths = {
       responses: {
         200: {
           description: "Updated.",
-          content: json(ref("OrderUpsertResult"), { data: { id: "c1d1f0a2-5b8e-4a37-8a54-2f0c6d0a9e01", po_number: "1230" } }),
+          content: json(ref("OrderUpsertResult"), { data: { id: "c1d1f0a2-5b8e-4a37-8a54-2f0c6d0a9e01", po_number: "1230", is_active: true } }),
         },
         400: R400Body("No SOTWISE user found for e-mail 'x@example.com'."),
         401: R401,
@@ -212,6 +217,7 @@ export const restPaths = {
         { name: "order_gss_id", in: "query", schema: { type: "string" } },
         { name: "batch_id", in: "query", schema: { type: "string" }, description: "Batch UUID or `full_number` (`1230.02`)." },
         { name: "unassigned", in: "query", schema: { type: "string", enum: ["true", "false"] }, description: "`true` = only lines without batch." },
+        isActiveParam,
         updatedSinceParam,
         orderParam("updated_at"),
         limitParam(200, 50),
@@ -271,7 +277,8 @@ export const restPaths = {
       description:
         "`batch_id` moves the line (UUID or `full_number`; `null` takes it out of its batch) — origin and target must be editable, " +
         "an In Production batch never becomes empty, no twins. `ship_requirement` only while the line's batch is editable. " +
-        "Factory/category cannot change (delete and create). `loading_status` comes from Confirm Shipping.",
+        "Factory/category cannot change (delete and create). `loading_status` comes from Confirm Shipping. " +
+        "`is_active` is only a flag — it changes in any batch, without the batch locks.",
       requestBody: { required: true, content: json(ref("OrderItemUpdate"), { batch_id: "1230.03" }) },
       responses: {
         200: { description: "Updated.", content: json({ type: "object", properties: { data: ref("OrderItemRow") } }) },
@@ -325,6 +332,7 @@ export const restPaths = {
         "- A **correction** — changing a filled `current_date` or unchecking `ready_parts` — requires `remarks` (the reason).",
         "- `current_date` cannot change once the batch has shipped.",
         "- Every change is written to the ETD history (source \"API (GSS)\").",
+        "- `is_active` is only a flag on the line's ETD record (no rule above applies to it).",
       ].join("\n"),
       requestBody: {
         required: true,
@@ -335,6 +343,7 @@ export const restPaths = {
               first: { summary: "First ETD", value: { initial_date: du("2026-11-20") } },
               correction: { summary: "Correction (needs remarks)", value: { current_date: du("2026-11-27"), remarks: "Factory delayed one week" } },
               ready: { summary: "Parts ready", value: { ready_parts: true } },
+              inactive: { summary: "Mark inactive (flag only)", value: { is_active: false } },
             },
           },
         },
@@ -364,6 +373,7 @@ export const restPaths = {
         { name: "pl_number", in: "query", schema: { type: "string" }, description: "Exact PL number." },
         { name: "po_number", in: "query", schema: { type: "string" }, description: "Partial match: PLs that carry a batch of these orders." },
         { name: "status", in: "query", schema: { type: "string", enum: ["preloading", "in_transit", "delivered"] } },
+        { ...isActiveParam, description: `${isActiveParam.description} It is the PL's flag (mirrored to its shipment).` },
         updatedSinceParam,
         orderParam("created_at"),
         limitParam(200, 50),
@@ -431,6 +441,7 @@ export const restPaths = {
       description: [
         "Three uses — `status` goes in its own request:",
         "1. **Header / batches** (`clients`, `client_reference`, `pod`, people, `batch_ids` = the full set, `gss_id`) — only while not shipped (409 after).",
+        "   `is_active` (flag only, stored on the PL and mirrored to its shipment) changes at any time, even after shipping — e.g. `{ \"is_active\": false }` alone.",
         "2. **`status: \"in_transit\"` + `confirm`** = Confirm Shipping, same rules as the screen: the 7 Pre-loading steps complete " +
           "(incl. the Shipping Docs attachment, uploaded in SOTWISE), a `loading_status` for **every** line of the PL's batches. " +
           "`none`/`partial` lines move to the next open batch of the order (or a new one).",
@@ -466,6 +477,7 @@ export const restPaths = {
                 },
               },
               undo: { summary: "Undo the shipment", value: { status: "preloading" } },
+              inactive: { summary: "Mark inactive (flag only)", value: { is_active: false } },
             },
           },
         },
@@ -564,6 +576,7 @@ export const restSchemas = {
       leader_email: emailInNullable,
       requester_email: emailInNullable,
       operational_responsible_email: emailInNullable,
+      is_active: isActiveIn,
     },
   },
   OrderItemRow: {
@@ -582,6 +595,7 @@ export const restSchemas = {
       supplier_category_gss_id: { type: ["string", "null"] },
       ship_requirement: nullableDate,
       loading_status: { type: ["string", "null"], enum: ["total", "partial", "none", null] },
+      is_active: isActiveOut,
       created_at: instant,
       updated_at: instant,
     },
@@ -596,23 +610,27 @@ export const restSchemas = {
       supplier_category_gss_id: { type: ["string", "integer"] },
       ship_requirement: inDay,
       batch_id: { type: "string", description: "Batch UUID or `full_number` (`1230.02`)." },
+      is_active: isActiveIn,
     },
   },
   OrderItemUpdate: {
     type: "object",
+    description: "Any subset — `{ \"is_active\": false }` alone is valid.",
     properties: {
       batch_id: { type: ["string", "null"], description: "Batch UUID or `full_number`; `null` = take out of its batch." },
       ship_requirement: inDay,
+      is_active: isActiveIn,
     },
   },
   EtdPatch: {
     type: "object",
-    description: "At least one of `initial_date`, `current_date`, `ready_parts`.",
+    description: "At least one of `initial_date`, `current_date`, `ready_parts`, `is_active`.",
     properties: {
       initial_date: inDay,
       current_date: inDay,
       ready_parts: { type: "boolean" },
       remarks: { type: "string", maxLength: 2000, description: "Reason — required for a correction." },
+      is_active: { ...isActiveIn, description: `Stored on this line's ETD record. ${isActiveIn.description}` },
     },
   },
   Shipment: {
@@ -630,6 +648,7 @@ export const restSchemas = {
       ATA_Brazil: { ...nullableDate, description: "Actual date of the ATA Brazil step." },
       DELIVERED_DATE: { ...nullableDate, description: "Actual date of the Delivered step." },
       shipping_date: { ...nullableDate, description: "Actual date of the Shipping Date step." },
+      is_active: { ...isActiveOut, description: `The PL's flag (mirrored to its shipment). ${isActiveOut.description}` },
       created_at: instant,
       updated_at: { ...instant, description: "Latest of the PL and its shipment." },
     },
@@ -645,6 +664,7 @@ export const restSchemas = {
       leader_email: emailIn,
       responsible_signer_email: emailInNullable,
       batch_ids: { type: "array", items: { type: "string" }, description: "Batch UUIDs or `full_number`s." },
+      is_active: isActiveIn,
     },
   },
   ShipmentConfirm: {
@@ -683,8 +703,9 @@ export const restSchemas = {
   },
   ShipmentPatch: {
     type: "object",
-    description: "Header keys, OR `status` (+ `confirm` for `in_transit`) alone.",
+    description: "Header keys, OR `status` (+ `confirm` for `in_transit`) alone. `{ \"is_active\": false }` alone is valid.",
     properties: {
+      is_active: { ...isActiveIn, description: `The PL's flag (mirrored to its shipment). ${isActiveIn.description}` },
       gss_id: { type: ["string", "integer", "null"] },
       clients: { type: "array", minItems: 1, items: ref2 },
       client_reference: { type: "string", maxLength: 200 },

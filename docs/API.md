@@ -104,7 +104,7 @@ Além da mensagem em `error`, vem a lista completa de problemas em `issues` (for
 
 ## 3. `GET /api/{recurso}` — listar
 
-Retorna os registros **ativos** (excluídos via soft-delete não aparecem), ordenados por `name` em ordem alfabética.
+Retorna os registros **não excluídos** (excluídos via soft-delete não aparecem), ordenados por `name` em ordem alfabética. Registros com `is_active: false` **aparecem** — ver [`is_active`](#is_active--marca-de-ativoinativo-desde-13102026).
 
 ### Query params
 
@@ -112,6 +112,7 @@ Retorna os registros **ativos** (excluídos via soft-delete não aparecem), orde
 |---|---|---|---|
 | `q` | string | — | Busca parcial por nome, sem diferenciar maiúsculas (`ILIKE %q%`). Só filtra a coluna `name` |
 | `gss_id` | string | — | Igualdade exata no id do GSS (0 ou 1 registro) |
+| `is_active` | `true` \| `false` | — | Filtra pela marca `is_active`. Sem o parâmetro vêm ativos **e** inativos |
 | `limit` | inteiro | `1000` | Teto de 1000. `0`, vazio ou texto não numérico caem no default. **Valor negativo causa `500`** |
 | `offset` | inteiro | `0` | Quantos registros pular — use junto com `limit` para paginar. Negativo é tratado como `0` |
 
@@ -139,7 +140,7 @@ curl -s -X POST "https://sot.gssdatahub.com/api/carriers" \
 
 ```jsonc
 // 201
-{ "data": { "id": "3f6d…", "name": "Maersk", "gss_id": null } }
+{ "data": { "id": "3f6d…", "name": "Maersk", "gss_id": null, "is_active": true } }
 ```
 
 Campos gerados pelo servidor: `id`, `created_at`, `updated_at`, `deleted_at`, `created_by`.
@@ -165,7 +166,7 @@ curl -s -X PATCH "https://sot.gssdatahub.com/api/carriers/3f6d…" \
 
 ```jsonc
 // 200
-{ "data": { "id": "3f6d…", "name": "Maersk Line" } }
+{ "data": { "id": "3f6d…", "name": "Maersk Line", "is_active": true } }
 ```
 
 Regras:
@@ -173,7 +174,8 @@ Regras:
 - **Só campos documentados.** Os campos aceitos são os mesmos do POST daquele recurso (§6), todos opcionais, mais o `gss_id`. Campos desconhecidos (ex.: `bubble_id`) são **descartados em silêncio**, igual ao POST.
 - **Vincular ao GSS:** `{ "gss_id": "118" }` sozinho é um PATCH válido (inclusive nos recursos só-nome); `null` desvincula. `gss_id` já usado por outro registro → `409`.
 - **Corpo vazio → `400`** (`{ "error": "No fields to update." }`). Não há PATCH "no-op".
-- **Id inexistente ou já excluído (soft-delete) → `404`** (`{ "error": "Record not found." }`). Só registros ativos são alcançáveis.
+- **Id inexistente ou já excluído (soft-delete) → `404`** (`{ "error": "Record not found." }`). Só registros não excluídos são alcançáveis (inativos — `is_active: false` — são).
+- **`{"is_active": false}` sozinho é um PATCH válido**, em qualquer recurso (inclusive os "somente nome").
 - **Nada de `id`, `created_by`, `created_at`** é alterável por aqui.
 - **Não é upsert.** PATCH nunca cria; se o `id` não existe, é `404`. Para criar, use o POST.
 
@@ -214,6 +216,18 @@ Os 14 recursos disponíveis. O slug da URL é exatamente o da coluna "Endpoint".
 | Exporters | `/api/exporters` | `id, name, acronym` |
 | Order Types | `/api/order-types` | `id, name, color, icon_path` |
 | Shipment Models | `/api/shipment-models` | `id, name` |
+
+Todos devolvem também `is_active` (boolean).
+
+### `is_active` — marca de ativo/inativo (desde 13/10/2026)
+
+Os 14 recursos têm `is_active` (boolean, default `true`):
+
+- **É só uma marca.** Inativo continua aparecendo no GET e nas telas do SOTWISE; nenhuma regra muda. **Não substitui a exclusão** — essa continua sendo o soft-delete do app (`deleted_at`), que a API segue escondendo.
+- **POST/PATCH** aceitam `is_active` opcional em todo recurso (não precisa repetir na tabela do §6). Omitido → não muda; registro novo nasce `true`.
+- **GET** filtra com `?is_active=true|false`; sem o parâmetro, vêm os dois.
+
+Os recursos operacionais (orders, lotes, linhas Factory × Category, ETD, PL/shipment) seguem a mesma regra — ver [`SOTWISE-API-para-GSS.md`](./SOTWISE-API-para-GSS.md) §0.1 e o Swagger (`/api/docs`).
 
 ---
 

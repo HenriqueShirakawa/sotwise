@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiDay, apiInstantQuery } from "@/lib/api-dates";
+import { isActiveBody, isActiveQuery } from "@/domain/api/is-active";
 
 /**
  * Contrato da API REST das linhas FACTORY × CATEGORY (`/api/order-items`) —
@@ -30,6 +31,7 @@ export const createOrderItemSchema = z
     supplier_category_gss_id: gssRef,
     ship_requirement: apiDay,
     batch_id: batchRef.optional(),
+    is_active: isActiveBody.optional(),
   })
   .refine((v) => (v.order_gss_id ? 1 : 0) + (v.po_number ? 1 : 0) === 1, {
     message: "Send exactly one of 'order_gss_id' or 'po_number' to identify the order.",
@@ -47,10 +49,14 @@ export const updateOrderItemSchema = z
   .strictObject({
     batch_id: batchRef.nullable().optional(),
     ship_requirement: apiDay.optional(),
+    is_active: isActiveBody.optional(),
   })
-  .refine((v) => v.batch_id !== undefined || v.ship_requirement !== undefined, {
-    message: "No fields to update.",
-  });
+  .refine(
+    (v) => v.batch_id !== undefined || v.ship_requirement !== undefined || v.is_active !== undefined,
+    {
+      message: "No fields to update.",
+    }
+  );
 
 export type UpdateOrderItemInput = z.infer<typeof updateOrderItemSchema>;
 
@@ -62,6 +68,7 @@ export const orderItemQuerySchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((v) => v === "true"),
+  is_active: isActiveQuery.optional(),
   updated_since: apiInstantQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -75,6 +82,7 @@ const QUERY_KEYS = [
   "order_gss_id",
   "batch_id",
   "unassigned",
+  "is_active",
   "updated_since",
   "order",
   "limit",

@@ -84,6 +84,7 @@ export async function buildOrderFields(
   if (input.schedule_requested !== undefined) fields.schedule_requested = input.schedule_requested;
   if (input.client_reference !== undefined) fields.client_reference = input.client_reference;
   if (input.date_po !== undefined) fields.date_po = input.date_po;
+  if (input.is_active !== undefined) fields.is_active = input.is_active;
 
   for (const [key, { table, column }] of Object.entries(FK_LIBS)) {
     const raw = input[key as keyof typeof FK_LIBS];
@@ -213,7 +214,7 @@ export async function patchOrder(
   admin: AdminClient,
   orderId: UUID,
   input: GssOrderPatchInput
-): Promise<WriteResult<{ id: UUID; po_number: string }>> {
+): Promise<WriteResult<{ id: UUID; po_number: string; is_active: boolean }>> {
   const built = await buildOrderFields(admin, input);
   if (!built.ok) return fail(400, built.error);
 
@@ -221,7 +222,7 @@ export async function patchOrder(
     .from("orders")
     .update(built.fields as never)
     .eq("id", orderId)
-    .select("id, po_number")
+    .select("id, po_number, is_active")
     .maybeSingle();
   if (error) return fail(500, error.message);
   if (!data) return fail(404, "Order not found.");

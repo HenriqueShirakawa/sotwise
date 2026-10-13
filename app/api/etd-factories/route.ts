@@ -9,7 +9,7 @@ import { listGssEtdEntries, parseGssEtdQuery } from "@/domain/etd-factories/gss-
  * Factories"). Só leitura — os dados nascem na etapa ETD do checklist da
  * Order, dentro do SOTWISE.
  *
- *   GET /api/etd-factories?po_number=&batch_status=&order=&limit=&offset=
+ *   GET /api/etd-factories?po_number=&batch_status=&is_active=&order=&limit=&offset=
  *   Authorization: Bearer $API_TOKEN
  *
  * Mesma auth de /api/orders: token de serviço ou sessão de cookie de um

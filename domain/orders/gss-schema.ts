@@ -56,6 +56,8 @@ export const gssOrderSchema = z.object({
   leader_email: z.email("Invalid leader e-mail.").nullish(),
   requester_email: z.email("Invalid requester e-mail.").nullish(),
   operational_responsible_email: z.email("Invalid operational responsible e-mail.").nullish(),
+  // Só uma marca (2026-10-13): inativa continua aparecendo e seguindo as regras.
+  is_active: z.boolean().optional(),
   // Linhas Factory×Category da order (order_factory_category). Opcional: pode
   // vir vazio ou omitido. Ver gssOrderItemSchema.
   items: z.array(gssOrderItemSchema).nullish(),

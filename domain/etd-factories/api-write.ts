@@ -7,6 +7,7 @@ import { apiDay } from "@/lib/api-dates";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { ETD_SAVED_COLUMNS, writeEtdHistory, type EtdHistorySnapshot } from "@/lib/etd-history";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { isActiveBody } from "@/domain/api/is-active";
 import { fail, type WriteResult } from "@/domain/api/write-result";
 import { EDITABLE_BATCH_STATUSES } from "@/domain/batches/api-schema";
 import type { BatchStatus, TablesInsert } from "@/types/database";
@@ -26,7 +27,9 @@ import { getGssEtdEntry, type GssEtdRead } from "./gss-read";
  *    `ready_parts` — exige `remarks` (o motivo, como no modal);
  *  - `current_date` não muda com o lote já embarcado (fora de In Negotiation/
  *    In Production);
- *  - toda mudança grava `etd_history` (source `api`).
+ *  - toda mudança de data/ready grava `etd_history` (source `api`);
+ *  - `is_active` (13/10, em `etd_info`) é SÓ uma marca: grava sem trava, sem
+ *    `remarks` e sem `etd_history`.
  *
  * Mesmos nomes de campo do GET (`ready_parts` = `etd_info.ready`).
  */
@@ -40,10 +43,15 @@ export const patchEtdSchema = z
     current_date: apiDay.optional(),
     ready_parts: z.boolean().optional(),
     remarks: z.string().trim().min(1, "remarks cannot be empty.").max(2000).optional(),
+    is_active: isActiveBody.optional(),
   })
   .refine(
-    (v) => v.initial_date !== undefined || v.current_date !== undefined || v.ready_parts !== undefined,
-    { message: "Send at least one of 'initial_date', 'current_date' or 'ready_parts'." }
+    (v) =>
+      v.initial_date !== undefined ||
+      v.current_date !== undefined ||
+      v.ready_parts !== undefined ||
+      v.is_active !== undefined,
+    { message: "Send at least one of 'initial_date', 'current_date', 'ready_parts' or 'is_active'." }
   );
 
 export type PatchEtdInput = z.infer<typeof patchEtdSchema>;
@@ -66,7 +74,7 @@ export async function patchEtd(
 
   const { data: existing, error: readError } = await admin
     .from("etd_info")
-    .select("initial_date, current_date, ready, ready_date")
+    .select("initial_date, current_date, ready, ready_date, is_active")
     .eq("order_factory_category_id", lineId)
     .maybeSingle();
   if (readError) return fail(500, readError.message);
@@ -110,6 +118,11 @@ export async function patchEtd(
     changed.push("ready");
   }
 
+  // Linha sem etd_info ainda conta como ativa (default da coluna).
+  const flagChanged =
+    input.is_active !== undefined && input.is_active !== (existing?.is_active ?? true);
+  if (flagChanged) update.is_active = input.is_active;
+
   if (isCorrection && !input.remarks) {
     return fail(
       400,
@@ -117,8 +130,8 @@ export async function patchEtd(
     );
   }
 
-  if (changed.length > 0) {
-    if (input.remarks) update.remarks = input.remarks;
+  if (changed.length > 0 || flagChanged) {
+    if (changed.length > 0 && input.remarks) update.remarks = input.remarks;
     const { data: saved, error } = await admin
       .from("etd_info")
       .upsert(update, { onConflict: "order_factory_category_id" })
@@ -126,8 +139,11 @@ export async function patchEtd(
       .single();
     if (error || !saved) return fail(500, error?.message ?? "Failed to save the ETD.");
 
-    const historyError = await writeEtdHistory(admin, saved, changed, "api", actorId);
-    if (historyError) return fail(500, historyError);
+    // Histórico é só de data/ready — a marca `is_active` sozinha não entra.
+    if (changed.length > 0) {
+      const historyError = await writeEtdHistory(admin, saved, changed, "api", actorId);
+      if (historyError) return fail(500, historyError);
+    }
 
     revalidatePath("/orders/[id]", "page");
     revalidatePath("/orders");

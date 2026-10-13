@@ -10,7 +10,7 @@ import { createShipment } from "@/domain/shipments/api-write";
  * API REST de PL + SHIPMENT — coleção. Um recurso só (como o /v1/shipments/
  * do GSS): o Pre-loading e o embarque que nasce dele.
  *
- *   GET  /api/shipments?pl_number=&po_number=&status=&updated_since=&order=&limit=&offset=
+ *   GET  /api/shipments?pl_number=&po_number=&status=&is_active=&updated_since=&order=&limit=&offset=
  *   POST /api/shipments   → Create PL (clientes, POD, leader, lotes)
  *
  *   Authorization: Bearer $API_TOKEN

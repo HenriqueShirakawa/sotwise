@@ -2,13 +2,19 @@ import type { NextRequest } from "next/server";
 
 import { requireApiFeature, requireApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { GSS_ID_COLUMN, RESOURCES, readGssId } from "@/domain/api/registry";
+import {
+  GSS_ID_COLUMN,
+  IS_ACTIVE_COLUMN,
+  RESOURCES,
+  readGssId,
+  readIsActive,
+} from "@/domain/api/registry";
 
 /**
  * API REST genérica para os cadastros de referência.
  *
- *   GET  /api/{resource}?q=&gss_id=&limit=&offset=   → lista (deleted_at IS NULL, order name)
- *   POST /api/{resource}                             → cria 1 registro
+ *   GET  /api/{resource}?q=&gss_id=&is_active=&limit=&offset=   → lista (deleted_at IS NULL, order name)
+ *   POST /api/{resource}                                        → cria 1 registro
  *
  * `{resource}` precisa existir em RESOURCES (allowlist). Autenticação por
  * sessão via requireApiSession() (401/403 JSON). Route handlers não são
@@ -49,14 +55,20 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ resourc
   const gssId = params.get("gss_id")?.trim();
   const limit = Math.min(Number(params.get("limit")) || MAX_LIMIT, MAX_LIMIT);
   const offset = Math.max(Number(params.get("offset")) || 0, 0);
+  // `is_active` é filtro opcional; sem ele vêm ativos e inativos.
+  const isActive = params.get("is_active");
+  if (isActive && isActive !== "true" && isActive !== "false") {
+    return json({ error: "is_active must be 'true' or 'false'." }, 400);
+  }
 
   const admin = createAdminClient();
   let query = admin
     .from(cfg.table)
-    .select(`${cfg.select}, ${GSS_ID_COLUMN}`)
+    .select(`${cfg.select}, ${GSS_ID_COLUMN}, ${IS_ACTIVE_COLUMN}`)
     .is("deleted_at", null);
   if (q) query = query.ilike("name", `%${q}%`);
   if (gssId) query = query.eq(GSS_ID_COLUMN, gssId);
+  if (isActive) query = query.eq(IS_ACTIVE_COLUMN, isActive === "true");
 
   const { data, error } = await query.order("name").range(offset, offset + limit - 1);
   if (error) return json({ error: error.message }, dbErrorStatus(error.code));
@@ -89,10 +101,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ resour
 
   const gssId = readGssId(body);
   if (!gssId.ok) return json({ error: gssId.error }, 400);
+  const isActive = readIsActive(body);
+  if (!isActive.ok) return json({ error: isActive.error }, 400);
 
   const admin = createAdminClient();
-  const select = `${cfg.select}, ${GSS_ID_COLUMN}`;
+  const select = `${cfg.select}, ${GSS_ID_COLUMN}, ${IS_ACTIVE_COLUMN}`;
   const row = cfg.buildRow(parsed.data, { userId: auth.session.userId });
+  if (isActive.value !== undefined) row[IS_ACTIVE_COLUMN] = isActive.value;
 
   // Idempotência por gss_id: já existe → atualiza (sem mexer em created_by).
   if (gssId.value) {

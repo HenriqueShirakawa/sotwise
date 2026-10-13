@@ -9,7 +9,7 @@ import { createOrderItem } from "@/domain/order-items/api-write";
 /**
  * API REST das linhas FACTORY × CATEGORY — coleção.
  *
- *   GET  /api/order-items?po_number=&order_gss_id=&batch_id=&unassigned=true&updated_since=&order=&limit=&offset=
+ *   GET  /api/order-items?po_number=&order_gss_id=&batch_id=&unassigned=true&is_active=&updated_since=&order=&limit=&offset=
  *   POST /api/order-items   → cria a linha numa order (com lote opcional)
  *
  *   Authorization: Bearer $API_TOKEN
