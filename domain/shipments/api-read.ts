@@ -35,6 +35,11 @@ export type ShipmentRead = {
   gss_id: string | null;
   pl_number: number | null;
   status: string;
+  /**
+   * `pre_loadings.is_active` — SÓ uma marca (13/10), nada some por estar
+   * inativo. A API grava o mesmo valor no embarque (`shipments.is_active`).
+   */
+  is_active: boolean;
   batches: PlBatchRef[];
 } & PlDates & {
     created_at: number | null;
@@ -48,14 +53,16 @@ type PlRow = {
   id: UUID;
   gss_id: string | null;
   pl_number: string;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
   shipments: Embed<{ id: UUID; status: string; updated_at: string; deleted_at: string | null }>;
 };
 
-const SELECT_LEFT = "id, gss_id, pl_number, created_at, updated_at, shipments(id, status, updated_at, deleted_at)";
+const SELECT_LEFT =
+  "id, gss_id, pl_number, is_active, created_at, updated_at, shipments(id, status, updated_at, deleted_at)";
 const SELECT_INNER =
-  "id, gss_id, pl_number, created_at, updated_at, shipments!inner(id, status, updated_at, deleted_at)";
+  "id, gss_id, pl_number, is_active, created_at, updated_at, shipments!inner(id, status, updated_at, deleted_at)";
 
 /** `{id}` das rotas: UUID do PL ou o `pl_number` (ex.: /api/shipments/1306). */
 export async function resolveShipmentKey(admin: AdminClient, key: string): Promise<UUID | null> {
@@ -87,6 +94,7 @@ async function shape(admin: AdminClient, rows: PlRow[]): Promise<ShipmentRead[]>
       gss_id: r.gss_id,
       pl_number: numericPlNumber(r.pl_number),
       status: shipment?.status ?? "preloading",
+      is_active: r.is_active,
       batches: batches.get(r.id) ?? [],
       ...dates.get(r.id)!,
       created_at: timestampToUnix(r.created_at),
@@ -135,6 +143,7 @@ export async function listShipments(
   if (poFilterIds) q = q.in("id", poFilterIds);
   if (shipped) q = q.eq("shipments.status", query.status!).is("shipments.deleted_at", null);
   if (query.status === "preloading") q = q.is("shipments", null);
+  if (query.is_active !== undefined) q = q.eq("is_active", query.is_active);
 
   if (query.updated_since) {
     const touched = await plIdsTouchedSince(admin, query.updated_since);

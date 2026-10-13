@@ -10,7 +10,7 @@ import { patchEtd, patchEtdSchema } from "@/domain/etd-factories/api-write";
  * ETD de UMA linha Factory×Category.
  *
  *   GET   /api/etd-factories/{id}   → a linha, no formato do GET da lista
- *   PATCH /api/etd-factories/{id}   → initial_date, current_date, ready_parts, remarks
+ *   PATCH /api/etd-factories/{id}   → initial_date, current_date, ready_parts, remarks, is_active
  *
  * `{id}` = o `id` que o GET /api/etd-factories devolve (é o da linha
  * Factory×Category). Sem POST/DELETE: o ETD nasce e morre com a linha

@@ -196,6 +196,7 @@ export async function createShipment(
     batch_ids: batches.ids,
     created_by: actorId,
     gss_id: input.gss_id ?? null,
+    is_active: input.is_active,
   });
   if (!created.ok) return fail(created.conflict ? 409 : 500, created.error);
 
@@ -315,6 +316,8 @@ export async function patchShipment(
 
   const update: TablesUpdate<"pre_loadings"> = {};
   if (input.gss_id !== undefined) update.gss_id = input.gss_id;
+  // `is_active` é SÓ uma marca (13/10): vale mesmo com o PL já embarcado.
+  if (input.is_active !== undefined) update.is_active = input.is_active;
   if (input.client_reference !== undefined) update.client_reference = input.client_reference;
   if (input.pod !== undefined) {
     const pod = await resolveRef(admin, "pods", input.pod, "pod");
@@ -364,6 +367,15 @@ export async function patchShipment(
       if (error.code === "23505") return fail(409, `gss_id '${input.gss_id}' is already used by another pre-loading.`);
       return fail(500, error.message);
     }
+  }
+
+  // PL e embarque são um recurso só: a marca vai também no Shipment vivo.
+  if (input.is_active !== undefined && pl.shipment) {
+    const { error } = await admin
+      .from("shipments")
+      .update({ is_active: input.is_active })
+      .eq("id", pl.shipment.id);
+    if (error) return fail(500, error.message);
   }
 
   if (clientIds || batchIds) {

@@ -109,6 +109,14 @@ export async function createOrderItem(
       (i) => i.factory?.id === product.factory_id && i.category?.id === product.category_id
     );
     if (!created) return fail(500, "Item was saved but could not be read back.");
+    if (input.is_active !== undefined) {
+      // A escrita de lotes não conhece a marca: grava na linha recém-criada.
+      const { error: flagError } = await admin
+        .from("order_factory_category")
+        .update({ is_active: input.is_active })
+        .eq("id", created.id);
+      if (flagError) return fail(500, flagError.message);
+    }
     return readBack(admin, created.id, 201);
   }
 
@@ -136,6 +144,8 @@ export async function createOrderItem(
       factory_id: product.factory_id,
       category_id: product.category_id,
       ship_requirement: input.ship_requirement,
+      // Ausente → default da coluna (true).
+      ...(input.is_active !== undefined ? { is_active: input.is_active } : {}),
     })
     .select("id")
     .single();
@@ -212,11 +222,12 @@ export async function updateOrderItem(
     if (!result.ok) return result;
   }
 
-  if (input.ship_requirement !== undefined) {
-    const { error } = await admin
-      .from("order_factory_category")
-      .update({ ship_requirement: input.ship_requirement })
-      .eq("id", id);
+  // `is_active` é SÓ uma marca (13/10): grava em qualquer lote, sem trava.
+  const patch: { ship_requirement?: string; is_active?: boolean } = {};
+  if (input.ship_requirement !== undefined) patch.ship_requirement = input.ship_requirement;
+  if (input.is_active !== undefined) patch.is_active = input.is_active;
+  if (Object.keys(patch).length > 0) {
+    const { error } = await admin.from("order_factory_category").update(patch).eq("id", id);
     if (error) return fail(500, error.message);
     await refreshViews(line.order_id);
   }

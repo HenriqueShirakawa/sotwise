@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { dayToUnix } from "@/lib/api-dates";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { isActiveQuery } from "@/domain/api/is-active";
 import type { BatchStatus } from "@/types/database";
 
 /**
@@ -53,6 +54,7 @@ export const gssEtdQuerySchema = z.object({
         : []
     )
     .pipe(z.array(z.enum(BATCH_STATUSES))),
+  is_active: isActiveQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
@@ -60,7 +62,7 @@ export const gssEtdQuerySchema = z.object({
 
 export type GssEtdQuery = z.infer<typeof gssEtdQuerySchema>;
 
-const QUERY_KEYS = ["po_number", "batch_status", "order", "limit", "offset"] as const;
+const QUERY_KEYS = ["po_number", "batch_status", "is_active", "order", "limit", "offset"] as const;
 
 /** Só as chaves conhecidas viram query — o resto da query string é ignorado. */
 export function parseGssEtdQuery(params: URLSearchParams) {
@@ -83,6 +85,11 @@ export type GssEtdRead = {
   initial_date: number | null;
   current_date: number | null;
   ready_parts: boolean;
+  /**
+   * `etd_info.is_active` — SÓ uma marca (13/10), não esconde nada. Linha ainda
+   * sem etd_info sai `true` (o default da coluna).
+   */
+  is_active: boolean;
 };
 
 type Embed<T> = T | T[] | null;
@@ -94,7 +101,12 @@ type OfcRow = {
   category_id: UUID;
   batches: Embed<{ batch_number: string }>;
   orders: Embed<{ po_number: string }>;
-  etd_info: Embed<{ initial_date: DateStr | null; current_date: DateStr | null; ready: boolean }>;
+  etd_info: Embed<{
+    initial_date: DateStr | null;
+    current_date: DateStr | null;
+    ready: boolean;
+    is_active: boolean;
+  }>;
 };
 
 /** Busca `{id → name}` só dos ids realmente usados na página. */
@@ -125,11 +137,16 @@ export async function listGssEtdEntries(
   // A lista é por lote (linha sem lote não entra); a leitura de UMA linha
   // (getGssEtdEntry, resposta do PATCH) traz a linha mesmo sem lote.
   const batchJoin = query.id ? "batches" : "batches!inner";
+  // Filtro `is_active` mora no etd_info, que pode nem existir (= ativo). Um
+  // 2º embed só com os etd_info INATIVOS decide: vazio → ativo; preenchido →
+  // inativo. Fica separado pra não esvaziar o `etd_info` das datas.
+  const flagJoin = query.is_active !== undefined ? ", etd_inactive:etd_info(is_active)" : "";
   let select = admin
     .from("order_factory_category")
     .select(
       `id, factory_id, category_id, created_at, ${batchJoin}(batch_number, status), ` +
-        "orders!inner(po_number), etd_info(initial_date, current_date, ready)",
+        "orders!inner(po_number), etd_info(initial_date, current_date, ready, is_active)" +
+        flagJoin,
       { count: "exact" }
     )
     .is("orders.deleted_at", null);
@@ -137,6 +154,12 @@ export async function listGssEtdEntries(
   if (query.id) select = select.eq("id", query.id);
   if (query.po_number) select = select.ilike("orders.po_number", `%${query.po_number}%`);
   if (query.batch_status.length > 0) select = select.in("batches.status", query.batch_status);
+  if (query.is_active !== undefined) {
+    select = select.eq("etd_inactive.is_active", false);
+    select = query.is_active
+      ? select.is("etd_inactive", null)
+      : select.not("etd_inactive", "is", null);
+  }
 
   const { data, error, count } = await select
     // `id` desempata linhas com o mesmo created_at entre páginas.
@@ -165,6 +188,7 @@ export async function listGssEtdEntries(
       initial_date: dayToUnix(etd?.initial_date),
       current_date: dayToUnix(etd?.current_date),
       ready_parts: etd?.ready ?? false,
+      is_active: etd?.is_active ?? true,
     };
   });
 

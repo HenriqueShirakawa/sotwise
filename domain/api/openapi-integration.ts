@@ -105,6 +105,27 @@ export const updatedSinceParam = {
 };
 export const uuid = { type: "string", format: "uuid" };
 
+/*
+ * `is_active` (2026-10-13) — comum a TODOS os recursos da API. É só uma marca:
+ * inativo continua aparecendo (telas e API); exclusão é outra coisa
+ * (`deleted_at` das bibliotecas / DELETE dos operacionais).
+ */
+const IS_ACTIVE_NOTE = "Flag only — an inactive record still appears in SOTWISE and in this API; deletion is separate.";
+/** SAÍDA — todo objeto de topo (e as linhas Factory × Category embutidas). */
+export const isActiveOut = { type: "boolean", description: `Active flag (\`true\` by default). ${IS_ACTIVE_NOTE}` };
+/** ENTRADA — opcional em todo POST/PATCH. */
+export const isActiveIn = {
+  type: "boolean",
+  description: `Optional. Omitted → unchanged (new records start \`true\`). ${IS_ACTIVE_NOTE}`,
+};
+/** Filtro das listas: sem o parâmetro vêm ativos E inativos. */
+export const isActiveParam = {
+  name: "is_active",
+  in: "query",
+  schema: { type: "boolean" },
+  description: "Filter by the `is_active` flag (`true` / `false`). Omitted → no filter (active and inactive both come).",
+};
+
 /* -------------------------------------------------------------------------- */
 /* Bibliotecas (cadastros) — uma entrada por recurso de domain/api/registry.ts */
 /* -------------------------------------------------------------------------- */
@@ -277,10 +298,12 @@ function libPaths() {
         tags: [tag],
         operationId: `list_${lib.key}`,
         summary: `List ${lib.label}`,
-        description: "Active records only (deleted ones never appear), sorted by `name`. No `pagination` block — page with `limit`/`offset`.",
+        description:
+          "Deleted records never appear; inactive ones (`is_active: false`) do, unless filtered with `is_active`. Sorted by `name`. No `pagination` block — page with `limit`/`offset`.",
         parameters: [
           { name: "q", in: "query", schema: { type: "string" }, description: "Case-insensitive partial match on `name`." },
           { name: "gss_id", in: "query", schema: { type: "string" }, description: "Exact match on the GSS id." },
+          isActiveParam,
           limitParam(1000, 1000),
           offsetParam,
         ],
@@ -375,17 +398,22 @@ const LIB_GSS_ID_IN = {
 
 function libSchemas() {
   const schemas: Record<string, unknown> = {};
+  // `is_active` entra aqui, uma vez, em todas as bibliotecas.
   for (const lib of LIBS) {
-    schemas[schemaName(lib, "")] = { type: "object", properties: { ...lib.out, gss_id: LIB_GSS_ID_OUT } };
+    schemas[schemaName(lib, "")] = {
+      type: "object",
+      properties: { ...lib.out, gss_id: LIB_GSS_ID_OUT, is_active: isActiveOut },
+    };
     schemas[schemaName(lib, "Create")] = {
       type: "object",
       required: lib.required,
-      properties: { ...lib.create, gss_id: LIB_GSS_ID_IN },
+      properties: { ...lib.create, gss_id: LIB_GSS_ID_IN, is_active: isActiveIn },
     };
     schemas[schemaName(lib, "Update")] = {
       type: "object",
       minProperties: 1,
-      properties: { ...lib.update, gss_id: LIB_GSS_ID_IN },
+      description: "Any subset of the fields — `{ \"is_active\": false }` or `{ \"gss_id\": \"118\" }` alone is valid.",
+      properties: { ...lib.update, gss_id: LIB_GSS_ID_IN, is_active: isActiveIn },
     };
   }
   return schemas;
@@ -410,6 +438,7 @@ const exampleOrder = {
   exporter: { id: "2770eb04-0000-4000-8000-000000000003", name: "AGK", gss_id: "3" },
   leader: { id: "46c4eb13-0000-4000-8000-000000000004", name: "André Mazzuchelli" },
   requester: { id: "45b0bc3e-0000-4000-8000-000000000005", name: "Amy" },
+  is_active: true,
   created_at: ts("2026-08-28T20:40:41.406099+00:00"),
   updated_at: ts("2026-08-28T20:50:36.391853+00:00"),
 };
@@ -431,7 +460,8 @@ export const integrationTags = [
   },
   {
     name: "Libraries",
-    description: "Reference registers (cadastros): list, create, update. No PUT/DELETE — soft delete belongs to the app.",
+    description:
+      "Reference registers (cadastros): list, create, update. No PUT/DELETE — soft delete belongs to the app. `is_active` is only a flag (it does not delete or hide).",
   },
 ];
 
@@ -451,6 +481,7 @@ export const integrationPaths = {
         { name: "gss_id", in: "query", schema: { type: "string" }, description: "GSS order id — read one specific order." },
         { name: "po_number", in: "query", schema: { type: "string" } },
         { name: "status", in: "query", schema: { type: "string", enum: ORDER_STATUSES } },
+        isActiveParam,
         updatedSinceParam,
         orderParam("updated_at"),
         limitParam(200, 50),
@@ -530,11 +561,11 @@ export const integrationPaths = {
       responses: {
         200: {
           description: "Existing order (`gss_id` known) updated.",
-          content: json(ref("OrderUpsertResult"), { data: { id: exampleOrder.id, po_number: "1001" }, created: false }),
+          content: json(ref("OrderUpsertResult"), { data: { id: exampleOrder.id, po_number: "1001", is_active: true }, created: false }),
         },
         201: {
           description: "Order created (its 10 checklist steps are seeded automatically).",
-          content: json(ref("OrderUpsertResult"), { data: { id: exampleOrder.id, po_number: "1001" }, created: true }),
+          content: json(ref("OrderUpsertResult"), { data: { id: exampleOrder.id, po_number: "1001", is_active: true }, created: true }),
         },
         400: err(
           "Invalid payload, unknown library `gss_id`, e-mail without SOTWISE user, unknown `supplier_category_gss_id` (nothing is written), or creation without `po_number`.",
@@ -558,6 +589,7 @@ export const integrationPaths = {
       parameters: [
         { name: "pl_number", in: "query", schema: { type: "string" }, description: "Partial match on the PL number." },
         { name: "po_number", in: "query", schema: { type: "string" }, description: "Partial match: PLs that carry a batch of these orders." },
+        { ...isActiveParam, description: `${isActiveParam.description} It is the PL's flag (mirrored to its shipment).` },
         orderParam("created_at"),
         limitParam(200, 50),
         offsetParam,
@@ -580,6 +612,7 @@ export const integrationPaths = {
                   { order: 1230, batch: ".02" },
                   { order: 1324, batch: ".03" },
                 ],
+                is_active: true,
               },
             ],
             pagination: { limit: 50, offset: 0, returned: 1, total: 1460 },
@@ -610,6 +643,7 @@ export const integrationPaths = {
           description: `Comma-separated batch statuses: ${BATCH_STATUSES.map((s) => `\`${s}\``).join(", ")}.`,
           example: "in_production,preloading",
         },
+        { ...isActiveParam, description: `${isActiveParam.description} It is the flag of the line's ETD record.` },
         orderParam("created_at"),
         limitParam(200, 50),
         offsetParam,
@@ -628,6 +662,7 @@ export const integrationPaths = {
                 initial_date: du("2026-08-20"),
                 current_date: du("2026-08-22"),
                 ready_parts: false,
+                is_active: true,
               },
             ],
             pagination: { limit: 50, offset: 0, returned: 1, total: 1317 },
@@ -656,7 +691,7 @@ export const integrationSchemas = {
   },
   OrderItem: {
     type: "object",
-    required: ["id", "factory", "category", "ship_requirement", "loading_status", "batch"],
+    required: ["id", "factory", "category", "ship_requirement", "loading_status", "batch", "is_active"],
     properties: {
       id: { ...uuid, description: "Line id — usable in `item_ids` of the batches API." },
       factory: ref("LibraryRefNamed"),
@@ -668,6 +703,7 @@ export const integrationSchemas = {
         description: "Batch assigned in SOTWISE; null = no batch yet.",
         properties: { id: uuid, batch_number: { type: "string" }, status: { type: "string", enum: BATCH_STATUSES } },
       },
+      is_active: isActiveOut,
     },
   },
   OrderChecklistStep: {
@@ -699,6 +735,7 @@ export const integrationSchemas = {
       leader: ref("PersonRef"),
       requester: ref("PersonRef"),
       operational_responsible: ref("PersonRef"),
+      is_active: isActiveOut,
       created_at: instant,
       updated_at: instant,
       items: { type: "array", items: ref("OrderItem"), description: "Only with `include=items`." },
@@ -733,6 +770,7 @@ export const integrationSchemas = {
       leader_email: { type: ["string", "null"], format: "email" },
       requester_email: { type: ["string", "null"], format: "email" },
       operational_responsible_email: { type: ["string", "null"], format: "email" },
+      is_active: isActiveIn,
       items: { type: ["array", "null"], items: ref("OrderUpsertItem") },
     },
   },
@@ -740,7 +778,11 @@ export const integrationSchemas = {
     type: "object",
     required: ["data", "created"],
     properties: {
-      data: { type: "object", required: ["id", "po_number"], properties: { id: uuid, po_number: { type: "string" } } },
+      data: {
+        type: "object",
+        required: ["id", "po_number", "is_active"],
+        properties: { id: uuid, po_number: { type: "string" }, is_active: isActiveOut },
+      },
       created: { type: "boolean" },
     },
   },
@@ -756,6 +798,7 @@ export const integrationSchemas = {
       DELIVERED_DATE: { ...nullableDate, description: "Actual date of the Delivered step." },
       shipping_date: { ...nullableDate, description: "Actual date of the Shipping Date step." },
       batches: { type: "array", items: ref("PlBatchRef"), description: "Batches in the PL." },
+      is_active: { ...isActiveOut, description: `The PL's flag (mirrored to its shipment). ${isActiveOut.description}` },
     },
   },
   PlBatchRef: {
@@ -777,6 +820,7 @@ export const integrationSchemas = {
       initial_date: { ...nullableDate, description: "null until the order's ETD step is filled for the first time." },
       current_date: nullableDate,
       ready_parts: { type: "boolean", description: "The \"Ready Parts\" checkbox." },
+      is_active: { ...isActiveOut, description: `Flag of this line's ETD record. ${isActiveOut.description}` },
     },
   },
   ...libSchemas(),

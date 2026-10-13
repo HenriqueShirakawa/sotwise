@@ -32,6 +32,8 @@ export type OrderItemRead = {
   /** Unix (s) às 12:00 UTC. */
   ship_requirement: number | null;
   loading_status: LoadingStatus | null;
+  /** SÓ uma marca (13/10): linha inativa continua listada; exclusão é o DELETE. */
+  is_active: boolean;
   created_at: number | null;
   updated_at: number | null;
 };
@@ -47,6 +49,7 @@ type Row = {
   batch_id: UUID | null;
   ship_requirement: string;
   loading_status: LoadingStatus | null;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
   orders: Embed<{ po_number: string; gss_id: string | null }>;
@@ -56,7 +59,7 @@ type Row = {
 };
 
 const SELECT =
-  "id, order_id, factory_id, category_id, batch_id, ship_requirement, loading_status, created_at, updated_at, " +
+  "id, order_id, factory_id, category_id, batch_id, ship_requirement, loading_status, is_active, created_at, updated_at, " +
   "orders!inner(po_number, gss_id, deleted_at), batches(batch_number, status), " +
   "factories(name, gss_id), categories(name, gss_id)";
 
@@ -101,6 +104,7 @@ async function shape(admin: AdminClient, rows: Row[]): Promise<OrderItemRead[]> 
       supplier_category_gss_id: sc.get(`${r.factory_id}|${r.category_id}`) ?? null,
       ship_requirement: dayToUnix(r.ship_requirement),
       loading_status: r.loading_status,
+      is_active: r.is_active,
       created_at: timestampToUnix(r.created_at),
       updated_at: timestampToUnix(r.updated_at),
     };
@@ -128,6 +132,7 @@ export async function listOrderItems(
   if (order) q = q.eq("order_id", order.id);
   if (batchId) q = q.eq("batch_id", batchId);
   if (query.unassigned) q = q.is("batch_id", null);
+  if (query.is_active !== undefined) q = q.eq("is_active", query.is_active);
   if (query.updated_since) q = q.gte("updated_at", query.updated_since);
 
   const { data, count, error } = await q

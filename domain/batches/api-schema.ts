@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiDay, apiInstantQuery } from "@/lib/api-dates";
+import { isActiveBody, isActiveQuery } from "@/domain/api/is-active";
 import { isUuid } from "@/domain/api/write-result";
 import type { BatchStatus } from "@/types/database";
 
@@ -87,6 +88,7 @@ export const createBatchSchema = z
     batch_number: batchNumber.optional(),
     item_ids: itemIds.optional(),
     items: newItems.optional(),
+    is_active: isActiveBody.optional(),
   })
   .refine((v) => (v.order_gss_id ? 1 : 0) + (v.po_number ? 1 : 0) === 1, {
     message: "Send exactly one of 'order_gss_id' or 'po_number' to identify the order.",
@@ -103,6 +105,7 @@ export const updateBatchSchema = z
     item_ids: itemIds.optional(),
     items: newItems.optional(),
     remove_item_ids: itemIds.optional(),
+    is_active: isActiveBody.optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: "No fields to update.",
@@ -123,6 +126,7 @@ export const batchQuerySchema = z.object({
   order_gss_id: z.string().trim().min(1).optional(),
   po_number: z.string().trim().min(1).optional(),
   status: z.enum(BATCH_STATUSES).optional(),
+  is_active: isActiveQuery.optional(),
   updated_since: apiInstantQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -136,6 +140,7 @@ const QUERY_KEYS = [
   "order_gss_id",
   "po_number",
   "status",
+  "is_active",
   "updated_since",
   "order",
   "limit",

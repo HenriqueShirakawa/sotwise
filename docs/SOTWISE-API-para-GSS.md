@@ -25,6 +25,16 @@ Documento de referência para integração **GSS ↔ SOTWISE**. Cobre:
 
 > ⚠️ Os exemplos de JSON mais abaixo neste documento ainda mostram o formato antigo (string). **A referência atualizada, com exemplos em Unix, é o Swagger: `https://sot.gssdatahub.com/api/docs`.**
 
+## 0.1. `is_active` — marca de ativo/inativo (desde 13/10/2026)
+
+Todo registro da API tem `is_active` (boolean, default `true`): orders, lotes, linhas Factory × Category, ETD, PL/shipment e as 14 bibliotecas.
+
+- **É só uma marca.** Registro inativo **continua aparecendo** — nas telas do SOTWISE e nesta API — e nenhuma regra muda por causa dele. **Excluir é outra coisa:** bibliotecas seguem com o soft delete do app (excluídas não aparecem na API); orders, lotes, linhas e PLs seguem com o `DELETE`.
+- **Saída:** todo objeto de topo traz `is_active`; as linhas Factory × Category embutidas (`GET /api/orders?include=items`, `items[]` do lote) também. As referências de biblioteca embutidas (`{ id, gss_id, name }`) **não**.
+- **Entrada:** `POST` e `PATCH` aceitam `is_active` opcional. Omitido → não muda (registro novo nasce `true`). Um `PATCH` só com `{ "is_active": false }` é válido.
+- **Filtro:** os `GET` de lista aceitam `?is_active=true|false`. Sem o parâmetro vêm **ativos e inativos**.
+- **ETD:** a marca fica no registro de ETD daquela linha. **PL/shipment:** é a marca do PL (espelhada no embarque).
+
 ---
 ## 1. Autenticação
 
@@ -91,6 +101,7 @@ Content-Type: application/json
 | `exporter_gss_id` | string | não | `gss_id` do exporter. |
 | `leader_email` | e-mail | não | E-mail do Leader (usuário SOTWISE). |
 | `requester_email` | e-mail | não | E-mail do Requester (usuário SOTWISE). |
+| `is_active` | boolean | não | Marca de ativo/inativo — só uma marca, não exclui nem esconde (§0.1). Omitido → não muda; order nova nasce `true`. |
 | `items` | array | não | Linhas **Factory × Category** — ver abaixo. |
 
 ### `items[]` — linhas Factory × Category
@@ -276,6 +287,7 @@ A resposta é **sempre uma lista**, mesmo filtrando por uma order só — assim 
 | `gss_id` | id do pedido no GSS | — | Ler **uma** order específica (a chave que o GSS já usa no POST) |
 | `po_number` | número da PO | — | Ler uma order pelo número |
 | `status` | `in_negotiation`, `in_production`, `partially_preloading`, `pre_loading`, `partially_shipped`, `shipped`, `partially_delivered`, `delivered`, `canceled` | — | Filtrar pela fase |
+| `is_active` | `true` \| `false` | — (vêm as duas) | Filtrar pela marca (§0.1) |
 | `updated_since` | ISO 8601 com fuso (`2026-09-01T00:00:00Z`) | — | Só o que mudou desde então (sincronização incremental) |
 | `order` | `asc` \| `desc` (por `updated_at`) | `desc` | `asc` para varrer em ordem cronológica |
 | `limit` | 1–200 | 50 | Tamanho da página |
@@ -314,6 +326,7 @@ Pagine com `offset` até `returned < limit`. A ordenação é `updated_at` + `id
       "exporter":      { "id": "2770eb04-…", "name": "AGK",   "gss_id": "3" },
       "leader":    { "id": "46c4eb13-…", "name": "André Mazzuchelli" },
       "requester": { "id": "45b0bc3e-…", "name": "Amy" },
+      "is_active": true,                  // só uma marca (§0.1)
       "created_at": "2026-08-28T20:40:41.406099+00:00",
       "updated_at": "2026-08-28T20:50:36.391853+00:00"
     }
@@ -336,7 +349,8 @@ Pagine com `offset` até `returned < limit`. A ordenação é `updated_at` + `id
     "category": { "id": "52cb8d40-…", "name": "Absorber", "gss_id": "6" },
     "ship_requirement": "2026-08-28",
     "loading_status": null,                                  // total | partial | none | null
-    "batch": { "id": "1b58fb15-…", "batch_number": ".02", "status": "in_production" }
+    "batch": { "id": "1b58fb15-…", "batch_number": ".02", "status": "in_production" },
+    "is_active": true
   }
 ]
 ```
@@ -380,7 +394,7 @@ Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 ```
 
-> Não há `PUT` nem `DELETE` (o soft-delete é feito pelo app/pela origem).
+> Não há `PUT` nem `DELETE` (o soft-delete é feito pelo app/pela origem). `is_active` (§0.1) vem em todo registro, é aceito no `POST`/`PATCH` (todos os recursos; no `PATCH`, `{ "is_active": false }` sozinho vale) e filtra o `GET` com `?is_active=true|false` — é só uma marca, não exclui.
 
 ## 2.1. Envelope de resposta
 
@@ -496,6 +510,7 @@ A resposta é **sempre uma lista**, mesmo filtrando por um PL só — mesma conv
 |---|---|---|---|
 | `pl_number` | parte do número do PL (ex.: `1354`) | — | Ler um PL específico |
 | `po_number` | número da PO | — | PLs que carregam algum lote dessa order |
+| `is_active` | `true` \| `false` | — (vêm os dois) | Filtrar pela marca do PL (§0.1) |
 | `order` | `asc` \| `desc` (por data de criação do PL) | `desc` | `asc` para varrer em ordem cronológica |
 | `limit` | 1–200 | 50 | Tamanho da página |
 | `offset` | ≥ 0 | 0 | Deslocamento da página |
@@ -515,7 +530,8 @@ Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issue
       "ETA_Brazil": "2026-10-05",
       "ATA_Brazil": null,
       "DELIVERED_DATE": null,
-      "shipping_date": "2026-09-15"
+      "shipping_date": "2026-09-15",
+      "is_active": true
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "returned": 1, "total": 214 }
@@ -557,6 +573,7 @@ A resposta é **sempre uma lista**.
 |---|---|---|---|
 | `po_number` | parte do número da PO | — | Entradas de uma order específica |
 | `batch_status` | `in_negotiation`, `in_production`, `preloading`, `in_transit`, `delivered`, `canceled` (separados por vírgula) | todos | Restringir por status do lote — **sem filtro vem tudo**, diferente da tela do SOTWISE (que só mostra lotes ativos) |
+| `is_active` | `true` \| `false` | — (vêm as duas) | Filtrar pela marca do registro de ETD da linha (§0.1) |
 | `order` | `asc` \| `desc` (por data de criação da entrada) | `desc` | `asc` para varrer em ordem cronológica |
 | `limit` | 1–200 | 50 | Tamanho da página |
 | `offset` | ≥ 0 | 0 | Deslocamento da página |
@@ -575,7 +592,8 @@ Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issue
       "category": "Absorber",
       "initial_date": "2026-08-20",
       "current_date": "2026-08-22",
-      "ready_parts": false
+      "ready_parts": false,
+      "is_active": true
     }
   ],
   "pagination": { "limit": 50, "offset": 0, "returned": 1, "total": 1317 }
@@ -611,10 +629,10 @@ CRUD completo dos lotes de uma order. **A referência completa, com schemas, exe
 
 | Método | Path | O quê |
 |---|---|---|
-| `GET` | `/api/batches?order_gss_id=&po_number=&status=&updated_since=&order=&limit=&offset=` | Lista (sempre lista; order inexistente → `data: []`) |
+| `GET` | `/api/batches?order_gss_id=&po_number=&status=&is_active=&updated_since=&order=&limit=&offset=` | Lista (sempre lista; order inexistente → `data: []`) |
 | `POST` | `/api/batches` | Cria um lote numa order (`order_gss_id` **ou** `po_number`), vazio ou já com linhas |
 | `GET` | `/api/batches/{id}` | Um lote |
-| `PATCH` | `/api/batches/{id}` | Parcial: `batch_number`, `status`, `items` (linhas novas), `item_ids` (mover linhas existentes), `remove_item_ids` |
+| `PATCH` | `/api/batches/{id}` | Parcial: `batch_number`, `status`, `items` (linhas novas), `item_ids` (mover linhas existentes), `remove_item_ids`, `is_active` |
 | `DELETE` | `/api/batches/{id}` | Apaga o lote; as linhas **ficam na order sem lote** (`released_item_ids`) |
 
 Cada lote volta com a order (`id`, `gss_id`, `po_number`), `full_number` (ex.: `1680.02`), `status`, as linhas (`items`, com `supplier_category_gss_id`, factory e category com `gss_id`) e os PLs em que entrou.
@@ -632,7 +650,7 @@ Com `gss_id` a chamada é **idempotente**: reenviar o mesmo lote responde `200` 
 - `item_ids: [uuid]` → linha que **já existe** na order (o `items[].id` do `GET /api/orders?include=items`) é **movida** para o lote.
 
 **Regras (as mesmas da tela do SOTWISE):**
-- Lote só muda ou é apagado em `in_negotiation`/`in_production` → senão **409**. Daí pra frente quem move o lote é o fluxo de Pre-loading/Shipment.
+- Lote só muda ou é apagado em `in_negotiation`/`in_production` → senão **409**. Daí pra frente quem move o lote é o fluxo de Pre-loading/Shipment. Exceção: um `PATCH` só com `is_active` vale em qualquer status (é só uma marca).
 - `status` só aceita `in_negotiation` e `in_production` (outro valor → **400**).
 - A mesma Category + Factory não repete no lote → **409**.
 - Lote `in_production` nunca fica sem linha — nem o lote, nem o lote de onde uma linha sai → **409**.
@@ -662,8 +680,10 @@ O registro de `/api/shipments` é a mesma view plana da Parte 3, com `id`, `gss_
 { "id": "…", "gss_id": "1", "pl_number": 1306, "status": "in_transit",
   "batches": [ { "order": 1230, "batch": ".02" }, { "order": 1324, "batch": ".03" } ],
   "estimated_loading_date": 1791115200, "loading_date": 1791201600, "ETD": null, "ETA_Brazil": null,
-  "ATA_Brazil": null, "DELIVERED_DATE": null, "shipping_date": null }
+  "ATA_Brazil": null, "DELIVERED_DATE": null, "shipping_date": null, "is_active": true }
 ```
+
+Os cinco recursos aceitam `is_active` no POST/PATCH e `?is_active=true|false` no GET de lista (§0.1). No ETD a marca é do registro de ETD da linha; no `/api/shipments`, é a do PL (espelhada no embarque).
 
 > ⚠️ Confirm Shipping exige as 7 etapas do Pre-loading completas, inclusive o **anexo** de Shipping Docs — anexo só sobe pela tela do SOTWISE.
 

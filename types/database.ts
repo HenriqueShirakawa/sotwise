@@ -250,6 +250,7 @@ export type Database = {
           updated_at: Timestamp;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -259,6 +260,7 @@ export type Database = {
           updated_at?: Timestamp;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["countries"]["Insert"]>;
         Relationships: [];
@@ -272,6 +274,7 @@ export type Database = {
           updated_at: Timestamp;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -281,6 +284,7 @@ export type Database = {
           updated_at?: Timestamp;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["pols"]["Insert"]>;
         Relationships: [];
@@ -294,6 +298,7 @@ export type Database = {
           updated_at: Timestamp;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -303,6 +308,7 @@ export type Database = {
           updated_at?: Timestamp;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["pods"]["Insert"]>;
         Relationships: [];
@@ -316,6 +322,7 @@ export type Database = {
           updated_at: Timestamp;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -325,6 +332,7 @@ export type Database = {
           updated_at?: Timestamp;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["cities"]["Insert"]>;
         Relationships: [];
@@ -345,6 +353,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -355,6 +364,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["factories"]["Insert"]>;
         Relationships: [];
@@ -369,6 +379,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -379,6 +390,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["categories"]["Insert"]>;
         Relationships: [];
@@ -402,6 +414,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -415,6 +428,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["contacts"]["Insert"]>;
         Relationships: [];
@@ -434,6 +448,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -449,6 +464,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["agents"]["Insert"]>;
         Relationships: [];
@@ -469,6 +485,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -479,6 +496,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["carriers"]["Insert"]>;
         Relationships: [];
@@ -504,6 +522,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -516,6 +535,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["clients"]["Insert"]>;
         Relationships: [];
@@ -531,6 +551,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -542,6 +563,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["exporters"]["Insert"]>;
         Relationships: [];
@@ -557,6 +579,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -568,6 +591,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["business_units"]["Insert"]>;
         Relationships: [];
@@ -584,6 +608,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -596,6 +621,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["order_types"]["Insert"]>;
         Relationships: [];
@@ -610,6 +636,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -620,6 +647,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["shipment_models"]["Insert"]>;
         Relationships: [];
@@ -646,6 +674,7 @@ export type Database = {
           created_by: UUID | null;
           bubble_id: string | null;
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -668,6 +697,7 @@ export type Database = {
           created_by?: UUID | null;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["orders"]["Insert"]>;
         Relationships: [];
@@ -684,6 +714,7 @@ export type Database = {
           bubble_id: string | null;
           /** id do OrderBatch no GSS (o lote nasce lá — 20261005120000). */
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -695,6 +726,7 @@ export type Database = {
           updated_at?: Timestamp;
           bubble_id?: string | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["batches"]["Insert"]>;
         Relationships: [];
@@ -744,6 +776,7 @@ export type Database = {
           loading_status: LoadingStatus | null;
           created_at: Timestamp;
           updated_at: Timestamp;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -755,6 +788,7 @@ export type Database = {
           loading_status?: LoadingStatus | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
+          is_active?: boolean;
         };
         Update: Partial<
           Database["public"]["Tables"]["order_factory_category"]["Insert"]
@@ -804,6 +838,7 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -819,6 +854,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["etd_info"]["Insert"]>;
         Relationships: [];
@@ -890,6 +926,7 @@ export type Database = {
           created_by: UUID | null;
           /** id do Shipment no GSS (1 por PL; espelhado em shipments.gss_id). */
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -907,6 +944,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["pre_loadings"]["Insert"]>;
         Relationships: [];
@@ -928,6 +966,7 @@ export type Database = {
           created_by: UUID | null;
           /** Herdado do PL por trigger (o registro do GSS é PL + embarque). */
           gss_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: UUID;
@@ -944,6 +983,7 @@ export type Database = {
           updated_at?: Timestamp;
           created_by?: UUID | null;
           gss_id?: string | null;
+          is_active?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["shipments"]["Insert"]>;
         Relationships: [];

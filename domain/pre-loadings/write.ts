@@ -130,6 +130,8 @@ export async function createPreLoadingRecord(
     batch_ids: string[];
     created_by: string | null;
     gss_id?: string | null;
+    /** Só a API manda (marca, 13/10); ausente → default da coluna (true). */
+    is_active?: boolean;
   }
 ): Promise<{ ok: true; id: string; pl_number: string } | { ok: false; error: string; conflict?: boolean }> {
   let created: { id: string; pl_number: string } | null = null;
@@ -145,6 +147,7 @@ export async function createPreLoadingRecord(
         leader_id: input.leader_id,
         created_by: input.created_by,
         ...(input.gss_id ? { gss_id: input.gss_id } : {}),
+        ...(input.is_active !== undefined ? { is_active: input.is_active } : {}),
       })
       .select("id, pl_number")
       .single();
