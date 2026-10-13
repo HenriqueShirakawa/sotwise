@@ -2094,6 +2094,17 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 
 **Testado (06/10, local contra o AGK, só registros `GSS-TEST-*` apagados no fim):** 90 verificações — order → linhas → lote → ETD → PL → 7 etapas → Confirm (split) → Delivered → reabrir → desfazer → apagar, mais os 400/401/404/409 de cada regra.
 
+### 6.11 `gss_id` na API de bibliotecas (2026-10-13)
+
+**Motivo:** o GSS criou o cliente 118 pelo `POST /api/clients` e a order 1696 voltou `No clients found for gss_id '118'` — a API de bibliotecas descartava o `gss_id` em silêncio, então o cadastro nascia sem vínculo (foi vinculado à mão: "GSS Update" = 118).
+
+**Regra:** as 14 bibliotecas de `/api/{recurso}` aceitam `gss_id` (string ou inteiro → texto, `unique` por tabela):
+- **POST com `gss_id` é idempotente** (mesmo padrão de orders e lotes): já existe → atualiza o registro com o corpo e responde `200`; não existe → cria (`201`); pertence a registro excluído → `409`.
+- **PATCH** aceita `gss_id`, inclusive sozinho (vincular); `null` desvincula; colisão → `409`.
+- **GET** devolve `gss_id` e filtra por `?gss_id=`.
+
+Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/[resource]/**` (não nos schemas). Em main e dev.
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente

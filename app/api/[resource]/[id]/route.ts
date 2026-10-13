@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { requireApiFeature, requireApiSession } from "@/lib/api-auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { RESOURCES } from "@/domain/api/registry";
+import { GSS_ID_COLUMN, RESOURCES, readGssId } from "@/domain/api/registry";
 
 /**
  * PATCH /api/{resource}/{id} — atualiza 1 registro de cadastro de referência.
@@ -11,6 +11,7 @@ import { RESOURCES } from "@/domain/api/registry";
  * Não há PUT (substituição total) nem DELETE por decisão: o soft-delete é do
  * app/da origem. O corpo é um objeto JSON PARCIAL — só as colunas enviadas
  * mudam; campos desconhecidos são descartados pelo schema, como no POST.
+ * `gss_id` vale para todo recurso e pode vir sozinho (vincular ao GSS).
  *
  * Mesma allowlist (`RESOURCES`), mesma auth (`requireApiSession`) e mesma
  * feature (`registration`, agora na ação `edit`). Só registros ativos são
@@ -50,22 +51,39 @@ export async function PATCH(
   if (!UUID_RE.test(id)) return json({ error: "Record not found." }, 404);
 
   const body = await request.json().catch(() => null);
-  const parsed = cfg.updateSchema.safeParse(body);
-  if (!parsed.success) {
-    return json(
-      {
-        error: parsed.error.issues[0]?.message ?? "Invalid input.",
-        issues: parsed.error.issues,
-      },
-      400
-    );
+  const gssId = readGssId(body);
+  if (!gssId.ok) return json({ error: gssId.error }, 400);
+
+  // `gss_id` é tratado aqui (comum a todos); o resto do corpo passa pelo schema
+  // do recurso. Um PATCH só com `{ gss_id }` não chama o schema — senão os
+  // recursos name-only exigiriam `name` para vincular.
+  const otherKeys = Object.keys(body && typeof body === "object" ? body : {}).filter(
+    (key) => key !== GSS_ID_COLUMN
+  );
+  const onlyGssId = gssId.value !== undefined && otherKeys.length === 0;
+
+  let input: unknown = {};
+  if (!onlyGssId) {
+    const parsed = cfg.updateSchema.safeParse(body);
+    if (!parsed.success) {
+      return json(
+        {
+          error: parsed.error.issues[0]?.message ?? "Invalid input.",
+          issues: parsed.error.issues,
+        },
+        400
+      );
+    }
+    input = parsed.data;
   }
-  if (Object.keys(parsed.data as object).length === 0) {
+  if (Object.keys(input as object).length === 0 && gssId.value === undefined) {
     return json({ error: "No fields to update." }, 400);
   }
 
   const admin = createAdminClient();
-  const row = cfg.buildUpdate(parsed.data);
+  const row: Record<string, unknown> = onlyGssId ? {} : cfg.buildUpdate(input);
+  if (gssId.value !== undefined) row[GSS_ID_COLUMN] = gssId.value;
+  const select = `${cfg.select}, ${GSS_ID_COLUMN}`;
 
   // Se o corpo só mexe em junção (ex.: `contact_ids`), não há coluna para o SET —
   // então confere existência com um SELECT em vez de um UPDATE vazio.
@@ -76,22 +94,25 @@ export async function PATCH(
           .update(row as never)
           .eq("id", id)
           .is("deleted_at", null)
-          .select(cfg.select)
+          .select(select)
           .single()
       : await admin
           .from(cfg.table)
-          .select(cfg.select)
+          .select(select)
           .eq("id", id)
           .is("deleted_at", null)
           .single();
 
   if (error) {
     if (error.code === "PGRST116") return json({ error: "Record not found." }, 404);
+    if (error.code === "23505" && gssId.value) {
+      return json({ error: `gss_id '${gssId.value}' is already used by another record.` }, 409);
+    }
     return json({ error: error.message }, dbErrorStatus(error.code));
   }
 
-  if (cfg.afterUpdate) {
-    const linkError = await cfg.afterUpdate(id, parsed.data, admin);
+  if (cfg.afterUpdate && !onlyGssId) {
+    const linkError = await cfg.afterUpdate(id, input, admin);
     if (linkError) return json({ error: linkError }, 500);
   }
 
