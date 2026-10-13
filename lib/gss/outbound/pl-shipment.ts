@@ -19,8 +19,14 @@
  * `estimated_loading_date` (estimada do Loading date) e `ETD` (etapa ETD da
  * Order) estão na lista do usuário mas não têm campo no GSS ainda.
  *
- * Envio: PATCH com as datas; se o PL não existe lá (404), cria (POST) — Create
- * PL e PL antigo caem no mesmo caminho. Status só vai na criação.
+ * Envio: PATCH com as datas, o status e os lotes; se o PL não existe lá (404),
+ * cria (POST) — Create PL e PL antigo caem no mesmo caminho.
+ *
+ * Status e lotes (confirmado com o Gustavo, do GSS, em 13/10/2026): o GSS é o
+ * dono dos lotes e quer saber, a cada mudança, a fase do PL — lote incluído num
+ * PL = `preloading`, Confirm Shipping = `in_transit`, Delivered = `delivered`
+ * — e quais lotes estão amarrados nele (`batch_ids` = `batches.gss_id`). Antes
+ * o status só ia na criação.
  *
  * Sem `server-only` e com imports relativos: também roda no CLI
  * (scripts/sync-gss/push-outbound.ts).
@@ -60,6 +66,9 @@ export type PlShipmentState = {
    *  enquanto o embarque não foi confirmado. */
   shipmentStatus: string | null;
   completedOn: Record<TrackedStep, DateStr | null>;
+  /** `gss_id` dos lotes do PL (os que vieram do GSS). Ausente = não enviar
+   *  `batch_ids` (o CLI push-pl-shipments monta os lotes por conta própria). */
+  batchGssIds?: number[];
 };
 
 export async function loadPlShipmentState(
@@ -107,6 +116,20 @@ export async function loadPlShipmentState(
 
   const podGssId = pl.pods?.gss_id ? Number(pl.pods.gss_id) : null;
 
+  const { data: plBatches, error: batchesError } = await db
+    .from("pre_loading_batches")
+    .select("batches(gss_id)")
+    .eq("pre_loading_id", preLoadingId)
+    .returns<{ batches: { gss_id: string | null } | null }[]>();
+  if (batchesError) throw new Error(`pre_loading_batches: ${batchesError.message}`);
+  const batchGssIds = [
+    ...new Set(
+      (plBatches ?? [])
+        .map((b) => Number(b.batches?.gss_id ?? NaN))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    ),
+  ];
+
   return {
     state: {
       preLoadingId,
@@ -115,6 +138,7 @@ export async function loadPlShipmentState(
       podGssId: Number.isFinite(podGssId) ? podGssId : null,
       shipmentStatus: shipment?.status ?? null,
       completedOn,
+      batchGssIds,
     },
   };
 }
@@ -143,9 +167,8 @@ export function datesBody(state: PlShipmentState): Record<string, number | null>
 }
 
 /**
- * Status de criação no GSS a partir do nosso. Só vale no POST: depois disso
- * mandamos apenas as datas (o GSS avisa que troca de status pode disparar
- * regras financeiras dele). Embarque cancelado não cria nada.
+ * Status do GSS a partir do nosso: sem embarque = `preloading`; depois o do
+ * embarque. Embarque cancelado não manda status (nem cria nada).
  */
 export function createStatus(shipmentStatus: string | null): string | null {
   if (shipmentStatus === null) return "preloading";
@@ -153,11 +176,28 @@ export function createStatus(shipmentStatus: string | null): string | null {
   return null;
 }
 
+/** `batch_ids` só quando o PL tem lote vindo do GSS — lista vazia limparia no
+ *  GSS um vínculo que ele mesmo pode ter feito. */
+function batchesBody(state: PlShipmentState): Record<string, number[]> {
+  return state.batchGssIds?.length ? { batch_ids: state.batchGssIds } : {};
+}
+
+/** PATCH: datas + status da fase + lotes amarrados. */
+export function patchBody(state: PlShipmentState): Record<string, unknown> {
+  const status = createStatus(state.shipmentStatus);
+  return {
+    ...datesBody(state),
+    ...(status ? { status } : {}),
+    ...batchesBody(state),
+  };
+}
+
 export function createBody(state: PlShipmentState, status: string): Record<string, unknown> {
   const body: Record<string, unknown> = {
     pl_number: state.plNumber,
     status,
     ...datesBody(state),
+    ...batchesBody(state),
   };
   const ref = state.clientReference?.trim();
   if (ref) body.customer_reference = ref.slice(0, 100);
@@ -193,7 +233,7 @@ export async function pushPlShipment(
   const { state } = loaded;
 
   const path = `/shipments/${state.plNumber}/`;
-  const patch: GssCall = { method: "PATCH", path, body: datesBody(state) };
+  const patch: GssCall = { method: "PATCH", path, body: patchBody(state) };
   const status = createStatus(state.shipmentStatus);
   const create: GssCall | null = status
     ? { method: "POST", path: "/shipments/", body: createBody(state, status) }

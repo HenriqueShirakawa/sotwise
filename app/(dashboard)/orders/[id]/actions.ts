@@ -6,7 +6,7 @@ import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
-import { promoteBatchesIfDepositSettled } from "@/lib/deposit-production";
+import { promoteBatchesToProduction } from "@/lib/deposit-production";
 import { fetchAll } from "@/lib/fetch-all";
 import { findBatchTwinError } from "@/lib/ofc-twins";
 import { syncOrderStatus } from "@/lib/order-status";
@@ -96,7 +96,7 @@ async function promoteFilledBatches(
   batchIds: string[]
 ): Promise<string | null> {
   if (batchIds.length === 0) return null;
-  const promoteError = await promoteBatchesIfDepositSettled(admin, orderId, batchIds);
+  const promoteError = await promoteBatchesToProduction(admin, orderId, batchIds);
   if (promoteError) return promoteError;
   return syncOrderStatus(admin, [orderId]);
 }
@@ -129,6 +129,13 @@ export async function updateBatchStatus(
 
   const { error } = await admin.from("batches").update({ status }).eq("id", batchId);
   if (error) return { ok: false, error: error.message };
+
+  // Um lote em Production leva os outros In Negotiation da Order junto (regra
+  // do GSS, 13/10/2026 — lib/deposit-production).
+  if (status === "in_production") {
+    const promoteError = await promoteBatchesToProduction(admin, orderId);
+    if (promoteError) return { ok: false, error: promoteError };
+  }
 
   // O status da Order é o rollup dos lotes (docs §3.7.1) — mudou lote, recalcula.
   const statusError = await syncOrderStatus(admin, [orderId]);
@@ -415,7 +422,7 @@ export async function updateChecklistStep(
   // Deposit Payment concluído ou desligado: os lotes In Negotiation com Factory
   // x Category vão para In Production (docs §3.7.2). Reabrir não rebaixa.
   if (current.step === "deposit_payment" && (patch.completed_on || patch.enabled === false)) {
-    const promoteError = await promoteBatchesIfDepositSettled(admin, orderId);
+    const promoteError = await promoteBatchesToProduction(admin, orderId);
     if (promoteError) return { ok: false, error: promoteError };
     const statusError = await syncOrderStatus(admin, [orderId]);
     if (statusError) return { ok: false, error: statusError };

@@ -2,7 +2,7 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
-import { promoteBatchesIfDepositSettled } from "@/lib/deposit-production";
+import { promoteBatchesToProduction } from "@/lib/deposit-production";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { syncOrderStatus } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -360,7 +360,7 @@ export async function createBatch(
   }
 
   if (incoming.lines.length + fresh.lines.length > 0) {
-    const promoteError = await promoteBatchesIfDepositSettled(admin, order.id, [batch.id]);
+    const promoteError = await promoteBatchesToProduction(admin, order.id, [batch.id]);
     if (promoteError) return fail(500, promoteError);
   }
 
@@ -444,8 +444,13 @@ export async function updateBatch(
   if (linesError) return fail(500, linesError);
 
   const wasEmpty = currentLines.length === 0;
-  if (wasEmpty && finalContent.length > 0 && input.status === undefined) {
-    const promoteError = await promoteBatchesIfDepositSettled(admin, batch.order_id, [batchId]);
+  if (input.status === "in_production") {
+    // Um lote em Production leva os outros In Negotiation da Order junto
+    // (regra do GSS, 13/10/2026 — lib/deposit-production).
+    const promoteError = await promoteBatchesToProduction(admin, batch.order_id);
+    if (promoteError) return fail(500, promoteError);
+  } else if (wasEmpty && finalContent.length > 0 && input.status === undefined) {
+    const promoteError = await promoteBatchesToProduction(admin, batch.order_id, [batchId]);
     if (promoteError) return fail(500, promoteError);
   }
 

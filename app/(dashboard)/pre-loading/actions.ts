@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireFeature } from "@/lib/dal";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { scheduleGssOutboundDispatch } from "@/lib/gss/outbound/schedule";
+import { scheduleGssOutboundDispatch, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import { loadSelectableBatchOptions } from "@/domain/pre-loadings/selectable-batches";
 import {
   createPreLoadingRecord,
@@ -63,7 +63,9 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
   revalidatePath(PATH);
   revalidatePath("/orders"); // os lotes selecionados mudaram de fase
   await broadcastPreLoadingPing(); // lista Pre-loading aberta reflete o PL novo
-  // Create PL cria o PL no GSS (o trigger enfileira; isto só apressa o envio).
+  // Create PL cria o PL no GSS, já com os lotes e status preloading (o trigger
+  // da fila também enfileira; a fila só age com migration + chave).
+  sendPlShipmentToGss(created.id);
   await scheduleGssOutboundDispatch();
   return { ok: true, id: created.id, pl_number: created.pl_number };
 }
@@ -99,6 +101,8 @@ export async function updatePreLoading(
   revalidatePath(PATH);
   revalidatePath("/orders"); // tirar lote do PL pode mexer no status da Order
   await broadcastPreLoadingPing();
+  // Lotes incluídos/retirados do PL → GSS (batch_ids + status preloading).
+  sendPlShipmentToGss(id);
   return { ok: true };
 }
 

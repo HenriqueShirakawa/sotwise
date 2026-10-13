@@ -15,9 +15,28 @@ type Admin = ReturnType<typeof createAdminClient>;
  * criado vazio que recebe a primeira entrada, já vai para In Production.
  * Desfazer o Deposit não rebaixa lote nenhum.
  *
+ * Segundo gatilho (regra do GSS, confirmada pelo Gustavo em 13/10/2026): o 1º
+ * lote da Order entra In Negotiation; quando um lote da Order vai para In
+ * Production, os outros In Negotiation — os que já estão no pedido e os que
+ * chegarem depois (o GSS cria pela API) — vão junto. Vale enquanto a Order
+ * tiver algum lote de Production em diante (preloading/in_transit/delivered
+ * contam: o pedido já entrou em produção).
+ *
  * Lote sem nenhuma entrada fica em In Negotiation: a regra de 17/09 não deixa
- * lote vazio em produção (`updateBatchStatus`).
+ * lote vazio em produção (`updateBatchStatus`). Ele sobe quando recebe a 1ª
+ * entrada.
  */
+const PRODUCTION_ONWARD = ["in_production", "preloading", "in_transit", "delivered"] as const;
+
+async function orderHasProductionBatch(admin: Admin, orderId: string): Promise<boolean> {
+  const { count } = await admin
+    .from("batches")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", orderId)
+    .in("status", [...PRODUCTION_ONWARD]);
+  return !!count;
+}
+
 async function isDepositSettled(admin: Admin, orderId: string): Promise<boolean> {
   const { data } = await admin
     .from("order_checklist_steps")
@@ -30,18 +49,21 @@ async function isDepositSettled(admin: Admin, orderId: string): Promise<boolean>
 }
 
 /**
- * Com o Deposit resolvido, move para In Production os lotes In Negotiation da
- * Order que têm ao menos uma Factory x Category — todos, ou só `batchIds`.
+ * Com o Deposit resolvido OU a Order já com lote em produção, move para In
+ * Production os lotes In Negotiation da Order que têm ao menos uma Factory x
+ * Category — todos, ou só `batchIds`.
  * Quem chama refaz o rollup da Order depois (`syncOrderStatus`), que também
  * empurra o aviso ao cliente. Devolve a mensagem de erro, ou null.
  */
-export async function promoteBatchesIfDepositSettled(
+export async function promoteBatchesToProduction(
   admin: Admin,
   orderId: string,
   batchIds?: string[]
 ): Promise<string | null> {
   if (batchIds && batchIds.length === 0) return null;
-  if (!(await isDepositSettled(admin, orderId))) return null;
+  const inProduction =
+    (await orderHasProductionBatch(admin, orderId)) || (await isDepositSettled(admin, orderId));
+  if (!inProduction) return null;
 
   let query = admin
     .from("batches")
