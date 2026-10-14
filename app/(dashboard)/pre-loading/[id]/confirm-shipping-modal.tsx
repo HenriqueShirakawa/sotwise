@@ -19,13 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 import { confirmShipping } from "./actions";
 import type { Ref } from "./pl-checklist-client";
@@ -41,8 +34,6 @@ export type ShipmentLine = {
   batch_number: string;
   ship_requirement: string | null;
 };
-
-type LoadStatus = "none" | "partial" | "total";
 
 /** Chave de ordenação clicável na tabela do modal: fábrica ou nº do PO. */
 type SortKey = "factory" | "po";
@@ -107,9 +98,10 @@ function SelectField({
 
 /**
  * Modal de "Confirm Shipping" — converte o PL num Shipment. Montado só quando
- * aberto (estado reseta a cada abertura). O status por linha é None/Partial/Total
- * (docs §3.9.6). Sem split desde 13/10/2026: toda linha fica no lote que
- * embarcou — lote seguinte pro saldo só vem do GSS.
+ * aberto (estado reseta a cada abertura). Desde 13/10/2026 (confirmado com o
+ * Gustavo, do GSS) a tabela só lista as Factory × Category dos lotes que o GSS
+ * amarrou neste PL — sem o status None/Partial/Total por linha (quem sabe o que
+ * embarcou é o GSS, no nível produto) e sem split: nenhum lote é criado.
  */
 export function ConfirmShippingModal({
   onClose,
@@ -154,7 +146,6 @@ export function ConfirmShippingModal({
   const [carrierId, setCarrierId] = useState("");
   const [shipmentModelId, setShipmentModelId] = useState("");
   const [signerId, setSignerId] = useState(currentUserId);
-  const [statuses, setStatuses] = useState<Record<string, LoadStatus>>({});
   // Só uma coluna é prioritária por vez; a outra entra como critério de desempate.
   const [primarySort, setPrimarySort] = useState<SortKey>("factory");
 
@@ -167,7 +158,6 @@ export function ConfirmShippingModal({
     return [...lines].sort((a, b) => first(a, b) || second(a, b));
   }, [lines, primarySort]);
 
-  const allLinesSet = lines.length > 0 && lines.every((l) => statuses[l.id]);
   const headerFilled =
     containerNumber.trim() &&
     seal.trim() &&
@@ -178,7 +168,7 @@ export function ConfirmShippingModal({
     carrierId &&
     shipmentModelId &&
     signerId;
-  const canConfirm = Boolean(headerFilled && allLinesSet);
+  const canConfirm = Boolean(headerFilled && lines.length > 0);
 
   function confirm() {
     startTransition(async () => {
@@ -192,7 +182,6 @@ export function ConfirmShippingModal({
         carrier_id: carrierId,
         shipment_model_id: shipmentModelId,
         signer_id: signerId,
-        statuses: lines.map((l) => ({ ofc_id: l.id, status: statuses[l.id] })),
       });
       if (res.ok) {
         toast.success(`Shipment created for PL - ${plNumber}.`);
@@ -293,7 +282,7 @@ export function ConfirmShippingModal({
           </div>
         </div>
 
-        {/* Abaixo de sm cada linha vira card — a tabela tem 5 colunas + select. */}
+        {/* Abaixo de sm cada linha vira card. */}
         <div className="mt-2 divide-y rounded-xl border sm:hidden">
           {sortedLines.map((l) => (
             <div key={l.id} className="space-y-3 px-3 py-3 text-sm">
@@ -305,24 +294,9 @@ export function ConfirmShippingModal({
                   {l.factory} · {l.category}
                 </p>
               </div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-muted-foreground">
-                  ETD {l.etd_initial ? formatDateNumeric(l.etd_initial) : "—"}
-                </span>
-                <Select
-                  value={statuses[l.id] ?? ""}
-                  onValueChange={(v) => setStatuses((s) => ({ ...s, [l.id]: v as LoadStatus }))}
-                >
-                  <SelectTrigger className="h-9 w-36 bg-white">
-                    <SelectValue placeholder="Choose status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                    <SelectItem value="total">Total</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                ETD {l.etd_initial ? formatDateNumeric(l.etd_initial) : "—"}
+              </p>
             </div>
           ))}
         </div>
@@ -347,7 +321,6 @@ export function ConfirmShippingModal({
                     onClick={() => setPrimarySort("po")}
                   />
                 </th>
-                <th className="px-3 py-2 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -360,23 +333,6 @@ export function ConfirmShippingModal({
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {l.po_number} / {l.batch_number}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Select
-                      value={statuses[l.id] ?? ""}
-                      onValueChange={(v) =>
-                        setStatuses((s) => ({ ...s, [l.id]: v as LoadStatus }))
-                      }
-                    >
-                      <SelectTrigger className="h-9 w-36 bg-white">
-                        <SelectValue placeholder="Choose status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="partial">Partial</SelectItem>
-                        <SelectItem value="total">Total</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </td>
                 </tr>
               ))}

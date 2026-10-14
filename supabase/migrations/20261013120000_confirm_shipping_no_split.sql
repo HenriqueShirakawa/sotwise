@@ -4,20 +4,27 @@
 -- O SOT deixa de criar lotes. Quem decide se existe um lote novo é o GSS: ele
 -- enxerga o nível PRODUTO (abaixo de Factory × Category, com quantidade) e sabe
 -- o que de fato embarcou; quando sobra saldo, o GSS cria o lote seguinte pela
--- API (POST /api/batches). Por isso, no PL -> Shipment:
---   - o loading_status (Total/Partial/None) de cada entrada continua sendo
---     gravado, junto com o snapshot em shipment_loaded_lines;
---   - NENHUMA entrada migra de lote e NENHUM lote é criado — a linha
---     Partial/None fica no lote que embarcou, com o status gravado;
+-- API (POST /api/batches). Por isso, no PL -> Shipment (confirmado com o
+-- Gustavo, do GSS):
+--   - o SOT NÃO pede mais Total/Partial/None por entrada — nada de
+--     loading_status nem snapshot em shipment_loaded_lines (as entradas não
+--     saem mais do lote, então o lote embarcado já É o que embarcou);
+--   - NENHUMA entrada migra de lote e NENHUM lote é criado;
 --   - todo lote do PL vai para in_transit.
 --
 -- Função NOVA (não create or replace da confirm_shipping): main e dev usam o
 -- mesmo banco, e a main (produção) segue chamando a confirm_shipping com split
--- até essa regra ser levada pra lá. Mesma assinatura e mesmo retorno.
+-- até essa regra ser levada pra lá. Mesmo retorno; sem p_statuses.
 --
--- delete_shipment segue correto: as linhas não-Total registradas no embarque
--- já estão no lote de origem (o "voltar" delas é no-op).
+-- delete_shipment segue correto: sem snapshot não há linha a devolver, e os
+-- lotes voltam para preloading.
 -- =============================================================================
+
+-- Rascunho anterior desta mesma migration tinha p_statuses (nunca aplicado,
+-- mas por garantia).
+drop function if exists public.confirm_shipping_no_split(
+  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, jsonb, date
+);
 
 create or replace function public.confirm_shipping_no_split(
   p_pre_loading_id uuid,
@@ -30,7 +37,6 @@ create or replace function public.confirm_shipping_no_split(
   p_shipment_model_id uuid,
   p_signer_id uuid,
   p_created_by uuid,
-  p_statuses jsonb,
   p_loading_date_completed_on date
 )
 returns jsonb
@@ -55,20 +61,7 @@ begin
   )
   returning id into v_shipment_id;
 
-  -- 2. loading_status por entrada.
-  update public.order_factory_category ofc
-  set loading_status = (v->>'status')::public.loading_status
-  from jsonb_array_elements(p_statuses) as v
-  where ofc.id = (v->>'ofc_id')::uuid;
-
-  -- 2b. Snapshot do que ESTE embarque carregou.
-  insert into public.shipment_loaded_lines (shipment_id, batch_id, order_factory_category_id, loading_status)
-  select v_shipment_id, ofc.batch_id, ofc.id, (v->>'status')::public.loading_status
-  from jsonb_array_elements(p_statuses) as v
-  join public.order_factory_category ofc on ofc.id = (v->>'ofc_id')::uuid
-  where ofc.batch_id is not null;
-
-  -- 3. Os lotes do PL vão para in_transit — sem split.
+  -- 2. Os lotes do PL vão para in_transit — sem split.
   update public.batches b
   set status = 'in_transit'
   from public.pre_loading_batches plb
@@ -101,7 +94,7 @@ begin
   set completed_on = p_loading_date_completed_on
   where pre_loading_id = p_pre_loading_id and step = 'loading_date';
 
-  -- 4. Marca o PL como confirmado + grava seal/leader do embarque.
+  -- 3. Marca o PL como confirmado + grava seal/leader do embarque.
   update public.pre_loadings
   set seal_number = p_seal_number,
       leader_id = p_preloading_leader_id,
@@ -116,16 +109,16 @@ end;
 $$;
 
 revoke all on function public.confirm_shipping_no_split(
-  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, jsonb, date
+  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, date
 ) from public;
 revoke all on function public.confirm_shipping_no_split(
-  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, jsonb, date
+  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, date
 ) from anon;
 revoke all on function public.confirm_shipping_no_split(
-  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, jsonb, date
+  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, date
 ) from authenticated;
 grant execute on function public.confirm_shipping_no_split(
-  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, jsonb, date
+  uuid, text, text, date, uuid, uuid, uuid, uuid, uuid, uuid, date
 ) to service_role;
 
 comment on function public.confirm_shipping_no_split is
