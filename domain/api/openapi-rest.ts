@@ -469,10 +469,6 @@ export const restPaths = {
                     shipment_model: "027d1f3c-3ac9-400c-967e-bda0248daa89",
                     shipment_leader_email: "leader@example.com",
                     signer_email: "signer@example.com",
-                    lines: [
-                      { item_id: "0e5b5f0e-1d7c-4a8e-bb8e-6f1b1b2b9c33", loading_status: "total" },
-                      { item_id: "1a2b3c4d-1d7c-4a8e-bb8e-6f1b1b2b9c34", loading_status: "partial" },
-                    ],
                   },
                 },
               },
@@ -678,7 +674,6 @@ export const restSchemas = {
       "shipment_model",
       "shipment_leader_email",
       "signer_email",
-      "lines",
     ],
     properties: {
       container_number: { type: "string" },
@@ -692,7 +687,8 @@ export const restSchemas = {
       preloading_leader_email: { ...emailIn, description: "Default: the PL leader." },
       lines: {
         type: "array",
-        description: "One entry per line of the PL's batches.",
+        deprecated: true,
+        description: "Deprecated and ignored since 2026-10-13 — SOTWISE no longer records a loading status per line. Still accepted so older callers don't break.",
         items: {
           type: "object",
           required: ["item_id", "loading_status"],

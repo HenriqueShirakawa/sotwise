@@ -284,7 +284,6 @@ export async function patchShipment(
         carrier_id: carrier.id,
         shipment_model_id: model.id,
         signer_id: signer.id!,
-        statuses: c.lines.map((l) => ({ ofc_id: l.item_id, status: l.loading_status })),
       },
       actorId
     );

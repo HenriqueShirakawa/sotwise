@@ -249,19 +249,17 @@ export default async function ShipmentDetailPage({
   // novo, levando a linha para um "neto". Sobe a linhagem inteira até o lote
   // deste embarque (limite defensivo, caso algum dado forme ciclo).
   const shippedAncestorOf = new Map<string, string>();
-  const descendantNumberById = new Map<string, string>();
   let frontier = batchIds;
   for (let depth = 0; depth < 10 && frontier.length > 0; depth++) {
     const { data } = await admin
       .from("batches")
-      .select("id, batch_number, split_from_batch_id")
+      .select("id, split_from_batch_id")
       .in("split_from_batch_id", frontier);
     const generation = (data ?? []).filter((b) => !shippedAncestorOf.has(b.id));
     if (generation.length === 0) break;
     for (const b of generation) {
       const parent = b.split_from_batch_id as string;
       shippedAncestorOf.set(b.id, shippedAncestorOf.get(parent) ?? parent);
-      descendantNumberById.set(b.id, b.batch_number);
     }
     frontier = generation.map((b) => b.id);
   }
@@ -306,7 +304,7 @@ export default async function ShipmentDetailPage({
   for (const o of ofcRes.data ?? []) {
     if (!o.batch_id) continue;
     // Linha que migrou no split é atribuída ao lote de ORIGEM (o que embarcou),
-    // marcada com o lote onde ela está hoje.
+    // marcada com o lote que recebeu o saldo neste embarque.
     const ancestor = shippedAncestorOf.get(o.batch_id);
     const targetBatchId = ancestor ?? o.batch_id;
     // O lote-filho pode já existir antes do split (lotes espelhados) e ter
@@ -322,9 +320,7 @@ export default async function ShipmentDetailPage({
       order_id: o.order_id,
       factory: factoryNameById.get(o.factory_id) ?? "—",
       category: categoryNameById.get(o.category_id) ?? "—",
-      loading_status: loadedByBatch.get(targetBatchId)?.get(o.id) ?? o.loading_status,
       etd_initial: etd?.initial_date ?? null,
-      moved_to: ancestor ? (descendantNumberById.get(o.batch_id) ?? null) : null,
     });
     partsByBatch.set(targetBatchId, arr);
   }
