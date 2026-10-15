@@ -118,6 +118,8 @@ export const openApiSpec = {
       "- `status` can only be set to `in_negotiation` or `in_production`.",
       "- The same Category + Factory cannot appear twice in a batch.",
       "- A batch `in_production` always keeps at least one item (applies to the batch an item is moved *from* as well).",
+      "- The first batch of an order starts `in_negotiation`. Once any batch of the order is `in_production` (or further), every other `in_negotiation` batch of the order — existing or created later — goes to `in_production` too, as soon as it has at least one item. Setting a batch to `in_production` (screen or `PATCH`) triggers this for the whole order.",
+      "- Same automatic promotion when the order's Deposit Payment step is settled (unless the same PATCH sets `status`).",
       "- The order status is recalculated from its batches after every write.",
       "",
       "**`is_active`** — every resource (orders, batches, Factory × Category lines, ETD, shipments/PLs, libraries) carries an `is_active` boolean (default `true`). " +
@@ -192,7 +194,8 @@ export const openApiSpec = {
         operationId: "createBatch",
         summary: "Create a batch (also the GSS webhook)",
         description:
-          "Creates a batch in an order, optionally already filled. It starts `in_negotiation`. " +
+          "Creates a batch in an order, optionally already filled. It starts `in_negotiation` " +
+          "(or `in_production` when it has items and the order already has a batch in production, or its Deposit Payment is settled). " +
           "Use `PATCH` to change the status.\n\n" +
           "**Webhook from GSS** — batches are created in GSS and pushed here with the GSS OrderBatch id in `gss_id`. " +
           "With `gss_id` the call is idempotent:\n" +
