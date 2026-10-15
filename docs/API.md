@@ -287,7 +287,7 @@ Em `business-units` e `order-types` o ícone **não** é enviado por esta API (o
 | Campo | Tipo | Obrigatório | Regras |
 |---|---|---|---|
 | `name` | string | sim | 1–200 caracteres |
-| `color` | string | não | 1–50 caracteres |
+| `color` | string | não | 1–50 caracteres. Sem valor, fica o roxo do SOTWISE (`#640BB7`) |
 | `icon_path` | string | não | 1–500 caracteres — caminho de um arquivo já existente no storage |
 
 ```json

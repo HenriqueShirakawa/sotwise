@@ -421,7 +421,7 @@ Content-Type: application/json
 | Clients | `/api/clients` | `name`, `country_id` |
 | Countries | `/api/countries` | `name` (opcional `iso_code`) |
 | Exporters | `/api/exporters` | `name`, `acronym` |
-| Order Types | `/api/order-types` | `name` (opcional `color`) |
+| Order Types | `/api/order-types` | `name` (opcional `color` — sem valor, fica `#640BB7`) |
 | Shipment Models | `/api/shipment-models` | `name` |
 
 `name` é obrigatório em todos (1–200 caracteres). Campos desconhecidos são **descartados em silêncio**.
