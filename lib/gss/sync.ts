@@ -306,7 +306,19 @@ function planResource<G>(
    * contra o nosso `sales15.tsn@cn-asgroup.com` — e trocar um e-mail operacional
    * por um genérico é perda, não sincronização.
    */
-  fillOnly?: Set<string>
+  fillOnly?: Set<string>,
+  /**
+   * Chave de IDENTIDADE do registro no GSS, quando o nome não basta. Default: o
+   * nome normalizado — duas linhas de mesmo nome são a mesma coisa e a de menor
+   * id representa o grupo (§9.4).
+   *
+   * `cities` é a exceção: o nome não identifica cidade. O GSS tem 8192 cidades
+   * com 411 nomes repetidos entre províncias — "Santa Maria" existe no RS e no
+   * RN, "Jundiaí" em SP e no RN. Com a chave no nome, só a primeira de cada
+   * homônima entrava no espelho e as outras eram descartadas em silêncio. A
+   * chave de lá é `nome|província`, único na origem.
+   */
+  dedupKey?: (g: G) => string
 ): ResourcePlan {
   const alive = local.filter((r) => r.deleted_at === null);
 
@@ -330,18 +342,23 @@ function planResource<G>(
     }
   }
 
-  // Deduplica o GSS por nome: menor id vence (a API devolve o array sem ordem
-  // fixa). `idsByNorm` guarda todos os ids daquele nome — um vínculo já gravado
-  // em qualquer um deles continua válido (sticky, §9.4).
-  const gssByNorm = new Map<string, G>();
-  const idsByNorm = new Map<string, Set<string>>();
+  // Deduplica o GSS pela chave de identidade (nome, ou `dedupKey` quando o nome
+  // não basta): menor id vence (a API devolve o array sem ordem fixa).
+  // `idsByKey` guarda todos os ids daquela chave — um vínculo já gravado em
+  // qualquer um deles continua válido (sticky, §9.4).
+  const chave = dedupKey ?? ((g: G) => norm(getName(g)));
+  const gssByKey = new Map<string, G>();
+  const idsByKey = new Map<string, Set<string>>();
   for (const g of gssItems) {
-    const k = norm(getName(g));
-    if (!k) continue;
-    const cur = gssByNorm.get(k);
-    if (!cur || getId(g) < getId(cur)) gssByNorm.set(k, g);
-    (idsByNorm.get(k) ?? idsByNorm.set(k, new Set()).get(k)!).add(String(getId(g)));
+    const k = chave(g);
+    if (!k || !norm(getName(g))) continue;
+    const cur = gssByKey.get(k);
+    if (!cur || getId(g) < getId(cur)) gssByKey.set(k, g);
+    (idsByKey.get(k) ?? idsByKey.set(k, new Set()).get(k)!).add(String(getId(g)));
   }
+  // Ordem estável por id do GSS: com homônimas, QUAL delas fica com a linha
+  // local sem vínculo deixa de depender da ordem do array da API.
+  const gssGrupos = [...gssByKey.entries()].sort((a, b) => getId(a[1]) - getId(b[1]));
 
   const links: ResourcePlan["links"] = [];
   const fields: ResourcePlan["fields"] = [];
@@ -350,28 +367,31 @@ function planResource<G>(
   const seenLocal = new Set<string>(); // uuids locais que o GSS cobriu
   let matched = 0;
 
-  for (const [k, g] of gssByNorm) {
+  for (const [k, g] of gssGrupos) {
     const gssId = String(getId(g));
     const payload = buildPayload(g);
-    const validIds = idsByNorm.get(k)!;
+    const validIds = idsByKey.get(k)!;
+    const nomeKey = norm(getName(g));
 
     // 1) par direto por gss_id — autoritativo, sobrevive a rename no GSS.
     let row = byGssId.get(gssId);
-    // 2) sticky: outro id do mesmo nome já vinculado aqui vale como par.
+    // 2) sticky: outro id da mesma chave já vinculado aqui vale como par.
     if (!row) {
       for (const id of validIds) {
         const cand = byGssId.get(id);
         if (cand) { row = cand; break; }
       }
     }
-    // 3) por nome, só em linha ainda SEM vínculo — nunca roubar de outro id.
-    if (!row) row = (byNorm.get(k) ?? []).find((r) => !r.gss_id);
+    // 3) por nome, só em linha ainda SEM vínculo e que outro registro do GSS
+    //    não tenha levado nesta mesma execução — nunca roubar de outro id, nem
+    //    dar a mesma linha local a duas homônimas.
+    if (!row) row = (byNorm.get(nomeKey) ?? []).find((r) => !r.gss_id && !seenLocal.has(r.id));
     // 4) pela chave alternativa (e-mail): pega o par cujo nome está escrito
     //    diferente dos dois lados.
     if (!row && altKey) {
       const v = norm(altKey.gss(g));
       const cand = v && v !== "n/a" && v !== "na" ? byAlt.get(v) : undefined;
-      if (cand && !cand.gss_id) row = cand;
+      if (cand && !cand.gss_id && !seenLocal.has(cand.id)) row = cand;
     }
 
     if (!row) {
@@ -418,8 +438,8 @@ function planResource<G>(
   // INSERT aqui pode ser, na verdade, a mesma entidade já existente.
   const quaseCasam: ResourcePlan["quaseCasam"] = [];
   const sobraram = alive.filter((r) => !r.gss_id && !seenLocal.has(r.id));
-  for (const [k, g] of gssByNorm) {
-    if (byNorm.has(k)) continue; // casou exato, não é candidato
+  for (const [, g] of gssGrupos) {
+    if (byNorm.has(norm(getName(g)))) continue; // casou exato, não é candidato
     const nomeGss = getName(g) ?? "";
     let melhor: { row: LocalRow; score: number } | null = null;
     for (const r of sobraram) {
@@ -676,9 +696,11 @@ export async function runSync(
   };
 
   // 1) countries — os placeholders do GSS não entram (COUNTRY_SKIP).
+  // Espelho completo do registro deles: nome, ISO e a marca `is_active` (§9.9).
   const countries = (await fetchGss<GssCountry>(GSS_ENDPOINTS.country)).filter((c) => !COUNTRY_SKIP.has(norm(c.name)));
   await run(planResource("countries", await loadLocal(sb, "countries"), countries,
-    (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
+    (c) => c.name, (c) => c.id,
+    (c) => ({ name: c.name, iso_code: c.iso_code, is_active: c.is_active }), opts));
 
   // mapa id-do-GSS → uuid local, para traduzir clients.country_id. Relido depois
   // do apply para enxergar os países recém-inseridos.
@@ -686,8 +708,14 @@ export async function runSync(
   for (const r of await loadLocal(sb, "countries")) if (r.gss_id && r.deleted_at === null) countryMap.set(r.gss_id, r.id);
 
   // 2) independentes
+  // cities: espelho completo, com província e país como TEXTO (sem tabela
+  // `provinces`, sem `country_id` — decisão de 14/10/2026, §9.9). A identidade
+  // de uma cidade é `nome|província`, não o nome: 411 nomes se repetem entre
+  // províncias e com a chave no nome as homônimas nunca entravam.
   await run(planResource("cities", await loadLocal(sb, "cities"), await fetchGss<GssCity>(GSS_ENDPOINTS.city),
-    (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
+    (c) => c.name, (c) => c.id,
+    (c) => ({ name: c.name, province: c.province_name, country: c.country_name, is_active: c.is_active }),
+    opts, undefined, undefined, (c) => `${norm(c.name)}|${norm(c.province_name)}`));
 
   // `port` roteado por país: China → pols (embarque), resto → pods (destino).
   const ports = await fetchGss<GssPort>(GSS_ENDPOINTS.port);

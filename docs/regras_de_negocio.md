@@ -513,10 +513,32 @@ create trigger trg_exporters_updated_at
 
 Hierarquia geográfica: **Country → City → POL** (cada cidade agrupa POLs), e **POD** separado (porto de destino). Countries já vem pré-populado.
 
-- `countries`: só nome. Usado por Clients, Agents, Cities.
-- `cities`: nome + **POLs vinculados** (não obrigatório). Relação City→POL.
+- `countries`: nome + `iso_code`. Usado por Clients, Agents, Cities.
+- `cities`: nome + `province` + `country` (texto) + **POLs vinculados** (não obrigatório). Relação City→POL.
 - `pols` (Ports of Loading): só nome (porto de embarque).
 - `pods` (Ports of Discharge): só nome (porto de destino).
+
+**Countries e Cities são ESPELHO do GSS (14/10/2026).** Decisão do usuário: as
+duas bibliotecas são consumidas da base dele (`/core/country/` e `/core/city/`)
+e aqui refletem o registro inteiro, não só o nome — `countries.iso_code`,
+`cities.province`, `cities.country`, mais a marca `is_active`. Quem preenche é o
+sync agendado (`lib/gss/sync.ts`, migration `20261014120000`); as telas exibem os
+campos e continuam editando apenas o nome.
+
+**As FKs da origem NÃO são replicadas — viram texto.** No GSS a cidade aponta
+para uma tabela `province`, que aponta para `country`. Aqui `province` e
+`country` são `text`: nenhuma tabela `provinces` nova e nenhum `cities.country_id`
+→ `countries`. Era a parte explícita do pedido ("se houver mais conexões com
+outros bd não vamos precisar, vamos apenas colocar como string mesmo") e evita
+uma tradução de id a mais a manter.
+
+**A identidade de uma cidade é (nome, província), não o nome.** O GSS tem 8192
+cidades e **411 nomes repetidos** entre províncias — "Santa Maria" existe no RS e
+no RN. Enquanto o pareamento era por nome, só a primeira de cada homônima entrava
+e as outras eram descartadas em silêncio (eram 502 linhas a menos). Duas
+consequências visíveis: o cadastro de Cities ganha coluna de província/país e a
+busca passa a pegar as duas; e o seletor de City do Pre-loading mostra
+"Cidade — Província" **só** quando o nome é ambíguo (Ningbo continua Ningbo).
 
 **Tela de Cities construída em 2026-08-19** (`/registration/cities`) — cadastro name-only, no molde de POL/POD/Countries, com criação em lote. 652 cidades em produção.
 
@@ -526,6 +548,7 @@ Hierarquia geográfica: **Country → City → POL** (cada cidade agrupa POLs), 
 create table public.countries (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  iso_code text,                                      -- espelho do GSS (ISO 3166-1 alfa-3)
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -556,12 +579,15 @@ create trigger trg_pods_updated_at before update on public.pods
 create table public.cities (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  province text,                                      -- espelho do GSS, TEXTO (não FK)
+  country  text,                                      -- idem — ver 20261014120000
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create trigger trg_cities_updated_at before update on public.cities
   for each row execute function public.set_updated_at();
+create index idx_cities_province_name on public.cities(province, name);
 
 -- Cidade agrupa POLs (M-N; validar se um POL pode estar em várias cidades)
 create table public.city_pols (

@@ -136,8 +136,10 @@ export default async function PreLoadingChecklistPage({
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
     ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("cities").select("id, name").is("deleted_at", null).range(from, to)
+    // `province` vem do espelho do GSS (20261014120000): é ela que separa as
+    // cidades homônimas no seletor — ver o `cities={...}` lá embaixo.
+    fetchAll<{ id: string; name: string; province: string | null }>((from, to) =>
+      admin.from("cities").select("id, name, province").is("deleted_at", null).range(from, to)
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
@@ -250,6 +252,23 @@ export default async function PreLoadingChecklistPage({
   // 2+, fica a última, o suficiente para o filtro do seletor.
   const cityByPol = new Map(cityPolRes.map((cp) => [cp.pol_id, cp.city_id]));
 
+  // O espelho do GSS traz as homônimas (411 nomes se repetem entre províncias),
+  // então o seletor de City mostra a província SÓ quando o nome é ambíguo —
+  // "Santa Maria — Rio Grande do Sul" / "Santa Maria — Rio Grande do Norte", e
+  // "Ningbo" continua "Ningbo".
+  const cityNameCount = new Map<string, number>();
+  for (const c of cityRes) {
+    const k = c.name.trim().toLowerCase();
+    cityNameCount.set(k, (cityNameCount.get(k) ?? 0) + 1);
+  }
+  const cityNames: Ref[] = cityRes.map((c) => ({
+    id: c.id,
+    name:
+      (cityNameCount.get(c.name.trim().toLowerCase()) ?? 0) > 1 && c.province
+        ? `${c.name} — ${c.province}`
+        : c.name,
+  }));
+
   // Contatos por agente (via agent_contacts) — alimenta Contact Brazil/China.
   const contactsByAgent: Record<string, Ref[]> = {};
   for (const ac of agentContactRes) {
@@ -326,7 +345,7 @@ export default async function PreLoadingChecklistPage({
         .map((p) => ({ id: p.id, name: p.full_name as string }))
         .sort(byName)}
       factories={factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName)}
-      cities={cityRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
+      cities={cityNames.sort(byName)}
       pols={polRes
         .map((p) => ({ id: p.id, name: p.name, cityId: cityByPol.get(p.id) ?? null }))
         .sort(byName)}

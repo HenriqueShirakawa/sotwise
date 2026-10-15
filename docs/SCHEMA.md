@@ -128,8 +128,8 @@ Contagens de produção em 2026-08-11. Todas têm `deleted_at`, `created_at`,
 
 | Tabela | Linhas | Colunas próprias (além das comuns) |
 |---|---:|---|
-| `countries` | 3 | `name` NOT NULL |
-| `cities` | 51 | `name` NOT NULL |
+| `countries` | 23 | `name` NOT NULL, `iso_code` (espelho do GSS) |
+| `cities` | 7701 (8203 com as homônimas do GSS) | `name` NOT NULL, `province`, `country` (texto, espelho do GSS) |
 | `pols` | 74 | `name` NOT NULL |
 | `pods` | 26 | `name` NOT NULL |
 | `factories` | 752 | `name` NOT NULL |

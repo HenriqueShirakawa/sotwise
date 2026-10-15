@@ -306,9 +306,14 @@ export async function gssRequest(
 
 type IsoDate = string;
 
-export type GssCountry = { id: number; name: string; iso_code: string | null; created_at: IsoDate; updated_at: IsoDate };
+/**
+ * `is_active` apareceu em `country` e `city` (conferido ao vivo em 2026-10-14) —
+ * é a mesma marca que a nossa coluna `is_active` (20261013130000) e o espelho de
+ * geografia a traz. Os outros recursos daqui ainda não têm o campo.
+ */
+export type GssCountry = { id: number; name: string; iso_code: string | null; is_active?: boolean; created_at: IsoDate; updated_at: IsoDate };
 export type GssProvince = { id: number; name: string; country: number; country_name: string; created_at: IsoDate; updated_at: IsoDate };
-export type GssCity = { id: number; name: string; province: number; province_name: string; country_name: string; created_at: IsoDate; updated_at: IsoDate };
+export type GssCity = { id: number; name: string; province: number; province_name: string | null; country_name: string | null; is_active?: boolean; created_at: IsoDate; updated_at: IsoDate };
 export type GssPort = { id: number; name: string; city: number; city_name: string; province_name: string; country_name: string; created_at: IsoDate; updated_at: IsoDate };
 export type GssCustomer = {
   id: number;

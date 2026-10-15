@@ -10,10 +10,13 @@ import {
   categorySchema,
   categoryUpdateSchema,
   citySchema,
+  cityUpdateSchema,
   clientSchema,
   clientUpdateSchema,
   contactSchema,
   contactUpdateSchema,
+  countrySchema,
+  countryUpdateSchema,
   exporterSchema,
   exporterUpdateSchema,
   nameSchema,
@@ -296,13 +299,26 @@ export const RESOURCES: Record<string, ResourceConfig> = {
     buildUpdate: (input) => ({ name: input.name }),
   }),
 
+  // Geografia espelhada do GSS (14/10/2026): `province`/`country` como texto,
+  // sem FK (ver supabase/migrations/20261014120000). O PATCH distingue "não
+  // enviei" (undefined, não mexe) de `null` (limpa o campo).
   cities: defineResource({
     table: "cities",
-    select: "id, name",
+    select: "id, name, province, country",
     schema: citySchema,
-    buildRow: (input) => ({ name: input.name }),
-    updateSchema: nameUpdateSchema,
-    buildUpdate: (input) => ({ name: input.name }),
+    buildRow: (input) => ({
+      name: input.name,
+      province: input.province ?? null,
+      country: input.country ?? null,
+    }),
+    updateSchema: cityUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.province !== undefined) row.province = input.province;
+      if (input.country !== undefined) row.country = input.country;
+      return row;
+    },
   }),
 
   pols: defineResource({
@@ -343,11 +359,16 @@ export const RESOURCES: Record<string, ResourceConfig> = {
 
   countries: defineResource({
     table: "countries",
-    select: "id, name",
-    schema: nameOnlySchema,
-    buildRow: (input) => ({ name: input.name }),
-    updateSchema: nameUpdateSchema,
-    buildUpdate: (input) => ({ name: input.name }),
+    select: "id, name, iso_code",
+    schema: countrySchema,
+    buildRow: (input) => ({ name: input.name, iso_code: input.iso_code ?? null }),
+    updateSchema: countryUpdateSchema,
+    buildUpdate: (input) => {
+      const row: Record<string, unknown> = {};
+      if (input.name !== undefined) row.name = input.name;
+      if (input.iso_code !== undefined) row.iso_code = input.iso_code;
+      return row;
+    },
   }),
 
   exporters: defineResource({

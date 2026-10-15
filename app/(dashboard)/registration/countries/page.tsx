@@ -12,10 +12,12 @@ export default async function CountriesPage() {
   const admin = createAdminClient();
   // Paginado: a lista inteira vai pro cliente, que pagina — sem isto o cadastro
   // pararia de crescer aos olhos do usuário no registro 1000 (ver lib/fetch-all).
-  const data = await fetchAll<{ id: string; name: string }>((from, to) =>
+  // `iso_code` é espelho do GSS (migration 20261014120000) — exibido, não
+  // editável: o sync o reescreve no próximo pull.
+  const data = await fetchAll<{ id: string; name: string; iso_code: string | null }>((from, to) =>
     admin
       .from("countries")
-      .select("id, name")
+      .select("id, name, iso_code")
       .is("deleted_at", null)
       .order("name")
       .range(from, to)
@@ -23,7 +25,8 @@ export default async function CountriesPage() {
 
   return (
     <SimpleRegistrationCrud
-      data={data}
+      data={data.map((c) => ({ id: c.id, name: c.name, extras: { iso_code: c.iso_code } }))}
+      extraColumns={[{ key: "iso_code", label: "ISO code" }]}
       title="Countries"
       subtitle="View and manage countries"
       singular="country"
