@@ -218,6 +218,7 @@ export async function loadClientOrderDetail(
         admin
           .from("order_factory_category")
           .select("batch_id, category_id, ship_requirement")
+          .eq("is_active", true)
           .eq("order_id", orderId)
           .range(from, to)
     ),

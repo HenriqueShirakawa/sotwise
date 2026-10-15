@@ -2255,6 +2255,8 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **Filtro:** GET de lista aceita `?is_active=true|false`; sem o parâmetro vêm os dois.
 - **ETD:** a marca é do registro de `etd_info` da linha. **PL/Ship:** é a do PL, espelhada no shipment.
 
+**Exceção (15/10): linha Factory × Category inativa SOME das telas.** O GSS passa a mandar `is_active` das linhas (`order_factory_category`); `false` esconde a linha de dentro do lote — o lote em si continua aparecendo. Decisão do usuário: o alcance é só a LINHA (não o lote inteiro). Filtrado em: detalhe da Order (View/Edit batch e o recarregamento das actions), ETD factories, Pre-loading (lista, seletor de lotes do modal, detalhe e popup do Confirm Shipping), Shipments (lista e detalhe/View parts), portal e notificação do cliente e Copilot. O Confirm Shipping conta só linhas ativas na trava "PL precisa de ≥1 F×C". **Não muda:** a API (segue devolvendo as duas, com `?is_active=`), a regra de visibilidade de Order do GSS na lista de Orders (Order com linha, mesmo inativa, continua aparecendo) e as regras de status (Deposit/In Production, status da Order).
+
 ### 6.11 `gss_id` na API de bibliotecas (2026-10-13)
 
 **Motivo:** o GSS criou o cliente 118 pelo `POST /api/clients` e a order 1696 voltou `No clients found for gss_id '118'` — a API de bibliotecas descartava o `gss_id` em silêncio, então o cadastro nascia sem vínculo (foi vinculado à mão: "GSS Update" = 118).
