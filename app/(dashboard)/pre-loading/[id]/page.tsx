@@ -299,6 +299,7 @@ export default async function PreLoadingChecklistPage({
         .select(
           "id, batch_id, ship_requirement, factories(name), categories(name), orders(po_number), batches(batch_number), etd_info(initial_date)"
         )
+        .eq("is_active", true)
         .in("batch_id", plBatchIds)
         .returns<OfcLineEmbed[]>()
     : { data: [] as OfcLineEmbed[] };

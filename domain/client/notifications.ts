@@ -84,6 +84,7 @@ async function productsForBatch(
   const { data } = await admin
     .from("order_factory_category")
     .select("categories(name)")
+    .eq("is_active", true)
     .eq("batch_id", batchId)
     .returns<{ categories: { name: string } | null }[]>();
 
