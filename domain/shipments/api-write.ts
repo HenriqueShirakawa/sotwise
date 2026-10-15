@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { validateStepDates } from "@/lib/checklist-completion";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
+import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -424,6 +425,20 @@ const STEP_REFS: Partial<Record<keyof PatchStepInput, { column: string; table: R
   contact_china: { column: "contact_china_id", table: "contacts", label: "contact" },
 };
 
+/** Campos que entram na regra de conclusão — só eles disparam a auto-conclusão. */
+const COMPLETION_FACT_COLUMNS = [
+  "estimated_date",
+  "consolidation_point_id",
+  "city_id",
+  "pol_id",
+  "carrier_id",
+  "agent_brazil_id",
+  "agent_china_id",
+  "contact_brazil_id",
+  "contact_china_id",
+  "booking_number",
+];
+
 export async function patchShipmentStep(
   admin: AdminClient,
   actor: { userId: string | null; isAdmin: boolean },
@@ -508,6 +523,11 @@ export async function patchShipmentStep(
     const ruleError = await applyDeliveredRule(admin, pl.shipment.id, id, completedOn != null);
     if (ruleError) return fail(500, ruleError);
     await scheduleClientNotificationDispatch();
+  }
+
+  // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha.
+  if (!("completed_on" in patch) && COMPLETION_FACT_COLUMNS.some((c) => c in patch)) {
+    await autoCompletePlStep(admin, id, checklistStep, actor.userId);
   }
 
   refreshViews();
