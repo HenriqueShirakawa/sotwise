@@ -37,7 +37,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export type SimpleRow = { id: string; name: string };
+export type SimpleRow = {
+  id: string;
+  name: string;
+  /**
+   * Colunas a mais, SÓ DE LEITURA, por chave (ver `extraColumns`). É o caso das
+   * bibliotecas que o GSS espelha com mais de um campo — Countries traz o ISO,
+   * Cities a província e o país. O formulário continua editando apenas o nome:
+   * o resto é dado do GSS e o sync o reescreve no próximo pull.
+   */
+  extras?: Record<string, string | null>;
+};
 
 /**
  * Tela de CRUD para os cadastros "name-only" (Carriers, POL, POD, Countries,
@@ -52,6 +62,7 @@ export function SimpleRegistrationCrud({
   columnLabel,
   searchPlaceholder,
   createLabel,
+  extraColumns = [],
   createAction,
   updateAction,
   deleteAction,
@@ -65,6 +76,8 @@ export function SimpleRegistrationCrud({
   columnLabel: string;
   searchPlaceholder: string;
   createLabel: string;
+  /** Colunas só-de-leitura exibidas depois do nome, lidas de `row.extras`. */
+  extraColumns?: { key: string; label: string }[];
   createAction: (names: string[]) => Promise<ActionResult>;
   updateAction: (id: string, name: string) => Promise<ActionResult>;
   deleteAction: (id: string) => Promise<ActionResult>;
@@ -81,8 +94,14 @@ export function SimpleRegistrationCrud({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return data;
-    return data.filter((r) => r.name.toLowerCase().includes(q));
-  }, [data, search]);
+    // A busca pega as colunas extras também: em Cities, procurar por "Zhejiang"
+    // ou "China" é tão útil quanto pelo nome da cidade.
+    return data.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        extraColumns.some((c) => (r.extras?.[c.key] ?? "").toLowerCase().includes(q))
+    );
+  }, [data, search, extraColumns]);
 
   function openCreate() {
     setEditing(null);
@@ -133,6 +152,14 @@ export function SimpleRegistrationCrud({
         header: ({ column }) => <SortableHeader label={columnLabel} column={column} />,
         cell: ({ row }) => <span className="text-slate-800">{row.original.name}</span>,
       },
+      ...extraColumns.map<ColumnDef<SimpleRow>>((c) => ({
+        id: c.key,
+        accessorFn: (row) => row.extras?.[c.key] ?? "",
+        header: ({ column }) => <SortableHeader label={c.label} column={column} />,
+        cell: ({ row }) => (
+          <span className="text-slate-600">{row.original.extras?.[c.key] || "—"}</span>
+        ),
+      })),
       {
         id: "actions",
         header: "",
@@ -161,7 +188,7 @@ export function SimpleRegistrationCrud({
         ),
       },
     ],
-    [columnLabel]
+    [columnLabel, extraColumns]
   );
 
   const table = useReactTable({
@@ -204,7 +231,7 @@ export function SimpleRegistrationCrud({
 
       <DataCards
         rows={table.getRowModel().rows}
-        labels={{ name: columnLabel }}
+        labels={{ name: columnLabel, ...Object.fromEntries(extraColumns.map((c) => [c.key, c.label])) }}
         emptyMessage="No records found."
       />
 

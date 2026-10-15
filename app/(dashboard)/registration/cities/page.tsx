@@ -21,10 +21,18 @@ export default async function CitiesPage() {
   const admin = createAdminClient();
   // Paginado: 652 cidades hoje, e a lista inteira vai pro cliente, que pagina
   // (ver lib/fetch-all).
-  const data = await fetchAll<{ id: string; name: string }>((from, to) =>
+  // `province`/`country` são espelho do GSS, em texto (migration
+  // 20261014120000). São eles que distinguem as homônimas — "Santa Maria" do RS
+  // da "Santa Maria" do RN —, então entram como coluna e na busca.
+  const data = await fetchAll<{
+    id: string;
+    name: string;
+    province: string | null;
+    country: string | null;
+  }>((from, to) =>
     admin
       .from("cities")
-      .select("id, name")
+      .select("id, name, province, country")
       .is("deleted_at", null)
       .order("name")
       .range(from, to)
@@ -32,7 +40,17 @@ export default async function CitiesPage() {
 
   return (
     <SimpleRegistrationCrud
-      data={data.filter((c) => c.name.trim())}
+      data={data
+        .filter((c) => c.name.trim())
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          extras: { province: c.province, country: c.country },
+        }))}
+      extraColumns={[
+        { key: "province", label: "Province" },
+        { key: "country", label: "Country" },
+      ]}
       title="Cities"
       subtitle="Manage the cities used by ports and factories"
       singular="city"

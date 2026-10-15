@@ -415,11 +415,11 @@ Content-Type: application/json
 | Carriers | `/api/carriers` | `name` |
 | Categories | `/api/categories` | `name` (opcional `factory_ids[]`) |
 | Factories | `/api/factories` | `name` |
-| Cities | `/api/cities` | `name` |
+| Cities | `/api/cities` | `name` (opcional `province`, `country` — texto) |
 | POLs | `/api/pols` | `name` |
 | PODs | `/api/pods` | `name` |
 | Clients | `/api/clients` | `name`, `country_id` |
-| Countries | `/api/countries` | `name` |
+| Countries | `/api/countries` | `name` (opcional `iso_code`) |
 | Exporters | `/api/exporters` | `name`, `acronym` |
 | Order Types | `/api/order-types` | `name` (opcional `color`) |
 | Shipment Models | `/api/shipment-models` | `name` |
@@ -430,11 +430,23 @@ Content-Type: application/json
 
 ## 2.3. Exemplos de body
 
-### Só nome (`carriers`, `factories`, `categories`, `cities`, `pols`, `pods`, `countries`, `business-units`, `shipment-models`)
+### Só nome (`carriers`, `factories`, `categories`, `pols`, `pods`, `business-units`, `shipment-models`)
 
 ```json
 { "name": "Shanghai" }
 ```
+
+### Geografia (`countries`, `cities`) — mirror of your own registry
+
+```json
+{ "name": "China", "iso_code": "CHN" }
+{ "name": "Ningbo", "province": "Zhejiang", "country": "China" }
+```
+
+`province` and `country` are plain text, not foreign keys — the province table is
+not replicated on our side. Both resources are a **mirror** of `/core/country/`
+and `/core/city/`: the scheduled pull refreshes them from GSS, so GSS stays the
+owner of the data.
 
 ### `clients` (precisa de `country_id` — id de `/api/countries`)
 

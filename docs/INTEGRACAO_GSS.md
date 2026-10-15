@@ -862,6 +862,67 @@ O `CRON_SECRET` está cadastrado na Vercel desde 17/08/2026 (sem o token a rota
 responde 401, não 503). O agendado voltou a rodar em 01/10/2026 — ver "O
 agendado" no §9.6.
 
+### 9.10 Geografia virou espelho de verdade (2026-10-14)
+
+Até aqui `countries` e `cities` sincronizavam **só o nome** — o resto do registro
+do GSS ficava de fora. Pedido do usuário: espelhar as duas bibliotecas inteiras,
+e **sem replicar as FKs da origem** ("se houver mais conexões com outros bd não
+vamos precisar, vamos apenas colocar como string mesmo").
+
+| | GSS | Aqui |
+|---|---|---|
+| país | `/core/country/` → `name`, `iso_code`, `is_active` | `countries.name`, `countries.iso_code`, `countries.is_active` |
+| cidade | `/core/city/` → `name`, `province` (FK) + `province_name`, `country_name`, `is_active` | `cities.name`, `cities.province` **(texto)**, `cities.country` **(texto)**, `cities.is_active` |
+
+Migration `20261014120000_geography_mirror_gss.sql` (aditiva: 3 colunas
+nullable + índice `(province, name)`). Nenhuma tabela `provinces` e nenhum
+`cities.country_id` → `countries`: a hierarquia Country → Province → City do GSS
+chega achatada em texto, e quem quiser filtrar cidade por país filtra pela
+string.
+
+#### A identidade de uma cidade é `(nome, província)`
+
+Descoberta ao ligar o espelho: o GSS tem **8192 cidades** (eram 646 em 08/2026 —
+carregaram os municípios do Brasil inteiro e 2166 da China) e **411 nomes se
+repetem** entre províncias — "Santa Maria" no RS e no RN, "Jundiaí" em SP e no RN.
+O motor dedupe o lado do GSS pela chave de identidade e **o nome não serve de
+chave aqui**: a homônima de menor id representava o grupo e as outras **502**
+nunca entravam — descartadas em silêncio, não barradas por política.
+
+`planResource` ganhou o parâmetro `dedupKey`, e `cities` passa
+`nome|província` (único na origem: 0 repetições em 14/10/2026). O resto das
+bibliotecas segue com a chave no nome. Dois ajustes que vieram com isso e valem
+para todos os recursos:
+
+- o match por nome não entrega a mesma linha local a dois registros do GSS
+  (`seenLocal`) — sem isso, as duas "Santa Maria" disputariam a nossa única linha
+  e uma das duas sobrescreveria o `gss_id` da outra;
+- a ordem de processamento é por id do GSS, não a ordem do array da API: qual
+  homônima fica com a linha local existente deixa de variar entre execuções.
+
+#### O que o primeiro pull aplica
+
+Dry-run de 14/10/2026 (`npx tsx scripts/sync-gss/sync.ts`):
+
+| Recurso | FIELDS | INSERT | sumiu |
+|---|---:|---:|---:|
+| countries | 20 (`iso_code`) | 0 | 1 (Singapore, §9.7) |
+| cities | 7690 (`province`+`country`) | 502 (homônimas) | 6 |
+
+São 7710 UPDATEs linha a linha (25 em paralelo) **uma vez só**; do segundo pull
+em diante a geografia volta a ser diferença pequena. A rota do cron tem
+`maxDuration = 300`, e o backfill cabe — mas se estourar, a execução é
+idempotente e o dia seguinte continua de onde parou.
+
+> ⚠️ **`factories` está sincronizando zero, e não é por causa daqui.**
+> `/core/supplier/` devolve 812 linhas, mas o payload virou
+> `{id, is_obsolete, obsolete_justification, is_active}` — **sem `company` nem
+> `company_name`**, que é de onde tirávamos o nome da fábrica. Com nome vazio o
+> recurso inteiro é ignorado (`match 0 / insert 0` no dry-run acima). Era o que o
+> §4.4 chamava de "supplier é o company_name"; o campo saiu da resposta. Voltar a
+> sincronizar fábrica exige cruzar `supplier.company` com `/core/company/` — e o
+> `company` precisa voltar ao payload. É decisão para a origem, não ajuste nosso.
+
 ---
 
 ## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01; PL/Shipment construído em 2026-10-02)

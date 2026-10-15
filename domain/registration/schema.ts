@@ -103,8 +103,40 @@ export const categoryFormSchema = z.object({
 });
 export type CategoryFormInput = z.infer<typeof categoryFormSchema>;
 
-export const citySchema = z.object({ name: nameSchema });
+/**
+ * Geografia — espelho do GSS (14/10/2026). `province` e `country` são TEXTO, não
+ * FK: a tabela `province` do GSS não é replicada aqui e a cidade não aponta para
+ * `countries`. Os dois são opcionais porque o espelho é de quem preenche — o
+ * sync — e o POST da API precisa continuar aceitando `{ name }` puro.
+ */
+const geoText = z.string().trim().min(1).max(200).nullable().optional();
+
+export const citySchema = z.object({
+  name: nameSchema,
+  province: geoText,
+  country: geoText,
+});
 export type CityInput = z.infer<typeof citySchema>;
+
+export const cityUpdateSchema = z.object({
+  name: nameSchema.optional(),
+  province: geoText,
+  country: geoText,
+});
+export type CityUpdateInput = z.infer<typeof cityUpdateSchema>;
+
+/** `iso_code` é o ISO 3166-1 alfa-3 do GSS (BRA, CHN) — 2 a 3 letras. */
+export const countrySchema = z.object({
+  name: nameSchema,
+  iso_code: z.string().trim().min(2).max(10).nullable().optional(),
+});
+export type CountryInput = z.infer<typeof countrySchema>;
+
+export const countryUpdateSchema = z.object({
+  name: nameSchema.optional(),
+  iso_code: z.string().trim().min(2).max(10).nullable().optional(),
+});
+export type CountryUpdateInput = z.infer<typeof countryUpdateSchema>;
 
 /** `acronym` é NOT NULL na base (ver init_schema.sql). */
 export const exporterSchema = z.object({

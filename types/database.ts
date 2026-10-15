@@ -269,6 +269,8 @@ export type Database = {
         Row: {
           id: UUID;
           name: string;
+          /** Espelho do GSS: ISO 3166-1 alfa-3 (migration 20261014120000). */
+          iso_code: string | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -279,6 +281,7 @@ export type Database = {
         Insert: {
           id?: UUID;
           name: string;
+          iso_code?: string | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
@@ -341,6 +344,10 @@ export type Database = {
         Row: {
           id: UUID;
           name: string;
+          /** Espelho do GSS: `province_name` e `country_name` como TEXTO, não
+           *  FK — decisão de 14/10/2026 (migration 20261014120000). */
+          province: string | null;
+          country: string | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -351,6 +358,8 @@ export type Database = {
         Insert: {
           id?: UUID;
           name: string;
+          province?: string | null;
+          country?: string | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
