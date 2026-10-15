@@ -646,12 +646,14 @@ create trigger trg_business_units_updated_at before update on public.business_un
 
 Tipo de pedido (Gift, Exchange, Samples, Sales). Nome + **ícone SVG** + **cor** (para o chip "Type" em Orders). Ícone vai para Supabase Storage (bucket `order-types`); cor guardada como texto (hex ou nome da paleta).
 
+> 🟣 **15/10/2026 — cor opcional, padrão roxo.** Ninguém precisa mandar `color` (GSS, API ou tela): sem valor, o tipo fica com o roxo do SOTWISE `#640BB7` (o `--primary` do app). O padrão é o default da coluna no banco, então vale para qualquer caminho de gravação; os tipos que estavam sem cor foram preenchidos com o roxo. Migration `20261015120000_order_types_default_color.sql`.
+
 ```sql
 create table public.order_types (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   icon_path   text not null,             -- SVG no bucket 'order-types'
-  color       text not null,             -- cor da tag (hex ou token da paleta)
+  color       text not null default '#640BB7', -- cor da tag (hex); opcional na gravação, sem valor fica o roxo (15/10/2026)
   deleted_at  timestamptz,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
