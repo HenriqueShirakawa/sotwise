@@ -634,7 +634,8 @@ export type Database = {
           id: UUID;
           name: string;
           icon_path: string | null;
-          color: string | null;
+          /** NOT NULL com default `#640BB7` (roxo do SOTWISE) desde 20261015120000. */
+          color: string;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -647,7 +648,7 @@ export type Database = {
           id?: UUID;
           name: string;
           icon_path?: string | null;
-          color?: string | null;
+          color?: string;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;

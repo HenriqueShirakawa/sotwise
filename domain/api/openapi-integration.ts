@@ -305,12 +305,12 @@ const LIBS: Lib[] = [
     out: {
       id: uuid,
       name: { type: "string" },
-      color: { type: ["string", "null"] },
+      color: { type: "string", description: "Always set — `#640BB7` (SOTWISE purple) when none was sent." },
       icon_path: { type: ["string", "null"] },
     },
     create: {
       name,
-      color: { type: "string", maxLength: 50, description: "e.g. `#640BB7`." },
+      color: { type: "string", maxLength: 50, description: "Optional. Hex, e.g. `#640BB7`. Defaults to `#640BB7` (SOTWISE purple) when omitted." },
       icon_path: { type: "string", maxLength: 500 },
     },
     required: ["name"],
