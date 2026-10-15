@@ -342,7 +342,7 @@ Vale escrever uma ferramenta de merge se o volume do pareamento B for alto.
 `business_units.icon_path` e `order_types.icon_path` são **paths no nosso
 Supabase Storage** — arquivo não viaja pelo sync. Proposta: ícone continua sendo
 gerenciado aqui (única exceção ao read-only), amarrado ao registro pelo `gss_id`;
-o GSS manda `name` e `color`. Se o cliente quiser o ícone também no GSS, aí o
+o GSS manda `name` (não tem cor; `color` cai no default roxo `#640BB7` desde 15/10/2026). Se o cliente quiser o ícone também no GSS, aí o
 contrato precisa de bytes ou URL pública, e o sync ganha um passo de download.
 
 ### 6.5 Observabilidade
