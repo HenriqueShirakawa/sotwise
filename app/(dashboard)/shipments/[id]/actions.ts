@@ -10,6 +10,7 @@ import { scheduleClientNotificationDispatch } from "@/domain/client/notification
 import { requireFeature } from "@/lib/dal";
 import { applyDeliveredRule } from "@/domain/shipments/delivered";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
+import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
@@ -135,13 +136,19 @@ export async function saveShipmentStep(
     if (ruleError) return { ok: false, error: ruleError };
   }
 
+  // Data prevista posta numa etapa que já tinha o documento: fecha sozinha
+  // (ver lib/pl-step-autocomplete). Limpar o "Completed on" à mão não reabre-fecha.
+  if (!("completed_on" in patch) && "estimated_date" in patch) {
+    await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+  }
+
   revalidateShipmentViews();
   // Atribuir/trocar responsável ou concluir/reabrir etapa muda a To do list.
   revalidatePath("/todo");
   // Realtime: colunas da lista Shipments (datas/status) mudaram — atualiza quem
   // está com ela aberta e parada.
   await broadcastShipmentPing();
-  // Data de Shipping date / ETA / ATA / Delivered mudou → GSS na hora (só PATCH).
+  // Data de Shipping date / ETA / ATA / Delivered mudou → GSS na hora.
   if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
   return { ok: true };
 }
@@ -198,7 +205,14 @@ export async function registerShipmentAttachment(
     return { ok: false, error: insertError.message };
   }
 
+  // O anexo pode ser o que faltava pra etapa fechar (BL, Original Docs…).
+  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+
   revalidateShipmentViews();
+  if (completed) {
+    revalidatePath("/todo");
+    await broadcastShipmentPing();
+  }
   return { ok: true };
 }
 

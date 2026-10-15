@@ -8,6 +8,7 @@ import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { requireFeature } from "@/lib/dal";
 import { confirmShippingRecord, type ConfirmShippingInput } from "@/domain/shipments/confirm";
+import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
@@ -36,6 +37,24 @@ export type StepPatch = Partial<{
   booking_number: string | null;
   cutoff_date: string | null;
 }>;
+
+/** Campos que entram na regra de conclusão — só eles disparam a auto-conclusão. */
+const COMPLETION_FACT_FIELDS: (keyof StepPatch)[] = [
+  "estimated_date",
+  "consolidation_point_id",
+  "city_id",
+  "pol_id",
+  "carrier_id",
+  "agent_brazil_id",
+  "agent_china_id",
+  "contact_brazil_id",
+  "contact_china_id",
+  "booking_number",
+];
+
+function touchesCompletionFacts(patch: StepPatch): boolean {
+  return COMPLETION_FACT_FIELDS.some((k) => k in patch);
+}
 
 /**
  * Grava um campo de uma etapa do checklist do PL. As linhas de
@@ -91,6 +110,13 @@ export async function savePreLoadingStep(
         .insert({ pre_loading_id: preLoadingId, step, ...values });
   if (error) return { ok: false, error: error.message };
 
+  // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha.
+  // Não roda quando o próprio patch mexe no "Completed on" — limpar a data à mão
+  // não pode ser desfeito na mesma hora.
+  if (!("completed_on" in patch) && touchesCompletionFacts(patch)) {
+    await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+  }
+
   // Pelo padrão da rota, não por valor: a página vive em duas URLs (pl_number
   // bonito e UUID antigo) — isto invalida as duas de uma vez.
   revalidatePath("/pre-loading/[id]", "page");
@@ -99,7 +125,7 @@ export async function savePreLoadingStep(
   revalidatePath("/todo");
   // Realtime: colunas da lista Pre-loading (datas/booking) mudaram.
   await broadcastPreLoadingPing();
-  // Data do Loading date mudou → GSS na hora (depois da resposta, só PATCH).
+  // Data do Loading date mudou → GSS na hora (depois da resposta).
   if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
   return { ok: true };
 }
@@ -178,7 +204,15 @@ export async function registerPreLoadingAttachment(
     return { ok: false, error: insertError.message };
   }
 
+  // O anexo pode ser o que faltava pra etapa fechar (ver lib/pl-step-autocomplete).
+  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+
   revalidatePath("/pre-loading/[id]", "page");
+  if (completed) {
+    revalidatePath("/pre-loading");
+    revalidatePath("/todo");
+    await broadcastPreLoadingPing();
+  }
   return { ok: true };
 }
 
