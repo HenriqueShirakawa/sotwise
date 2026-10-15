@@ -208,11 +208,11 @@ Os 14 recursos disponíveis. O slug da URL é exatamente o da coluna "Endpoint".
 | Carriers | `/api/carriers` | `id, name` |
 | Categories | `/api/categories` | `id, name` |
 | Factories | `/api/factories` | `id, name` |
-| Cities | `/api/cities` | `id, name` |
+| Cities | `/api/cities` | `id, name, province, country` |
 | POLs | `/api/pols` | `id, name` |
 | PODs | `/api/pods` | `id, name` |
 | Clients | `/api/clients` | `id, name, country_id` |
-| Countries | `/api/countries` | `id, name` |
+| Countries | `/api/countries` | `id, name, iso_code` |
 | Exporters | `/api/exporters` | `id, name, acronym` |
 | Order Types | `/api/order-types` | `id, name, color, icon_path` |
 | Shipment Models | `/api/shipment-models` | `id, name` |
@@ -237,11 +237,26 @@ Os recursos operacionais (orders, lotes, linhas Factory × Category, ETD, PL/shi
 
 ### Somente nome
 
-`carriers` · `categories` · `factories` · `cities` · `pols` · `pods` · `countries` · `shipment-models` · `business-units`
+`carriers` · `categories` · `factories` · `pols` · `pods` · `shipment-models` · `business-units`
 
 ```json
 { "name": "Shanghai" }
 ```
+
+### Geografia (`countries`, `cities`) — espelho do GSS
+
+`countries` aceita `iso_code` (ISO 3166-1 alfa-3) e `cities` aceita `province` e
+`country`, os dois **em texto**: não são FK, a hierarquia de províncias do GSS
+não é replicada aqui. Todos opcionais — `{ "name": "…" }` continua válido.
+
+```json
+{ "name": "China", "iso_code": "CHN" }
+{ "name": "Ningbo", "province": "Zhejiang", "country": "China" }
+```
+
+⚠️ As duas bibliotecas são **espelho** do cadastro do GSS (`/core/country/` e
+`/core/city/`): escrever aqui funciona, mas o sync agendado devolve o valor da
+origem no pull seguinte. Ver [`INTEGRACAO_GSS.md` §9.10](INTEGRACAO_GSS.md).
 
 Em `business-units` e `order-types` o ícone **não** é enviado por esta API (o upload de imagem acontece só pela tela do app). O registro nasce sem ícone.
 

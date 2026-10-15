@@ -156,6 +156,16 @@ const NAME_ONLY = (key: string, label: string, extraOut: Record<string, unknown>
   example: { name: "Shanghai" },
 });
 
+/**
+ * Geografia (Countries/Cities) é ESPELHO do GSS — ele é o dono do cadastro e
+ * estas duas bibliotecas são o reflexo do `/core/country/` e `/core/city/` dele.
+ */
+const GEO_MIRROR_NOTE =
+  "Mirror of the GSS registry: these records are pulled from GSS and refreshed by the scheduled sync. Writing here is possible, but the next sync restores the GSS value.";
+
+const GEO_TEXT_NOTE =
+  "Plain text, not a foreign key — the GSS province/country tables are not replicated here.";
+
 const EMAIL_NOTE =
   "E-mail rule: send `email` filled **or** `email_na: true` (then `email` is stored as null). On PATCH the rule applies only when one of the two is sent.";
 
@@ -236,7 +246,29 @@ const LIBS: Lib[] = [
     example: { name: "Brake Pads", factory_ids: [] },
   },
   NAME_ONLY("factories", "Factories"),
-  NAME_ONLY("cities", "Cities"),
+  {
+    key: "cities",
+    label: "Cities",
+    out: {
+      id: uuid,
+      name: { type: "string" },
+      province: { type: ["string", "null"] },
+      country: { type: ["string", "null"] },
+    },
+    create: {
+      name,
+      province: { type: ["string", "null"], maxLength: 200, description: GEO_TEXT_NOTE },
+      country: { type: ["string", "null"], maxLength: 200, description: GEO_TEXT_NOTE },
+    },
+    required: ["name"],
+    update: {
+      name,
+      province: { type: ["string", "null"], maxLength: 200 },
+      country: { type: ["string", "null"], maxLength: 200 },
+    },
+    note: GEO_MIRROR_NOTE,
+    example: { name: "Ningbo", province: "Zhejiang", country: "China" },
+  },
   NAME_ONLY("pols", "POLs"),
   NAME_ONLY("pods", "PODs"),
   {
@@ -248,7 +280,16 @@ const LIBS: Lib[] = [
     update: { name, country_id: uuid },
     example: { name: "Amacom", country_id: "8e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a45" },
   },
-  NAME_ONLY("countries", "Countries"),
+  {
+    key: "countries",
+    label: "Countries",
+    out: { id: uuid, name: { type: "string" }, iso_code: { type: ["string", "null"] } },
+    create: { name, iso_code: { type: ["string", "null"], minLength: 2, maxLength: 10, description: "ISO 3166-1 alpha-3 (BRA, CHN)." } },
+    required: ["name"],
+    update: { name, iso_code: { type: ["string", "null"], minLength: 2, maxLength: 10 } },
+    note: GEO_MIRROR_NOTE,
+    example: { name: "China", iso_code: "CHN" },
+  },
   {
     key: "exporters",
     label: "Exporters",

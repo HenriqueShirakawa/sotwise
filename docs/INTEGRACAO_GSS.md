@@ -44,6 +44,13 @@ Complementa [`docs/SCHEMA.md`](SCHEMA.md) (schema do nosso lado) e
 > que a API de Bibliotecas já usava (`requireApiSession()`, lib/api-auth.ts) —
 > mesmo header nas duas áreas. Seguro trocar direto (sem período de transição)
 > porque o GSS ainda não tinha implementado a chamada de Orders do lado deles.
+>
+> ➡️ **Via de SAÍDA SOTWISE → GSS (2026-10-01) — desenhada, sem código.** O
+> usuário quer que algumas gravações do front, além do nosso banco, sejam
+> enviadas ao GSS (POST/PUT/PATCH). Decisão: **salva aqui e envia por fila
+> assíncrona** — a gravação nunca falha por causa do GSS. O que o GSS aceita
+> hoje, os bloqueios e o desenho estão no §10. **O build espera a lista de dados
+> do usuário.**
 
 ---
 
@@ -558,11 +565,29 @@ A política do agendado é conservadora de propósito: campos e vínculos sempre
 INSERT só de `countries`/`cities`, e **`softDelete` desligado** — sem
 `deleted_at` na origem o sumiço é inferido por diferença de conjunto, e uma
 falha parcial da API viraria exclusão em massa. Cada recurso grava
-`gss_sync_state` (status, linhas, erro), inclusive quando falha.
+`gss_sync_state` (status, linhas, erro), inclusive quando falha. O próprio
+agendado grava a linha **`cron`** da mesma tabela a cada execução, com sucesso
+ou erro: a leitura do GSS acontece antes de qualquer recurso gravar estado, então
+sem ela uma falha de leitura não deixava rastro (o banco seguia mostrando o
+último "ok" manual — foi assim que o cron ficou parado de 01/09 a 01/10/2026 sem
+ninguém ver). O CLI não toca essa linha: ela é o batimento só do agendado.
 
-> ⚠️ **`CRON_SECRET` precisa ser configurada na Vercel** — sem ela a rota
-> responde 503 e o cron nunca roda. Mesma pendência de ambiente do Copilot e do
-> Resend.
+> ✅ **Agendado de volta em 01/10/2026** (primeira execução ok às 18:41 UTC,
+> disparada pelo botão **Run** em Vercel → Settings → Cron Jobs). Eram três
+> travas empilhadas, e cada uma só aparecia depois de tirar a anterior:
+>
+> 1. **Bot Fight Mode** na zona `gssdatahub.com` desafiava o IP da Vercel
+>    (§9.9). A zona é plano Free, onde o Bot Fight Mode não aceita exceção (nem
+>    regra Skip, nem por IP) — foi **desligado** na zona inteira. O `api.`
+>    continua atrás do Cloudflare Access (sem service token → login).
+> 2. **`GSS_CF_ACCESS_CLIENT_SECRET` vazia** no projeto `agk-solution/sotwise`
+>    (existia desde 28/08, sem valor) → "Credenciais do GSS ausentes no runtime".
+> 3. **`GSS_USERNAME`/`GSS_PASSWORD` desatualizados** na Vercel → GSS respondia
+>    401 *"No active account found with the given credentials"*.
+>
+> Env var na Vercel só vale depois de **Redeploy**. A recuperação de um mês
+> gravou de uma vez: +7044 cidades, 29 factories, 5 clients, 34 vínculos
+> Factory×Category.
 
 ### 9.7 Em aberto
 
@@ -787,9 +812,15 @@ O gerador espelha a resposta CRUA da API (payload em `jsonb`) e carimba a
 geração; o painel mostra "snapshot tirado há…" e, se a última geração falhou,
 segue exibindo a foto anterior com aviso. Rodar o gerador de dentro de um
 datacenter (Vercel/CI/GitHub Actions) esbarra no mesmo challenge — tem que ser
-de IP allowlistado. **Consequência ainda aberta:** o cron `app/api/cron/gss-sync`
-roda na Vercel e apanha do mesmo jeito; o sync operacional segue disparado à mão
-pelo CLI (ver §9 e a memória do projeto).
+de IP allowlistado.
+
+**Atualização 01/10/2026:** o desafio vinha do **Bot Fight Mode** da zona
+`gssdatahub.com` (Security → Analytics → Events: *Managed Challenge*, service
+*Bot fight mode*, IP da AWS São Paulo). Temos acesso ao Cloudflare da zona e o
+Bot Fight Mode foi **desligado** — no plano Free ele não aceita exceção por regra
+nem por IP. Com isso o cron voltou a ler o GSS da Vercel (ver "O agendado" no
+§9.6). O painel segue no snapshot; dá para voltar a ler ao vivo, mas não foi
+mexido. Se alguém religar o Bot Fight Mode, o cron volta a falhar na hora.
 
 Por recurso, a tela mostra a lista do GSS com o par de cada linha e quatro
 contadores — quantos vieram, quantos casaram, quantos do GSS estão sem par e
@@ -827,6 +858,249 @@ pareamento automático (o match por nome só pega linha ainda sem vínculo).
 **Gatilho para retomar:** quando o GSS virar a fonte operacional de verdade das
 bibliotecas — antes disso, o custo de travar supera o de conviver com o risco.
 
-Na mesma linha, o **`CRON_SECRET` não está cadastrado na Vercel**: a rota
-responde 503 em produção e o agendado não roda. Fica assim de propósito
-enquanto o sync for disparado à mão pelo CLI durante os testes.
+O `CRON_SECRET` está cadastrado na Vercel desde 17/08/2026 (sem o token a rota
+responde 401, não 503). O agendado voltou a rodar em 01/10/2026 — ver "O
+agendado" no §9.6.
+
+### 9.10 Geografia virou espelho de verdade (2026-10-14)
+
+Até aqui `countries` e `cities` sincronizavam **só o nome** — o resto do registro
+do GSS ficava de fora. Pedido do usuário: espelhar as duas bibliotecas inteiras,
+e **sem replicar as FKs da origem** ("se houver mais conexões com outros bd não
+vamos precisar, vamos apenas colocar como string mesmo").
+
+| | GSS | Aqui |
+|---|---|---|
+| país | `/core/country/` → `name`, `iso_code`, `is_active` | `countries.name`, `countries.iso_code`, `countries.is_active` |
+| cidade | `/core/city/` → `name`, `province` (FK) + `province_name`, `country_name`, `is_active` | `cities.name`, `cities.province` **(texto)**, `cities.country` **(texto)**, `cities.is_active` |
+
+Migration `20261014120000_geography_mirror_gss.sql` (aditiva: 3 colunas
+nullable + índice `(province, name)`). Nenhuma tabela `provinces` e nenhum
+`cities.country_id` → `countries`: a hierarquia Country → Province → City do GSS
+chega achatada em texto, e quem quiser filtrar cidade por país filtra pela
+string.
+
+#### A identidade de uma cidade é `(nome, província)`
+
+Descoberta ao ligar o espelho: o GSS tem **8192 cidades** (eram 646 em 08/2026 —
+carregaram os municípios do Brasil inteiro e 2166 da China) e **411 nomes se
+repetem** entre províncias — "Santa Maria" no RS e no RN, "Jundiaí" em SP e no RN.
+O motor dedupe o lado do GSS pela chave de identidade e **o nome não serve de
+chave aqui**: a homônima de menor id representava o grupo e as outras **502**
+nunca entravam — descartadas em silêncio, não barradas por política.
+
+`planResource` ganhou o parâmetro `dedupKey`, e `cities` passa
+`nome|província` (único na origem: 0 repetições em 14/10/2026). O resto das
+bibliotecas segue com a chave no nome. Dois ajustes que vieram com isso e valem
+para todos os recursos:
+
+- o match por nome não entrega a mesma linha local a dois registros do GSS
+  (`seenLocal`) — sem isso, as duas "Santa Maria" disputariam a nossa única linha
+  e uma das duas sobrescreveria o `gss_id` da outra;
+- a ordem de processamento é por id do GSS, não a ordem do array da API: qual
+  homônima fica com a linha local existente deixa de variar entre execuções.
+
+#### O que o primeiro pull aplica
+
+Dry-run de 14/10/2026 (`npx tsx scripts/sync-gss/sync.ts`):
+
+| Recurso | FIELDS | INSERT | sumiu |
+|---|---:|---:|---:|
+| countries | 20 (`iso_code`) | 0 | 1 (Singapore, §9.7) |
+| cities | 7690 (`province`+`country`) | 502 (homônimas) | 6 |
+
+São 7710 UPDATEs linha a linha (25 em paralelo) **uma vez só**; do segundo pull
+em diante a geografia volta a ser diferença pequena. A rota do cron tem
+`maxDuration = 300`, e o backfill cabe — mas se estourar, a execução é
+idempotente e o dia seguinte continua de onde parou.
+
+> ⚠️ **`factories` está sincronizando zero, e não é por causa daqui.**
+> `/core/supplier/` devolve 812 linhas, mas o payload virou
+> `{id, is_obsolete, obsolete_justification, is_active}` — **sem `company` nem
+> `company_name`**, que é de onde tirávamos o nome da fábrica. Com nome vazio o
+> recurso inteiro é ignorado (`match 0 / insert 0` no dry-run acima). Era o que o
+> §4.4 chamava de "supplier é o company_name"; o campo saiu da resposta. Voltar a
+> sincronizar fábrica exige cruzar `supplier.company` com `/core/company/` — e o
+> `company` precisa voltar ao payload. É decisão para a origem, não ajuste nosso.
+
+---
+
+## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01; PL/Shipment construído em 2026-10-02)
+
+Até aqui tudo é GSS → SOTWISE (pull de bibliotecas, push e leitura de orders).
+O pedido novo é o sentido contrário: quando o usuário salva certos dados no
+front, gravar no nosso banco **e** mandar ao GSS por POST/PUT/PATCH. O primeiro
+dado construído é **PL/Shipment → `/v1/shipments/`** (§10.4).
+
+**Decisões do usuário (01/10):**
+1. **Salva aqui e envia em fila.** O nosso banco é gravado na hora; o envio ao
+   GSS é assíncrono, com retentativa. A gravação do usuário **nunca** falha por
+   causa do GSS.
+2. **Esperar a lista.** Nada é implementado até o usuário definir quais dados
+   vão (e se o endpoint já existe no GSS ou se nós propomos o contrato).
+
+### 10.1 O que o GSS aceita hoje
+
+Sondado em 01/10/2026 pelo `/openapi.json` (Swagger 2.0, `basePath /v1`, 63
+paths), da máquina allowlistada, só leitura:
+
+| Recurso | Métodos |
+|---|---|
+| `/orders/{id}/` | GET, PUT, PATCH — `{id}` = `orders.gss_id` (= `po_number`) |
+| `/orders/` | GET, POST |
+| `/orders/{order_id}/items/`, `/orders/totals/`, `/orders/batch-totals/` | **só GET** |
+| `/shipments/` · `/shipments/{pl_number}/` | GET, POST · GET, PATCH, DELETE — **novo em 02/10**, ver §10.4 |
+| `/core/{agent, business-unit, carrier, company, currency, customer, customer-consignee, customer-importer, exporter, family, order-type, port, sales-representative, sales-representative-customer, supplier, supplier-category}/` | CRUD completo (lista: GET/POST · `{id}`: GET/PUT/PATCH/DELETE); customer, supplier, exporter, order-type, port e business-unit também têm `deactivate`/`reactivate` |
+
+Order (`definitions.Order`) — campos **graváveis**: `customer`, `exporter`,
+`consignee`, `importer`, `leader` (id de usuário **do GSS**, nullable),
+`currency` (`USD`|`RMB`), `usd_rmb`, `down_payment`, `fob_cost_rate`, `pod`,
+`sales_representative`, `business_unit`, `order_type`, `is_locked`. Os `*_name`,
+`leader_username`, `requester_username`, `id`, `created_at`, `updated_at` são
+read-only. **Obrigatórios:** customer, exporter, consignee, importer, usd_rmb,
+down_payment, order_type.
+
+Consequências:
+- **PUT e POST de Order não dão:** exigem consignee, importer, usd_rmb e
+  down_payment, que não existem no nosso schema. **Só PATCH (parcial) serve.**
+- Do nosso cabeçalho, hoje só dá para mandar **customer** (`clients.gss_id`),
+  **exporter**, **business_unit** e **order_type**. `leader` não: `profiles` não
+  tem o id de usuário do GSS.
+- **Status, checklist (ETD/ETA/Booking/Cut-off…), lotes, F×C, PL e Shipment não
+  têm campo no GSS.** Se algum deles entrar na lista, o time do GSS precisa criar
+  o endpoint — e aí nós propomos o payload.
+
+### 10.2 Bloqueios que independem da lista
+
+- ~~**Cloudflare barra a Vercel**~~ (§9.9) — **resolvido em 01/10/2026**: o
+  desafio era o Bot Fight Mode da zona, que foi desligado; a Vercel já lê o GSS
+  (o cron voltou). Para a escrita, falta só a permissão abaixo.
+- **Permissão de escrita do usuário técnico** em Order (`change_order`) é
+  desconhecida. Descobrir exige um PATCH de teste — só com aprovação explícita.
+  Em Shipment ela existe: POST 201 e PATCH 200 testados em 02/10 (§10.4).
+- **Quem manda em cada campo.** O cabeçalho da Order nasce no GSS; mandar o
+  nosso valor sobrescreve o deles, e hoje há divergência (50 exporters, 18 order
+  types com troca real — ver o de-para de 24/09). Decidir campo a campo antes de
+  ligar envio de cabeçalho.
+- **Eco.** O GSS escreve em nós por `POST /api/orders`; se essa rota também
+  enfileirasse envio, a mudança voltaria pro GSS. O desenho abaixo evita isso
+  enfileirando só nas server actions do front.
+
+### 10.3 Desenho (de 01/10 — o que foi construído e onde mudou: §10.4)
+
+- **Fila `gss_outbound`** (migration nova): `kind`, `entity_type`, `entity_id`,
+  `status` (`pending|sending|sent|failed|skipped`), `attempts`,
+  `next_attempt_at`, `locked_until`, `method`, `path`, `payload` (o que foi
+  enviado), `response_status`, `response_body` (truncado), `last_error`,
+  `created_by`, timestamps. RLS deny-all. Índice único parcial em
+  `(kind, entity_id) where status = 'pending'` — saves seguidos viram **um**
+  envio.
+- **Reserva sem envio duplo:** RPC `claim_gss_outbound(p_limit)` (`security
+  definer`, só service_role) com `FOR UPDATE SKIP LOCKED` + `locked_until`. Ao
+  contrário de `client_notifications` (que aceita envio duplo), aqui um PATCH/POST
+  repetido teria efeito no GSS.
+- **Cliente de escrita:** `gssRequest(method, path, body)` em `lib/gss/client.ts`,
+  reusando `readConfig`/`ensureAccessToken`/`cfHeaders`; `gssGet` vira invólucro.
+  Timeout de 15s. Dentro da chamada só repete em 401 (renova token); o resto
+  volta classificado para a fila: **`blocked`** (challenge do Cloudflare —
+  `cf-mitigated: challenge` ou HTML "Just a moment"), **`retryable`** (rede, 429,
+  5xx), **`permanent`** (400/403/404/409/422, guardando o corpo do GSS).
+- **Mapeadores** (`lib/gss/outbound/events.ts`): `kind → build(admin, entityId)`
+  devolve `{ method, path, body }` ou `{ skip }`. O payload é montado **na hora
+  do envio** a partir do estado atual do banco (vale o último estado). Sem
+  `gss_id` no registro ou na biblioteca referenciada → `skipped` com motivo.
+- **Enfileirar** (`lib/gss/outbound/enqueue.ts`): `enqueueGssOutbound(...)` na
+  server action **depois** da gravação, `on conflict do nothing`, e agenda o
+  disparo com `after()` (mesmo padrão de `scheduleClientNotificationDispatch`).
+  Nunca lança erro para a action. Exceção: dado com muitos pontos de escrita
+  (status de lote: 7 lugares + 2 RPCs) vai por trigger, como
+  `trg_batches_notify_client`, com guarda contra eco.
+- **Disparo** (`lib/gss/outbound/dispatch.ts`): com `GSS_OUTBOUND_ENABLED !==
+  "true"` não envia (a fila acumula). Backoff `2^attempts` min (teto 6h); 8
+  tentativas → `failed`; `blocked` **não conta tentativa**. Acionado por
+  `after()`, por `POST /api/gss/outbound/dispatch` (`CRON_SECRET`), pelo cron
+  diário e pelo CLI `scripts/sync-gss/push-outbound.ts [--dry|--commit]`.
+- **Painel** em `/access/gss`: contagem por status, últimos eventos com
+  `last_error` e "Reenviar" nos que falharam.
+
+**Receita por dado:** um mapeador em `events.ts` + uma chamada de
+`enqueueGssOutbound` em cada action que grava aquele dado + uma linha aqui.
+
+### 10.4 PL/Shipment → `/v1/shipments/` (construído em 2026-10-02)
+
+**Contrato do GSS** (sondado em 02/10): um registro por PL, chave = `pl_number`
+**inteiro** (não o id). Lista paginada `{count, next, previous, results}`
+(`page_size` ≤ 200 — diferente das `/core/*`), com filtros `status`,
+`pl_number`, `order_id`, `batch_id`, `search`, `created_since/until`,
+`updated_since/until`. `status` por código (`preloading`/`in_transit`/
+`delivered`; legados `PRE`/`RDY`/`SHP`) + `status_phase` read-only.
+Relacionamentos por id do GSS (`pol`/`pod` = porto, `cons_point`/`city` =
+cidade, `carrier`, `origin_agent`/`destination_agent`); `leader`/`signer` por
+id **ou** e-mail (`leader_email` casou com `leonardo.pacce@…` = usuário 5 lá).
+Lotes por `batch_ids` (ids de OrderBatch do GSS; lote ligado em outro shipment
+→ 409). Escrita atômica; 409 com `code` estável (`pl_number_conflict`,
+`batch_already_linked`, `shipment_status_blocked`, `shipment_status_trigger_failed`,
+`shipment_has_financial_records`, `shipment_delete_blocked`).
+
+**PL 1306** foi criado à mão em 02/10 (id 1 — o primeiro shipment do GSS) para
+validar o contrato e ficou lá. O envio automático foi testado contra ele (PATCH
+200 com os mesmos valores).
+
+**Regra (ver `regras_de_negocio.md` §6.5):** Create PL cria lá; cada data
+concluída das etapas abaixo atualiza; se o PL não existe lá, cria antes.
+
+| Etapa (`completed_on`) | Campo no GSS |
+|---|---|
+| Loading date | `loading_date` (datetime, `YYYY-MM-DDT12:00:00Z`) |
+| Shipping date | `shipping_date` |
+| ETA Brazil | `eta_destination` |
+| ATA Brazil | `ata_destination` |
+| Delivered | `delivered_date` |
+
+Pendentes do lado do GSS: campos `estimated_loading_date` e `etd` (pedidos ao
+time deles), escrita de **OrderBatch** (sem isso não há `batch_ids` — o GSS não
+tem nenhum lote; `/orders/batch-totals/` volta `[]`), porto **Qingdao** (o GSS
+tem 27 portos, sem ele). Consolidation point não mapeia (lá é cidade, aqui é
+fábrica).
+
+**O que foi construído e onde difere do desenho de 01/10:**
+- **Captura por trigger, não nas actions** (migration
+  `20261002120000_gss_outbound.sql`): `trg_pre_loadings_gss_outbound` (AFTER
+  INSERT, ignora linha com `bubble_id` — migração não é Create PL) e
+  `trg_pl_steps_gss_outbound_update/insert` (`completed_on` das 5 etapas mudou).
+  As datas são gravadas em `savePreLoadingStep`, `saveShipmentStep`, na RPC
+  `confirm_shipping` e nas actions de e-mail, e `main`/`dev` escrevem no mesmo
+  banco — o trigger pega todos. Falha da fila vira `warning`, nunca derruba o save.
+- Tabela mais enxuta: `kind`, `entity_id`, `status`, `attempts`,
+  `next_attempt_at`, `locked_until`, `request` (`{method, path, body}`),
+  `response_status`, `response_body`, `last_error`, `sent_at`, timestamps. Sem
+  `entity_type`/`created_by`. RPCs `enqueue_gss_outbound` e
+  `claim_gss_outbound` (só `service_role`).
+- `gssRequest` em `lib/gss/client.ts` (classes `ok|blocked|retryable|permanent`);
+  `gssGet` ficou como estava.
+- Mapeador `lib/gss/outbound/pl-shipment.ts` (em vez de `events.ts`): PATCH com
+  as 5 datas (etapa reaberta → `null`, que limpa lá); 404 → POST com
+  `pl_number`, `status` (só na criação), `customer_reference`, `pod` e as
+  datas; 409 `pl_number_conflict` (corrida) → repete o PATCH.
+- **Envio DIRETO na hora (mudança de 02/10, pedido do usuário):** salvar uma
+  das 5 datas no checklist (`savePreLoadingStep`/`saveShipmentStep`) e o
+  `confirmShipping` chamam `sendPlShipmentToGss` (`schedule.ts`), que manda ao
+  GSS logo depois da resposta (`after()`) — **sem depender da migration nem de
+  `GSS_OUTBOUND_ENABLED`**. Resultado só no log da Vercel (`[gss] PATCH
+  /shipments/1306/ → 200 (ok)`). O Create PL ficou na fila (o envio automático
+  na criação foi barrado pelo controle de permissões desta sessão — pendente).
+- Fila (rede de retentativa, opcional): `lib/gss/outbound/dispatch.ts`; o cron
+  diário (`app/api/cron/sync-gss`) drena no fim — só com a migration e a chave.
+  **Não foram feitos:** `POST /api/gss/outbound/dispatch` e o painel em
+  `/access/gss`.
+- CLI: `npx tsx scripts/sync-gss/push-outbound.ts` (dry: fila + payloads) ·
+  `--enqueue 1306,1400` (força PLs — backfill à mão) · `--commit` (envia mesmo
+  com a chave desligada).
+
+**Para ligar:** aplicar a migration no Studio do AGK e cadastrar
+`GSS_OUTBOUND_ENABLED=true` no ambiente da Vercel. Sem a chave os triggers
+enfileiram e nada sai.
+
+⚠️ **Re-migração/recarga em massa do checklist enfileira todos os PLs tocados.**
+Antes de uma, desligar a chave; depois, `update gss_outbound set status =
+'skipped', last_error = 'recarga' where status = 'pending'`.
