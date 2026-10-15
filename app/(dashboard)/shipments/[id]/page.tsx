@@ -271,6 +271,7 @@ export default async function ShipmentDetailPage({
         .select(
           "id, batch_id, order_id, factory_id, category_id, loading_status, etd_info(initial_date)"
         )
+        .eq("is_active", true)
         .in("batch_id", lookupIds)
         .returns<OfcEmbed[]>()
     : { data: [] as OfcEmbed[] };

@@ -110,7 +110,11 @@ export default async function ShipmentsPage() {
       admin.from("orders").select("id, order_type_id").range(from, to)
     ),
     fetchAll<{ id: string; batch_id: string | null }>((from, to) =>
-      admin.from("order_factory_category").select("id, batch_id").range(from, to)
+      admin
+        .from("order_factory_category")
+        .select("id, batch_id")
+        .eq("is_active", true)
+        .range(from, to)
     ),
     fetchAll<StepRow>((from, to) =>
       admin

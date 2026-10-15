@@ -106,6 +106,7 @@ export default async function EtdFactoriesPage() {
             "etd_info(initial_date, current_date, ready, ready_date, updated_at, " +
             "inspection, dispatch_location_id, dispatch_date)"
         )
+        .eq("is_active", true)
         .in("batches.status", ACTIVE_BATCH_STATUSES)
         .is("orders.deleted_at", null)
         .range(from, to)

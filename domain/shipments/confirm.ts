@@ -157,6 +157,7 @@ export async function confirmShippingRecord(
   const { count: lineCount, error: linesError } = await admin
     .from("order_factory_category")
     .select("id", { count: "exact", head: true })
+    .eq("is_active", true)
     .in("batch_id", batchIds);
   if (linesError) return { ok: false, status: 500, error: linesError.message };
   if (!lineCount) {

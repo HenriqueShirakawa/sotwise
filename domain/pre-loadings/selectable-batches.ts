@@ -44,6 +44,7 @@ export async function loadSelectableBatchOptions(admin: Admin): Promise<BatchOpt
       admin
         .from("order_factory_category")
         .select("batch_id, factory_id, category_id, batches!inner(status)")
+        .eq("is_active", true)
         .in("batches.status", SELECTABLE_BATCH_STATUSES)
         .range(from, to)
         .returns<OfcBatchRow[]>()

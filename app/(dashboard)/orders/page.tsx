@@ -73,6 +73,7 @@ export default async function OrdersPage() {
         admin
           .from("etd_info")
           .select("initial_date, order_factory_category!inner(order_id)")
+          .eq("order_factory_category.is_active", true)
           .not("initial_date", "is", null)
           .range(from, to)
           .returns<EtdOrderRow[]>()
