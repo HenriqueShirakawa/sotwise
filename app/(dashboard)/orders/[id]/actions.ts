@@ -723,6 +723,7 @@ export async function getOrderEtdStepData(
     admin
       .from("order_factory_category")
       .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
+      .eq("is_active", true)
       .eq("order_id", orderId),
     // Paginados: cortados no teto de 1000 do PostgREST, a entrada apareceria
     // com fábrica/categoria "—" na tela (ver lib/fetch-all).

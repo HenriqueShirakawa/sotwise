@@ -97,6 +97,7 @@ export default async function OrderDetailPage({
     admin
       .from("order_factory_category")
       .select("id, batch_id, category_id, factory_id, ship_requirement, loading_status")
+      .eq("is_active", true)
       .eq("order_id", order.id),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin

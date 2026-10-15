@@ -494,6 +494,7 @@ const getOrderDetail = defineTool({
         .select(
           "id, factory_id, category_id, ship_requirement, loading_status, batch_id, etd_info(initial_date, current_date, ready, ready_date, inspection)"
         )
+        .eq("is_active", true)
         .eq("order_id", order.id)
         .returns<
           {
@@ -680,6 +681,7 @@ const listEtdEntries = defineTool({
       .select(
         "factory_id, category_id, ship_requirement, batches!inner(batch_number, status), orders!inner(id, po_number, client_id), etd_info(initial_date, current_date, ready, ready_date, inspection, updated_at)"
       )
+      .eq("is_active", true)
       .in("batches.status", statuses)
       .is("orders.deleted_at", null);
 
@@ -1129,6 +1131,7 @@ const traceChain = defineTool({
         .select(
           "batch_id, factory_id, category_id, ship_requirement, loading_status, etd_info(initial_date, current_date, ready, ready_date)"
         )
+        .eq("is_active", true)
         .in("batch_id", [...pageIds, ...ancestorOf.keys()])
         .returns<ChainOfcRow[]>(),
     ]);
