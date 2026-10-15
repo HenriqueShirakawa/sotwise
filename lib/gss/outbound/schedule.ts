@@ -13,13 +13,14 @@ export function isGssShipmentStep(step: ChecklistStep): boolean {
 }
 
 /**
- * Manda as datas do PL ao GSS (`PATCH /v1/shipments/{pl_number}/`) logo DEPOIS
- * da resposta (`after` do Next 16): o usuário troca a data no checklist e o GSS
- * recebe na hora, sem o save esperar o GSS nem falhar por causa dele.
+ * Manda o estado atual do PL ao GSS (`PATCH /v1/shipments/{pl_number}/`) logo
+ * DEPOIS da resposta (`after` do Next 16): o usuário troca a data no checklist e
+ * o GSS recebe na hora, sem o save esperar o GSS nem falhar por causa dele.
  *
- * Só PATCH por enquanto (decisão do usuário, 02/10): PL que não existe no GSS
- * não é criado — sai no log como não enviado. Na produção, hoje, só o PL 1306
- * existe lá. Resultado só no log da Vercel (`[gss] ...`).
+ * Chamado por Create PL / edição do PL (lotes incluídos ou retirados), pelos
+ * saves das etapas de data (Pre-loading e Shipment — Delivered incluso), pelo
+ * Confirm Shipping e pelo desfazer embarque. Vão as datas, o status da fase e os
+ * lotes do PL (ver pl-shipment.ts). Resultado só no log da Vercel (`[gss] ...`).
  *
  * Na `dev` há também a fila de retentativa (`gss_outbound`); aqui na `main` é
  * só o envio direto.
@@ -31,6 +32,9 @@ export function sendPlShipmentToGss(preLoadingId: string): void {
   try {
     after(async () => {
       try {
+        // Só PATCH: o SOT espelha no GSS o que já existe lá, NUNCA cria — toda
+        // criação é no GSS (decisão do usuário, reafirmada em 13/10). PL que não
+        // existe no GSS sai "skipped" no log.
         const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: false });
         if (push.outcome === "skipped") {
           console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);

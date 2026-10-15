@@ -2,6 +2,7 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
+import { promoteBatchesToProduction } from "@/lib/deposit-production";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { syncOrderStatus } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -25,8 +26,9 @@ import {
  *    sai ao ser movida (a tela só checa o destino; a API é mais estrita);
  *  - a mesma Category + Factory não repete no lote ("gêmeas", lib/ofc-twins);
  *  - lote In Production nunca fica sem linha (nem o destino, nem a origem);
- *  - lote novo nasce In Negotiation e só muda pelo `status` do PATCH (a
- *    promoção automática pelo Deposit Payment ainda não existe na main);
+ *  - lote que ganha a 1ª linha com o Deposit Payment resolvido vai para
+ *    In Production (lib/deposit-production) — a não ser que o PATCH mande o
+ *    `status` explicitamente;
  *  - toda escrita refaz o rollup de status da Order (syncOrderStatus, que já
  *    dispara aviso ao cliente e ping realtime) e revalida as telas.
  *
@@ -367,6 +369,11 @@ export async function createBatch(
     return fail(500, linesError);
   }
 
+  if (incoming.lines.length + fresh.lines.length > 0) {
+    const promoteError = await promoteBatchesToProduction(admin, order.id, [batch.id]);
+    if (promoteError) return fail(500, promoteError);
+  }
+
   return finish(admin, order.id, batch.id, 201);
 }
 
@@ -459,6 +466,17 @@ export async function updateBatch(
 
   const linesError = await writeLines(admin, batch.order_id, batchId, incoming.lines, fresh.lines);
   if (linesError) return fail(500, linesError);
+
+  const wasEmpty = currentLines.length === 0;
+  if (input.status === "in_production") {
+    // Um lote em Production leva os outros In Negotiation da Order junto
+    // (regra do GSS, 13/10/2026 — lib/deposit-production).
+    const promoteError = await promoteBatchesToProduction(admin, batch.order_id);
+    if (promoteError) return fail(500, promoteError);
+  } else if (wasEmpty && finalContent.length > 0 && input.status === undefined) {
+    const promoteError = await promoteBatchesToProduction(admin, batch.order_id, [batchId]);
+    if (promoteError) return fail(500, promoteError);
+  }
 
   return finish(admin, batch.order_id, batchId, 200);
 }
