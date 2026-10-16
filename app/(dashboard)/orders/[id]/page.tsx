@@ -64,7 +64,6 @@ export default async function OrderDetailPage({
     ofcRes,
     categoriesRes,
     factoriesRes,
-    categoryFactoriesRes,
   ] = await Promise.all([
     order.business_unit_id
       ? admin.from("business_units").select("name").eq("id", order.business_unit_id).single()
@@ -116,13 +115,6 @@ export default async function OrderDetailPage({
         .neq("name", "")
         .order("name")
         .range(from, to)
-    ),
-    // Vínculo Factory × Category (docs §3.5.2) — o seletor de Factory dos
-    // modais de lote só oferece as fábricas da categoria escolhida. Passa de 800
-    // linhas, então a paginação aqui não é teórica: cortado no 1000, categoria
-    // ficaria sem fábrica nenhuma pra oferecer.
-    fetchAll<{ category_id: string; factory_id: string }>((from, to) =>
-      admin.from("category_factories").select("category_id, factory_id").range(from, to)
     ),
   ]);
 
@@ -239,13 +231,6 @@ export default async function OrderDetailPage({
     };
   }
 
-  // category_id → fábricas vinculadas. Categoria sem vínculo não entra no mapa;
-  // o client trata a ausência como "sem restrição" (ver order-detail-client).
-  const factoriesByCategory: Record<string, string[]> = {};
-  for (const link of categoryFactoriesRes) {
-    (factoriesByCategory[link.category_id] ??= []).push(link.factory_id);
-  }
-
   return (
     <OrderDetailClient
       orderId={order.id}
@@ -272,9 +257,7 @@ export default async function OrderDetailPage({
       ofc={ofc}
       etdByOfc={etdByOfc}
       loadedByBatch={loadedByBatch}
-      categories={categoriesRes.map((c) => ({ id: c.id, name: c.name }))}
       factories={factoriesRes.map((f) => ({ id: f.id, name: f.name }))}
-      factoriesByCategory={factoriesByCategory}
       profiles={profiles}
       steps={steps}
       viewPrefs={readViewPrefs(profile.ui_preferences)}
