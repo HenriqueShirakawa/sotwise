@@ -807,7 +807,7 @@ Lote do pedido. **Regra do ciclo de vida e do split confirmada com o cliente** (
 > - **Lote recebido do GSS:** o 1º lote da Order entra **In Negotiation**. Quando um lote da Order vai para **In Production** (manual no SOT ou PATCH da API), **todos** os outros lotes In Negotiation da Order — os que já estão lá e os que o GSS incluir depois — vão para In Production também. Vale enquanto a Order tiver lote de Production em diante. Lote vazio continua sem poder ir pra produção (regra de 17/09): ele sobe quando recebe a 1ª Factory × Category. O gatilho do Deposit Payment (30/09) continua valendo junto. Código: `lib/deposit-production.ts` (`promoteBatchesToProduction`). ⚠️ O GSS **não tem endpoint de escrita de lote** (só `GET /orders/batch-totals/`), então a mudança para In Production **não é enviada** ao GSS por enquanto.
 > - **Lote incluído num PL → Pre-loading** (já era assim) **e o GSS recebe**: o PL vai pro `/v1/shipments/` do GSS com `status: preloading` e `batch_ids` (= `batches.gss_id` dos lotes do PL). **Só PATCH — o SOT nunca cria nada no GSS** (decisão do usuário, 13/10): é espelho do que está no SOT; PL que ainda não existe lá é pulado. Toda criação é no GSS.
 > - **Confirm Shipping → In Transit e o GSS recebe** (`status: in_transit`). **Delivered date → Delivered e o GSS recebe** (`status: delivered`, junto com `delivered_date`). Desfazer embarque devolve `preloading`.
-> - Todo envio ao GSS segue atrás da chave `GSS_PL_PUSH_ENABLED=true` (desligada desde 07/10) — `lib/gss/outbound/pl-shipment.ts` / `schedule.ts`.
+> - O envio ao GSS ficou desligado de 07 a 16/10 e foi **religado em 16/10** (§6.12): o "fail request" de 07/10 era outro bug (todas as actions das telas de detalhe quebradas por um `export type` em arquivo "use server"). Desliga em emergência com `GSS_PUSH_DISABLED=true` na Vercel — `lib/gss/outbound/schedule.ts`.
 > - **Confirm Shipping:** o popup lista só as Factory × Category dos lotes amarrados no PL, **sem** a coluna Total/Partial/None; nenhum lote é criado.
 > - **Status Total/Partial/None sai das telas:** "View parts" do Shipment, "View batch" e "Edit batch" do detalhe da Order e a lista do modal Factory × Category. O dado legado continua no banco.
 
@@ -2167,6 +2167,7 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 |---|---|---|
 | loading_date | Loading date (#17) | `loading_date` |
 | shipping_date | Shipping date (#18) | `shipping_date` |
+| BL _(16/10)_ | BL (#19) | `bl_date` |
 | ETA_Brazil | ETA Brazil (#22) | `eta_destination` |
 | ATA_Brazil | ATA Brazil (#23) | `ata_destination` |
 | DELIVERED_DATE | Delivered (#24) | `delivered_date` |
@@ -2269,6 +2270,30 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **GET** devolve `gss_id` e filtra por `?gss_id=`.
 
 Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/[resource]/**` (não nos schemas). Em main e dev.
+
+### 6.12 Todas as datas do checklist que o GSS aceita vão para ele (2026-10-16, só na `dev`)
+
+**Pedido do usuário:** "todas as datas precisam ser disparadas para o GSS", com os endpoints que o Swagger do GSS tem. Conferido no Swagger deles em 16/10: a API de **Orders do GSS é só leitura** (o PATCH de 01/10 sumiu), então datas só cabem em dois lugares — o **Shipment** (`/shipments/{pl_number}/`, PL + Shipment num registro) e o **ETD Factories** (`/shipments/etd-factories/`).
+
+| Etapa do checklist | Vai para | Campo |
+|---|---|---|
+| ETD (Order) — por linha Factory × Category | `etd-factories` | `initial_date`, `current_date`, `ready_parts` |
+| Loading date, Shipping date, ETA Brazil, ATA Brazil, Delivered | Shipment | já iam (§6.5) |
+| **BL** | Shipment | `bl_date` (novo) |
+| Order, PO, PI, Deposit Payment, Packing Confirm., Condition Confirm., Place the Order, Balance Payment, Pre-Loading | — | sem campo no GSS |
+| Booking, Shipping docs, Original docs, Inspection report | — | sem campo de data (Inspection só tem `inspection_no`) |
+
+**ETD Factories** — um registro no GSS por **lote + fornecedor + categoria**:
+- lote = `batches.gss_id` (lote que não veio do GSS não vai — hoje só os das orders 1701–1705); fornecedor/categoria = `gss_id` do cadastro, ou o nome quando não tem.
+- O GSS não faz upsert (duplicata = 409) nem tem DELETE: a cada save a gente lista os registros do lote lá, acha o da linha e faz **PATCH só do que mudou**; sem registro, **POST** — que o GSS só aceita com **Initial E Current** preenchidas. Data apagada aqui não limpa lá (o GSS proíbe null).
+- Dispara no save da linha do ETD (Initial Date, Ready?) e no modal de motivo (Initial/Current/Ready). Insp., Dispatch loc. e Dispatch date não têm campo lá. **A escrita pela nossa API (`PATCH /api/etd-factories`) não dispara** — não devolve ao GSS o que veio dele.
+- Carga/conferência: `npx tsx scripts/sync-gss/push-etd-factories.ts` (dry; `--commit` envia; `--only <po>`). Em 16/10 não havia nada a carregar: as 16 linhas dos lotes do GSS estavam sem ETD.
+
+**Shipment — dois PATCHes:** as datas vão num PATCH e o status + lotes em outro, porque o GSS desfaz o request **inteiro** quando recusa status ou lote (regra financeira, lote em outro PL) e as datas iam junto.
+
+**Envio religado:** estava desligado desde 07/10 por um "fail request" que não era dele (ver 3.7.2). Agora é ligado por padrão; `GSS_PUSH_DISABLED=true` na Vercel desliga PL e ETD. Código: `lib/gss/outbound/etd-factory.ts`, `pl-shipment.ts`, `schedule.ts`; disparo em `app/(dashboard)/orders/[id]/actions.ts`.
+
+⚠️ **Em 16/10 o GSS estava com 0 shipments** (os 1.462 PLs carregados em 07/10 — §6.9 — sumiram de lá, inclusive o 1306). Como o envio do PL é só PATCH (o SOT nunca cria), as datas de PL ficam "skipped" no log até o GSS ter os shipments de novo.
 
 ---
 
