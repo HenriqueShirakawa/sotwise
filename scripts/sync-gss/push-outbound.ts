@@ -62,6 +62,7 @@ async function showQueue(): Promise<void> {
     if (push.outcome === "skipped") console.log(`  pula: ${push.reason}`);
     if (push.outcome === "planned") {
       console.log(`  ${push.patch.method} ${push.patch.path} ${JSON.stringify(push.patch.body)}`);
+      if (push.meta) console.log(`  ${push.meta.method} ${push.meta.path} ${JSON.stringify(push.meta.body)}`);
       console.log(
         push.createIfMissing
           ? `  se 404 → ${push.createIfMissing.method} ${push.createIfMissing.path} ${JSON.stringify(push.createIfMissing.body)}`

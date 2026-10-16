@@ -1051,8 +1051,9 @@ concluída das etapas abaixo atualiza; se o PL não existe lá, cria antes.
 
 | Etapa (`completed_on`) | Campo no GSS |
 |---|---|
-| Loading date | `loading_date` (datetime, `YYYY-MM-DDT12:00:00Z`) |
+| Loading date | `loading_date` (Unix s, 12:00Z desde 05/10) |
 | Shipping date | `shipping_date` |
+| BL _(16/10)_ | `bl_date` |
 | ETA Brazil | `eta_destination` |
 | ATA Brazil | `ata_destination` |
 | Delivered | `delivered_date` |
@@ -1104,3 +1105,44 @@ enfileiram e nada sai.
 ⚠️ **Re-migração/recarga em massa do checklist enfileira todos os PLs tocados.**
 Antes de uma, desligar a chave; depois, `update gss_outbound set status =
 'skipped', last_error = 'recarga' where status = 'pending'`.
+
+**16/10/2026 — mudanças no envio do PL (só na `dev`):** o BL entrou (`bl_date`);
+o PATCH virou **dois** — datas num, status + `batch_ids` no outro — porque o GSS
+desfaz o request inteiro quando recusa status/lote e as datas iam junto; o envio
+na hora voltou a ser **ligado por padrão** (desligado de 07 a 16/10 por um erro
+que não era dele — `regras_de_negocio.md` §6.12). `GSS_PUSH_DISABLED=true` na
+Vercel desliga. ⚠️ Em 16/10 o GSS tinha **0 shipments** (a carga de 07/10
+sumiu de lá): como o envio é só PATCH, as datas de PL saem "skipped" no log até
+o GSS recriar os shipments.
+
+### 10.5 ETD Factories → `/v1/shipments/etd-factories/` (construído em 2026-10-16)
+
+**Contrato do GSS** (Swagger de 16/10): `GET`/`POST` na coleção, `GET`/`PATCH`
+no `{id}` (id do registro de ETD do GSS, não do lote). **Sem DELETE e sem
+upsert** — duplicata (lote + fornecedor + categoria) volta 409. Obrigatórios no
+POST: `order_batch` (id do OrderBatch do GSS), `supplier` e `category` (id do GSS
+ou nome literal — string numérica conta como nome), `initial_date` e
+`current_date` (Unix s; `null` proibido). `ready_parts` (bool, padrão false).
+Filtros da lista: `order_batch`, `order_id`, `supplier_id`/`supplier_literal`,
+`category_id`/`category_literal`, `ready_parts`, datas e `updated_since`.
+Permissão do usuário técnico conferida sem gravar nada (POST/PATCH com corpo
+vazio → 400/404, não 403).
+
+| Coluna da etapa ETD | Campo no GSS |
+|---|---|
+| Batch | `order_batch` = `batches.gss_id` |
+| Factory | `supplier` = `factories.gss_id` (ou o nome) |
+| Category | `category` = `categories.gss_id` (ou o nome) |
+| Initial Date | `initial_date` (Unix s, 12:00Z) |
+| Current Date | `current_date` |
+| Ready? | `ready_parts` |
+| Insp., Dispatch loc., Dispatch date | ❌ sem campo |
+
+**Envio:** `sendEtdToGss` (`schedule.ts`, `after()`) nos saves do ETD
+(`upsertEtdInfo` quando muda Initial/Ready; `updateEtdInfoWithReason` em
+Initial/Current/Ready). `pushEtdFactory` (`lib/gss/outbound/etd-factory.ts`) lista
+`?order_batch=` lá, acha o registro por fornecedor + categoria e faz PATCH só dos
+campos diferentes; sem registro faz POST (só com as duas datas); 409 de corrida →
+relê e faz PATCH. Lote sem `gss_id` = pulado. A escrita pela nossa API não
+dispara. CLI: `npx tsx scripts/sync-gss/push-etd-factories.ts` (dry ·
+`--only 1705` · `--commit`).
