@@ -12,6 +12,7 @@
  *   Loading date  → loading_date      (todas em Unix segundos, às 12:00Z —
  *                                      mesmo dia no Brasil e na China; ver toGssUnix)
  *   Shipping date → shipping_date
+ *   BL            → bl_date           (16/10/2026)
  *   ETA Brazil    → eta_destination
  *   ATA Brazil    → ata_destination
  *   Delivered     → delivered_date
@@ -19,8 +20,10 @@
  * `estimated_loading_date` (estimada do Loading date) e `ETD` (etapa ETD da
  * Order) estão na lista do usuário mas não têm campo no GSS ainda.
  *
- * Envio: PATCH com as datas, o status e os lotes; se o PL não existe lá (404),
- * cria (POST) — Create PL e PL antigo caem no mesmo caminho.
+ * Envio: um PATCH só com as datas e, depois, outro com o status e os lotes —
+ * separados porque o GSS desfaz o request INTEIRO quando recusa status/lote
+ * (regra financeira, lote de outro PL), e as datas iam junto. Se o PL não
+ * existe lá (404), cria (POST) — Create PL e PL antigo caem no mesmo caminho.
  *
  * Status e lotes (confirmado com o Gustavo, do GSS, em 13/10/2026): o GSS é o
  * dono dos lotes e quer saber, a cada mudança, a fase do PL — lote incluído num
@@ -41,11 +44,12 @@ import { gssRequest, type GssWriteResult } from "../client";
 type DB = SupabaseClient<Database>;
 type DateStr = string;
 
-/** As etapas cuja data concluída vai ao GSS (os triggers da migration
- *  20261002120000 enfileiram exatamente estas). */
+/** As etapas cuja data concluída vai ao GSS. (Os triggers da fila, migration
+ *  20261002120000 — não aplicada no AGK —, só enfileiram 5 delas, sem o BL.) */
 export const PL_SHIPMENT_STEPS = [
   "loading_date",
   "shipping_date",
+  "bl",
   "eta_brazil",
   "ata_brazil",
   "delivered",
@@ -155,12 +159,13 @@ export function toGssUnix(date: DateStr | null): number | null {
   return dayToUnix(date);
 }
 
-/** As 5 datas no formato do GSS (Unix s). Etapa sem data concluída vai `null`,
+/** As 6 datas no formato do GSS (Unix s). Etapa sem data concluída vai `null`,
  *  que no GSS limpa o campo — reabrir a etapa aqui reabre lá. */
 export function datesBody(state: PlShipmentState): Record<string, number | null> {
   return {
     loading_date: toGssUnix(state.completedOn.loading_date),
     shipping_date: toGssUnix(state.completedOn.shipping_date),
+    bl_date: toGssUnix(state.completedOn.bl),
     eta_destination: toGssUnix(state.completedOn.eta_brazil),
     ata_destination: toGssUnix(state.completedOn.ata_brazil),
     delivered_date: toGssUnix(state.completedOn.delivered),
@@ -183,11 +188,10 @@ function batchesBody(state: PlShipmentState): Record<string, number[]> {
   return state.batchGssIds?.length ? { batch_ids: state.batchGssIds } : {};
 }
 
-/** PATCH: datas + status da fase + lotes amarrados. */
-export function patchBody(state: PlShipmentState): Record<string, unknown> {
+/** 2º PATCH: status da fase + lotes amarrados (vazio = nada a mandar). */
+export function metaBody(state: PlShipmentState): Record<string, unknown> {
   const status = createStatus(state.shipmentStatus);
   return {
-    ...datesBody(state),
     ...(status ? { status } : {}),
     ...batchesBody(state),
   };
@@ -211,9 +215,16 @@ export type GssCall = { method: "PATCH" | "POST"; path: string; body: Record<str
 export type PlShipmentPush =
   | { outcome: "skipped"; reason: string }
   /** Modo dry: o que seria enviado, sem chamar o GSS. */
-  | { outcome: "planned"; patch: GssCall; createIfMissing: GssCall | null }
-  /** A última chamada feita e o que o GSS respondeu. */
-  | { outcome: "called"; call: GssCall; result: GssWriteResult; created: boolean };
+  | { outcome: "planned"; patch: GssCall; meta: GssCall | null; createIfMissing: GssCall | null }
+  /** A chamada principal (datas, ou o POST de criação) e o que o GSS respondeu;
+   *  `meta` é o 2º PATCH (status + lotes), quando houve. */
+  | {
+      outcome: "called";
+      call: GssCall;
+      result: GssWriteResult;
+      created: boolean;
+      meta?: { call: GssCall; result: GssWriteResult };
+    };
 
 function isPlNumberConflict(result: GssWriteResult): boolean {
   return result.status === 409 && (result.data as { code?: string } | null)?.code === "pl_number_conflict";
@@ -234,18 +245,33 @@ export async function pushPlShipment(
   const { state } = loaded;
 
   const path = `/shipments/${state.plNumber}/`;
-  const patch: GssCall = { method: "PATCH", path, body: patchBody(state) };
+  const patch: GssCall = { method: "PATCH", path, body: datesBody(state) };
+  const metaFields = metaBody(state);
+  const meta: GssCall | null = Object.keys(metaFields).length
+    ? { method: "PATCH", path, body: metaFields }
+    : null;
   const status = createStatus(state.shipmentStatus);
   const create: GssCall | null = status
     ? { method: "POST", path: "/shipments/", body: createBody(state, status) }
     : null;
 
-  if (opts.dry) return { outcome: "planned", patch, createIfMissing: create };
+  if (opts.dry) return { outcome: "planned", patch, meta, createIfMissing: create };
 
   const patched = await gssRequest(patch.method, patch.path, patch.body);
   if (!(patched.kind === "permanent" && patched.status === 404)) {
     await rememberGssId(db, preLoadingId, patched);
-    return { outcome: "called", call: patch, result: patched, created: false };
+    // Sem resposta do GSS (rede/credencial) não adianta tentar o 2º PATCH.
+    if (!meta || patched.status === 0) {
+      return { outcome: "called", call: patch, result: patched, created: false };
+    }
+    const metaResult = await gssRequest(meta.method, meta.path, meta.body);
+    return {
+      outcome: "called",
+      call: patch,
+      result: patched,
+      created: false,
+      meta: { call: meta, result: metaResult },
+    };
   }
 
   if (opts.create === false) {
@@ -260,7 +286,7 @@ export async function pushPlShipment(
 
   // Corrida: outro disparo criou entre o 404 e o POST → vale o PATCH.
   if (isPlNumberConflict(created)) {
-    const again = await gssRequest(patch.method, patch.path, patch.body);
+    const again = await gssRequest(patch.method, patch.path, { ...patch.body, ...meta?.body });
     await rememberGssId(db, preLoadingId, again);
     return { outcome: "called", call: patch, result: again, created: false };
   }
