@@ -73,3 +73,5 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 **Corpos:** exemplo do spec quando existe; senão só os obrigatórios. PATCH vem `{}` de propósito (Send sem querer não zera nada). A aba **Docs** de cada request lista todos os campos do body e as respostas. Query params vêm desmarcados; path vars (`:id`, `:pl_number`) vêm vazias.
 
 > ⚠️ As duas bases apontam para **produção**. Rotas do GSS terminam com `/` — sem a barra o Django devolve 301 e o Postman refaz como GET (volta a lista com 200 e parece que deu certo).
+
+**Rotas fora do Swagger do GSS** (`orders` → `⚠️ lote — fora do Swagger (16/10)`): o servidor do GSS aceita `PATCH /orders/{order_id}/batch/{batch_number}/` (achado por `OPTIONS`), mas o `/openapi.json` deles não documenta. O script injeta 3 requests (ler o lote; PATCH do `status` por `code` e por `id`), já apontando para a Order de teste 1705, lote 1. Em 16/10 o usuário técnico recebia **403** — falta o GSS liberar a permissão de alterar lote.
