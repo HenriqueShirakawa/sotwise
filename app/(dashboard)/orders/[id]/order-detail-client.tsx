@@ -11,9 +11,6 @@ import {
   ChevronsUpDown,
   Eye,
   Info,
-  Pencil,
-  Plus,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -59,17 +56,13 @@ import {
 } from "@/components/ui/dialog";
 
 import {
-  createOrderFactoryCategory,
-  deleteOrderFactoryCategory,
   deleteStepAttachment,
   getAttachmentDownloadUrl,
-  updateBatchNumber,
   updateBatchStatus,
   updateChecklistStep,
   createStepAttachmentTicket,
   registerStepAttachment,
 } from "./actions";
-import { factoriesForCategory } from "@/lib/factory-category";
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
@@ -110,9 +103,8 @@ const TOGGLEABLE_STEPS = new Set<ChecklistStep>([
   "balance_payment",
 ]);
 
-// Só lotes em In Negotiation/In Production aceitam novas entradas Factory x
-// Category (ou troca de lote de uma entrada existente) — uma vez em
-// Pre-Loading pra frente, o lote "fecha" pra esse cadastro (regra do Bubble).
+// Só lotes em In Negotiation/In Production têm o status editável na tela — uma
+// vez em Pre-Loading pra frente, quem mexe é o fluxo de PL/Shipment.
 export const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
 
 export type ChecklistStepRow = {
@@ -451,242 +443,6 @@ function ViewBatchModal({
   );
 }
 
-function EditBatchModal({
-  open,
-  onOpenChange,
-  orderId,
-  batch,
-  rows,
-  categories,
-  factories,
-  factoriesByCategory,
-  onSaved,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  orderId: string;
-  batch: BatchRow | null;
-  rows: OfcRow[];
-  categories: Ref[];
-  factories: Ref[];
-  factoriesByCategory: Record<string, string[]>;
-  onSaved: () => void;
-}) {
-  const [pending, startTransition] = useTransition();
-  const [batchNumber, setBatchNumber] = useState(batch?.batch_number ?? "");
-  const [categoryId, setCategoryId] = useState("");
-  const [factoryId, setFactoryId] = useState("");
-  const [shipRequirement, setShipRequirement] = useState("");
-  const [page, setPage] = useState(0);
-
-  const openFor = open ? batch?.id ?? null : null;
-  const [syncedFor, setSyncedFor] = useState<string | null>(null);
-  if (openFor !== syncedFor) {
-    setSyncedFor(openFor);
-    setBatchNumber(batch?.batch_number ?? "");
-    setCategoryId("");
-    setFactoryId("");
-    setShipRequirement("");
-    setPage(0);
-  }
-
-  const sortedRows = sortByCategoryFactory(rows);
-  const safePage = Math.min(page, Math.max(0, Math.ceil(sortedRows.length / ROWS_PAGE_SIZE) - 1));
-  const pageRows = sortedRows.slice(
-    safePage * ROWS_PAGE_SIZE,
-    safePage * ROWS_PAGE_SIZE + ROWS_PAGE_SIZE
-  );
-
-  const visibleFactories = factoriesForCategory(factories, categoryId, factoriesByCategory);
-  const canAdd = !!categoryId && !!factoryId && !!shipRequirement;
-
-  /** Trocar de categoria descarta a fábrica que não pertence à nova. */
-  function selectCategory(id: string) {
-    setCategoryId(id);
-    const allowed = factoriesForCategory(factories, id, factoriesByCategory);
-    if (factoryId && !allowed.some((f) => f.id === factoryId)) setFactoryId("");
-  }
-
-  function addRow() {
-    if (!batch || !categoryId || !factoryId || !shipRequirement) {
-      toast.error("Select a category, factory, and ship requirement date.");
-      return;
-    }
-    startTransition(async () => {
-      const res = await createOrderFactoryCategory(orderId, {
-        batch_id: batch.id,
-        category_id: categoryId,
-        factory_id: factoryId,
-        ship_requirement: shipRequirement,
-      });
-      if (res.ok) {
-        setCategoryId("");
-        setFactoryId("");
-        setShipRequirement("");
-        onSaved();
-      } else {
-        toast.error(res.error);
-      }
-    });
-  }
-
-  function removeRow(id: string) {
-    if (!batch) return;
-    startTransition(async () => {
-      const res = await deleteOrderFactoryCategory(orderId, batch.id, id);
-      if (res.ok) onSaved();
-      else toast.error(res.error);
-    });
-  }
-
-  function save() {
-    if (!batch) return;
-    startTransition(async () => {
-      const res = await updateBatchNumber(orderId, batch.id, batchNumber);
-      if (res.ok) {
-        toast.success("Batch updated.");
-        onSaved();
-        onOpenChange(false);
-      } else {
-        toast.error(res.error);
-      }
-    });
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-lg text-primary">Edit batch</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Main information</p>
-            <Label className="text-foreground">Batch No.</Label>
-            <Input
-              value={batchNumber}
-              onChange={(e) => setBatchNumber(e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
-
-          <div>
-            <p className="mb-2 border-b pb-2 text-sm text-muted-foreground">Shipment request</p>
-            {/* Três campos preenchendo a largura toda do container (o usuário
-                preferiu isso ao alinhamento com as colunas da tabela abaixo). */}
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <Label className="text-foreground">Category</Label>
-                <div className="mt-1.5">
-                  <SearchSelect
-                    value={categoryId}
-                    onChange={selectCategory}
-                    options={categories}
-                    placeholder="Select category"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label className="text-foreground">Factory</Label>
-                <div className="mt-1.5">
-                  <SearchSelect
-                    value={factoryId}
-                    onChange={setFactoryId}
-                    options={visibleFactories}
-                    placeholder="Select factory"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label className="text-foreground">Ship requirement</Label>
-                <DatePicker
-                  value={shipRequirement}
-                  onChange={(v) => setShipRequirement(v ?? "")}
-                  // Mesma altura padrão (h-8) do SearchSelect ao lado — os três
-                  // campos da linha ficam do mesmo tamanho.
-                  className="mt-1.5"
-                />
-              </div>
-            </div>
-            {/* Roxo (variant default) assim que Category+Factory+Ship req.
-                estão preenchidos; antes disso fica outline e desabilitado. */}
-            <Button
-              variant={canAdd ? "default" : "outline"}
-              className="mt-3 w-full"
-              onClick={addRow}
-              disabled={!canAdd || pending}
-            >
-              <Plus />
-              Add
-            </Button>
-
-            <div className="mt-3 overflow-hidden rounded-lg border">
-              <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-x-3 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
-                <span>Category</span>
-                <span>Factory</span>
-                <span>Ship req.</span>
-                <span>Batch No.</span>
-                {/* Reserva a largura da lixeira das linhas (size-7), senão o
-                    cabeçalho distribui as colunas numa medida e as linhas noutra. */}
-                <span className="w-7" />
-              </div>
-              {pageRows.length === 0 ? (
-                <p className="px-3 py-4 text-sm text-muted-foreground">No entries yet.</p>
-              ) : (
-                pageRows.map((r) => (
-                  <div
-                    key={r.id}
-                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-t px-3 py-2 text-sm sm:grid-cols-[1fr_1fr_1fr_1fr_auto] sm:gap-y-0"
-                  >
-                    <SmallField label="Category" className="max-sm:col-start-1">
-                      <span className="block truncate text-slate-700">{r.category_name}</span>
-                    </SmallField>
-                    <SmallField label="Factory" className="max-sm:col-start-1">
-                      <span className="block truncate text-slate-700">{r.factory_name}</span>
-                    </SmallField>
-                    <SmallField label="Ship req." className="max-sm:col-start-1">
-                      <span className="text-slate-700">
-                        {formatDateNumeric(r.ship_requirement)}
-                      </span>
-                    </SmallField>
-                    <SmallField label="Batch No." className="max-sm:col-start-1">
-                      <span className="text-slate-700">{batch?.batch_number}</span>
-                    </SmallField>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="text-rose-500 hover:text-rose-600 max-sm:col-start-2 max-sm:row-start-1"
-                      aria-label="Delete"
-                      disabled={pending}
-                      onClick={() => removeRow(r.id)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                ))
-              )}
-              <RowsPagination page={page} setPage={setPage} total={rows.length} />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            className="sm:min-w-32"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
-            Cancel
-          </Button>
-          <Button className="sm:min-w-32" onClick={save} disabled={pending}>
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function AttachmentsSection({
   orderId,
   step,
@@ -757,9 +513,7 @@ export function OrderDetailClient({
   ofc,
   etdByOfc,
   loadedByBatch,
-  categories,
   factories,
-  factoriesByCategory,
   profiles,
   steps,
   viewPrefs,
@@ -772,9 +526,7 @@ export function OrderDetailClient({
   etdByOfc: Record<string, EtdInfoRow>;
   /** Carregamento congelado no embarque: lote → entrada → Total/Partial/None. */
   loadedByBatch: Record<string, Record<string, LoadingStatus>>;
-  categories: Ref[];
   factories: Ref[];
-  factoriesByCategory: Record<string, string[]>;
   profiles: Ref[];
   steps: ChecklistStepRow[];
   /** Preferências de visualização do usuário — não restringem nada. */
@@ -794,7 +546,6 @@ export function OrderDetailClient({
     () => new Set(deepLinkStep ? [deepLinkStep] : [])
   );
   const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
-  const [editBatch, setEditBatch] = useState<BatchRow | null>(null);
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
 
   useEffect(() => {
@@ -1010,7 +761,7 @@ export function OrderDetailClient({
         ) : (
           batches.map((b) => {
             const editable = EDITABLE_BATCH_STATUSES.includes(b.status);
-            // Edição só mexe nas linhas fisicamente neste lote.
+            // Linhas fisicamente neste lote (trava do Production no status).
             const ownRows = ofc.filter((r) => r.batch_id === b.id);
             // Visualização inclui as que migraram no split (lote embarcado).
             // A linha é exibida como deste lote — número e status do embarque
@@ -1055,17 +806,9 @@ export function OrderDetailClient({
                     <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
                   )}
                 </div>
+                {/* Sem "Edit batch": número do lote e Factory x Category vêm só do
+                    GSS (16/10/2026) — aqui é só consulta. */}
                 <div className="flex items-center gap-1">
-                  {editable && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Edit batch"
-                      onClick={() => setEditBatch(b)}
-                    >
-                      <Pencil className="size-4 text-slate-400" />
-                    </Button>
-                  )}
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -1081,19 +824,6 @@ export function OrderDetailClient({
                     onOpenChange={(o) => !o && setViewBatch(null)}
                     batch={b}
                     rows={viewRows}
-                  />
-                )}
-                {editBatch?.id === b.id && (
-                  <EditBatchModal
-                    open
-                    onOpenChange={(o) => !o && setEditBatch(null)}
-                    orderId={orderId}
-                    batch={b}
-                    rows={ownRows}
-                    categories={categories}
-                    factories={factories}
-                    factoriesByCategory={factoriesByCategory}
-                    onSaved={() => router.refresh()}
                   />
                 )}
               </div>
@@ -1300,7 +1030,7 @@ export function OrderDetailClient({
                           className="w-full justify-center border-dashed bg-white"
                           onClick={() => setFactoryCategoryOpen(true)}
                         >
-                          <Plus className="size-3.5" />
+                          <Eye className="size-3.5" />
                           Factory x Category
                         </Button>
                       )}
@@ -1316,13 +1046,8 @@ export function OrderDetailClient({
       <FactoryCategoryModal
         open={factoryCategoryOpen}
         onOpenChange={setFactoryCategoryOpen}
-        orderId={orderId}
         batches={batches}
         ofc={ofc}
-        categories={categories}
-        factories={factories}
-        factoriesByCategory={factoriesByCategory}
-        onChanged={() => router.refresh()}
       />
     </div>
   );

@@ -18,13 +18,14 @@ import {
 } from "./api-schema";
 
 /**
- * Escrita de LOTES pela API (POST/PATCH/DELETE /api/batches). Espelha as
- * travas das actions da tela da Order (app/(dashboard)/orders/[id]/actions.ts):
+ * Escrita de LOTES pela API (POST/PATCH/DELETE /api/batches). Lote e Factory x
+ * Category só se escrevem pela API (esta + /api/order-items): a tela da Order é
+ * só consulta desde 16/10/2026 — o GSS é o dono. Travas:
  *
  *  - lote só é editável em In Negotiation / In Production (daí pra frente é do
  *    fluxo de PL/Shipment) — e isso vale também para o lote de ONDE uma linha
- *    sai ao ser movida (a tela só checa o destino; a API é mais estrita);
- *  - a mesma Category + Factory não repete no lote ("gêmeas", lib/ofc-twins);
+ *    sai ao ser movida;
+ *  - a mesma Category + Factory não repete no lote ("gêmeas");
  *  - lote In Production nunca fica sem linha (nem o destino, nem a origem);
  *  - lote que ganha a 1ª linha com o Deposit Payment resolvido vai para
  *    In Production (lib/deposit-production) — a não ser que o PATCH mande o
