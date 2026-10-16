@@ -232,6 +232,47 @@ const GSS_SAVE_TOKENS = [
   "if (j.refresh) pm.environment.set('gss_refresh', j.refresh);",
 ];
 
+/**
+ * Rotas que o servidor do GSS aceita mas o `/openapi.json` NÃO documenta —
+ * achadas por OPTIONS (header `Allow`) em 16/10/2026. Entram num subfolder
+ * próprio de `orders`. Path vars já vêm na Order de teste da integração (1705,
+ * "GSS SOT Integration test 5"), lote 1.
+ */
+const GSS_UNDOCUMENTED_FOLDER = "⚠️ lote — fora do Swagger (16/10)";
+const GSS_UNDOCUMENTED_DOC =
+  "Rota aceita pelo servidor (`OPTIONS` → `Allow: GET, PUT, PATCH`), mas fora do Swagger do GSS.\n\n" +
+  "**16/10/2026:** o usuário técnico (`henrique.junji`) recebe **403** — falta o GSS liberar a permissão de alterar lote (OrderBatch). " +
+  "O formato do `status` também não está documentado: o catálogo `GET /orders/batch/status/` tem `id` e `code` " +
+  "(created=8, negotiation=1, production=2, pre=3, transit=4, delivered=5, stb=6, canceled=7). Por isso vão duas requests: uma por `code`, outra por `id`.\n\n" +
+  "De-para do SOT: In Negotiation→negotiation · In Production→production · Pre-loading→pre · In Transit→transit · Delivered→delivered · Canceled→canceled.";
+
+function gssUndocumentedItems(): PmItem[] {
+  const url = (): Json => ({
+    raw: "{{gss_base}}/orders/:order_id/batch/:batch_number/",
+    host: ["{{gss_base}}"],
+    path: ["orders", ":order_id", "batch", ":batch_number", ""],
+    variable: [
+      { key: "order_id", value: "1705", description: "Id da Order no GSS (= nosso po_number)." },
+      { key: "batch_number", value: "1", description: "Número do lote na Order (1 = .01)." },
+    ],
+  });
+  const headers = [...GSS_CF_HEADERS, { key: "Content-Type", value: "application/json", type: "text" }];
+  return [
+    {
+      name: "GET /orders/{order_id}/batch/{batch_number}/ — ler o lote",
+      request: { method: "GET", header: GSS_CF_HEADERS, url: url(), description: GSS_UNDOCUMENTED_DOC },
+    },
+    {
+      name: "PATCH /orders/{order_id}/batch/{batch_number}/ — status por code",
+      request: { method: "PATCH", header: headers, url: url(), body: jsonBody({ status: "production" }), description: GSS_UNDOCUMENTED_DOC },
+    },
+    {
+      name: "PATCH /orders/{order_id}/batch/{batch_number}/ — status por id",
+      request: { method: "PATCH", header: headers, url: url(), body: jsonBody({ status: 2 }), description: GSS_UNDOCUMENTED_DOC },
+    },
+  ];
+}
+
 function gssFolderKey(path: string, tag: string): [string, string | null] {
   const seg = path.split("/").filter(Boolean);
   if (seg[0] === "core") return ["core", seg[1]];
@@ -300,6 +341,9 @@ function buildGss(spec: Json): PmItem {
       subs.get(sub)!.push(item);
     }
   }
+
+  if (!folders.has("orders")) folders.set("orders", new Map());
+  folders.get("orders")!.set(GSS_UNDOCUMENTED_FOLDER, gssUndocumentedItems());
 
   const order = ["authentication", "orders", "shipments", "shipments / etd-factories", "core", "commercial"];
   const tops = [...folders.keys()].sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99);
