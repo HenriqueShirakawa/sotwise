@@ -12,6 +12,7 @@ import { syncOrderStatus } from "@/lib/order-status";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { ETD_SAVED_COLUMNS, writeEtdHistory, type EtdHistorySnapshot } from "@/lib/etd-history";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
+import { sendEtdToGss } from "@/lib/gss/outbound/schedule";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
 import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
@@ -318,6 +319,8 @@ export async function upsertEtdInfo(
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
   await broadcastEtdPing({ order_ids: [orderId] });
+  // Inspection e Dispatch não têm campo no GSS — só datas e Ready vão.
+  if (patch.initial_date !== undefined || patch.ready !== undefined) sendEtdToGss([ofcId]);
   return { ok: true };
 }
 
@@ -407,6 +410,7 @@ export async function updateEtdInfoWithReason(
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
   await broadcastEtdPing({ order_ids: [orderId] });
+  if (field === "initial_date" || field === "current_date" || field === "ready") sendEtdToGss([ofcId]);
   return { ok: true };
 }
 
