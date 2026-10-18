@@ -2295,6 +2295,8 @@ Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/
 
 ⚠️ **Em 16/10 o GSS estava com 0 shipments** (os 1.462 PLs carregados em 07/10 — §6.9 — sumiram de lá, inclusive o 1306). Como o envio do PL é só PATCH (o SOT nunca cria), as datas de PL ficam "skipped" no log até o GSS ter os shipments de novo.
 
+**18/10/2026 — Create PL faz POST no GSS (só na `dev`).** Pedido do usuário: "liberar um POST lá quando criamos um PL". O Create PL manda `create: true` (PATCH → 404 → `POST /shipments/` com `pl_number`, `status` `preloading`, `customer_reference`, `pod`, datas e lotes do GSS; se o PL já existe lá, fica no PATCH). Os outros saves (datas, Confirm Shipping, edição do PL) seguem só PATCH — PL antigo que não existe no GSS continua "skipped". Permissão do usuário técnico para `POST /shipments/` conferida em 18/10 (corpo vazio → 400).
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente

@@ -44,15 +44,15 @@ function logWrite(prefix: string, call: { method: string; path: string }, result
  * `gss_outbound` (migration 20261002120000), quando aplicada, é a rede de
  * retentativa.
  */
-export function sendPlShipmentToGss(preLoadingId: string): void {
+export function sendPlShipmentToGss(preLoadingId: string, opts: { create?: boolean } = {}): void {
   if (!gssPushEnabled()) return;
   try {
     after(async () => {
       try {
-        // Só PATCH: o SOT espelha no GSS o que já existe lá, NUNCA cria — toda
-        // criação é no GSS (decisão do usuário, reafirmada em 13/10). PL que não
-        // existe no GSS sai "skipped" no log.
-        const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: false });
+        // Padrão = só PATCH: PL que não existe no GSS sai "skipped" no log. O
+        // Create PL passa `create: true` → PATCH 404 → POST /shipments/ (pedido
+        // do usuário em 18/10: "liberar um POST lá quando criamos um PL").
+        const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: opts.create ?? false });
         if (push.outcome === "skipped") {
           console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);
         } else if (push.outcome === "called") {
