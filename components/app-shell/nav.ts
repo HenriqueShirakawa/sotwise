@@ -26,7 +26,9 @@ export type NavGroup = {
   title: string;
   icon: LucideIcon;
   feature: FeatureKey;
-  children: { title: string; href: string }[];
+  /** `exact`: só fica ativo na URL exata — para pai de outra rota do grupo
+   *  (/access vs /access/gss) não acender junto com o filho. */
+  children: { title: string; href: string; exact?: boolean }[];
 };
 
 export type NavItem = NavLink | NavGroup;
@@ -83,5 +85,17 @@ export const NAV: NavItem[] = [
     ].sort((a, b) => a.title.localeCompare(b.title)),
   },
   { type: "link", title: "Users", href: "/users", icon: Users, feature: "users" },
-  { type: "link", title: "Access", href: "/access", icon: ShieldCheck, feature: "access" },
+  {
+    type: "group",
+    title: "Access",
+    icon: ShieldCheck,
+    feature: "access",
+    // Owner-only (feature `access`). Permissões, e as duas ferramentas da
+    // integração com o GSS: paridade dos cadastros e o log de chamadas.
+    children: [
+      { title: "Permissions", href: "/access", exact: true },
+      { title: "GSS parity", href: "/access/gss", exact: true },
+      { title: "GSS calls", href: "/access/gss/calls" },
+    ],
+  },
 ];
