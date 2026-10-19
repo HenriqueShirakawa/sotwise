@@ -22,9 +22,11 @@ type Admin = ReturnType<typeof createAdminClient>;
  * tiver algum lote de Production em diante (preloading/in_transit/delivered
  * contam: o pedido já entrou em produção).
  *
- * Lote sem nenhuma entrada fica em In Negotiation: a regra de 17/09 não deixa
- * lote vazio em produção (`updateBatchStatus`). Ele sobe quando recebe a 1ª
- * entrada.
+ * Com a Order já em produção sobe QUALQUER lote In Negotiation, mesmo sem
+ * Factory x Category (usuário, 20/10/2026: quem cria lotes, factories e
+ * categories agora é o GSS — o lote pode chegar antes das linhas). Só o gatilho
+ * do Deposit Payment, com a Order ainda sem lote em produção, segue exigindo ao
+ * menos uma entrada (regra de 17/09).
  */
 const PRODUCTION_ONWARD = ["in_production", "preloading", "in_transit", "delivered"] as const;
 
@@ -61,9 +63,8 @@ export async function promoteBatchesToProduction(
   batchIds?: string[]
 ): Promise<string | null> {
   if (batchIds && batchIds.length === 0) return null;
-  const inProduction =
-    (await orderHasProductionBatch(admin, orderId)) || (await isDepositSettled(admin, orderId));
-  if (!inProduction) return null;
+  const hasProductionBatch = await orderHasProductionBatch(admin, orderId);
+  if (!hasProductionBatch && !(await isDepositSettled(admin, orderId))) return null;
 
   let query = admin
     .from("batches")
@@ -74,6 +75,17 @@ export async function promoteBatchesToProduction(
   const { data: candidates, error } = await query;
   if (error) return error.message;
   if (!candidates?.length) return null;
+
+  if (hasProductionBatch) {
+    const { error: updateError } = await admin
+      .from("batches")
+      .update({ status: "in_production" })
+      .in(
+        "id",
+        candidates.map((b) => b.id)
+      );
+    return updateError?.message ?? null;
+  }
 
   const { data: withEntries, error: entriesError } = await admin
     .from("order_factory_category")
