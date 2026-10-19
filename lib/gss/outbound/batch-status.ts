@@ -2,20 +2,19 @@
  * Status do lote do SOTWISE → `PATCH /v1/orders/{order}/batch/{n}/` do GSS
  * (regras_de_negocio §6.13, pedido do usuário em 19/10/2026).
  *
- * Quando o status muda aqui, o GSS recebe `{status: <id>}` — o `id` do catálogo
- * `GET /orders/batch/status/` (pedido do usuário; antes ia o `code`):
+ * Quando o status muda aqui, o GSS recebe `{status: "<code>"}` — o `code` do
+ * catálogo `GET /orders/batch/status/` — e devolve o NOME no GET/PATCH:
  *
- *   in_negotiation → 1 negotiation   (dropdown do lote)
- *   in_production  → 2 production    (dropdown, Deposit Payment, regra do Gustavo)
- *   preloading     → 3 pre           (Create/Edit PL)
- *   in_transit     → 4 transit       (Confirm Shipping)
- *   delivered      → 5 delivered     (etapa Delivered)
- *   canceled       → 7 canceled
+ *   in_negotiation → negotiation → "In Negotiation"  (dropdown do lote)
+ *   in_production  → production  → "In Production"   (dropdown, Deposit Payment, regra do Gustavo)
+ *   preloading     → pre         → "Pre Shipment"    (Create/Edit PL)
+ *   in_transit     → transit     → "In Transit"      (Confirm Shipping)
+ *   delivered      → delivered   → "Delivered"       (etapa Delivered)
+ *   canceled       → canceled    → "Canceled"
  *
- * ⚠️ 19/10/2026: o Swagger do GSS marca `OrderBatchPatch.status` como
- * readOnly — o PATCH responde 200 e IGNORA o campo (os lotes seguem
- * `status: null` lá). Este envio fica montado; quando o GSS liberar o campo,
- * passa a valer sem mudar nada aqui. Enquanto isso o resultado sai `ignored`.
+ * Histórico: até 19/10 o GSS tratava `status` como readOnly (200 e ignorava);
+ * liberado pelo time do GSS em 20/10 — só aceita o code (id dá 400 "Expected a
+ * status code string."). `ignored` segue no log se ele voltar a descartar.
  *
  * Por Order: lista os lotes dela no GSS (`GET /orders/{order}/batch/`), casa
  * pelo `batch_id` (= nosso `batches.gss_id`) e só faz PATCH do que difere —
@@ -39,14 +38,14 @@ export const GSS_BATCH_STATUS: Record<BatchStatus, string> = {
   canceled: "canceled",
 };
 
-/** id do catálogo do GSS (conferido em 19/10) — é o que vai no PATCH; o GET pode devolver code, id ou nome. */
-const GSS_BATCH_STATUS_ID: Record<string, number> = {
-  negotiation: 1,
-  production: 2,
-  pre: 3,
-  transit: 4,
-  delivered: 5,
-  canceled: 7,
+/** Nome que o GSS devolve para cada code (catálogo conferido em 20/10). */
+const GSS_BATCH_STATUS_NAME: Record<string, string> = {
+  negotiation: "in negotiation",
+  production: "in production",
+  pre: "pre shipment",
+  transit: "in transit",
+  delivered: "delivered",
+  canceled: "canceled",
 };
 
 type GssOrderBatch = { batch_id: number; batch_code: string; batch_number: number | null; status: unknown };
@@ -62,14 +61,10 @@ export type BatchStatusPush = {
 
 function sameStatus(gss: unknown, code: string): boolean {
   if (gss === null || gss === undefined || gss === "") return false;
-  if (typeof gss === "object") {
-    const o = gss as { code?: unknown; id?: unknown };
-    return o.code === code || Number(o.id) === GSS_BATCH_STATUS_ID[code];
-  }
+  if (typeof gss === "object") return (gss as { code?: unknown }).code === code;
   const s = String(gss).trim().toLowerCase();
-  return s === code || Number(s) === GSS_BATCH_STATUS_ID[code];
+  return s === code || s === GSS_BATCH_STATUS_NAME[code];
 }
-
 
 /** Orders donas dos lotes (e as próprias `orderIds`), sem repetição. */
 async function resolveOrderIds(db: DB, ref: { orderIds?: string[]; batchIds?: string[] }): Promise<string[]> {
@@ -141,10 +136,10 @@ export async function pushBatchStatuses(
       }
       const call = { method: "PATCH" as const, path: `/orders/${gssOrder}/batch/${there.batch_number}/` };
       if (opts.dry) {
-        out.push({ label, outcome: "skipped", reason: `dry: PATCH ${call.path} {status: ${GSS_BATCH_STATUS_ID[code]}} (${code}) (GSS hoje: ${JSON.stringify(there.status)})`, call });
+        out.push({ label, outcome: "skipped", reason: `dry: PATCH ${call.path} {status: "${code}"} (GSS hoje: ${JSON.stringify(there.status)})`, call });
         continue;
       }
-      const result = await gssRequest(call.method, call.path, { status: GSS_BATCH_STATUS_ID[code] });
+      const result = await gssRequest(call.method, call.path, { status: code });
       if (result.kind !== "ok") {
         out.push({ label, outcome: "failed", call, result });
         continue;
@@ -153,7 +148,7 @@ export async function pushBatchStatuses(
       out.push({
         label,
         outcome: sameStatus(saved, code) ? "sent" : "ignored",
-        reason: sameStatus(saved, code) ? undefined : `GSS respondeu 200 mas manteve status ${JSON.stringify(saved)} (campo readOnly lá)`,
+        reason: sameStatus(saved, code) ? undefined : `GSS respondeu 200 mas manteve status ${JSON.stringify(saved)} (GSS descartou o campo)`,
         call,
         result,
       });
