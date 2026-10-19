@@ -1162,7 +1162,7 @@ delivered→delivered, canceled→canceled.
 
 `pushBatchStatuses` (`lib/gss/outbound/batch-status.ts`) trabalha por Order:
 `GET /orders/{order}/batch/`, casa por `batch_id` = `batches.gss_id`, PATCH
-`{status: code}` só do que difere, usando o `batch_number` do GSS na rota.
+`{status: <id>}` só do que difere, usando o `batch_number` do GSS na rota.
 Disparos: dropdown do lote, Deposit Payment, Create/Edit/Delete PL, Confirm
 Shipping, Delivered e desfazer embarque (ver `regras_de_negocio.md` §6.13).
 
