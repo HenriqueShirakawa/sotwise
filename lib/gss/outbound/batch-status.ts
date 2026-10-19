@@ -111,7 +111,7 @@ export async function pushBatchStatuses(
     // Order do GSS: id = nosso po_number; `gss_id` quando gravado.
     const gssOrder = order.gss_id || order.po_number;
 
-    const list = await gssRequest("GET", `/orders/${gssOrder}/batch/`);
+    const list = await gssRequest("GET", `/orders/${gssOrder}/batch/`, undefined, { source: "batch-status", ref: `Order ${order.po_number}` });
     if (list.kind !== "ok" || !Array.isArray(list.data)) {
       out.push({ label: String(order.po_number), outcome: "failed", reason: list.error ?? `GET lotes → ${list.status}` });
       continue;
@@ -139,7 +139,7 @@ export async function pushBatchStatuses(
         out.push({ label, outcome: "skipped", reason: `dry: PATCH ${call.path} {status: "${code}"} (GSS hoje: ${JSON.stringify(there.status)})`, call });
         continue;
       }
-      const result = await gssRequest(call.method, call.path, { status: code });
+      const result = await gssRequest(call.method, call.path, { status: code }, { source: "batch-status", ref: label });
       if (result.kind !== "ok") {
         out.push({ label, outcome: "failed", call, result });
         continue;
