@@ -1170,3 +1170,9 @@ Shipping, Delivered e desfazer embarque (ver `regras_de_negocio.md` §6.13).
 PATCH devolve 200 e mantém `status: null` (testado com code, id, `status_id`,
 `status_code`, `{id}`). Resultado no log: `[gss-batch] … (ignored)`. Falta o
 GSS tornar o campo gravável; do nosso lado nada muda quando isso acontecer.
+
+**20/10/2026 — liberado pelo GSS.** `status` passou a ser gravável: o PATCH aceita
+o **code** (`{"status": "production"}`, ou `null` para limpar) e o GET devolve o
+**nome** ("In Production", "Pre Shipment"…). id dá 400 ("Expected a status code
+string."). O envio voltou a mandar o code e compara pelo nome. Teste real: 1705
+(.01–.03 In Production) e 1701 (.01–.02 In Negotiation) sincronizados.
