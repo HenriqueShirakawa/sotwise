@@ -12,7 +12,7 @@ import { syncOrderStatus } from "@/lib/order-status";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { ETD_SAVED_COLUMNS, writeEtdHistory, type EtdHistorySnapshot } from "@/lib/etd-history";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
-import { sendEtdToGss } from "@/lib/gss/outbound/schedule";
+import { sendBatchStatusToGss, sendEtdToGss } from "@/lib/gss/outbound/schedule";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
 import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
@@ -91,6 +91,9 @@ export async function updateBatchStatus(
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return { ok: false, error: statusError };
 
+  // Status do lote (e dos promovidos junto) → GSS.
+  sendBatchStatusToGss({ orderIds: [orderId] });
+
   await revalidateBatchViews(orderId);
   return { ok: true };
 }
@@ -140,6 +143,7 @@ export async function updateChecklistStep(
     if (promoteError) return { ok: false, error: promoteError };
     const statusError = await syncOrderStatus(admin, [orderId]);
     if (statusError) return { ok: false, error: statusError };
+    sendBatchStatusToGss({ orderIds: [orderId] });
     await revalidateBatchViews(orderId);
   }
 

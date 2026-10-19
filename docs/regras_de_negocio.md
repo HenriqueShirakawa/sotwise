@@ -2195,6 +2195,26 @@ Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/
 
 **18/10/2026 — Create PL faz POST no GSS (só na `dev`).** Pedido do usuário: "liberar um POST lá quando criamos um PL". O Create PL manda `create: true` (PATCH → 404 → `POST /shipments/` com `pl_number`, `status` `preloading`, `customer_reference`, `pod`, datas e lotes do GSS; se o PL já existe lá, fica no PATCH). Os outros saves (datas, Confirm Shipping, edição do PL) seguem só PATCH — PL antigo que não existe no GSS continua "skipped". Permissão do usuário técnico para `POST /shipments/` conferida em 18/10 (corpo vazio → 400).
 
+### 6.13 Status do lote → GSS (19/10/2026, só na `dev`)
+
+Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATCH /v1/orders/{order}/batch/{n}/` com o `code` do catálogo `GET /orders/batch/status/`.
+
+| Onde muda no SOT | Status | `code` no GSS |
+|---|---|---|
+| Dropdown do lote | In Negotiation / In Production | `negotiation` / `production` |
+| Deposit Payment e regra do Gustavo (lotes da Order juntos) | In Production | `production` |
+| Create PL / lote entra no PL | Pre-loading | `pre` |
+| Lote sai do PL / PL excluído | In Production | `production` |
+| Confirm Shipping | In Transit | `transit` |
+| Etapa Delivered | Delivered | `delivered` |
+
+- Vai por **Order**: lista os lotes dela no GSS, casa pelo `batch_id` (= `batches.gss_id`) e só faz PATCH do que difere. Lote sem `gss_id` não vai. Nos passos de PL/Shipment roda depois do envio do PL (o vínculo lote↔shipment já existe lá).
+- A escrita pela nossa API (o GSS mandando para nós) não dispara — não ecoa.
+- `GSS_PUSH_DISABLED=true` desliga junto com PL e ETD.
+- ⚠️ **Bloqueado no GSS em 19/10:** o Swagger deles marca `status` do `OrderBatchPatch` como **somente leitura**. O PATCH responde 200 e ignora o valor (os lotes seguem `status: null` lá); o log sai `[gss-batch] … (ignored)`. O envio está montado: quando o GSS liberar o campo, passa a gravar sem mudança aqui.
+
+Código: `lib/gss/outbound/batch-status.ts`, `schedule.ts` (`sendBatchStatusToGss`, e dentro de `sendPlShipmentToGss`); disparo em `updateBatchStatus`, `updateChecklistStep` (Deposit), `updatePreLoading`, `deletePreLoading`.
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente
