@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { requireOwner } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -71,17 +69,9 @@ export default async function GssCallsPage({
   return (
     <div>
       <PageHeader
-        title="GSS — chamadas"
+        title="GSS calls"
         description="Toda chamada que o SOTWISE faz à API do GSS: o que foi enviado e o que o GSS respondeu."
-      >
-        <Link
-          href="/access/gss"
-          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
-        >
-          <ArrowLeft className="size-4" />
-          Dados do GSS
-        </Link>
-      </PageHeader>
+      />
 
       <CallsClient
         rows={rows}
