@@ -120,6 +120,12 @@ export default async function GssPanelPage({
           <ArrowLeft className="size-4" />
           Access
         </Link>
+        <Link
+          href="/access/gss/calls"
+          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
+        >
+          Chamadas ao GSS
+        </Link>
       </PageHeader>
 
       <GssClient

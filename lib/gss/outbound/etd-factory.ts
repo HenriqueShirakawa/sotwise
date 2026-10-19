@@ -141,7 +141,7 @@ async function findRemote(
     method: "GET",
     path: `/shipments/etd-factories/?order_batch=${state.batchGssId}&page_size=200`,
   };
-  const result = await gssRequest(call.method, call.path);
+  const result = await gssRequest(call.method, call.path, undefined, { source: "etd-factory", ref: state.label });
   if (result.kind !== "ok") return { ok: false, call, result };
   const rows = ((result.data as { results?: RemoteEtd[] } | null)?.results ?? []) as RemoteEtd[];
   const remote =
@@ -177,7 +177,7 @@ export async function pushEtdFactory(
     }
     const call: GssEtdCall = { method: "PATCH", path: `/shipments/etd-factories/${found.remote.id}/`, body };
     if (opts.dry) return { outcome: "planned", label: state.label, call };
-    return { outcome: "called", label: state.label, call, result: await gssRequest(call.method, call.path, body) };
+    return { outcome: "called", label: state.label, call, result: await gssRequest(call.method, call.path, body, { source: "etd-factory", ref: state.label }) };
   }
 
   if (state.initialDate === null || state.currentDate === null) {
@@ -201,7 +201,7 @@ export async function pushEtdFactory(
   };
   if (opts.dry) return { outcome: "planned", label: state.label, call };
 
-  const created = await gssRequest(call.method, call.path, call.body);
+  const created = await gssRequest(call.method, call.path, call.body, { source: "etd-factory", ref: state.label });
   if (created.status !== 409) return { outcome: "called", label: state.label, call, result: created };
 
   // Corrida: outro disparo criou entre a leitura e o POST → atualiza o que existe.
@@ -210,5 +210,5 @@ export async function pushEtdFactory(
   const body = patchBody(state, again.remote);
   if (!Object.keys(body).length) return { outcome: "unchanged", label: state.label, remoteId: again.remote.id };
   const patch: GssEtdCall = { method: "PATCH", path: `/shipments/etd-factories/${again.remote.id}/`, body };
-  return { outcome: "called", label: state.label, call: patch, result: await gssRequest(patch.method, patch.path, body) };
+  return { outcome: "called", label: state.label, call: patch, result: await gssRequest(patch.method, patch.path, body, { source: "etd-factory", ref: state.label }) };
 }
