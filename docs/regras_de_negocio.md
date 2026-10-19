@@ -2209,7 +2209,7 @@ Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATC
 | Etapa Delivered | Delivered | `delivered` |
 
 - Vai por **Order**: lista os lotes dela no GSS, casa pelo `batch_id` (= `batches.gss_id`) e só faz PATCH do que difere. Lote sem `gss_id` não vai. Nos passos de PL/Shipment roda depois do envio do PL (o vínculo lote↔shipment já existe lá).
-- A escrita pela nossa API (o GSS mandando para nós) não dispara — não ecoa.
+- Pela nossa API (o GSS mandando para nós) só dispara quando o SOT promove lotes da Order para In Production (regra do Gustavo — ex.: o GSS cria um lote novo In Negotiation numa Order que já tem lote em produção). Como só vai o que difere do GSS, não ecoa o que veio dele.
 - `GSS_PUSH_DISABLED=true` desliga junto com PL e ETD.
 - **20/10: funcionando.** Até 19/10 o GSS tratava `status` como somente leitura (200 e ignorava); o time do GSS liberou em 20/10. Só aceita o code — id dá 400 ("Expected a status code string."). Teste real: lotes 1705.01–.03 e 1701.01–.02 iguais nos dois lados.
 

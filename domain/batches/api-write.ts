@@ -3,6 +3,7 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
+import { sendBatchStatusToGss } from "@/lib/gss/outbound/schedule";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { syncOrderStatus } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -373,6 +374,9 @@ export async function createBatch(
   if (incoming.lines.length + fresh.lines.length > 0) {
     const promoteError = await promoteBatchesToProduction(admin, order.id, [batch.id]);
     if (promoteError) return fail(500, promoteError);
+    // Lote que o GSS criou e o SOT promoveu (regra do Gustavo) → o GSS precisa
+    // saber; o envio só faz PATCH do que difere, então não ecoa o que veio dele.
+    sendBatchStatusToGss({ orderIds: [order.id] });
   }
 
   return finish(admin, order.id, batch.id, 201);
@@ -474,9 +478,11 @@ export async function updateBatch(
     // (regra do GSS, 13/10/2026 — lib/deposit-production).
     const promoteError = await promoteBatchesToProduction(admin, batch.order_id);
     if (promoteError) return fail(500, promoteError);
+    sendBatchStatusToGss({ orderIds: [batch.order_id] });
   } else if (wasEmpty && finalContent.length > 0 && input.status === undefined) {
     const promoteError = await promoteBatchesToProduction(admin, batch.order_id, [batchId]);
     if (promoteError) return fail(500, promoteError);
+    sendBatchStatusToGss({ orderIds: [batch.order_id] });
   }
 
   return finish(admin, batch.order_id, batchId, 200);
