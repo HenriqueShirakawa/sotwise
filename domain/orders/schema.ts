@@ -33,4 +33,3 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 /** Como o ActionResult, mas devolve o id e o po_number do registro criado — o
  * form usa o po_number pra mandar o usuário direto pro checklist do novo
  * pedido com a URL bonita (`/orders/<po_number>`) em vez do UUID. */
-export type CreateResult = { ok: true; id: string; po_number: string } | { ok: false; error: string };

@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { SearchSelect, SEARCHABLE_FROM } from "@/components/search-select";
 
-import { createOrder, updateOrder } from "./actions";
+import { updateOrder } from "./actions";
 import type { OrderRow, Ref } from "./orders-client";
 
 type FormState = {
@@ -71,7 +71,6 @@ export function OrderFormModal({
   open,
   onOpenChange,
   editing,
-  nextPo,
   orderTypes,
   clients,
   businessUnits,
@@ -81,8 +80,8 @@ export function OrderFormModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Só edição: criar order é papel do GSS (via API), não do SOT. */
   editing: OrderRow | null;
-  nextPo: string;
   orderTypes: Ref[];
   clients: Ref[];
   businessUnits: Ref[];
@@ -117,7 +116,7 @@ export function OrderFormModal({
       ? [...operationalUsers, ...profiles.filter((p) => p.id === current)]
       : operationalUsers;
 
-  const poNumber = editing ? editing.po_number : nextPo;
+  const poNumber = editing?.po_number ?? "";
   // Campos "importantes" que liberam o submit (espelha o botão travado do Bubble).
   const canSubmit =
     !!form.order_type_id && !!form.client_id && !!form.business_unit_id && !pending;
@@ -135,28 +134,16 @@ export function OrderFormModal({
       leader_id: form.leader_id || null,
       operational_responsible_id: form.operational_responsible_id || null,
     };
+    if (!editing) return;
     startTransition(async () => {
-      if (editing) {
-        const res = await updateOrder(editing.id, payload);
-        if (!res.ok) {
-          toast.error(res.error);
-          return;
-        }
-        toast.success("Order updated.");
-        onOpenChange(false);
-        router.refresh();
-        return;
-      }
-      const res = await createOrder(payload);
+      const res = await updateOrder(editing.id, payload);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
-      toast.success("Order created.");
+      toast.success("Order updated.");
       onOpenChange(false);
-      // Pedido novo abre direto no próprio checklist — a lista atrás do modal
-      // é idêntica e voltar pra ela dava a impressão de que nada aconteceu.
-      router.push(`/orders/${res.po_number}`);
+      router.refresh();
     });
   }
 
@@ -165,7 +152,7 @@ export function OrderFormModal({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-lg text-primary">
-            {editing ? "Edit order" : "Create order"}
+            Edit order
           </DialogTitle>
         </DialogHeader>
 
@@ -267,7 +254,7 @@ export function OrderFormModal({
           </Button>
           <Button className="sm:min-w-32" onClick={submit} disabled={!canSubmit}>
             {pending ? <Loader2 className="animate-spin" /> : null}
-            {editing ? "Edit" : "Create"}
+            Edit
           </Button>
         </DialogFooter>
       </DialogContent>
