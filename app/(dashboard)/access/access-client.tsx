@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Database, FlaskConical } from "lucide-react";
+import { FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -84,27 +84,6 @@ export function AccessClient({
         >
           <FlaskConical className="size-3.5" />
           Preview: novo modelo de acesso (protótipo)
-          <span aria-hidden>→</span>
-        </Link>
-
-        {/* Diagnóstico da integração com o GSS — o que a origem devolve e o que
-            já pareou aqui. Owner-only, ver app/(dashboard)/access/gss/. */}
-        <Link
-          href="/access/gss"
-          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <Database className="size-3.5" />
-          Dados do GSS
-          <span aria-hidden>→</span>
-        </Link>
-
-        {/* Log de toda chamada que fazemos ao GSS (gss_call_log). */}
-        <Link
-          href="/access/gss/calls"
-          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <Database className="size-3.5" />
-          Chamadas ao GSS
           <span aria-hidden>→</span>
         </Link>
       </div>

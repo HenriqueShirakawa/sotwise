@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import type { PermissionMap } from "@/domain/access/features";
 import { NAV, type NavGroup } from "./nav";
 
+function isChildActive(c: NavGroup["children"][number], pathname: string): boolean {
+  return c.exact ? pathname === c.href : pathname === c.href || pathname.startsWith(c.href + "/");
+}
+
 export function SidebarNav({
   permissions,
   onNavigate,
@@ -32,7 +36,7 @@ export function SidebarNav({
         if (item.type === "group") {
           if (collapsed) {
             const childActive = item.children.some(
-              (c) => pathname === c.href || pathname.startsWith(c.href + "/")
+              (c) => isChildActive(c, pathname)
             );
             return (
               <RailIcon
@@ -155,7 +159,7 @@ function GroupItem({
   onNavigate?: () => void;
 }) {
   const childActive = group.children.some(
-    (c) => pathname === c.href || pathname.startsWith(c.href + "/")
+    (c) => isChildActive(c, pathname)
   );
   const [open, setOpen] = useState(childActive);
   const Icon = group.icon;
@@ -183,7 +187,7 @@ function GroupItem({
         <div className="mt-1 grid gap-1 pl-6">
           {group.children.map((c) => {
             const active =
-              pathname === c.href || pathname.startsWith(c.href + "/");
+              isChildActive(c, pathname);
             return (
               <Link
                 key={c.href}
