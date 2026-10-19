@@ -2299,21 +2299,21 @@ Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/
 
 ### 6.13 Status do lote → GSS (19/10/2026, só na `dev`)
 
-Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATCH /v1/orders/{order}/batch/{n}/` com o `id` do catálogo `GET /orders/batch/status/` (`{"status": 2}`; antes ia o `code`).
+Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATCH /v1/orders/{order}/batch/{n}/` com o `code` do catálogo `GET /orders/batch/status/` (`{"status": "production"}`); o GSS devolve o nome ("In Production").
 
-| Onde muda no SOT | Status | `id` (code) no GSS |
+| Onde muda no SOT | Status | `code` no GSS |
 |---|---|---|
-| Dropdown do lote | In Negotiation / In Production | `1` (negotiation) / `2` (production) |
-| Deposit Payment e regra do Gustavo (lotes da Order juntos) | In Production | `2` (production) |
-| Create PL / lote entra no PL | Pre-loading | `3` (pre) |
-| Lote sai do PL / PL excluído | In Production | `2` (production) |
-| Confirm Shipping | In Transit | `4` (transit) |
-| Etapa Delivered | Delivered | `5` (delivered) |
+| Dropdown do lote | In Negotiation / In Production | `negotiation` / `production` |
+| Deposit Payment e regra do Gustavo (lotes da Order juntos) | In Production | `production` |
+| Create PL / lote entra no PL | Pre-loading | `pre` |
+| Lote sai do PL / PL excluído | In Production | `production` |
+| Confirm Shipping | In Transit | `transit` |
+| Etapa Delivered | Delivered | `delivered` |
 
 - Vai por **Order**: lista os lotes dela no GSS, casa pelo `batch_id` (= `batches.gss_id`) e só faz PATCH do que difere. Lote sem `gss_id` não vai. Nos passos de PL/Shipment roda depois do envio do PL (o vínculo lote↔shipment já existe lá).
 - A escrita pela nossa API (o GSS mandando para nós) não dispara — não ecoa.
 - `GSS_PUSH_DISABLED=true` desliga junto com PL e ETD.
-- ⚠️ **Bloqueado no GSS em 19/10:** o Swagger deles marca `status` do `OrderBatchPatch` como **somente leitura**. O PATCH responde 200 e ignora o valor (os lotes seguem `status: null` lá); o log sai `[gss-batch] … (ignored)`. O envio está montado: quando o GSS liberar o campo, passa a gravar sem mudança aqui.
+- **20/10: funcionando.** Até 19/10 o GSS tratava `status` como somente leitura (200 e ignorava); o time do GSS liberou em 20/10. Só aceita o code — id dá 400 ("Expected a status code string."). Teste real: lotes 1705.01–.03 e 1701.01–.02 iguais nos dois lados.
 
 Código: `lib/gss/outbound/batch-status.ts`, `schedule.ts` (`sendBatchStatusToGss`, e dentro de `sendPlShipmentToGss`); disparo em `updateBatchStatus`, `updateChecklistStep` (Deposit), `updatePreLoading`, `deletePreLoading`.
 
