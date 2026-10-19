@@ -17,7 +17,6 @@ import {
 } from "@tanstack/react-table";
 import {
   Filter,
-  Plus,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -359,18 +358,6 @@ export function OrdersClient({
   const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // Próximo número de PO (auto-gerado) = maior número + 1, igual ao Bubble.
-  const nextPo = useMemo(
-    () =>
-      String(rows.reduce((m, r) => Math.max(m, Number(r.po_number) || 0), 0) + 1),
-    [rows]
-  );
-
-  function openCreate() {
-    setEditing(null);
-    setFormOpen(true);
-  }
-
   function confirmDelete() {
     if (!deleteTarget) return;
     const id = deleteTarget.id;
@@ -611,15 +598,9 @@ export function OrdersClient({
           </h1>
           <p className="text-sm text-muted-foreground">Orders management</p>
         </div>
-        {/* Sem "Download XLS" aqui: a exportação foi cortada de todo o sistema,
-            exceto ETD Factories, Pre-loading e Shipments (docs §11, decisão do
-            cliente). Orders não é uma das exceções. */}
-        <div className="flex w-full items-center gap-3 sm:w-auto">
-          <Button className="h-11 flex-1 rounded-xl px-5 sm:flex-none" onClick={openCreate}>
-            <Plus />
-            Create Order
-          </Button>
-        </div>
+        {/* Sem "Create Order": quem cria order é o GSS, pela API (19/10/2026).
+            Sem "Download XLS": a exportação foi cortada de todo o sistema,
+            exceto ETD Factories, Pre-loading e Shipments (docs §11). */}
       </div>
 
       <ListToolbar
@@ -776,7 +757,6 @@ export function OrdersClient({
         open={formOpen}
         onOpenChange={setFormOpen}
         editing={editing}
-        nextPo={nextPo}
         orderTypes={orderTypes}
         clients={clients}
         businessUnits={businessUnits}
