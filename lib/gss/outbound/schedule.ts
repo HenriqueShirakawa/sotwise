@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
+import { preLoadingBatchIds, pushBatchStatuses, type BatchStatusPush } from "./batch-status";
 import { dispatchGssOutbound, gssOutboundEnabled } from "./dispatch";
 import { pushEtdFactory } from "./etd-factory";
 import { PL_SHIPMENT_STEPS, pushPlShipment } from "./pl-shipment";
@@ -44,15 +45,19 @@ function logWrite(prefix: string, call: { method: string; path: string }, result
  * `gss_outbound` (migration 20261002120000), quando aplicada, é a rede de
  * retentativa.
  */
-export function sendPlShipmentToGss(preLoadingId: string, opts: { create?: boolean } = {}): void {
+export function sendPlShipmentToGss(
+  preLoadingId: string,
+  opts: { create?: boolean; removedBatchIds?: string[] } = {}
+): void {
   if (!gssPushEnabled()) return;
   try {
     after(async () => {
+      const db = createAdminClient();
       try {
         // Padrão = só PATCH: PL que não existe no GSS sai "skipped" no log. O
         // Create PL passa `create: true` → PATCH 404 → POST /shipments/ (pedido
         // do usuário em 18/10: "liberar um POST lá quando criamos um PL").
-        const push = await pushPlShipment(createAdminClient(), preLoadingId, { create: opts.create ?? false });
+        const push = await pushPlShipment(db, preLoadingId, { create: opts.create ?? false });
         if (push.outcome === "skipped") {
           console.warn(`[gss] PL ${preLoadingId} não enviado: ${push.reason}`);
         } else if (push.outcome === "called") {
@@ -62,9 +67,48 @@ export function sendPlShipmentToGss(preLoadingId: string, opts: { create?: boole
       } catch (err) {
         console.error(`[gss] envio do PL ${preLoadingId} falhou:`, err);
       }
+      // Depois do PL (o vínculo lote↔shipment já existe lá): status dos lotes do
+      // PL — pre/transit/delivered — e dos que saíram dele (voltam a production).
+      try {
+        const batchIds = [...(await preLoadingBatchIds(db, preLoadingId)), ...(opts.removedBatchIds ?? [])];
+        logBatchStatuses(await pushBatchStatuses(db, { batchIds }));
+      } catch (err) {
+        console.error(`[gss-batch] status dos lotes do PL ${preLoadingId} falhou:`, err);
+      }
     });
   } catch (err) {
     console.error("[gss] after() indisponível:", err);
+  }
+}
+
+function logBatchStatuses(pushes: BatchStatusPush[]): void {
+  for (const p of pushes) {
+    if (p.outcome === "same") continue;
+    const line = `[gss-batch] ${p.label} ${p.call ? `${p.call.method} ${p.call.path} → ${p.result?.status ?? "-"} ` : ""}(${p.outcome})`;
+    if (p.outcome === "sent") console.log(line);
+    else if (p.outcome === "failed") console.error(`${line}: ${p.reason ?? p.result?.error ?? p.result?.text}`);
+    else console.warn(`${line}: ${p.reason}`);
+  }
+}
+
+/**
+ * Manda ao GSS o status dos lotes (`/orders/{order}/batch/{n}/`) depois da
+ * resposta — dropdown do lote e Deposit Payment (que leva os lotes da Order
+ * para In Production). Os passos de PL/Shipment vão por `sendPlShipmentToGss`.
+ * A escrita pela NOSSA API não chama (não ecoa para o GSS o que veio dele).
+ */
+export function sendBatchStatusToGss(ref: { orderIds?: string[]; batchIds?: string[] }): void {
+  if (!gssPushEnabled()) return;
+  try {
+    after(async () => {
+      try {
+        logBatchStatuses(await pushBatchStatuses(createAdminClient(), ref));
+      } catch (err) {
+        console.error("[gss-batch] envio do status dos lotes falhou:", err);
+      }
+    });
+  } catch (err) {
+    console.error("[gss-batch] after() indisponível:", err);
   }
 }
 
