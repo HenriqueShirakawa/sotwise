@@ -251,6 +251,7 @@ export async function pushPlShipment(
   const { state } = loaded;
 
   const path = `/shipments/${state.plNumber}/`;
+  const ctx = { source: "pl-shipment", ref: `PL ${state.plNumber}` };
   const patch: GssCall = { method: "PATCH", path, body: datesBody(state) };
   const metaFields = metaBody(state);
   const meta: GssCall | null = Object.keys(metaFields).length
@@ -263,14 +264,14 @@ export async function pushPlShipment(
 
   if (opts.dry) return { outcome: "planned", patch, meta, createIfMissing: create };
 
-  const patched = await gssRequest(patch.method, patch.path, patch.body);
+  const patched = await gssRequest(patch.method, patch.path, patch.body, ctx);
   if (!(patched.kind === "permanent" && patched.status === 404)) {
     await rememberGssId(db, preLoadingId, patched);
     // Sem resposta do GSS (rede/credencial) não adianta tentar o 2º PATCH.
     if (!meta || patched.status === 0) {
       return { outcome: "called", call: patch, result: patched, created: false };
     }
-    const metaResult = await gssRequest(meta.method, meta.path, meta.body);
+    const metaResult = await gssRequest(meta.method, meta.path, meta.body, ctx);
     return {
       outcome: "called",
       call: patch,
@@ -288,7 +289,7 @@ export async function pushPlShipment(
   if (!create) {
     return { outcome: "skipped", reason: `embarque ${state.shipmentStatus}: não cria no GSS` };
   }
-  let created = await gssRequest(create.method, create.path, create.body);
+  let created = await gssRequest(create.method, create.path, create.body, ctx);
 
   // POD que não existe mais no GSS (ex.: porto de teste apagado lá — PL 1470,
   // 19/10/2026) derruba o POST inteiro com 400 em `pod`. O PL importa mais que
@@ -297,12 +298,12 @@ export async function pushPlShipment(
     console.warn(`[gss] PL ${state.plNumber}: POD ${String(create.body.pod)} recusado pelo GSS, criando sem POD`);
     const withoutPod = { ...create.body };
     delete withoutPod.pod;
-    created = await gssRequest(create.method, create.path, withoutPod);
+    created = await gssRequest(create.method, create.path, withoutPod, ctx);
   }
 
   // Corrida: outro disparo criou entre o 404 e o POST → vale o PATCH.
   if (isPlNumberConflict(created)) {
-    const again = await gssRequest(patch.method, patch.path, { ...patch.body, ...meta?.body });
+    const again = await gssRequest(patch.method, patch.path, { ...patch.body, ...meta?.body }, ctx);
     await rememberGssId(db, preLoadingId, again);
     return { outcome: "called", call: patch, result: again, created: false };
   }

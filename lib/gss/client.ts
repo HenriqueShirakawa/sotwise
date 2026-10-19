@@ -235,16 +235,91 @@ function isCloudflareChallenge(res: Response, text: string): boolean {
   return /<title>\s*Just a moment/i.test(text);
 }
 
+/** Quem fez a chamada — vai para o log (`gss_call_log.source` / `.ref`). */
+export type GssCallContext = { source?: string; ref?: string };
+
+type HttpMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+
+// ---- log de chamadas (gss_call_log, migration 20261019120000) ---------------
+// Cada `gssRequest` vira uma linha, para os erros dos envios em `after()` não
+// sumirem no log da Vercel (pedido do usuário, 19/10/2026). Grava direto pelo
+// PostgREST com o service role — funciona no app e nos scripts. Se a tabela
+// não existir (migration não aplicada) ou o insert falhar, avisa UMA vez e
+// segue: o log nunca derruba um envio.
+let callLogDisabled = false;
+
+async function logGssCall(row: {
+  method: HttpMethod;
+  path: string;
+  status: number;
+  kind: GssWriteKind;
+  duration_ms: number;
+  request_body: unknown;
+  response_body: string;
+  error: string | null;
+  source: string | null;
+  ref: string | null;
+}): Promise<void> {
+  if (callLogDisabled) return;
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, "")}/rest/v1/gss_call_log`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        ...row,
+        request_body: row.request_body === undefined ? null : row.request_body,
+        origin: process.env.VERCEL ? "app" : "script",
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      callLogDisabled = true;
+      console.warn(`[gss-log] log desligado neste processo: ${res.status} ${(await res.text()).slice(0, 200)}`);
+    }
+  } catch (err) {
+    callLogDisabled = true;
+    console.warn("[gss-log] log desligado neste processo:", err);
+  }
+}
+
 /**
  * Requisição autenticada de ESCRITA no GSS. Diferente de `gssGet`, não repete
  * 429/5xx aqui dentro: quem decide quando tentar de novo é a fila (backoff entre
- * disparos). Só renova o token num 401 e repete 1x.
+ * disparos). Só renova o token num 401 e repete 1x. Toda chamada vai para o
+ * `gss_call_log` (tela /access/gss/calls).
  */
 export async function gssRequest(
-  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+  method: HttpMethod,
   path: string,
-  body?: unknown
+  body?: unknown,
+  ctx: GssCallContext = {}
 ): Promise<GssWriteResult> {
+  const started = Date.now();
+  const result = await gssRequestRaw(method, path, body);
+  await logGssCall({
+    method,
+    path,
+    status: result.status,
+    kind: result.kind,
+    duration_ms: Date.now() - started,
+    request_body: body,
+    response_body: result.text,
+    error: result.error ?? null,
+    source: ctx.source ?? null,
+    ref: ctx.ref ?? null,
+  });
+  return result;
+}
+
+async function gssRequestRaw(method: HttpMethod, path: string, body?: unknown): Promise<GssWriteResult> {
   const cfg = readConfig();
   if (!cfg.ok) return { kind: "blocked", status: 0, data: null, text: "", error: cfg.error };
 

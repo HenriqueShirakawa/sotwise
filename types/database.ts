@@ -1201,6 +1201,41 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_snapshot_runs"]["Insert"]>;
         Relationships: [];
       };
+      /** Toda chamada do SOTWISE à API do GSS (`gssRequest`). Tela:
+       * /access/gss/calls. Migration 20261019120000_gss_call_log.sql. */
+      gss_call_log: {
+        Row: {
+          id: number;
+          created_at: Timestamp;
+          method: string;
+          path: string;
+          status: number;
+          kind: string;
+          duration_ms: number | null;
+          request_body: unknown;
+          response_body: string | null;
+          error: string | null;
+          source: string | null;
+          ref: string | null;
+          origin: string;
+        };
+        Insert: {
+          created_at?: Timestamp;
+          method: string;
+          path: string;
+          status: number;
+          kind: string;
+          duration_ms?: number | null;
+          request_body?: unknown;
+          response_body?: string | null;
+          error?: string | null;
+          source?: string | null;
+          ref?: string | null;
+          origin?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_call_log"]["Insert"]>;
+        Relationships: [];
+      };
       /** Fila de envio SOTWISE → GSS (via de saída). Escrita por trigger,
        * drenada por lib/gss/outbound/dispatch.ts. Ver
        * supabase/migrations/20261002120000_gss_outbound.sql e INTEGRACAO_GSS §10. */

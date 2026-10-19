@@ -97,6 +97,16 @@ export function AccessClient({
           Dados do GSS
           <span aria-hidden>→</span>
         </Link>
+
+        {/* Log de toda chamada que fazemos ao GSS (gss_call_log). */}
+        <Link
+          href="/access/gss/calls"
+          className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <Database className="size-3.5" />
+          Chamadas ao GSS
+          <span aria-hidden>→</span>
+        </Link>
       </div>
 
       <div className="grid gap-8">
