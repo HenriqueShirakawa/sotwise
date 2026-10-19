@@ -2197,16 +2197,16 @@ Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/
 
 ### 6.13 Status do lote → GSS (19/10/2026, só na `dev`)
 
-Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATCH /v1/orders/{order}/batch/{n}/` com o `code` do catálogo `GET /orders/batch/status/`.
+Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATCH /v1/orders/{order}/batch/{n}/` com o `id` do catálogo `GET /orders/batch/status/` (`{"status": 2}`; antes ia o `code`).
 
-| Onde muda no SOT | Status | `code` no GSS |
+| Onde muda no SOT | Status | `id` (code) no GSS |
 |---|---|---|
-| Dropdown do lote | In Negotiation / In Production | `negotiation` / `production` |
-| Deposit Payment e regra do Gustavo (lotes da Order juntos) | In Production | `production` |
-| Create PL / lote entra no PL | Pre-loading | `pre` |
-| Lote sai do PL / PL excluído | In Production | `production` |
-| Confirm Shipping | In Transit | `transit` |
-| Etapa Delivered | Delivered | `delivered` |
+| Dropdown do lote | In Negotiation / In Production | `1` (negotiation) / `2` (production) |
+| Deposit Payment e regra do Gustavo (lotes da Order juntos) | In Production | `2` (production) |
+| Create PL / lote entra no PL | Pre-loading | `3` (pre) |
+| Lote sai do PL / PL excluído | In Production | `2` (production) |
+| Confirm Shipping | In Transit | `4` (transit) |
+| Etapa Delivered | Delivered | `5` (delivered) |
 
 - Vai por **Order**: lista os lotes dela no GSS, casa pelo `batch_id` (= `batches.gss_id`) e só faz PATCH do que difere. Lote sem `gss_id` não vai. Nos passos de PL/Shipment roda depois do envio do PL (o vínculo lote↔shipment já existe lá).
 - A escrita pela nossa API (o GSS mandando para nós) não dispara — não ecoa.

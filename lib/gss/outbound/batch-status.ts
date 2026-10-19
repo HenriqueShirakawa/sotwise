@@ -2,15 +2,15 @@
  * Status do lote do SOTWISE → `PATCH /v1/orders/{order}/batch/{n}/` do GSS
  * (regras_de_negocio §6.13, pedido do usuário em 19/10/2026).
  *
- * Quando o status muda aqui, o GSS recebe o `code` do catálogo
- * `GET /orders/batch/status/`:
+ * Quando o status muda aqui, o GSS recebe `{status: <id>}` — o `id` do catálogo
+ * `GET /orders/batch/status/` (pedido do usuário; antes ia o `code`):
  *
- *   in_negotiation → negotiation   (dropdown do lote)
- *   in_production  → production    (dropdown, Deposit Payment, regra do Gustavo)
- *   preloading     → pre           (Create/Edit PL)
- *   in_transit     → transit       (Confirm Shipping)
- *   delivered      → delivered     (etapa Delivered)
- *   canceled       → canceled
+ *   in_negotiation → 1 negotiation   (dropdown do lote)
+ *   in_production  → 2 production    (dropdown, Deposit Payment, regra do Gustavo)
+ *   preloading     → 3 pre           (Create/Edit PL)
+ *   in_transit     → 4 transit       (Confirm Shipping)
+ *   delivered      → 5 delivered     (etapa Delivered)
+ *   canceled       → 7 canceled
  *
  * ⚠️ 19/10/2026: o Swagger do GSS marca `OrderBatchPatch.status` como
  * readOnly — o PATCH responde 200 e IGNORA o campo (os lotes seguem
@@ -39,7 +39,7 @@ export const GSS_BATCH_STATUS: Record<BatchStatus, string> = {
   canceled: "canceled",
 };
 
-/** id do catálogo do GSS (conferido em 19/10) — o GET pode devolver code, id ou nome. */
+/** id do catálogo do GSS (conferido em 19/10) — é o que vai no PATCH; o GET pode devolver code, id ou nome. */
 const GSS_BATCH_STATUS_ID: Record<string, number> = {
   negotiation: 1,
   production: 2,
@@ -141,10 +141,10 @@ export async function pushBatchStatuses(
       }
       const call = { method: "PATCH" as const, path: `/orders/${gssOrder}/batch/${there.batch_number}/` };
       if (opts.dry) {
-        out.push({ label, outcome: "skipped", reason: `dry: PATCH ${call.path} {status: "${code}"} (GSS hoje: ${JSON.stringify(there.status)})`, call });
+        out.push({ label, outcome: "skipped", reason: `dry: PATCH ${call.path} {status: ${GSS_BATCH_STATUS_ID[code]}} (${code}) (GSS hoje: ${JSON.stringify(there.status)})`, call });
         continue;
       }
-      const result = await gssRequest(call.method, call.path, { status: code });
+      const result = await gssRequest(call.method, call.path, { status: GSS_BATCH_STATUS_ID[code] });
       if (result.kind !== "ok") {
         out.push({ label, outcome: "failed", call, result });
         continue;
