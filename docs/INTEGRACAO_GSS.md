@@ -1115,7 +1115,7 @@ Vercel desliga. ⚠️ Em 16/10 o GSS tinha **0 shipments** (a carga de 07/10
 sumiu de lá): como o envio é só PATCH, as datas de PL saem "skipped" no log até
 o GSS recriar os shipments.
 
-**18/10/2026 — Create PL volta a criar no GSS (só na `dev`):** `createPreLoading`
+**18/10/2026 — Create PL volta a criar no GSS (dev + main em 20/10):** `createPreLoading`
 chama `sendPlShipmentToGss(id, { create: true })` → PATCH 404 → `POST /shipments/`.
 Os demais disparos seguem só PATCH (`create` padrão `false`).
 
