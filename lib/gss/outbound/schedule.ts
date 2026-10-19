@@ -95,7 +95,8 @@ function logBatchStatuses(pushes: BatchStatusPush[]): void {
  * Manda ao GSS o status dos lotes (`/orders/{order}/batch/{n}/`) depois da
  * resposta — dropdown do lote e Deposit Payment (que leva os lotes da Order
  * para In Production). Os passos de PL/Shipment vão por `sendPlShipmentToGss`.
- * A escrita pela NOSSA API não chama (não ecoa para o GSS o que veio dele).
+ * Pela NOSSA API só dispara quando o SOT promove lotes (regra do Gustavo) — e
+ * como só vai o que difere do GSS, não ecoa o que veio dele.
  */
 export function sendBatchStatusToGss(ref: { orderIds?: string[]; batchIds?: string[] }): void {
   if (!gssPushEnabled()) return;
