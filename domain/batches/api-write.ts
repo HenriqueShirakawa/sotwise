@@ -371,13 +371,13 @@ export async function createBatch(
     return fail(500, linesError);
   }
 
-  if (incoming.lines.length + fresh.lines.length > 0) {
-    const promoteError = await promoteBatchesToProduction(admin, order.id, [batch.id]);
-    if (promoteError) return fail(500, promoteError);
-    // Lote que o GSS criou e o SOT promoveu (regra do Gustavo) → o GSS precisa
-    // saber; o envio só faz PATCH do que difere, então não ecoa o que veio dele.
-    sendBatchStatusToGss({ orderIds: [order.id] });
-  }
+  // Order já em produção → o lote novo nasce In Production, com ou sem linhas
+  // (20/10/2026); só o gatilho do Deposit exige linha (lib/deposit-production).
+  const promoteError = await promoteBatchesToProduction(admin, order.id, [batch.id]);
+  if (promoteError) return fail(500, promoteError);
+  // Lote que o GSS criou e o SOT promoveu (regra do Gustavo) → o GSS precisa
+  // saber; o envio só faz PATCH do que difere, então não ecoa o que veio dele.
+  sendBatchStatusToGss({ orderIds: [order.id] });
 
   return finish(admin, order.id, batch.id, 201);
 }
