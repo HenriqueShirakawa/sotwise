@@ -29,19 +29,10 @@ type OrderListRow = {
   status: OrderRow["status"];
   schedule_requested: string | null;
   created_at: string;
-  gss_id: string | null;
 };
 
-/**
- * Regra de visibilidade (2026-08-25): order que veio do GSS (`gss_id` não
- * nulo) só aparece na lista se já tiver ≥1 linha Factory×Category — o push do
- * GSS manda os itens no mesmo POST, então a ausência de F×C indica payload
- * incompleto. Orders criadas direto no SOTWISE (`gss_id` nulo, via "Create
- * Order") nunca tiveram F×C na criação — o usuário atribui fábrica/categoria
- * depois — então ficam sempre visíveis, como antes desta regra existir.
- * NEW_ORDER_CUTOFF grandfathers as ~388 orders migradas antes da regra.
- */
-const NEW_ORDER_CUTOFF = new Date("2026-08-25T00:00:00Z");
+// Sem regra de visibilidade por Factory×Category (removida em 19/10/2026): a
+// order criada pelo GSS aparece na lista mesmo antes de ter fábrica/categoria.
 
 const VALID_PO_NUMBER = /^\d+$/;
 
@@ -51,13 +42,13 @@ export default async function OrdersPage() {
   const { profile } = await requireFeature("orders");
   const admin = createAdminClient();
 
-  const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes, ofcOrderIdRows] =
+  const [orders, batches, etdRows, buRes, typeRes, clientRes, exporterRes, profileRes] =
     await Promise.all([
       fetchAll<OrderListRow>((from, to) =>
         admin
           .from("orders")
           .select(
-            "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, created_at, gss_id"
+            "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, created_at"
           )
           .is("deleted_at", null)
           .order("po_number", { ascending: false })
@@ -102,13 +93,7 @@ export default async function OrdersPage() {
       }>((from, to) =>
         admin.from("profiles").select("id, full_name, status, hidden, client_id").range(from, to)
       ),
-      // order_ids que têm ≥1 Factory×Category — base da regra de visibilidade.
-      fetchAll<{ order_id: string }>((from, to) =>
-        admin.from("order_factory_category").select("order_id").range(from, to)
-      ),
     ]);
-
-  const ordersWithFactoryCategory = new Set(ofcOrderIdRows.map((r) => r.order_id));
 
   const buMap = new Map(buRes.map((b) => [b.id, b.name]));
   const typeMap = new Map(typeRes.map((t) => [t.id, { name: t.name, color: t.color }]));
@@ -142,15 +127,6 @@ export default async function OrdersPage() {
     // Bubble têm po_number = unique id do Bubble ("1774…x…"). Só entra na lista
     // quem tem número puramente numérico.
     .filter((o) => VALID_PO_NUMBER.test(o.po_number?.trim() ?? ""))
-    // Regra de visibilidade: só orders do GSS (gss_id setado) exigem ≥1 F×C, e
-    // só a partir do corte; orders criadas direto no SOTWISE e as anteriores ao
-    // corte ficam sempre visíveis (não escondemos as migradas).
-    .filter(
-      (o) =>
-        !o.gss_id ||
-        new Date(o.created_at) < NEW_ORDER_CUTOFF ||
-        ordersWithFactoryCategory.has(o.id)
-    )
     .map((o) => {
     const type = o.order_type_id ? typeMap.get(o.order_type_id) : undefined;
     return {
