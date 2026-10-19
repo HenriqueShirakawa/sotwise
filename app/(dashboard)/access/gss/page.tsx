@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 
 import { requireOwner } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -110,23 +108,9 @@ export default async function GssPanelPage({
   return (
     <div>
       <PageHeader
-        title="GSS — dados da origem"
+        title="GSS parity"
         description="Espelho da resposta da API do GSS (snapshot), lado a lado com o que já está pareado no nosso banco."
-      >
-        <Link
-          href="/access"
-          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
-        >
-          <ArrowLeft className="size-4" />
-          Access
-        </Link>
-        <Link
-          href="/access/gss/calls"
-          className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
-        >
-          Chamadas ao GSS
-        </Link>
-      </PageHeader>
+      />
 
       <GssClient
         recursoAtual={key}
