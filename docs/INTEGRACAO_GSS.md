@@ -1176,3 +1176,17 @@ o **code** (`{"status": "production"}`, ou `null` para limpar) e o GET devolve o
 **nome** ("In Production", "Pre Shipment"…). id dá 400 ("Expected a status code
 string."). O envio voltou a mandar o code e compara pelo nome. Teste real: 1705
 (.01–.03 In Production) e 1701 (.01–.02 In Negotiation) sincronizados.
+
+### 10.7 Log de chamadas ao GSS → tela `/access/gss/calls` (2026-10-19)
+
+Os envios ao GSS rodam depois da resposta (`after()`), então um erro não aparece
+para quem salvou — só no log da Vercel (caso real: PL 1470 recusado por POD
+inexistente, 19/10). Agora **toda** chamada de `gssRequest` grava uma linha em
+`gss_call_log` (migration `20261019120000_gss_call_log.sql`): método, path,
+status, classe (`ok`/`retryable`/`permanent`/`blocked`), tempo, body enviado,
+resposta (2.000 caracteres), erro, origem (`pl-shipment`, `batch-status`,
+`etd-factory`), registro ("PL 1470", "1705.01") e se veio do app ou de script.
+Insert direto no PostgREST com o service role; se falhar (tabela ausente), o log
+se desliga no processo e o envio segue. Tela owner-only em `/access/gss/calls`:
+filtros "Só erros", origem e busca por path/registro; clique abre body e resposta.
+`gssGet` (leituras do sync/cron) não entra.
