@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireFeature } from "@/lib/dal";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
+import { sendBatchStatusToGss, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import { loadSelectableBatchOptions } from "@/domain/pre-loadings/selectable-batches";
 import {
   createPreLoadingRecord,
@@ -81,6 +81,12 @@ export async function updatePreLoading(
   const d = parsed.data;
 
   const admin = createAdminClient();
+  // Lotes de antes: os que saírem voltam a In Production e o GSS precisa saber.
+  const { data: beforeLinks } = await admin
+    .from("pre_loading_batches")
+    .select("batch_id")
+    .eq("pre_loading_id", id);
+  const removedBatchIds = (beforeLinks ?? []).map((l) => l.batch_id).filter((b) => !d.batch_ids.includes(b));
   // pl_number e created_date são imutáveis (auto-gerados) — não entram no update.
   const { error } = await admin
     .from("pre_loadings")
@@ -99,8 +105,9 @@ export async function updatePreLoading(
   revalidatePath(PATH);
   revalidatePath("/orders"); // tirar lote do PL pode mexer no status da Order
   await broadcastPreLoadingPing();
-  // Lotes incluídos/retirados do PL → GSS (batch_ids + status preloading).
-  sendPlShipmentToGss(id);
+  // Lotes incluídos/retirados do PL → GSS (batch_ids + status preloading, e o
+  // status de cada lote, inclusive dos que saíram).
+  sendPlShipmentToGss(id, { removedBatchIds });
   return { ok: true };
 }
 
@@ -109,8 +116,12 @@ export async function deletePreLoading(id: string): Promise<ActionResult> {
 
   // Hard delete em cascata (vínculos, checklist, Shipment 1:1); os lotes voltam
   // pra produção — ver domain/pre-loadings/write.ts.
-  const deleteError = await deletePreLoadingRecord(createAdminClient(), id);
+  const admin = createAdminClient();
+  const { data: links } = await admin.from("pre_loading_batches").select("batch_id").eq("pre_loading_id", id);
+  const deleteError = await deletePreLoadingRecord(admin, id);
   if (deleteError) return { ok: false, error: deleteError };
+  // Lotes voltaram a In Production → GSS.
+  sendBatchStatusToGss({ batchIds: (links ?? []).map((l) => l.batch_id) });
 
   revalidatePath(PATH);
   revalidatePath("/orders");

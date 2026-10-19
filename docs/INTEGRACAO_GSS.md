@@ -1150,3 +1150,23 @@ campos diferentes; sem registro faz POST (só com as duas datas); 409 de corrida
 relê e faz PATCH. Lote sem `gss_id` = pulado. A escrita pela nossa API não
 dispara. CLI: `npx tsx scripts/sync-gss/push-etd-factories.ts` (dry ·
 `--only 1705` · `--commit`).
+
+### 10.6 Status do lote → `/v1/orders/{order}/batch/{n}/` (montado em 2026-10-19)
+
+Rota no Swagger do GSS (`GET`/`PUT`/`PATCH`), permissão do usuário técnico
+liberada em 18/10 (PATCH → 200). De-para pelo `code` do catálogo
+`GET /orders/batch/status/` (created=8, negotiation=1, production=2, pre=3,
+transit=4, delivered=5, stb=6, canceled=7): in_negotiation→negotiation,
+in_production→production, preloading→pre, in_transit→transit,
+delivered→delivered, canceled→canceled.
+
+`pushBatchStatuses` (`lib/gss/outbound/batch-status.ts`) trabalha por Order:
+`GET /orders/{order}/batch/`, casa por `batch_id` = `batches.gss_id`, PATCH
+`{status: code}` só do que difere, usando o `batch_number` do GSS na rota.
+Disparos: dropdown do lote, Deposit Payment, Create/Edit/Delete PL, Confirm
+Shipping, Delivered e desfazer embarque (ver `regras_de_negocio.md` §6.13).
+
+⚠️ **19/10/2026:** `OrderBatchPatch.status` é `readOnly` no Swagger deles — o
+PATCH devolve 200 e mantém `status: null` (testado com code, id, `status_id`,
+`status_code`, `{id}`). Resultado no log: `[gss-batch] … (ignored)`. Falta o
+GSS tornar o campo gravável; do nosso lado nada muda quando isso acontecer.
