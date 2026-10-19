@@ -226,6 +226,12 @@ export type PlShipmentPush =
       meta?: { call: GssCall; result: GssWriteResult };
     };
 
+/** O DRF devolve `{campo: ["mensagem"]}` no 400 de validação. */
+function hasFieldError(result: GssWriteResult, field: string): boolean {
+  const data = result.data as Record<string, unknown> | null;
+  return !!data && typeof data === "object" && field in data;
+}
+
 function isPlNumberConflict(result: GssWriteResult): boolean {
   return result.status === 409 && (result.data as { code?: string } | null)?.code === "pl_number_conflict";
 }
@@ -282,7 +288,17 @@ export async function pushPlShipment(
   if (!create) {
     return { outcome: "skipped", reason: `embarque ${state.shipmentStatus}: não cria no GSS` };
   }
-  const created = await gssRequest(create.method, create.path, create.body);
+  let created = await gssRequest(create.method, create.path, create.body);
+
+  // POD que não existe mais no GSS (ex.: porto de teste apagado lá — PL 1470,
+  // 19/10/2026) derruba o POST inteiro com 400 em `pod`. O PL importa mais que
+  // o POD: cria sem ele e o erro fica no log.
+  if (created.kind === "permanent" && created.status === 400 && "pod" in create.body && hasFieldError(created, "pod")) {
+    console.warn(`[gss] PL ${state.plNumber}: POD ${String(create.body.pod)} recusado pelo GSS, criando sem POD`);
+    const withoutPod = { ...create.body };
+    delete withoutPod.pod;
+    created = await gssRequest(create.method, create.path, withoutPod);
+  }
 
   // Corrida: outro disparo criou entre o 404 e o POST → vale o PATCH.
   if (isPlNumberConflict(created)) {
@@ -305,6 +321,9 @@ async function rememberGssId(db: DB, preLoadingId: string, result: GssWriteResul
   const id = (result.data as { id?: unknown } | null)?.id;
   if (typeof id !== "number" && typeof id !== "string") return;
   const gssId = String(id);
+  // O GSS é a verdade: se outro PL daqui guarda este id (resto de uma carga que
+  // o GSS apagou — 19/10/2026, PL 201 segurava o 205 do PL 1470), ele solta.
+  await db.from("pre_loadings").update({ gss_id: null }).eq("gss_id", gssId).neq("id", preLoadingId);
   const { error } = await db
     .from("pre_loadings")
     .update({ gss_id: gssId })
