@@ -1151,7 +1151,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 1 | Order | — (a data vem do "Order received date", ver abaixo) |
 | 2 | PO | entradas Factory × Category (**sem documento** desde 20/10/2026) |
 | 3 | PI | — (**sem documento** desde 20/10/2026; a data vem do status da PI no GSS) |
-| 4 | Deposit Payment | — |
+| 4 | Deposit Payment | — (desde 20/10/2026 a data vem do "Deposit date", ver abaixo) |
 | 5 | Packing Confirm. | — |
 | 6 | Condition Confirm. | — |
 | 7 | Place the Order | documento |
@@ -1183,7 +1183,7 @@ As três primeiras etapas deixam de ser "data + anexo à mão" e passam a fechar
 | **PO** | as Factory × Category **chegam do GSS** (`items[]` no POST `/api/orders`, ou `/api/order-items`) | o dia da 1ª leva | cada leva que **muda o conjunto** de F×C ativas: lista recebida + o que entrou/saiu. Reenvio idêntico não grava nada |
 | **PI** | o GSS manda `pi_status` (**texto livre**) + `pi_status_date` | a data do 1º status (nunca futura) | cada status/data seguinte |
 
-- **Tabela `checklist_step_revisions`** (migration `20261020130000`): `kind` = `order_received_date` \| `fxc` \| `pi_status` \| `completed_on`; `previous_date`/`new_date`, `payload` (F×C: `items`/`added`/`removed`; PI: `status`/`previous_status`), `reason`, `source` = `manual` \| `gss`, `changed_by`, `changed_at`. A 1ª linha de cada `kind` é o **registro original**; o resto são revisões. Revisão vinda do GSS sem motivo grava "Updated by GSS" (`revision_reason` no payload sobrescreve).
+- **Tabela `checklist_step_revisions`** (migration `20261020130000`): `kind` = `order_received_date` \| `fxc` \| `pi_status` \| `completed_on` \| `deposit_date` (este em `20261020140000`, ver Deposit Payment abaixo); `previous_date`/`new_date`, `payload` (F×C: `items`/`added`/`removed`; PI: `status`/`previous_status`), `reason`, `source` = `manual` \| `gss`, `changed_by`, `changed_at`. A 1ª linha de cada `kind` é o **registro original**; o resto são revisões. Revisão vinda do GSS sem motivo grava "Updated by GSS" (`revision_reason` no payload sobrescreve).
 - Colunas novas em `orders`: `order_received_date` (a **vigente**), `pi_status`, `pi_status_date`. Saem no GET `/api/orders`.
 - **Tela:** o painel mostra a **1ª data** com um número em destaque = quantidade de revisões; clicar abre o popup com um "+" (gravar/revisar a data, motivo obrigatório depois da 1ª) e a lista de registros expansível (de → para, quando, quem/GSS, motivo; no PO, a lista de F×C e o +/−).
 - **PO e PI sem anexo** (o GSS gera os documentos). Documento antigo continua visível, só leitura. Saiu a regra "PI exige documento quando Sales".
@@ -1192,6 +1192,43 @@ As três primeiras etapas deixam de ser "data + anexo à mão" e passam a fechar
 - Gatilho **nunca reabre** etapa nem sobrescreve Completed on já preenchido (acervo do Bubble fica como está).
 - Diferente do "History" (`checklist_step_log`): o log registra quem mexeu em qual campo na tela; aqui ficam as revisões do **fato** da etapa, com motivo, inclusive as que vêm do GSS.
 - Código: `lib/checklist-revisions.ts` (regras), `orders/[id]/step-revisions.tsx` (badge + popup), ganchos em `domain/orders/api-write.ts` (`applyChecklistFields`), `app/api/orders/route.ts` e `domain/order-items/api-write.ts`.
+
+##### Deposit Payment: "Deposit date" como gatilho (card do cliente, decisão 2026-10-20)
+
+Card do Notion ("Deposit Payment"). A etapa para de ser "data na mão" e passa a
+fechar por um fato registrado: **a data em que o cliente de fato depositou**.
+Mesma mecânica do Order received date (§acima), com uma diferença de propósito —
+o **motivo é obrigatório em TODA gravação**, inclusive a 1ª.
+
+| Ponto do card | Decisão |
+|---|---|
+| Anexo obrigatório | **Nunca foi obrigatório** nesta etapa (não há `case "deposit_payment"` em `missingExtras`, nem na `main`). O anexo **continua aceito e opcional** — nada mudou em código. |
+| Toggle ativo/inativo | **Continua.** Além de dizer "esta etapa não se aplica a este pedido", desligá-lo é gatilho de lote (`isDepositSettled`, §3.7.2) — tirar o toggle mudaria essa regra. |
+| **Deposit Date** (campo novo) | Preenchido pelo usuário, **sempre com motivo**; cada gravação vira registro/revisão + entra no History da etapa. Nunca futura. |
+| Estimated Date | Sem mudança — segue manual, como hoje. |
+| Completed Date | **Automático na 1ª gravação do Deposit date = o DIA DA GRAVAÇÃO** (não a data do depósito), mesmo critério do Order. Revisar o Deposit date depois **não** mexe no Completed on. |
+
+- **Coluna nova em `orders`: `deposit_date`** (a vigente) — migration `20261020140000`,
+  que também abre `kind = 'deposit_date'` em `checklist_step_revisions`. A 1ª linha
+  desse `kind` é o registro original; as seguintes são revisões, com motivo.
+- **`Completed on` entrou em `LOCKED_COMPLETED_ON_STEPS`** (via `TRIGGER_COMPLETED_STEPS`):
+  campo travado na tela e no servidor — o save normal responde *"Set the deposit date
+  to complete this step."* —, e a etapa deixa de exigir `Estimated date` para concluir
+  (o gatilho não pode ficar preso num campo opcional).
+- **Promoção de lote mudou de gancho:** `in_negotiation → in_production` (§3.7.2) agora
+  sai de `saveDepositDate` (1ª gravação) e do toggle off, não mais do `completed_on`
+  digitado — `settleDepositPayment` em `orders/[id]/actions.ts` faz os dois caminhos
+  (promoção + rollup da Order + push de status ao GSS).
+- **Tela:** a etapa ganha o campo "Deposit date" (mesmo componente do Order received
+  date, `TriggerDateField`), com botão "Set date"/"Revise" que abre o popup
+  (`StepRevisionsModal`, agora só-formulário para Order **e** Deposit — a lista fica
+  no History). Sem "Revise" no Completed on: a correção é na data do depósito.
+- ⚠️ **Não há como reabrir a etapa** depois da 1ª gravação (revisar o Deposit date não
+  limpa o `Completed on`) — mesma limitação que a etapa Order tem hoje. Se o cliente
+  pedir, o caminho é `reviseCompletedOn` passar a aceitar a etapa.
+- Código: `setDepositDate` em `lib/checklist-revisions.ts`, `saveDepositDate` em
+  `orders/[id]/actions.ts`, `TriggerDateField`/`TRIGGER_PLACEHOLDER` em
+  `order-detail-client.tsx`, `FORM_ONLY_REVISIONS` em `step-revisions.tsx`.
 
 ##### Ordem de preenchimento: Estimated date antes de Completed on (✅ confirmado 12/08/2026)
 
@@ -1296,7 +1333,7 @@ Pedido do usuário: **todas** as etapas do checklist (Order #1–10, Pre-loading
 
 Pedido do usuário: o "Completed on" fica **bloqueado** — quem conclui a etapa são as ações/gatilhos, não a mão. **Toda etapa vai ter gatilho** (ainda em definição); por enquanto só trava onde o gatilho já existe.
 
-- **Lista única:** `LOCKED_COMPLETED_ON_STEPS` (`lib/checklist-completion.ts`) — hoje Order, PO, PI (gatilhos de `lib/checklist-revisions`) + Consolidation Point, City, Port of Loading, Shipping Docs, Agents, Booking, BL, Original Docs (auto-conclusão do PL). **Etapa que ganhar gatilho entra nessa lista e trava sozinha** (tela + servidor).
+- **Lista única:** `LOCKED_COMPLETED_ON_STEPS` (`lib/checklist-completion.ts`) — hoje Order, PO, PI, Deposit Payment (gatilhos de `lib/checklist-revisions`) + Consolidation Point, City, Port of Loading, Shipping Docs, Agents, Booking, BL, Original Docs (auto-conclusão do PL). **Etapa que ganhar gatilho entra nessa lista e trava sozinha** (tela + servidor).
 - **Loading date fica FORA:** o Confirm Shipping exige ela concluída antes de liberar (o popup só revisa a data) — travar impediria o embarque.
 - **Trava na tela e no servidor:** o save normal recusa mexer no Completed on dessas etapas (`LOCKED_COMPLETED_ON_ERROR`).
 - **Correção só por admin/owner, com motivo obrigatório:** Order/PO/PI pelo popup de revisões (botão "Set"/"Revise", vira `checklist_step_revisions`); PL/Shipment pelo botão **"Correct"** (`components/checklist/locked-completed-on.tsx` → `lib/completed-on-correction.ts`), que aceita data vazia pra reabrir e grava o motivo no History (`changes.reason`, badge "Correction").
@@ -2362,7 +2399,7 @@ Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATC
 - `GSS_PUSH_DISABLED=true` desliga junto com PL e ETD.
 - **20/10: funcionando.** Até 19/10 o GSS tratava `status` como somente leitura (200 e ignorava); o time do GSS liberou em 20/10. Só aceita o code — id dá 400 ("Expected a status code string."). Teste real: lotes 1705.01–.03 e 1701.01–.02 iguais nos dois lados.
 
-Código: `lib/gss/outbound/batch-status.ts`, `schedule.ts` (`sendBatchStatusToGss`, e dentro de `sendPlShipmentToGss`); disparo em `updateBatchStatus`, `updateChecklistStep` (Deposit), `updatePreLoading`, `deletePreLoading`.
+Código: `lib/gss/outbound/batch-status.ts`, `schedule.ts` (`sendBatchStatusToGss`, e dentro de `sendPlShipmentToGss`); disparo em `updateBatchStatus`, `saveDepositDate` e `updateChecklistStep` (Deposit — data e toggle), `updatePreLoading`, `deletePreLoading`.
 
 ---
 
