@@ -78,6 +78,7 @@ type Lookup = "profiles" | "factories" | "cities" | "pols" | "carriers" | "agent
 
 /** Rótulo e tipo de cada coluna do log, na ordem em que aparecem na tela. */
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
+  order_received_date: { label: "Order received date", kind: "date" },
   enabled: { label: "Enabled", kind: "bool" },
   estimated_date: { label: "Estimated date", kind: "date" },
   responsible_id: { label: "Responsible", kind: "text", lookup: "profiles" },
