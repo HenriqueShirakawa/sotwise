@@ -9,6 +9,7 @@ import {
   ORDER_STEPS,
   PRELOADING_STEPS,
   SHIPMENT_STEPS,
+  HIDDEN_STEPS,
 } from "@/lib/checklist";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,9 @@ const STEPS_BY_PHASE: Record<StepPhase, ChecklistStep[]> = {
 
 /** Opções do filtro de Step conforme a aba ativa (§3.12.2). */
 function stepOptions(phase: StepPhase): Ref[] {
-  return STEPS_BY_PHASE[phase].map((step) => ({ id: step, name: STEP_LABELS[step] }));
+  return STEPS_BY_PHASE[phase]
+    .filter((step) => !HIDDEN_STEPS.has(step))
+    .map((step) => ({ id: step, name: STEP_LABELS[step] }));
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

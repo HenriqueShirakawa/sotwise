@@ -2,7 +2,7 @@ import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { readListState } from "@/lib/list-state";
-import { SHIPMENT_STEPS } from "@/lib/checklist";
+import { HIDDEN_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 
 import { TodoClient, type TodoRow } from "./todo-client";
@@ -113,6 +113,8 @@ export default async function TodoPage() {
         .from("order_checklist_steps")
         .select("id, order_id, step, estimated_date, responsible_id")
         .eq("enabled", true)
+        // Etapa oculta do front (Packing Confirm.) não é tarefa de ninguém.
+        .not("step", "in", `(${[...HIDDEN_STEPS].join(",")})`)
         .is("completed_on", null)
         .not("responsible_id", "is", null)
         .not("estimated_date", "is", null)
