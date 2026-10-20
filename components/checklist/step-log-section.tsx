@@ -66,15 +66,16 @@ export function StepLogButton({
   if (!count) return null;
   return (
     <>
+      {/* Mesmo pill de antes (quando ficava dentro da etapa), agora no cabeçalho. */}
       <button
         type="button"
-        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+        className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-2.5 py-0.5 text-xs text-slate-700 transition-colors hover:bg-slate-50"
         aria-label={`History (${count})`}
-        title="History"
         onClick={() => setOpen(true)}
       >
-        <History className="size-3.5" />
-        {count}
+        <History className="size-3.5 text-slate-600" />
+        History
+        <span className="text-slate-700">{count}</span>
       </button>
       {open && (
         <StepLogDialog owner={owner} stepLabel={stepLabel} onClose={() => setOpen(false)} />
