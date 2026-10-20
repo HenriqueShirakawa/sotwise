@@ -107,8 +107,13 @@ function LogCard({ entry }: { entry: StepLogEntry }) {
           {entry.changes.map((c) => (
             <li key={c.field} className="text-slate-700">
               <span className="text-muted-foreground">{c.label}:</span>{" "}
-              <span className="text-slate-500">{show(c, c.from)}</span>
-              {" → "}
+              {/* Campo que estava vazio: só o valor novo, sem "— →". */}
+              {c.from !== null && (
+                <>
+                  <span className="text-slate-500">{show(c, c.from)}</span>
+                  {" → "}
+                </>
+              )}
               <span className="font-medium">{show(c, c.to)}</span>
             </li>
           ))}
