@@ -70,6 +70,8 @@ export type StepLogEntry = {
   file_name: string | null;
   /** Fábrica do anexo (Place the Order, por fábrica). */
   factory_name: string | null;
+  /** Motivo da correção do admin (Completed on travado). */
+  reason: string | null;
 };
 
 type Lookup = "profiles" | "factories" | "cities" | "pols" | "carriers" | "agents" | "contacts";
@@ -188,6 +190,7 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
         isAttachment && typeof raw.factory_id === "string"
           ? (names.get(raw.factory_id) ?? null)
           : null,
+      reason: typeof raw.reason === "string" ? raw.reason : null,
     };
   });
 }

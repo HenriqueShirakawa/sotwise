@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
-import { validateStepDates } from "@/lib/checklist-completion";
+import {
+  LOCKED_COMPLETED_ON_ERROR,
+  LOCKED_COMPLETED_ON_STEPS,
+  validateStepDates,
+} from "@/lib/checklist-completion";
+import { correctPlStepCompletedOn } from "@/lib/completed-on-correction";
 import {
   diffStepFields,
   PL_STEP_LOG_COLUMNS,
@@ -97,6 +102,16 @@ export async function savePreLoadingStep(
   );
   if (dateError) return { ok: false, error: dateError };
 
+  // Etapa com gatilho: a data é da auto-conclusão; o admin corrige pela
+  // correctPreLoadingCompletedOn (com motivo).
+  if (
+    "completed_on" in patch &&
+    (patch.completed_on ?? null) !== (existing?.completed_on ?? null) &&
+    LOCKED_COMPLETED_ON_STEPS.has(step)
+  ) {
+    return { ok: false, error: LOCKED_COMPLETED_ON_ERROR };
+  }
+
   // "completed_on" no patch redefine o `done`; fora isso mantém o que já valia.
   const completedOn =
     "completed_on" in patch ? (patch.completed_on ?? null) : (existing?.completed_on ?? null);
@@ -148,6 +163,38 @@ export async function savePreLoadingStep(
   await broadcastPreLoadingPing();
   // Data do Loading date mudou → GSS na hora (depois da resposta).
   if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
+  return { ok: true };
+}
+
+/**
+ * Correção do "Completed on" travado (etapas com gatilho) — só admin/owner, com
+ * motivo; `date` null reabre a etapa. Ver lib/completed-on-correction.
+ */
+export async function correctPreLoadingCompletedOn(
+  preLoadingId: string,
+  step: ChecklistStep,
+  date: string | null,
+  reason: string
+): Promise<ActionResult> {
+  const session = await requireFeature("pre_loading", "edit");
+  if (!session.isAdmin && !session.isOwner) {
+    return { ok: false, error: "Only an admin can correct the completion date." };
+  }
+  const admin = createAdminClient();
+  const error = await correctPlStepCompletedOn(
+    admin,
+    preLoadingId,
+    step,
+    date,
+    reason,
+    session.userId
+  );
+  if (error) return { ok: false, error };
+
+  revalidatePath("/pre-loading/[id]", "page");
+  revalidatePath("/pre-loading");
+  revalidatePath("/todo");
+  await broadcastPreLoadingPing();
   return { ok: true };
 }
 

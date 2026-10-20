@@ -159,6 +159,30 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
 ]);
 
 /**
+ * Etapas com "Completed on" TRAVADO (20/10/2026): quem grava a data é o gatilho
+ * da etapa, não a mão — Order/PO/PI pelo lib/checklist-revisions, as do PL/
+ * Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
+ * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
+ *
+ * Loading date fica FORA de propósito: o Confirm Shipping exige ela concluída
+ * antes de liberar (o popup só revisa a data), então ela precisa ser manual.
+ */
+export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  ...TRIGGER_COMPLETED_STEPS,
+  "consolidation_point",
+  "city",
+  "port_of_loading",
+  "shipping_docs",
+  "agents",
+  "booking",
+  "bl",
+  "original_docs",
+]);
+
+export const LOCKED_COMPLETED_ON_ERROR =
+  "This step is completed automatically. Only an admin can correct the date, with a reason.";
+
+/**
  * "Completed on" só existe com "Estimated date" preenchido: não se conclui uma
  * etapa que nunca foi prevista. Vale nas três telas de checklist.
  *

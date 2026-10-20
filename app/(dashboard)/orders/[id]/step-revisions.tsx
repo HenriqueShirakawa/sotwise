@@ -74,6 +74,7 @@ export function StepRevisionsModal({
   stepId,
   step,
   currentDate,
+  canCorrect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,6 +83,8 @@ export function StepRevisionsModal({
   step: RevisionStep;
   /** Order: received date vigente; PO/PI: Completed on. Vazio = 1º registro. */
   currentDate: string | null;
+  /** Admin/owner: só ele corrige o Completed on (travado) de PO/PI. */
+  canCorrect: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -118,10 +121,10 @@ export function StepRevisionsModal({
     };
   }, [openFor]);
 
-  // Order grava a received date; PO/PI só revisam um Completed on que já existe
-  // (o 1º preenchimento é o campo normal da etapa).
-  const canAdd = step === "order" || !!currentDate;
-  const reasonRequired = !!currentDate;
+  // Order grava a received date; o Completed on de PO/PI é travado (vem do GSS)
+  // e só o admin corrige — sempre com motivo, até quando ainda está vazio.
+  const canAdd = step === "order" || canCorrect;
+  const reasonRequired = step === "order" ? !!currentDate : true;
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
   function save() {
@@ -134,7 +137,9 @@ export function StepRevisionsModal({
         toast.error(res.error);
         return;
       }
-      toast.success(currentDate ? "Revision saved." : "Order received date saved.");
+      toast.success(
+        currentDate ? "Revision saved." : step === "order" ? "Order received date saved." : "Completion date saved."
+      );
       setAdding(false);
       setDate("");
       setReason("");
@@ -176,7 +181,9 @@ export function StepRevisionsModal({
                     ? currentDate
                       ? "Revise order received date"
                       : "Set order received date"
-                    : "Revise completion date"}
+                    : currentDate
+                      ? "Revise completion date"
+                      : "Set completion date"}
                 </Button>
               ) : (
                 <div className="space-y-3">
