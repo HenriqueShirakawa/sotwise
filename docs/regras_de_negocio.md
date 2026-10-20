@@ -1257,6 +1257,18 @@ create table public.step_attachments (
 > ✅ **Etapa "Place the Order" — visão agrupada por Factory (print da tela):** os campos padrão da etapa (Estimated date/Responsible/Completed on/Signed by) aparecem normalmente, e abaixo deles a **mesma entidade `order_factory_category`** da etapa PO é reexibida **agrupada por Factory**: uma linha por Factory com **"N° of categories"** = contagem de entradas daquela Factory neste pedido (não distinct — duas entradas com a mesma Category em lotes diferentes contam 2). Cada linha expande (chevron) pra uma sub-tabela **Categories | Batch Number**. Paginado (10 Factories por página).
 > - **Anexo por grupo:** o botão **"+ Attach"** de cada linha faz upload de documento vinculado a **essa combinação (Factory + etapa "Place the Order" + pedido)**, não à etapa inteira — por isso `step_attachments` ganhou a coluna `factory_id` (nullable; demais etapas continuam com anexo por etapa só, `factory_id = null`). A lista "Attached documents" some da UI genérica de etapa só pra "Place the Order" (substituída pelo anexo por Factory).
 
+##### Log de alterações por etapa — "History" (decisão 2026-10-20)
+
+Pedido do usuário: **todas** as etapas do checklist (Order #1–10, Pre-loading #11–17, Shipment #18–24) têm um LOG de cada alteração que **um usuário** fizer — quem, quando e o quê.
+
+- **Tabela `checklist_step_log`** (migration `20261020120000`): mesmo dono duplo de `step_attachments` (`checklist_step_id` OU `pre_loading_step_id`, check `checklist_step_log_one_owner`), `step`, `action`, `changes` jsonb (só o diff, `{"campo": {"from":..,"to":..}}`), `actor_id` (NOT NULL — sempre um usuário), `created_at`.
+- **`action`:** `update` (campos), `auto_complete` (a etapa do PL fechou sozinha depois do que o usuário preencheu), `confirm_shipping` (o popup grava o Completed on do Loading date), `attachment_added` / `attachment_removed` (`changes` = `{file_name, factory_id?}`).
+- **Campos logados:** Enabled (só Order), Estimated date, Responsible, Completed on, Signed by, Notes, Consolidation point, City, Port of loading, Carrier, Agents/Contacts Brazil e China, Booking number, Cut-off. `done` fica de fora (é espelho do Completed on).
+- **Gravado pelas server actions das 3 telas** (`lib/checklist-step-log.ts`), não por trigger: a integração com o GSS (API) e os scripts também escrevem nas etapas e **não** entram no log. Falha ao gravar o log não desfaz a alteração.
+- **Ids crus no diff** (responsável, agente, porto…); o nome é resolvido na leitura (`lib/checklist-step-log-actions.ts`) — renomear um cadastro muda o nome no log antigo também; cadastro apagado aparece como "(removed)".
+- **Tela:** pill **"History (N)"** logo abaixo de "Emails sent" em cada etapa (`components/checklist/step-log-section.tsx`), expande a lista mais recente primeiro. Recarrega sozinho quando a etapa muda na tela.
+- Não há histórico anterior a 20/10/2026 (nem do Bubble).
+
 ##### E-mail manual por etapa + histórico (decisão 2026-09-08)
 
 Pedido do cliente: em cada etapa do checklist (Order/Pre-loading/Shipment), poder mandar um e-mail escolhendo à mão quem recebe — diferente do módulo de mensagens (`messages`, 100% interno, nunca sai e-mail de verdade) e do outbox de notificação de cliente (`client_notifications`, automático por trigger, destinatário sempre o `client` do pedido). Descartado o caminho "alias externo com reply-all": o cliente quer poder **excluir** gente do envio, o que um alias compartilhado não permite.

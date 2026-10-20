@@ -1,6 +1,7 @@
 import "server-only";
 
 import { hasExtraRequirements, isStepChecked, plStepFacts } from "@/lib/checklist-completion";
+import { writeStepLog } from "@/lib/checklist-step-log";
 import { todayIso } from "@/lib/format";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -34,7 +35,7 @@ export async function autoCompletePlStep(
   const { data: s } = await admin
     .from("pre_loading_checklist_steps")
     .select(
-      "id, estimated_date, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+      "id, estimated_date, completed_on, signed_by_id, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
     )
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
@@ -69,6 +70,20 @@ export async function autoCompletePlStep(
     .update({ completed_on: today, done: true, signed_by_id: userId })
     .eq("id", s.id)
     .is("completed_on", null)
-    .select("id");
-  return (updated?.length ?? 0) > 0;
+    .select("id, signed_by_id");
+  if (!updated?.length) return false;
+
+  // Fechou por consequência do que o usuário acabou de preencher — entra no
+  // log como ação dele, marcada como automática.
+  await writeStepLog(admin, {
+    owner: { preLoadingStepId: s.id },
+    step,
+    action: "auto_complete",
+    changes: {
+      completed_on: { from: null, to: today },
+      signed_by_id: { from: s.signed_by_id ?? null, to: userId },
+    },
+    userId,
+  });
+  return true;
 }
