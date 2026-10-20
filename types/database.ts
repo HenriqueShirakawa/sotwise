@@ -116,7 +116,12 @@ export type ChecklistStepLogAction =
   | "confirm_shipping"
   | "attachment_added"
   | "attachment_removed";
-export type ChecklistRevisionKind = "order_received_date" | "fxc" | "pi_status" | "completed_on";
+export type ChecklistRevisionKind =
+  | "order_received_date"
+  | "fxc"
+  | "pi_status"
+  | "completed_on"
+  | "deposit_date";
 export type ChecklistRevisionSource = "manual" | "gss";
 
 export type Database = {
@@ -689,6 +694,7 @@ export type Database = {
           order_received_date: DateStr | null;
           pi_status: string | null;
           pi_status_date: DateStr | null;
+          deposit_date: DateStr | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -715,6 +721,7 @@ export type Database = {
           order_received_date?: DateStr | null;
           pi_status?: string | null;
           pi_status_date?: DateStr | null;
+          deposit_date?: DateStr | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;

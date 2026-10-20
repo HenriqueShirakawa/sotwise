@@ -12,8 +12,8 @@ import type {
 type Admin = ReturnType<typeof createAdminClient>;
 
 /**
- * Etapas Order / PO / PI do checklist — gatilho próprio + revisões (20/10/2026,
- * planilha "checklistregras", docs §3.7.5):
+ * Etapas do checklist da Order com gatilho próprio + revisões (20/10/2026,
+ * planilha "checklistregras" + card "Deposit Payment", docs §3.7.5):
  *
  *  - **Order**: o usuário grava o "Order received date" (data do pedido final do
  *    cliente). A 1ª gravação conclui a etapa com Completed on = HOJE; cada troca
@@ -22,10 +22,14 @@ type Admin = ReturnType<typeof createAdminClient>;
  *    muda o conjunto de F×C ativas é registrada (lista + o que mudou).
  *  - **PI**: o GSS manda o status da PI (texto livre) + data. O 1º status conclui
  *    a etapa com Completed on = data dele; os seguintes são revisões.
+ *  - **Deposit Payment**: o usuário grava o "Deposit date" (quando o cliente
+ *    depositou de fato), sempre com motivo. A 1ª gravação conclui a etapa com
+ *    Completed on = o dia da gravação.
  *
- * A 1ª linha de cada tipo (`order_received_date`, `fxc`, `pi_status`) é o
- * registro ORIGINAL — nunca se perde. Revisões = as linhas depois dela, mais as
- * correções manuais de Completed on (`completed_on`) no PO/PI.
+ * A 1ª linha de cada tipo (`order_received_date`, `fxc`, `pi_status`,
+ * `deposit_date`) é o registro ORIGINAL — nunca se perde. Revisões = as linhas
+ * depois dela, mais as correções manuais de Completed on (`completed_on`) no
+ * PO/PI.
  *
  * Gatilho nunca REABRE etapa nem sobrescreve Completed on já preenchido: etapa
  * migrada do Bubble (ou concluída à mão) fica como está.
@@ -170,6 +174,74 @@ export async function setOrderReceivedDate(
   return null;
 }
 
+// ── Deposit Payment ──────────────────────────────────────────────────────────
+
+/**
+ * Grava o "Deposit date" — a data em que o cliente de fato depositou (card do
+ * cliente, 20/10/2026). MOTIVO é obrigatório em TODA gravação, inclusive a 1ª
+ * (decisão do usuário; difere do Order received date, cujo 1º registro é livre).
+ *
+ * A 1ª gravação conclui a etapa com Completed on = o DIA DA GRAVAÇÃO, não a data
+ * do depósito — mesmo critério do Order. Revisar depois troca só o Deposit date.
+ * Retorna a mensagem de erro de validação, ou null.
+ */
+export async function setDepositDate(
+  admin: Admin,
+  orderId: string,
+  date: string,
+  who: Who
+): Promise<string | null> {
+  if (date > todayIso()) return "The deposit date can't be in the future.";
+
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("deposit_date")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!order) return "Order not found.";
+
+  const previous = order.deposit_date;
+  if (previous === date) return null;
+
+  const reason = reasonFor(who);
+  if (!reason) return "A reason is required to record the deposit date.";
+
+  const step = await readStep(admin, orderId, "deposit_payment");
+  if (!step) return "Checklist step not found.";
+
+  const { error: upError } = await admin
+    .from("orders")
+    .update({ deposit_date: date })
+    .eq("id", orderId);
+  if (upError) throw new Error(upError.message);
+
+  await insertRevision(
+    admin,
+    {
+      order_id: orderId,
+      step_id: step.id,
+      kind: "deposit_date",
+      previous_date: previous,
+      new_date: date,
+      reason,
+    },
+    who
+  );
+
+  // A gravação aparece no History da etapa, com o motivo (badge "Correction").
+  await writeStepLog(admin, {
+    owner: { checklistStepId: step.id },
+    step: step.step,
+    action: "update",
+    changes: { deposit_date: { from: previous, to: date }, reason },
+    userId: who.userId,
+  });
+
+  // Completed on = o MOMENTO em que a data foi informada (não a data do depósito).
+  if (!previous) await completeByTrigger(admin, step, todayIso(), who.userId);
+  return null;
+}
 // ── PO ───────────────────────────────────────────────────────────────────────
 
 export type FxcItem = {
