@@ -48,6 +48,7 @@ import {
 } from "./actions";
 import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
 import { ViewBatchLinesModal } from "./view-batch-lines-modal";
+import { StepLogSection } from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 /** Um `pol` é a junção (cidade, porto): a cidade distingue linhas de mesmo nome
@@ -786,6 +787,10 @@ export function PlChecklistClient({
                       preLoadingId={preLoading.id}
                       step={s.step}
                       attachments={s.attachments}
+                    />
+                    <StepLogSection
+                      owner={{ kind: "pre_loading", preLoadingId: preLoading.id, step: s.step }}
+                      refreshKey={JSON.stringify(s)}
                     />
                   </div>
                 )}

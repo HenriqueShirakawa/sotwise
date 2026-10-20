@@ -50,6 +50,7 @@ import {
   type ShipmentStepPatch,
 } from "./actions";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
+import { StepLogSection } from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 
@@ -751,6 +752,14 @@ export function ShipmentDetailClient({
                       step={s.step}
                       attachments={s.attachments}
                       readOnly={readOnly}
+                    />
+                    <StepLogSection
+                      owner={{
+                        kind: "pre_loading",
+                        preLoadingId: shipment.pre_loading_id,
+                        step: s.step,
+                      }}
+                      refreshKey={JSON.stringify(s)}
                     />
                   </div>
                 )}

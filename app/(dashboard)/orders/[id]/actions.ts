@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { validateStepDates } from "@/lib/checklist-completion";
+import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
 import { fetchAll } from "@/lib/fetch-all";
@@ -115,7 +116,7 @@ export async function updateChecklistStep(
   // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
   const { data: current, error: readError } = await admin
     .from("order_checklist_steps")
-    .select("step, estimated_date, completed_on")
+    .select("step, enabled, estimated_date, responsible_id, completed_on, signed_by_id")
     .eq("id", stepId)
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
@@ -135,6 +136,14 @@ export async function updateChecklistStep(
 
   const { error } = await admin.from("order_checklist_steps").update(update).eq("id", stepId);
   if (error) return { ok: false, error: error.message };
+
+  await writeStepLog(admin, {
+    owner: { checklistStepId: stepId },
+    step: current.step,
+    action: "update",
+    changes: diffStepFields(current, update),
+    userId: session.userId,
+  });
 
   // Deposit Payment concluído ou desligado: os lotes In Negotiation com Factory
   // x Category vão para In Production (docs §3.7.2). Reabrir não rebaixa.
@@ -202,6 +211,21 @@ export async function registerStepAttachment(
     return { ok: false, error: insertError.message };
   }
 
+  const { data: stepRow } = await admin
+    .from("order_checklist_steps")
+    .select("step")
+    .eq("id", stepId)
+    .maybeSingle();
+  if (stepRow) {
+    await writeStepLog(admin, {
+      owner: { checklistStepId: stepId },
+      step: stepRow.step,
+      action: "attachment_added",
+      changes: { file_name: fileName, ...(factoryId ? { factory_id: factoryId } : {}) },
+      userId: session.userId,
+    });
+  }
+
   revalidatePath("/orders/[id]", "page");
   return { ok: true };
 }
@@ -228,11 +252,21 @@ export async function deleteStepAttachment(
   attachmentId: string,
   filePath: string
 ): Promise<ActionResult> {
-  await requireFeature("orders", "edit");
+  const session = await requireFeature("orders", "edit");
   const admin = createAdminClient();
+
+  const removed = await readAttachmentForLog(admin, attachmentId);
 
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
   if (error) return { ok: false, error: error.message };
+
+  if (removed) {
+    await writeStepLog(admin, {
+      ...removed,
+      action: "attachment_removed",
+      userId: session.userId,
+    });
+  }
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
