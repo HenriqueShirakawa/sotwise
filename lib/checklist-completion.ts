@@ -151,17 +151,22 @@ export function hasExtraRequirements(step: ChecklistStep): boolean {
   return missingExtras(step, { completedOn: null }).length > 0;
 }
 
-/** Etapas concluídas pelo próprio gatilho (lib/checklist-revisions), 20/10/2026. */
+/**
+ * Etapas concluídas pelo próprio gatilho (lib/checklist-revisions), 20/10/2026:
+ * Order pelo "Order received date", PO pelas Factory × Category do GSS, PI pelo
+ * status do GSS, Deposit Payment pelo "Deposit date" que o usuário grava.
+ */
 export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "order",
   "po",
   "pi",
+  "deposit_payment",
 ]);
 
 /**
  * Etapas com "Completed on" TRAVADO (20/10/2026): quem grava a data é o gatilho
- * da etapa, não a mão — Order/PO/PI pelo lib/checklist-revisions, as do PL/
- * Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
+ * da etapa, não a mão — Order/PO/PI/Deposit Payment pelo lib/checklist-revisions,
+ * as do PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
  * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
  *
  * Loading date fica FORA de propósito: o Confirm Shipping exige ela concluída
@@ -209,8 +214,9 @@ export function validateStepDates(
     return "The completion date can't be in the future.";
   }
 
-  // Order, PO e PI concluem pelo gatilho (received date / GSS), que não tem
-  // estimativa — a regra "completed exige estimated" não vale para elas.
+  // Order, PO, PI e Deposit Payment concluem pelo gatilho (received date / GSS /
+  // deposit date), que não tem estimativa — a regra "completed exige estimated"
+  // não vale para elas.
   if (step && TRIGGER_COMPLETED_STEPS.has(step)) return null;
 
   const estimated = touchesEstimated ? (patch.estimated_date ?? null) : current.estimated_date;

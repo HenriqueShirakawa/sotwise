@@ -68,7 +68,12 @@ import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
 import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
-import { RevisionBadge, StepRevisionsModal, type RevisionStep } from "./step-revisions";
+import {
+  FORM_ONLY_REVISIONS,
+  RevisionBadge,
+  StepRevisionsModal,
+  type RevisionStep,
+} from "./step-revisions";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -179,6 +184,8 @@ type OrderDetail = {
   /** Etapa PI: último status vindo do GSS + data. */
   pi_status: string | null;
   pi_status_date: string | null;
+  /** Etapa Deposit Payment: data em que o cliente depositou (a vigente). */
+  deposit_date: string | null;
   status: OrderStatus;
   schedule_requested: string | null;
 };
@@ -455,11 +462,18 @@ function ViewBatchModal({
   );
 }
 
+/** O que o campo travado diz quando ainda não há data (por etapa de gatilho). */
+const TRIGGER_PLACEHOLDER: Partial<Record<ChecklistStep, string>> = {
+  order: "Set the received date",
+  deposit_payment: "Set the deposit date",
+};
+
 /**
- * "Completed on" das etapas Order/PO/PI (20/10/2026): concluem pelo próprio
- * gatilho, sem exigir Estimated date. Campo TRAVADO para todos — Order vem do
- * "Order received date", PO/PI do GSS; só admin/owner corrige PO/PI, com
- * motivo, pelo popup de revisões.
+ * "Completed on" das etapas de gatilho — Order/PO/PI/Deposit Payment
+ * (TRIGGER_COMPLETED_STEPS, 20/10/2026): concluem pelo próprio gatilho, sem
+ * exigir Estimated date. Campo TRAVADO para todos — Order vem do "Order received
+ * date", Deposit Payment do "Deposit date", PO/PI do GSS; só admin/owner corrige
+ * PO/PI, com motivo, pelo popup de revisões.
  */
 function TriggerCompletedOn({
   step,
@@ -477,7 +491,9 @@ function TriggerCompletedOn({
         {step.step === "po" && (
           <RevisionBadge count={step.revision_count} onClick={onRevise} />
         )}
-        {step.step !== "order" && canCorrect && (
+        {/* Order e Deposit Payment se corrigem pelo próprio campo de data
+            (received date / deposit date); PO e PI pelo popup de revisões. */}
+        {!FORM_ONLY_REVISIONS.has(step.step) && canCorrect && (
           <button
             type="button"
             className="text-xs font-medium text-primary hover:underline"
@@ -490,7 +506,7 @@ function TriggerCompletedOn({
       <DatePicker
         value={step.completed_on}
         disabled
-        placeholder={step.step === "order" ? "Set the received date" : "Set automatically"}
+        placeholder={TRIGGER_PLACEHOLDER[step.step] ?? "Set automatically"}
         onChange={() => {}}
         className="mt-1 bg-white"
       />
@@ -498,19 +514,25 @@ function TriggerCompletedOn({
   );
 }
 
-/** Etapa Order: "Order received date" (1ª data) + badge de revisões + "+". */
-function OrderReceivedDateField({
+/**
+ * Data que serve de gatilho da etapa, gravada pelo usuário: o "Order received
+ * date" do Order e o "Deposit date" do Deposit Payment. Mostra a data vigente e
+ * abre o popup pelo botão — cada troca aparece no History da etapa (sem
+ * contador próprio aqui).
+ */
+function TriggerDateField({
+  label,
   date,
   onOpen,
 }: {
+  label: string;
   date: string | null;
   onOpen: () => void;
 }) {
-  // Sem contador próprio: cada troca aparece no History da etapa.
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-white px-3 py-2.5">
       <div className="min-w-0 flex-1">
-        <p className="text-xs text-muted-foreground">Order received date</p>
+        <p className="text-xs text-muted-foreground">{label}</p>
         <div className="mt-0.5 flex items-center gap-2">
           <span className="text-sm font-medium text-slate-800">
             {date ? formatDateNumeric(date) : "Not set"}
@@ -1150,9 +1172,17 @@ export function OrderDetailClient({
                         </div>
                       </div>
                       {s.step === "order" && (
-                        <OrderReceivedDateField
+                        <TriggerDateField
+                          label="Order received date"
                           // A data vigente; o que mudou fica no History da etapa.
                           date={order.order_received_date}
+                          onOpen={() => setRevisionsFor(s)}
+                        />
+                      )}
+                      {s.step === "deposit_payment" && (
+                        <TriggerDateField
+                          label="Deposit date"
+                          date={order.deposit_date}
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
@@ -1225,7 +1255,9 @@ export function OrderDetailClient({
           currentDate={
             revisionsFor.step === "order"
               ? order.order_received_date
-              : revisionsFor.completed_on
+              : revisionsFor.step === "deposit_payment"
+                ? order.deposit_date
+                : revisionsFor.completed_on
           }
           canCorrect={canCorrectCompletedOn}
         />
