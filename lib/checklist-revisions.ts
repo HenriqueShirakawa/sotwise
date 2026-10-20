@@ -152,6 +152,19 @@ export async function setOrderReceivedDate(
     who
   );
 
+  // A troca aparece no History da etapa (é lá que a tela mostra, não num log
+  // à parte); writeStepLog ignora o que não veio de usuário.
+  await writeStepLog(admin, {
+    owner: { checklistStepId: step.id },
+    step: step.step,
+    action: "update",
+    changes: {
+      order_received_date: { from: previous, to: date },
+      ...(previous && reason ? { reason } : {}),
+    },
+    userId: who.userId,
+  });
+
   // Completed on = o MOMENTO em que a data foi informada (não a data em si).
   if (!previous) await completeByTrigger(admin, step, todayIso(), who.userId);
   return null;

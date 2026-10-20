@@ -502,13 +502,12 @@ function TriggerCompletedOn({
 /** Etapa Order: "Order received date" (1ª data) + badge de revisões + "+". */
 function OrderReceivedDateField({
   date,
-  revisions,
   onOpen,
 }: {
   date: string | null;
-  revisions: number;
   onOpen: () => void;
 }) {
+  // Sem contador próprio: cada troca aparece no History da etapa.
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-white px-3 py-2.5">
       <div className="min-w-0 flex-1">
@@ -517,7 +516,6 @@ function OrderReceivedDateField({
           <span className="text-sm font-medium text-slate-800">
             {date ? formatDateNumeric(date) : "Not set"}
           </span>
-          <RevisionBadge count={revisions} onClick={onOpen} />
         </div>
       </div>
       <Button type="button" variant="outline" size="sm" onClick={onOpen}>
@@ -1154,9 +1152,8 @@ export function OrderDetailClient({
                       </div>
                       {s.step === "order" && (
                         <OrderReceivedDateField
-                          // O painel mostra a 1ª data; a vigente fica no popup.
-                          date={s.revision_original_date ?? order.order_received_date}
-                          revisions={s.revision_count}
+                          // A data vigente; o que mudou fica no History da etapa.
+                          date={order.order_received_date}
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
