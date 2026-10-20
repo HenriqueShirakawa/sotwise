@@ -1114,7 +1114,7 @@ Ainda no payload: **`items[]`** (opcional) traz as linhas **Factory×Category** 
 | 2 | PO | Order | — fixa |
 | 3 | PI | Order | — fixa |
 | 4 | Deposit Payment | Order | ✅ toggle |
-| 5 | Packing Confirm. | Order | ✅ toggle |
+| 5 | Packing Confirm. | Order | ✅ toggle — **oculta do front desde 20/10/2026** (ver abaixo) |
 | 6 | Condition Confirm. | Order | ✅ toggle |
 | 7 | Place the Order | Order | — fixa |
 | 8 | ETD | Order | — fixa |
@@ -1137,6 +1137,8 @@ Ainda no payload: **`items[]`** (opcional) traz as linhas **Factory×Category** 
 
 > ✅ **Toggle = etapa opcional (ativar/desativar), confirmado nos prints de produção (ligado e desligado).** Algumas etapas têm um **toggle** que liga/desliga se aquela etapa **faz parte do fluxo daquele pedido específico**. Toggle **off = a etapa fica visível porém desabilitada/apagada** (texto e ícone acinzentados, toggle cinza) e **não precisa ser cumprida** — não bloqueia o avanço do pedido. Não **some** da lista; apenas fica inativa. **Não é conclusão** — a conclusão continua sendo pelo preenchimento dos campos (`completed_on`); o toggle é uma camada separada de "essa etapa se aplica a este pedido?". Na fase **Order**, as etapas com toggle são exatamente **Deposit Payment, Packing Confirm., Condition Confirm. e Balance Payment** (todas ligadas a pagamento/confirmação, que nem sempre se aplicam) — confirmado nos dois estados (on/off). As etapas com toggle das fases Preloading e Shipment ainda serão confirmadas por print. Modelado como coluna `enabled` em `order_checklist_steps` (ver abaixo).
 
+> ✅ **Packing Confirm. oculta do front (decisão 2026-10-20, card "Ajustes Data e Logs Etapas de Order, PL e Shipment").** A etapa saiu da esteira: não aparece no checklist da Order nem na To do list (linhas e filtro de Step). As linhas continuam em `order_checklist_steps` — nada é apagado, o histórico fica. Lista única `HIDDEN_STEPS` em `lib/checklist.ts`.
+
 > ⚠️ **Ordem sequencial dentro da fase — regra vs. realidade:** o esperado é que as etapas dentro de uma mesma fase sejam completadas em ordem (ex.: dentro de "Order", PO antes de PI antes de Deposit Payment...). Confirmado com o cliente que **isso não é garantido hoje no Bubble** — é um gap conhecido, não uma regra de negócio a replicar. Na versão nova, avaliar se vale a pena **impor** a ordem sequencial (bloquear conclusão de uma etapa se a anterior da mesma fase não estiver concluída) já que parece ser o comportamento pretendido, mesmo que não implementado hoje. Confirmar com o cliente se essa é uma melhoria desejada ou se a flexibilidade atual (completar fora de ordem) deve ser preservada.
 
 - Ícones: laranja = a etapa exige algo além da data e ainda não cumpriu; azul = só a data pendente; verde = concluída.
@@ -1154,7 +1156,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 4 | Deposit Payment | — (desde 20/10/2026 a data vem do "Deposit date", ver abaixo) |
 | 5 | Packing Confirm. | — |
 | 6 | Condition Confirm. | — |
-| 7 | Place the Order | documento |
+| 7 | Place the Order | documento em **cada** fábrica do pedido (desde 20/10/2026 o Completed on é automático, ver abaixo) |
 | 8 | ETD | "Initial date" preenchido em TODAS as entradas Factory × Category |
 | 9 | Balance Payment | — |
 | 10 | Pre-Loading | documento |
@@ -1315,6 +1317,7 @@ create table public.step_attachments (
 
 > ✅ **Etapa "Place the Order" — visão agrupada por Factory (print da tela):** os campos padrão da etapa (Estimated date/Responsible/Completed on/Signed by) aparecem normalmente, e abaixo deles a **mesma entidade `order_factory_category`** da etapa PO é reexibida **agrupada por Factory**: uma linha por Factory com **"N° of categories"** = contagem de entradas daquela Factory neste pedido (não distinct — duas entradas com a mesma Category em lotes diferentes contam 2). Cada linha expande (chevron) pra uma sub-tabela **Categories | Batch Number**. Paginado (10 Factories por página).
 > - **Anexo por grupo:** o botão **"+ Attach"** de cada linha faz upload de documento vinculado a **essa combinação (Factory + etapa "Place the Order" + pedido)**, não à etapa inteira — por isso `step_attachments` ganhou a coluna `factory_id` (nullable; demais etapas continuam com anexo por etapa só, `factory_id = null`). A lista "Attached documents" some da UI genérica de etapa só pra "Place the Order" (substituída pelo anexo por Factory).
+> - **Data por fábrica + Completed on automático (decisão 2026-10-20, card "Ajustes Data e Logs"):** cada linha de Factory mostra **"Placed on"** = data do **1º documento** anexado àquela fábrica (`step_attachments.created_at`); cada upload já vai pro History da etapa com o nome da fábrica. Quando a **última** fábrica sem documento recebe o dela, a etapa **conclui sozinha**: Completed on = hoje, Signed by = quem anexou (`completePlaceTheOrderIfCovered` em `lib/checklist-revisions.ts`). O Completed on fica **travado** (`LOCKED_COMPLETED_ON_STEPS`); só admin/owner corrige — ou reabre, deixando a data vazia — pelo "Correct", com motivo que vai pro History. O anexo por fábrica **continua obrigatório** (o card pedia "remover obrigatoriedade", o usuário mandou ignorar). Como as demais etapas de gatilho, o gatilho nunca reabre: apagar um documento ou chegar fábrica nova do GSS depois de concluída não limpa o Completed on (a etapa só volta a ficar laranja pela regra de documento por fábrica). Etapa antiga que já tinha documento em todas as fábricas sem Completed on só conclui no próximo anexo.
 
 ##### Log de alterações por etapa — "History" (decisão 2026-10-20)
 

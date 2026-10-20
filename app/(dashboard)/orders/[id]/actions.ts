@@ -10,10 +10,12 @@ import {
   validateStepDates,
 } from "@/lib/checklist-completion";
 import {
+  completePlaceTheOrderIfCovered,
   reviseCompletedOn,
   setDepositDate,
   setOrderReceivedDate,
 } from "@/lib/checklist-revisions";
+import { correctOrderStepCompletedOn as correctOrderStep } from "@/lib/completed-on-correction";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
@@ -282,6 +284,26 @@ export async function reviseStepCompletedOn(
   return { ok: true };
 }
 
+/**
+ * Place the Order: correção do Completed on travado pelo admin/owner, com motivo
+ * (vai pro History); `date` null reabre a etapa. Ver lib/completed-on-correction.
+ */
+export async function correctOrderStepCompletedOn(
+  orderId: string,
+  stepId: string,
+  date: string | null,
+  reason: string
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!session.isAdmin && !session.isOwner) {
+    return { ok: false, error: "Only an admin can correct the completion date." };
+  }
+  const error = await correctOrderStep(createAdminClient(), stepId, date, reason, session.userId);
+  if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
 export type StepRevision = {
   id: string;
   kind: ChecklistRevisionKind;
@@ -374,6 +396,12 @@ export async function registerStepAttachment(
       changes: { file_name: fileName, ...(factoryId ? { factory_id: factoryId } : {}) },
       userId: session.userId,
     });
+    // Place the Order fecha sozinha quando a última fábrica ganha documento.
+    if (stepRow.step === "place_the_order") {
+      await completePlaceTheOrderIfCovered(admin, stepId, session.userId);
+      await refreshChecklistViews(orderId);
+      return { ok: true };
+    }
   }
 
   revalidatePath("/orders/[id]", "page");
