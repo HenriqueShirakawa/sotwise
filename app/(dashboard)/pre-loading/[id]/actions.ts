@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { validateStepDates } from "@/lib/checklist-completion";
+import {
+  diffStepFields,
+  PL_STEP_LOG_COLUMNS,
+  readAttachmentForLog,
+  writeStepLog,
+} from "@/lib/checklist-step-log";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
@@ -77,7 +83,7 @@ export async function savePreLoadingStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, estimated_date, completed_on")
+    .select(PL_STEP_LOG_COLUMNS)
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
     .maybeSingle();
@@ -103,12 +109,27 @@ export async function savePreLoadingStep(
     values.signed_by_id = session.userId;
   }
 
-  const { error } = existing
-    ? await admin.from("pre_loading_checklist_steps").update(values).eq("id", existing.id)
+  const { data: saved, error } = existing
+    ? await admin
+        .from("pre_loading_checklist_steps")
+        .update(values)
+        .eq("id", existing.id)
+        .select("id")
+        .single()
     : await admin
         .from("pre_loading_checklist_steps")
-        .insert({ pre_loading_id: preLoadingId, step, ...values });
-  if (error) return { ok: false, error: error.message };
+        .insert({ pre_loading_id: preLoadingId, step, ...values })
+        .select("id")
+        .single();
+  if (error || !saved) return { ok: false, error: error?.message ?? "Could not save the step." };
+
+  await writeStepLog(admin, {
+    owner: { preLoadingStepId: saved.id },
+    step,
+    action: "update",
+    changes: diffStepFields(existing, values),
+    userId: session.userId,
+  });
 
   // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha.
   // Não roda quando o próprio patch mexe no "Completed on" — limpar a data à mão
@@ -204,6 +225,14 @@ export async function registerPreLoadingAttachment(
     return { ok: false, error: insertError.message };
   }
 
+  await writeStepLog(admin, {
+    owner: { preLoadingStepId: stepRow.id },
+    step,
+    action: "attachment_added",
+    changes: { file_name: fileName },
+    userId: session.userId,
+  });
+
   // O anexo pode ser o que faltava pra etapa fechar (ver lib/pl-step-autocomplete).
   const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
 
@@ -238,11 +267,21 @@ export async function deletePreLoadingStepAttachment(
   attachmentId: string,
   filePath: string
 ): Promise<ActionResult> {
-  await requireFeature("pre_loading", "edit");
+  const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
+
+  const removed = await readAttachmentForLog(admin, attachmentId);
 
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
   if (error) return { ok: false, error: error.message };
+
+  if (removed) {
+    await writeStepLog(admin, {
+      ...removed,
+      action: "attachment_removed",
+      userId: session.userId,
+    });
+  }
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
@@ -264,8 +303,35 @@ export async function confirmShipping(
   const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
 
+  // A RPC grava o "Completed on" da etapa Loading date (revisável no popup) —
+  // lido antes pra entrar no log da etapa.
+  const { data: loadingStep } = await admin
+    .from("pre_loading_checklist_steps")
+    .select("id, completed_on")
+    .eq("pre_loading_id", preLoadingId)
+    .eq("step", "loading_date")
+    .maybeSingle();
+
   const result = await confirmShippingRecord(admin, preLoadingId, input, session.userId);
   if (!result.ok) return { ok: false, error: result.error };
+
+  if (loadingStep) {
+    await writeStepLog(admin, {
+      owner: { preLoadingStepId: loadingStep.id },
+      step: "loading_date",
+      action: "confirm_shipping",
+      changes:
+        loadingStep.completed_on !== input.loading_date_completed_on
+          ? {
+              completed_on: {
+                from: loadingStep.completed_on,
+                to: input.loading_date_completed_on,
+              },
+            }
+          : {},
+      userId: session.userId,
+    });
+  }
 
   revalidatePath("/pre-loading/[id]", "page");
   revalidatePath("/pre-loading");
