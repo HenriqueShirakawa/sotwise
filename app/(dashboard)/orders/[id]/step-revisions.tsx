@@ -102,12 +102,12 @@ export function StepRevisionsModal({
     setRows(null);
     setDate("");
     setReason("");
-    // Order sem data ainda: o popup já abre no formulário.
-    setAdding(step === "order" && !currentDate);
+    // Order: o popup é só o formulário (o que mudou fica no History da etapa).
+    setAdding(step === "order");
   }
 
   useEffect(() => {
-    if (!openFor) return;
+    if (!openFor || step === "order") return;
     let cancelled = false;
     getStepRevisions(openFor)
       .then((r) => !cancelled && setRows(r))
@@ -119,7 +119,7 @@ export function StepRevisionsModal({
     return () => {
       cancelled = true;
     };
-  }, [openFor]);
+  }, [openFor, step]);
 
   // Order grava a received date; o Completed on de PO/PI é travado (vem do GSS)
   // e só o admin corrige — sempre com motivo, até quando ainda está vazio.
@@ -140,10 +140,14 @@ export function StepRevisionsModal({
       toast.success(
         currentDate ? "Revision saved." : step === "order" ? "Order received date saved." : "Completion date saved."
       );
+      router.refresh();
+      if (step === "order") {
+        onOpenChange(false);
+        return;
+      }
       setAdding(false);
       setDate("");
       setReason("");
-      router.refresh();
       setRows(await getStepRevisions(stepId));
     });
   }
@@ -216,7 +220,9 @@ export function StepRevisionsModal({
                       variant="outline"
                       className="flex-1 bg-white"
                       disabled={pending}
-                      onClick={() => setAdding(false)}
+                      onClick={() =>
+                        step === "order" ? onOpenChange(false) : setAdding(false)
+                      }
                     >
                       Cancel
                     </Button>
@@ -234,7 +240,8 @@ export function StepRevisionsModal({
             </div>
           )}
 
-          <div className="space-y-2">
+          {step !== "order" && (
+            <div className="space-y-2">
             {rows === null ? (
               <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
             ) : ordered.length === 0 ? (
@@ -246,7 +253,8 @@ export function StepRevisionsModal({
                 <RevisionItem key={r.id} row={r} original={originalIds.has(r.id)} />
               ))
             )}
-          </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
