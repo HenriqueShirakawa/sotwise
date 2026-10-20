@@ -1146,9 +1146,9 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 
 | # | Etapa | + além da data |
 |---|---|---|
-| 1 | Order | — |
-| 2 | PO | documento **e** entradas Factory × Category |
-| 3 | PI | documento — **só quando o Order Type é Sales**; Samples, Gift e Replacement fecham só com a data |
+| 1 | Order | — (a data vem do "Order received date", ver abaixo) |
+| 2 | PO | entradas Factory × Category (**sem documento** desde 20/10/2026) |
+| 3 | PI | — (**sem documento** desde 20/10/2026; a data vem do status da PI no GSS) |
 | 4 | Deposit Payment | — |
 | 5 | Packing Confirm. | — |
 | 6 | Condition Confirm. | — |
@@ -1170,6 +1170,26 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 22 | ETA Brazil | — |
 | 23 | ATA Brazil | — |
 | 24 | Delivered | — |
+
+##### Order, PO e PI: gatilho próprio + revisões (✅ planilha "checklistregras", Rapha 19/10 — implementado 20/10/2026, só na `dev`)
+
+As três primeiras etapas deixam de ser "data + anexo à mão" e passam a fechar pelo próprio gatilho. A ideia do cliente: o usuário não deve executar no GSS e depois redigitar a data no SOT; e **toda revisão fica gravada sem perder a 1ª data**.
+
+| Etapa | Gatilho | Completed on | Revisões |
+|---|---|---|---|
+| **Order** | usuário grava o **Order received date** (data do pedido final do cliente) no popup da etapa — ou o GSS manda `order_received_date` | o **dia da gravação** (não a received date) | cada troca da received date: nova data + momento + **motivo obrigatório** |
+| **PO** | as Factory × Category **chegam do GSS** (`items[]` no POST `/api/orders`, ou `/api/order-items`) | o dia da 1ª leva | cada leva que **muda o conjunto** de F×C ativas: lista recebida + o que entrou/saiu. Reenvio idêntico não grava nada |
+| **PI** | o GSS manda `pi_status` (**texto livre**) + `pi_status_date` | a data do 1º status (nunca futura) | cada status/data seguinte |
+
+- **Tabela `checklist_step_revisions`** (migration `20261020130000`): `kind` = `order_received_date` \| `fxc` \| `pi_status` \| `completed_on`; `previous_date`/`new_date`, `payload` (F×C: `items`/`added`/`removed`; PI: `status`/`previous_status`), `reason`, `source` = `manual` \| `gss`, `changed_by`, `changed_at`. A 1ª linha de cada `kind` é o **registro original**; o resto são revisões. Revisão vinda do GSS sem motivo grava "Updated by GSS" (`revision_reason` no payload sobrescreve).
+- Colunas novas em `orders`: `order_received_date` (a **vigente**), `pi_status`, `pi_status_date`. Saem no GET `/api/orders`.
+- **Tela:** o painel mostra a **1ª data** com um número em destaque = quantidade de revisões; clicar abre o popup com um "+" (gravar/revisar a data, motivo obrigatório depois da 1ª) e a lista de registros expansível (de → para, quando, quem/GSS, motivo; no PO, a lista de F×C e o +/−).
+- **PO e PI sem anexo** (o GSS gera os documentos). Documento antigo continua visível, só leitura. Saiu a regra "PI exige documento quando Sales".
+- **Completed on:** Order é só leitura (vem da received date). PO e PI aceitam o 1º preenchimento à mão como saída manual ("ainda existem situações que a edição de uma data pode ser necessária"); **trocar** uma data já gravada exige motivo e vira revisão (`kind = completed_on`).
+- Order, PO e PI **não exigem Estimated date** antes do Completed on (gatilho do GSS não tem estimativa). O Estimated date da Order continua: é a previsão de chegada do pedido final.
+- Gatilho **nunca reabre** etapa nem sobrescreve Completed on já preenchido (acervo do Bubble fica como está).
+- Diferente do "History" (`checklist_step_log`): o log registra quem mexeu em qual campo na tela; aqui ficam as revisões do **fato** da etapa, com motivo, inclusive as que vêm do GSS.
+- Código: `lib/checklist-revisions.ts` (regras), `orders/[id]/step-revisions.tsx` (badge + popup), ganchos em `domain/orders/api-write.ts` (`applyChecklistFields`), `app/api/orders/route.ts` e `domain/order-items/api-write.ts`.
 
 ##### Ordem de preenchimento: Estimated date antes de Completed on (✅ confirmado 12/08/2026)
 
@@ -2194,7 +2214,7 @@ Código: `readGssId` em `domain/api/registry.ts`, tratado nos handlers `app/api/
 | ETD (Order) — por linha Factory × Category | `etd-factories` | `initial_date`, `current_date`, `ready_parts` |
 | Loading date, Shipping date, ETA Brazil, ATA Brazil, Delivered | Shipment | já iam (desde 02/10) |
 | **BL** | Shipment | `bl_date` (novo) |
-| Order, PO, PI, Deposit Payment, Packing Confirm., Condition Confirm., Place the Order, Balance Payment, Pre-Loading | — | sem campo no GSS |
+| Order, PO, PI, Deposit Payment, Packing Confirm., Condition Confirm., Place the Order, Balance Payment, Pre-Loading | — | sem campo no GSS (desde 20/10 o sentido é o inverso para Order/PO/PI: o GSS **manda** `order_received_date`, `items[]` e `pi_status` — §3.7.5) |
 | Booking, Shipping docs, Original docs, Inspection report | — | sem campo de data (Inspection só tem `inspection_no`) |
 
 **ETD Factories** — um registro no GSS por **lote + fornecedor + categoria**:

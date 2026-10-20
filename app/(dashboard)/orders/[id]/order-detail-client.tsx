@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   Eye,
   Info,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,7 +24,7 @@ import {
   hasExtraRequirements,
   isStepChecked,
   missingLabel,
-  piDocumentRequired,
+  TRIGGER_COMPLETED_STEPS,
   type ChecklistFacts,
 } from "@/lib/checklist-completion";
 import {
@@ -67,6 +68,7 @@ import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
 import { StepLogSection } from "@/components/checklist/step-log-section";
+import { RevisionBadge, StepRevisionsModal, type RevisionStep } from "./step-revisions";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -124,6 +126,10 @@ export type ChecklistStepRow = {
     file_name: string | null;
     file_path: string;
   }[];
+  /** Order/PO/PI: quantas revisões a etapa tem (badge). */
+  revision_count: number;
+  /** Order/PO/PI: data do registro original (o painel mostra a 1ª data). */
+  revision_original_date: string | null;
 };
 
 export type OfcRow = {
@@ -168,6 +174,11 @@ type OrderDetail = {
   operational_responsible: string | null;
   exporter: string | null;
   date_po: string | null;
+  /** Etapa Order: data do pedido final (a vigente, após revisões). */
+  order_received_date: string | null;
+  /** Etapa PI: último status vindo do GSS + data. */
+  pi_status: string | null;
+  pi_status_date: string | null;
   status: OrderStatus;
   schedule_requested: string | null;
 };
@@ -444,6 +455,129 @@ function ViewBatchModal({
   );
 }
 
+/**
+ * "Completed on" das etapas Order/PO/PI (20/10/2026): concluem pelo próprio
+ * gatilho, sem exigir Estimated date. Order é só leitura (vem do "Order received
+ * date"); PO/PI aceitam o 1º preenchimento à mão e, depois, só revisão com
+ * motivo — pelo popup.
+ */
+function TriggerCompletedOn({
+  step,
+  pending,
+  onSave,
+  onRevise,
+}: {
+  step: ChecklistStepRow;
+  pending: boolean;
+  onSave: (value: string | null) => void;
+  onRevise: () => void;
+}) {
+  const locked = step.step === "order" || !!step.completed_on;
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <Label className="text-xs text-muted-foreground">Completed on</Label>
+        {step.step === "po" && (
+          <RevisionBadge count={step.revision_count} onClick={onRevise} />
+        )}
+        {step.step !== "order" && step.completed_on && (
+          <button
+            type="button"
+            className="text-xs font-medium text-primary hover:underline"
+            onClick={onRevise}
+          >
+            Revise
+          </button>
+        )}
+      </div>
+      <DatePicker
+        value={step.completed_on}
+        disabled={pending || locked}
+        max={todayIso()}
+        placeholder={step.step === "order" ? "Set the received date" : "dd/mm/yyyy"}
+        onChange={(v) => {
+          if (!locked && v !== (step.completed_on ?? null)) onSave(v);
+        }}
+        className="mt-1 bg-white"
+      />
+    </div>
+  );
+}
+
+/** Etapa Order: "Order received date" (1ª data) + badge de revisões + "+". */
+function OrderReceivedDateField({
+  date,
+  revisions,
+  onOpen,
+}: {
+  date: string | null;
+  revisions: number;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-white px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">Order received date</p>
+        <div className="mt-0.5 flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-800">
+            {date ? formatDateNumeric(date) : "Not set"}
+          </span>
+          <RevisionBadge count={revisions} onClick={onOpen} />
+        </div>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={onOpen}>
+        <Plus className="size-3.5" />
+        {date ? "Revise" : "Set date"}
+      </Button>
+    </div>
+  );
+}
+
+/** Etapa PI: último status vindo do GSS + data + badge de revisões. */
+function PiStatusField({
+  status,
+  date,
+  revisions,
+  onOpen,
+}: {
+  status: string | null;
+  date: string | null;
+  revisions: number;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-white px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">PI status (GSS)</p>
+        <div className="mt-0.5 flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-800">
+            {status ? `${status} · ${formatDateNumeric(date)}` : "Not received yet"}
+          </span>
+          <RevisionBadge count={revisions} onClick={onOpen} />
+        </div>
+      </div>
+      {status && (
+        <Button type="button" variant="ghost" size="sm" onClick={onOpen}>
+          Details
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Documentos antigos de PO/PI — só leitura (a etapa não aceita mais anexo). */
+function ReadOnlyAttachments({ attachments }: { attachments: ChecklistStepRow["attachments"] }) {
+  const [pending, startTransition] = useTransition();
+  function download(a: { file_path: string; file_name?: string | null }) {
+    startTransition(async () => {
+      const res = await getAttachmentDownloadUrl(a.file_path, a.file_name);
+      if (res.ok) triggerDownload(res.url, a.file_name);
+      else toast.error(res.error);
+    });
+  }
+  return <AttachedDocuments attachments={attachments} pending={pending} onDownload={download} />;
+}
+
 function AttachmentsSection({
   orderId,
   step,
@@ -548,6 +682,8 @@ export function OrderDetailClient({
   );
   const [viewBatch, setViewBatch] = useState<BatchRow | null>(null);
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
+  // Popup de revisões das etapas Order/PO/PI.
+  const [revisionsFor, setRevisionsFor] = useState<ChecklistStepRow | null>(null);
 
   useEffect(() => {
     if (!deepLinkStep) return;
@@ -597,7 +733,6 @@ export function OrderDetailClient({
   // está concluída é a regra de lib/checklist-completion, que também consulta
   // anexos, entradas Factory×Category e ETD. Derivado aqui, uma vez.
   const checkedSteps = useMemo(() => {
-    const piDocs = piDocumentRequired(order.type);
     // Place the Order agrupa por fábrica e exige um doc em CADA uma — quantas
     // fábricas o pedido tem e, por etapa, quantas já têm anexo.
     const placeOrderFactoryIds = new Set(ofc.map((o) => o.factory_id));
@@ -607,7 +742,6 @@ export function OrderDetailClient({
         attachments: s.attachments.length,
         factoryCategoryCount: ofc.length,
         etdInitialFilled,
-        piDocumentRequired: piDocs,
       };
       if (s.step === "place_the_order") {
         facts.placeOrderFactoriesTotal = placeOrderFactoryIds.size;
@@ -619,7 +753,7 @@ export function OrderDetailClient({
       }
       return { ...s, facts, done: isStepChecked(s.step, facts) };
     });
-  }, [steps, ofc, etdInitialFilled, order.type]);
+  }, [steps, ofc, etdInitialFilled]);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para
   // qualquer regra que dependa do checklist completo — esconder uma etapa é
@@ -872,7 +1006,7 @@ export function OrderDetailClient({
                     <StepIcon
                       enabled={s.enabled}
                       checked={s.done}
-                      gated={hasExtraRequirements(s.step, facts)}
+                      gated={hasExtraRequirements(s.step)}
                       // Etapa desligada não se aplica a este pedido: não há o
                       // que cobrar dela.
                       title={s.enabled ? missingLabel(s.step, facts) : undefined}
@@ -961,30 +1095,39 @@ export function OrderDetailClient({
                             </Select>
                           )}
                         </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">
-                            Completed on
-                          </Label>
-                          {/* Sem "Estimated date" não há o que concluir. Etapa
-                              antiga que já tem a conclusão segue editável, pra
-                              não ficar presa com o campo travado. */}
-                          <DatePicker
-                            value={s.completed_on}
-                            disabled={
-                              stepPending || (!s.estimated_date && !s.completed_on)
-                            }
-                            // "Completed on" é fato consumado — nunca futuro.
-                            max={todayIso()}
-                            placeholder={
-                              s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
-                            }
-                            onChange={(v) => {
-                              if (v !== (s.completed_on ?? null))
-                                saveStepField(s, { completed_on: v });
-                            }}
-                            className="mt-1 bg-white"
+                        {TRIGGER_COMPLETED_STEPS.has(s.step) ? (
+                          <TriggerCompletedOn
+                            step={s}
+                            pending={stepPending}
+                            onSave={(v) => saveStepField(s, { completed_on: v })}
+                            onRevise={() => setRevisionsFor(s)}
                           />
-                        </div>
+                        ) : (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              Completed on
+                            </Label>
+                            {/* Sem "Estimated date" não há o que concluir. Etapa
+                                antiga que já tem a conclusão segue editável, pra
+                                não ficar presa com o campo travado. */}
+                            <DatePicker
+                              value={s.completed_on}
+                              disabled={
+                                stepPending || (!s.estimated_date && !s.completed_on)
+                              }
+                              // "Completed on" é fato consumado — nunca futuro.
+                              max={todayIso()}
+                              placeholder={
+                                s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
+                              }
+                              onChange={(v) => {
+                                if (v !== (s.completed_on ?? null))
+                                  saveStepField(s, { completed_on: v });
+                              }}
+                              className="mt-1 bg-white"
+                            />
+                          </div>
+                        )}
                         <div>
                           <Label className="text-xs text-muted-foreground">
                             Signed by
@@ -1005,7 +1148,29 @@ export function OrderDetailClient({
                           </Select>
                         </div>
                       </div>
-                      {s.step === "place_the_order" ? (
+                      {s.step === "order" && (
+                        <OrderReceivedDateField
+                          // O painel mostra a 1ª data; a vigente fica no popup.
+                          date={s.revision_original_date ?? order.order_received_date}
+                          revisions={s.revision_count}
+                          onOpen={() => setRevisionsFor(s)}
+                        />
+                      )}
+                      {s.step === "pi" && (
+                        <PiStatusField
+                          status={order.pi_status}
+                          date={order.pi_status_date}
+                          revisions={s.revision_count}
+                          onOpen={() => setRevisionsFor(s)}
+                        />
+                      )}
+                      {s.step === "po" || s.step === "pi" ? (
+                        // Sem anexo: o GSS gera PO e PI (20/10/2026). Documento
+                        // antigo continua visível, só leitura.
+                        s.attachments.length > 0 && (
+                          <ReadOnlyAttachments attachments={s.attachments} />
+                        )
+                      ) : s.step === "place_the_order" ? (
                         <PlaceOrderFactoryGroups
                           orderId={orderId}
                           stepId={s.id}
@@ -1054,6 +1219,20 @@ export function OrderDetailClient({
         batches={batches}
         ofc={ofc}
       />
+      {revisionsFor && (
+        <StepRevisionsModal
+          open
+          onOpenChange={(o) => !o && setRevisionsFor(null)}
+          orderId={orderId}
+          stepId={revisionsFor.id}
+          step={revisionsFor.step as RevisionStep}
+          currentDate={
+            revisionsFor.step === "order"
+              ? order.order_received_date
+              : revisionsFor.completed_on
+          }
+        />
+      )}
     </div>
   );
 }

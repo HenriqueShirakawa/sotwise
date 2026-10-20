@@ -5,7 +5,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { gssOrderSchema } from "@/domain/orders/gss-schema";
 import { listGssOrders, parseGssOrderQuery } from "@/domain/orders/gss-read";
-import { applyOrderItems, buildOrderFields } from "@/domain/orders/api-write";
+import { recordFxcDelivery } from "@/lib/checklist-revisions";
+import {
+  applyChecklistFields,
+  applyOrderItems,
+  buildOrderFields,
+} from "@/domain/orders/api-write";
 
 /**
  * Via GSS ↔ SOTWISE de ORDERS. Mesmo path, mesmo token, dois sentidos:
@@ -167,6 +172,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     // Reenvio pode adicionar linhas Factory×Category novas (sem apagar as antigas).
     const items = await applyOrderItems(admin, data.id, input.items);
     if (!items.ok) return json({ error: items.error }, items.status);
+    // Etapas Order/PO/PI: received date, leva de F×C e status da PI.
+    const checklist = await applyChecklistFields(admin, data.id, input);
+    if (!checklist.ok) return json({ error: checklist.error }, 400);
+    if (input.items) await recordFxcDelivery(admin, data.id);
     // Ping realtime: a lista Orders aberta atualiza sozinha (ex.: a order passa a
     // ser visível quando ganha a 1ª linha Factory×Category).
     await broadcastOrderStatusPing({ order_ids: [data.id] });
@@ -208,6 +217,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Agora as linhas Factory×Category (sem lote — o usuário atribui depois).
   const items = await applyOrderItems(admin, data.id, input.items);
   if (!items.ok) return json({ error: items.error }, items.status);
+  const checklist = await applyChecklistFields(admin, data.id, input);
+  if (!checklist.ok) return json({ error: checklist.error }, 400);
+  if (input.items) await recordFxcDelivery(admin, data.id);
 
   // Ping realtime: se a order já nasceu com Factory×Category, aparece na lista
   // aberta sem F5 (a visibilidade da lista exige ≥1 linha — ver orders/page.tsx).

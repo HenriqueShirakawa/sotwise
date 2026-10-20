@@ -576,7 +576,7 @@ export function PlChecklistClient({
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
                   <StepIcon
                     done={s.done}
-                    gated={hasExtraRequirements(s.step, facts)}
+                    gated={hasExtraRequirements(s.step)}
                     title={missingLabel(s.step, facts)}
                   />
                   <button

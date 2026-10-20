@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 
+import { TRIGGER_COMPLETED_STEPS } from "@/lib/checklist-completion";
+import { summarizeRevisionsByStep } from "@/lib/checklist-revisions";
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { isUuid } from "@/lib/slugs";
@@ -46,7 +48,7 @@ export default async function OrderDetailPage({
   const orderQuery = admin
     .from("orders")
     .select(
-      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, date_po"
+      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, date_po, order_received_date, pi_status, pi_status_date"
     )
     .is("deleted_at", null);
   const { data: order } = await (isUuid(id) ? orderQuery.eq("id", id) : orderQuery.eq("po_number", id)).single();
@@ -155,6 +157,11 @@ export default async function OrderDetailPage({
   }
 
   const stepByKey = new Map(stepRows.map((s) => [s.step, s]));
+  // Badge de revisões das etapas Order/PO/PI (lib/checklist-revisions).
+  const revisions = await summarizeRevisionsByStep(
+    admin,
+    stepRows.filter((s) => TRIGGER_COMPLETED_STEPS.has(s.step)).map((s) => s.id)
+  );
 
   const steps: ChecklistStepRow[] = STEP_ORDER.filter((key) => stepByKey.has(key)).map(
     (key) => {
@@ -169,6 +176,8 @@ export default async function OrderDetailPage({
         responsible_id: s.responsible_id,
         signed_by_id: s.signed_by_id,
         attachments: attachmentsByStep.get(s.id) ?? [],
+        revision_count: revisions[s.id]?.count ?? 0,
+        revision_original_date: revisions[s.id]?.originalDate ?? null,
       };
     }
   );
@@ -245,6 +254,9 @@ export default async function OrderDetailPage({
         operational_responsible: operationalResponsibleName,
         exporter: exporterRes.data ? exporterRes.data.acronym || exporterRes.data.name : null,
         date_po: order.date_po,
+        order_received_date: order.order_received_date,
+        pi_status: order.pi_status,
+        pi_status_date: order.pi_status_date,
         status: order.status,
         schedule_requested: order.schedule_requested,
       }}

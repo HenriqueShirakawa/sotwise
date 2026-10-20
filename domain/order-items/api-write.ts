@@ -2,6 +2,7 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
+import { recordFxcDelivery } from "@/lib/checklist-revisions";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { syncOrderStatus } from "@/lib/order-status";
@@ -151,6 +152,8 @@ export async function createOrderItem(
     .single();
   if (error || !row) return fail(500, error?.message ?? "Failed to create item.");
 
+  // Etapa PO: a linha nova é uma leva de Factory × Category do GSS.
+  await recordFxcDelivery(admin, order.id);
   await refreshViews(order.id);
   // A lista de Orders só mostra order com ≥1 linha — o ping a faz aparecer sem F5.
   await broadcastOrderStatusPing({ order_ids: [order.id] });
@@ -229,6 +232,8 @@ export async function updateOrderItem(
   if (Object.keys(patch).length > 0) {
     const { error } = await admin.from("order_factory_category").update(patch).eq("id", id);
     if (error) return fail(500, error.message);
+    // Ativar/inativar muda o conjunto de F×C da etapa PO (no-op se não mudou).
+    if (input.is_active !== undefined) await recordFxcDelivery(admin, line.order_id);
     await refreshViews(line.order_id);
   }
 
@@ -279,6 +284,7 @@ export async function deleteOrderItem(
 
   const statusError = await syncOrderStatus(admin, [line.order_id]);
   if (statusError) return fail(500, statusError);
+  await recordFxcDelivery(admin, line.order_id);
   await refreshViews(line.order_id);
   return { ok: true, status: 200, data: { id, deleted: true } };
 }
