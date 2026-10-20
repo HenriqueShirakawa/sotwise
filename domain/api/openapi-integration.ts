@@ -97,6 +97,32 @@ export const inDay = {
   ],
 };
 export const inDayNullable = { oneOf: [...inDay.oneOf, { type: "null" }] };
+/**
+ * ENTRADA — campos de checklist da order (20/10/2026, lib/checklist-revisions):
+ * mesmos no POST (upsert) e no PATCH.
+ */
+export const orderChecklistFieldsIn = {
+  order_received_date: {
+    ...inDay,
+    description:
+      "Order step: date the client's final order was received. The first one completes the step; later changes are kept as revisions (the original is never lost). Not nullable.",
+  },
+  pi_status: {
+    type: "string",
+    maxLength: 200,
+    description:
+      "PI step: PI status in GSS, free text (e.g. issued, revised). The first one completes the step; each later status/date is kept as a revision. Same status + date again → no-op.",
+  },
+  pi_status_date: {
+    ...inDay,
+    description: "Date of `pi_status` (default: today). Requires `pi_status`.",
+  },
+  revision_reason: {
+    type: "string",
+    maxLength: 500,
+    description: "Reason stored with a revision of the fields above. Default: \"Updated by GSS\".",
+  },
+};
 export const updatedSinceParam = {
   name: "updated_since",
   in: "query",
@@ -563,6 +589,7 @@ export const integrationPaths = {
         "- Leader / Requester are SOTWISE users, matched by e-mail; unknown e-mail → 400.",
         "- `items[]` creates Factory × Category lines **without batch**. Additive: a resend only adds new (factory, category) pairs; existing ones are never recreated or overwritten.",
         "- `date_po` defaults to today, on creation only.",
+        "- Checklist: `order_received_date` completes the **Order** step; `pi_status` (+ `pi_status_date`) completes the **PI** step; the first `items[]` delivery completes the **PO** step. Later changes become revisions (original kept).",
       ].join("\n"),
       requestBody: {
         required: true,
@@ -769,6 +796,9 @@ export const integrationSchemas = {
       schedule_requested: nullableDate,
       client_reference: { type: ["string", "null"] },
       date_po: nullableDate,
+      order_received_date: { ...nullableDate, description: "Order step — current value (after revisions)." },
+      pi_status: { type: ["string", "null"], description: "PI step — last status received from GSS." },
+      pi_status_date: nullableDate,
       order_type: ref("LibraryRefNamed"),
       client: ref("LibraryRefNamed"),
       business_unit: ref("LibraryRefNamed"),
@@ -812,6 +842,7 @@ export const integrationSchemas = {
       requester_email: { type: ["string", "null"], format: "email" },
       operational_responsible_email: { type: ["string", "null"], format: "email" },
       is_active: isActiveIn,
+      ...orderChecklistFieldsIn,
       items: { type: ["array", "null"], items: ref("OrderUpsertItem") },
     },
   },

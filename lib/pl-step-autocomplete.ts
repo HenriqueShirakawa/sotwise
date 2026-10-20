@@ -30,7 +30,7 @@ export async function autoCompletePlStep(
   step: ChecklistStep,
   userId: string | null
 ): Promise<boolean> {
-  if (!hasExtraRequirements(step, { completedOn: null })) return false;
+  if (!hasExtraRequirements(step)) return false;
 
   const { data: s } = await admin
     .from("pre_loading_checklist_steps")

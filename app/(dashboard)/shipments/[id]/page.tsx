@@ -402,7 +402,7 @@ export default async function ShipmentDetailPage({
       return {
         step,
         done: false,
-        gated: hasExtraRequirements(step, empty),
+        gated: hasExtraRequirements(step),
         missing: missingLabel(step, empty) ?? null,
         attachments: [],
         estimated_date: null,
@@ -421,7 +421,7 @@ export default async function ShipmentDetailPage({
     return {
       step,
       done: isStepChecked(step, facts),
-      gated: hasExtraRequirements(step, facts),
+      gated: hasExtraRequirements(step),
       missing: missingLabel(step, facts) ?? null,
       attachments,
       estimated_date: s.estimated_date,
