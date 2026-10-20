@@ -51,6 +51,7 @@ import {
 } from "./actions";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
+import { StepLogSection } from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 
@@ -765,6 +766,14 @@ export function ShipmentDetailClient({
                       recordPath={`/shipments/${shipment.id}`}
                       responsibleId={s.responsible_id}
                       done={s.done}
+                    />
+                    <StepLogSection
+                      owner={{
+                        kind: "pre_loading",
+                        preLoadingId: shipment.pre_loading_id,
+                        step: s.step,
+                      }}
+                      refreshKey={JSON.stringify(s)}
                     />
                   </div>
                 )}

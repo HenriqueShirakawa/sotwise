@@ -134,6 +134,12 @@ export type ChecklistStep =
   | "eta_brazil"
   | "ata_brazil"
   | "delivered";
+export type ChecklistStepLogAction =
+  | "update"
+  | "auto_complete"
+  | "confirm_shipping"
+  | "attachment_added"
+  | "attachment_removed";
 
 export type Database = {
   public: {
@@ -911,6 +917,32 @@ export type Database = {
           bubble_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["etd_history"]["Insert"]>;
+        Relationships: [];
+      };
+      // Log de alterações das etapas (migration 20261020120000) — mesmo dono
+      // duplo de `step_attachments` (check `checklist_step_log_one_owner`).
+      checklist_step_log: {
+        Row: {
+          id: UUID;
+          checklist_step_id: UUID | null;
+          pre_loading_step_id: UUID | null;
+          step: ChecklistStep;
+          action: ChecklistStepLogAction;
+          changes: Record<string, unknown>;
+          actor_id: UUID;
+          created_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          checklist_step_id?: UUID | null;
+          pre_loading_step_id?: UUID | null;
+          step: ChecklistStep;
+          action: ChecklistStepLogAction;
+          changes?: Record<string, unknown>;
+          actor_id: UUID;
+          created_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["checklist_step_log"]["Insert"]>;
         Relationships: [];
       };
       // Serve às duas origens de checklist: exatamente UMA de

@@ -4,6 +4,12 @@ import { revalidatePath } from "next/cache";
 
 import { PRELOADING_STEPS } from "@/lib/checklist";
 import { validateStepDates } from "@/lib/checklist-completion";
+import {
+  diffStepFields,
+  PL_STEP_LOG_COLUMNS,
+  readAttachmentForLog,
+  writeStepLog,
+} from "@/lib/checklist-step-log";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
@@ -96,7 +102,7 @@ export async function saveShipmentStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, estimated_date, completed_on")
+    .select(PL_STEP_LOG_COLUMNS)
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
     .maybeSingle();
@@ -119,12 +125,27 @@ export async function saveShipmentStep(
   // Quem conclui a etapa assina — mesma regra do checklist de Pre-loading.
   if (patch.completed_on) values.signed_by_id = session.userId;
 
-  const { error } = existing
-    ? await admin.from("pre_loading_checklist_steps").update(values).eq("id", existing.id)
+  const { data: saved, error } = existing
+    ? await admin
+        .from("pre_loading_checklist_steps")
+        .update(values)
+        .eq("id", existing.id)
+        .select("id")
+        .single()
     : await admin
         .from("pre_loading_checklist_steps")
-        .insert({ pre_loading_id: preLoadingId, step, ...values });
-  if (error) return { ok: false, error: error.message };
+        .insert({ pre_loading_id: preLoadingId, step, ...values })
+        .select("id")
+        .single();
+  if (error || !saved) return { ok: false, error: error?.message ?? "Could not save the step." };
+
+  await writeStepLog(admin, {
+    owner: { preLoadingStepId: saved.id },
+    step,
+    action: "update",
+    changes: diffStepFields(existing, values),
+    userId: session.userId,
+  });
 
   if (step === "delivered" && "completed_on" in patch) {
     const ruleError = await applyDeliveredRule(
@@ -205,6 +226,14 @@ export async function registerShipmentAttachment(
     return { ok: false, error: insertError.message };
   }
 
+  await writeStepLog(admin, {
+    owner: { preLoadingStepId: stepRow.id },
+    step,
+    action: "attachment_added",
+    changes: { file_name: fileName },
+    userId: session.userId,
+  });
+
   // O anexo pode ser o que faltava pra etapa fechar (BL, Original Docs…).
   const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
 
@@ -254,8 +283,18 @@ export async function deleteShipmentStepAttachment(
     return { ok: false, error: INHERITED_DENIED };
   }
 
+  const removed = await readAttachmentForLog(admin, attachmentId);
+
   const { error } = await admin.from("step_attachments").delete().eq("id", attachmentId);
   if (error) return { ok: false, error: error.message };
+
+  if (removed) {
+    await writeStepLog(admin, {
+      ...removed,
+      action: "attachment_removed",
+      userId: session.userId,
+    });
+  }
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 

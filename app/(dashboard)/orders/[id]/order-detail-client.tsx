@@ -67,6 +67,7 @@ import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
+import { StepLogSection } from "@/components/checklist/step-log-section";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
   order: "Order",
@@ -1032,6 +1033,10 @@ export function OrderDetailClient({
                         recordPath={`/orders/${orderId}`}
                         responsibleId={s.responsible_id}
                         done={s.done}
+                      />
+                      <StepLogSection
+                        owner={{ kind: "order", stepId: s.id }}
+                        refreshKey={JSON.stringify(s)}
                       />
                       {s.step === "po" && (
                         <Button
