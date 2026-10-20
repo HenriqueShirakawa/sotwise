@@ -1021,14 +1021,10 @@ export function OrderDetailClient({
                     >
                       {STEP_LABELS[s.step]}
                     </button>
-                    <StepLogButton
-                      owner={{ kind: "order", stepId: s.id }}
-                      count={logCounts[s.step]}
-                      stepLabel={STEP_LABELS[s.step]}
-                    />
-                    {/* Etapa sem toggle reserva o espaço dele (w-9 = Switch),
-                        pra o History ficar na mesma coluna em todas as linhas. */}
-                    {TOGGLEABLE_STEPS.has(s.step) ? (
+                    {/* Toggle à esquerda do History. O History mora numa faixa
+                        de largura fixa colada na seta — assim os dois ficam em
+                        coluna, tenha a linha History ou não. */}
+                    {TOGGLEABLE_STEPS.has(s.step) && (
                       <Switch
                         checked={s.enabled}
                         disabled={stepPending}
@@ -1036,9 +1032,14 @@ export function OrderDetailClient({
                           saveStepField(s, { enabled: checked })
                         }
                       />
-                    ) : (
-                      <span aria-hidden className="w-9 shrink-0" />
                     )}
+                    <div className="flex w-24 shrink-0 justify-end">
+                      <StepLogButton
+                        owner={{ kind: "order", stepId: s.id }}
+                        count={logCounts[s.step]}
+                        stepLabel={STEP_LABELS[s.step]}
+                      />
+                    </div>
                     <button
                       type="button"
                       aria-label={open ? "Collapse" : "Expand"}
