@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { History } from "lucide-react";
+import { FileClock } from "lucide-react";
 
 import { formatDateNumeric, formatDateTime } from "@/lib/format";
 import type { StepOwner } from "@/lib/checklist-email-actions";
@@ -73,7 +73,7 @@ export function StepLogButton({
         aria-label={`History (${count})`}
         onClick={() => setOpen(true)}
       >
-        <History className="size-3.5 text-slate-600" />
+        <FileClock className="size-3.5 text-slate-600" />
         History
         <span className="text-slate-700">{count}</span>
       </button>
