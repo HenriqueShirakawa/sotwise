@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { validateStepDates } from "@/lib/checklist-completion";
+import { reviseCompletedOn, setOrderReceivedDate } from "@/lib/checklist-revisions";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
@@ -16,7 +17,13 @@ import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { sendBatchStatusToGss, sendEtdToGss } from "@/lib/gss/outbound/schedule";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/domain/orders/schema";
-import type { BatchStatus, TablesInsert, TablesUpdate } from "@/types/database";
+import type {
+  BatchStatus,
+  ChecklistRevisionKind,
+  ChecklistRevisionSource,
+  TablesInsert,
+  TablesUpdate,
+} from "@/types/database";
 import type { BatchRow, EtdInfoRow, OfcRow } from "./order-detail-client";
 
 const EDITABLE_BATCH_STATUSES: BatchStatus[] = ["in_negotiation", "in_production"];
@@ -122,8 +129,19 @@ export async function updateChecklistStep(
   if (readError) return { ok: false, error: readError.message };
   if (!current) return { ok: false, error: "Checklist step not found." };
 
-  const dateError = validateStepDates(current, patch);
+  const dateError = validateStepDates(current, patch, current.step);
   if (dateError) return { ok: false, error: dateError };
+
+  // Order conclui pelo "Order received date"; PO/PI só trocam uma conclusão já
+  // gravada por revisão com motivo (lib/checklist-revisions, 20/10/2026).
+  if ("completed_on" in patch && patch.completed_on !== current.completed_on) {
+    if (current.step === "order") {
+      return { ok: false, error: "Set the order received date to complete this step." };
+    }
+    if ((current.step === "po" || current.step === "pi") && current.completed_on) {
+      return { ok: false, error: "Revise the completion date with a reason." };
+    }
+  }
 
   const update: TablesUpdate<"order_checklist_steps"> = { ...patch };
   if ("completed_on" in patch) update.done = !!patch.completed_on;
@@ -165,6 +183,83 @@ export async function updateChecklistStep(
   // checklist step.
   await broadcastOrderStatusPing({ order_ids: [orderId] });
   return { ok: true };
+}
+
+async function refreshChecklistViews(orderId: string) {
+  revalidatePath("/orders/[id]", "page");
+  revalidatePath("/todo");
+  await broadcastOrderStatusPing({ order_ids: [orderId] });
+}
+
+/**
+ * "Order received date" da etapa Order: a 1ª gravação conclui a etapa (Completed
+ * on = hoje); trocar depois exige motivo e vira revisão.
+ */
+export async function saveOrderReceivedDate(
+  orderId: string,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!date) return { ok: false, error: "Choose the order received date." };
+  const error = await setOrderReceivedDate(createAdminClient(), orderId, date, {
+    source: "manual",
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
+/** PO/PI: troca de um Completed on já gravado, com motivo (vira revisão). */
+export async function reviseStepCompletedOn(
+  orderId: string,
+  stepId: string,
+  date: string,
+  reason: string
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!date) return { ok: false, error: "Choose the completion date." };
+  const error = await reviseCompletedOn(createAdminClient(), stepId, date, reason, session.userId);
+  if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
+export type StepRevision = {
+  id: string;
+  kind: ChecklistRevisionKind;
+  previous_date: string | null;
+  new_date: string | null;
+  payload: Record<string, unknown>;
+  reason: string | null;
+  source: ChecklistRevisionSource;
+  changed_by_name: string | null;
+  changed_at: string;
+};
+
+/** Registro original + revisões de uma etapa, do mais antigo pro mais novo. */
+export async function getStepRevisions(stepId: string): Promise<StepRevision[]> {
+  await requireFeature("orders", "view");
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("checklist_step_revisions")
+    .select("id, kind, previous_date, new_date, payload, reason, source, changed_by, changed_at")
+    .eq("step_id", stepId)
+    .order("changed_at", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  const ids = [...new Set((data ?? []).map((r) => r.changed_by).filter((v): v is string => !!v))];
+  const { data: people } = ids.length
+    ? await admin.from("profiles").select("id, full_name").in("id", ids)
+    : { data: [] };
+  const nameOf = new Map((people ?? []).map((p) => [p.id, p.full_name]));
+
+  return (data ?? []).map(({ changed_by, ...r }) => ({
+    ...r,
+    changed_by_name: changed_by ? (nameOf.get(changed_by) ?? null) : null,
+  }));
 }
 
 /**

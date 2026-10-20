@@ -30,6 +30,7 @@ import {
   listEnvelope,
   nullableDate,
   offsetParam,
+  orderChecklistFieldsIn,
   orderParam,
   ref,
   updatedSinceParam,
@@ -573,6 +574,7 @@ export const restSchemas = {
       requester_email: emailInNullable,
       operational_responsible_email: emailInNullable,
       is_active: isActiveIn,
+      ...orderChecklistFieldsIn,
     },
   },
   OrderItemRow: {

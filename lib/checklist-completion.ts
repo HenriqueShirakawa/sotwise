@@ -35,8 +35,6 @@ export type ChecklistFacts = {
   placeOrderFactoriesWithDoc?: number;
   /** ETD: "Initial date" preenchido em TODAS as entradas Factory × Category. */
   etdInitialFilled?: boolean;
-  /** PI: só pedido do tipo Sales exige o documento (ver `piDocumentRequired`). */
-  piDocumentRequired?: boolean;
 
   // ── fase Pre-loading ──────────────────────────────────────────────────────
   consolidationPointId?: string | null;
@@ -57,27 +55,17 @@ export type ChecklistFacts = {
   bookingNumber?: string | null;
 };
 
-/**
- * PI exige documento? Só no tipo **Sales** — Samples, Gift e Replacement
- * concluem a etapa só com a data. Tipo desconhecido (ou pedido sem tipo) não
- * exige, para não travar etapa por dado que a tela nem tem.
- */
-export function piDocumentRequired(orderTypeName: string | null | undefined): boolean {
-  return /sale/i.test(orderTypeName ?? "");
-}
-
 /** Condições ALÉM do "Completed on", em rótulos prontos pra UI. */
 function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const missing: string[] = [];
   const noDocs = (f.attachments ?? 0) === 0;
 
   switch (step) {
+    // Order, PO e PI fecham pelo próprio gatilho (20/10/2026, lib/checklist-revisions):
+    // Order pelo "Order received date", PO pelas Factory × Category que chegam do
+    // GSS, PI pelo status vindo do GSS. Sem anexo — o GSS gera os documentos.
     case "po":
-      if (noDocs) missing.push("a document");
       if ((f.factoryCategoryCount ?? 0) === 0) missing.push("Factory × Category entries");
-      break;
-    case "pi":
-      if (f.piDocumentRequired && noDocs) missing.push("a document");
       break;
     case "place_the_order": {
       // Não basta UM documento na etapa: CADA fábrica do agrupamento precisa do
@@ -159,14 +147,16 @@ export function isStepChecked(step: ChecklistStep, f: ChecklistFacts): boolean {
  * segunda lista pra manter em dia. Usado só pelo ícone: etapa com exigência
  * extra ainda pendente é o "i" laranja, não a bolinha azul.
  */
-export function hasExtraRequirements(step: ChecklistStep, f: ChecklistFacts): boolean {
-  return (
-    missingExtras(step, {
-      completedOn: null,
-      piDocumentRequired: f.piDocumentRequired,
-    }).length > 0
-  );
+export function hasExtraRequirements(step: ChecklistStep): boolean {
+  return missingExtras(step, { completedOn: null }).length > 0;
 }
+
+/** Etapas concluídas pelo próprio gatilho (lib/checklist-revisions), 20/10/2026. */
+export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "order",
+  "po",
+  "pi",
+]);
 
 /**
  * "Completed on" só existe com "Estimated date" preenchido: não se conclui uma
@@ -181,7 +171,8 @@ export function hasExtraRequirements(step: ChecklistStep, f: ChecklistFacts): bo
  */
 export function validateStepDates(
   current: { estimated_date: string | null; completed_on: string | null },
-  patch: { estimated_date?: string | null; completed_on?: string | null }
+  patch: { estimated_date?: string | null; completed_on?: string | null },
+  step?: ChecklistStep
 ): string | null {
   const touchesEstimated = "estimated_date" in patch;
   const touchesCompleted = "completed_on" in patch;
@@ -193,6 +184,10 @@ export function validateStepDates(
   if (touchesCompleted && patch.completed_on && patch.completed_on > todayIso()) {
     return "The completion date can't be in the future.";
   }
+
+  // Order, PO e PI concluem pelo gatilho (received date / GSS), que não tem
+  // estimativa — a regra "completed exige estimated" não vale para elas.
+  if (step && TRIGGER_COMPLETED_STEPS.has(step)) return null;
 
   const estimated = touchesEstimated ? (patch.estimated_date ?? null) : current.estimated_date;
   const completed = touchesCompleted ? (patch.completed_on ?? null) : current.completed_on;
