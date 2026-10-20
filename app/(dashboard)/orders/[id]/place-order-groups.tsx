@@ -188,6 +188,7 @@ export function PlaceOrderFactoryGroups({
         pageGroups.map((g) => {
           const open = expanded.has(g.factory_id);
           const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
+          const categoryCount = new Set(g.entries.map((e) => e.category_name)).size;
           return (
             <div key={g.factory_id} className="border-t">
               <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_160px_128px_40px]">
@@ -206,8 +207,12 @@ export function PlaceOrderFactoryGroups({
                   <span className="truncate font-medium text-slate-800">{g.factory_name}</span>
                 </span>
                 <span className="text-slate-700 max-sm:col-start-1 max-sm:text-xs max-sm:text-slate-500">
-                  {g.entries.length}
-                  <span className="sm:hidden"> categories</span>
+                  {/* Categorias DISTINTAS da fábrica — a mesma categoria em
+                      vários lotes conta uma vez (as linhas ficam na lista abaixo). */}
+                  {categoryCount}
+                  <span className="sm:hidden">
+                    {categoryCount === 1 ? " category" : " categories"}
+                  </span>
                 </span>
                 <Button
                   type="button"
