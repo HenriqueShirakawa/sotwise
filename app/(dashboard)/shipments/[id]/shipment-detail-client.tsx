@@ -44,12 +44,15 @@ import {
   deleteShipment,
   deleteShipmentStepAttachment,
   getShipmentAttachmentUrl,
+  correctShipmentCompletedOn,
   saveShipmentStep,
   createShipmentAttachmentTicket,
   registerShipmentAttachment,
   type ShipmentStepPatch,
 } from "./actions";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
+import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
+import { LOCKED_COMPLETED_ON_STEPS } from "@/lib/checklist-completion";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
 import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 
@@ -702,29 +705,46 @@ export function ShipmentDetailClient({
                               </Select>
                             )}
                           </div>
-                          <div>
-                            <Label className="text-xs text-muted-foreground">Completed on</Label>
-                            {/* Sem "Estimated date" não há o que concluir. Etapa
-                                antiga que já tem a conclusão segue editável, pra
-                                não ficar presa com o campo travado. */}
-                            <DatePicker
+                          {LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
+                            <LockedCompletedOn
                               value={s.completed_on}
-                              disabled={
-                                pending || (!s.estimated_date && !s.completed_on)
+                              canCorrect={canEditInherited}
+                              onCorrect={(date, reason) =>
+                                correctShipmentCompletedOn(
+                                  shipment.pre_loading_id,
+                                  s.step,
+                                  date,
+                                  reason
+                                )
                               }
-                              // "Completed on" é fato consumado — nunca futuro.
-                              // O servidor também recusa (validateStepDates).
-                              max={todayIso()}
-                              placeholder={
-                                s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
-                              }
-                              onChange={(v) => {
-                                if (v !== (s.completed_on ?? null))
-                                  save(s.step, { completed_on: v });
-                              }}
-                              className="mt-1 bg-white"
                             />
-                          </div>
+                          ) : (
+                            <div>
+                              <Label className="text-xs text-muted-foreground">
+                                Completed on
+                              </Label>
+                              {/* Sem "Estimated date" não há o que concluir. Etapa
+                                  antiga que já tem a conclusão segue editável, pra
+                                  não ficar presa com o campo travado. */}
+                              <DatePicker
+                                value={s.completed_on}
+                                disabled={
+                                  pending || (!s.estimated_date && !s.completed_on)
+                                }
+                                // "Completed on" é fato consumado — nunca futuro.
+                                // O servidor também recusa (validateStepDates).
+                                max={todayIso()}
+                                placeholder={
+                                  s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
+                                }
+                                onChange={(v) => {
+                                  if (v !== (s.completed_on ?? null))
+                                    save(s.step, { completed_on: v });
+                                }}
+                                className="mt-1 bg-white"
+                              />
+                            </div>
+                          )}
                           <div>
                             <Label className="text-xs text-muted-foreground">Signed by</Label>
                             {/* Assinatura é de quem conclui — preenchida no save. */}

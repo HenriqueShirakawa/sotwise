@@ -17,7 +17,12 @@ import { toast } from "sonner";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
-import { hasExtraRequirements, missingLabel, plStepFacts } from "@/lib/checklist-completion";
+import {
+  hasExtraRequirements,
+  LOCKED_COMPLETED_ON_STEPS,
+  missingLabel,
+  plStepFacts,
+} from "@/lib/checklist-completion";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
@@ -41,6 +46,7 @@ import {
 import {
   deletePreLoadingStepAttachment,
   getPreLoadingAttachmentUrl,
+  correctPreLoadingCompletedOn,
   savePreLoadingStep,
   createPreLoadingAttachmentTicket,
   registerPreLoadingAttachment,
@@ -48,6 +54,7 @@ import {
 } from "./actions";
 import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
 import { ViewBatchLinesModal } from "./view-batch-lines-modal";
+import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
 import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 
@@ -316,6 +323,7 @@ export function PlChecklistClient({
   preloadingLeaderId,
   alreadyShipped,
   viewPrefs,
+  canCorrectCompletedOn,
 }: {
   preLoading: PreLoadingDetail;
   batches: PlBatchRow[];
@@ -335,6 +343,8 @@ export function PlChecklistClient({
   alreadyShipped: boolean;
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
+  /** Admin/owner: corrige o "Completed on" travado das etapas com gatilho. */
+  canCorrectCompletedOn: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -630,26 +640,36 @@ export function PlChecklistClient({
                         options={profiles}
                         onChange={(v) => save(s.step, { responsible_id: v })}
                       />
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Completed on</Label>
-                        {/* Sem "Estimated date" não há o que concluir. Etapa
-                            antiga que já tem a conclusão segue editável, pra
-                            não ficar presa com o campo travado. */}
-                        <DatePicker
+                      {LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
+                        <LockedCompletedOn
                           value={s.completed_on}
-                          disabled={pending || (!s.estimated_date && !s.completed_on)}
-                          // "Completed on" é fato consumado — nunca futuro.
-                          max={todayIso()}
-                          placeholder={
-                            s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
+                          canCorrect={canCorrectCompletedOn}
+                          onCorrect={(date, reason) =>
+                            correctPreLoadingCompletedOn(preLoading.id, s.step, date, reason)
                           }
-                          onChange={(v) => {
-                            if (v !== (s.completed_on ?? null))
-                              save(s.step, { completed_on: v });
-                          }}
-                          className="mt-1 bg-white"
                         />
-                      </div>
+                      ) : (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Completed on</Label>
+                          {/* Sem "Estimated date" não há o que concluir. Etapa
+                              antiga que já tem a conclusão segue editável, pra
+                              não ficar presa com o campo travado. */}
+                          <DatePicker
+                            value={s.completed_on}
+                            disabled={pending || (!s.estimated_date && !s.completed_on)}
+                            // "Completed on" é fato consumado — nunca futuro.
+                            max={todayIso()}
+                            placeholder={
+                              s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
+                            }
+                            onChange={(v) => {
+                              if (v !== (s.completed_on ?? null))
+                                save(s.step, { completed_on: v });
+                            }}
+                            className="mt-1 bg-white"
+                          />
+                        </div>
+                      )}
                       {/* Travado: quem conclui a etapa (Completed on) assina —
                           preenchido pelo servidor, não editável aqui. */}
                       <SelectField

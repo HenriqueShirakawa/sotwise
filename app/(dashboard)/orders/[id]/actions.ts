@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
-import { validateStepDates } from "@/lib/checklist-completion";
+import {
+  LOCKED_COMPLETED_ON_ERROR,
+  LOCKED_COMPLETED_ON_STEPS,
+  validateStepDates,
+} from "@/lib/checklist-completion";
 import { reviseCompletedOn, setOrderReceivedDate } from "@/lib/checklist-revisions";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
@@ -132,14 +136,14 @@ export async function updateChecklistStep(
   const dateError = validateStepDates(current, patch, current.step);
   if (dateError) return { ok: false, error: dateError };
 
-  // Order conclui pelo "Order received date"; PO/PI só trocam uma conclusão já
-  // gravada por revisão com motivo (lib/checklist-revisions, 20/10/2026).
+  // Order conclui pelo "Order received date"; PO/PI pelo gatilho do GSS — o
+  // campo é travado e só o admin corrige, com motivo (reviseStepCompletedOn).
   if ("completed_on" in patch && patch.completed_on !== current.completed_on) {
     if (current.step === "order") {
       return { ok: false, error: "Set the order received date to complete this step." };
     }
-    if ((current.step === "po" || current.step === "pi") && current.completed_on) {
-      return { ok: false, error: "Revise the completion date with a reason." };
+    if (LOCKED_COMPLETED_ON_STEPS.has(current.step)) {
+      return { ok: false, error: LOCKED_COMPLETED_ON_ERROR };
     }
   }
 
@@ -212,7 +216,7 @@ export async function saveOrderReceivedDate(
   return { ok: true };
 }
 
-/** PO/PI: troca de um Completed on já gravado, com motivo (vira revisão). */
+/** PO/PI: correção do Completed on pelo admin, com motivo (vira revisão). */
 export async function reviseStepCompletedOn(
   orderId: string,
   stepId: string,
@@ -220,6 +224,9 @@ export async function reviseStepCompletedOn(
   reason: string
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
+  if (!session.isAdmin && !session.isOwner) {
+    return { ok: false, error: "Only an admin can correct the completion date." };
+  }
   if (!date) return { ok: false, error: "Choose the completion date." };
   const error = await reviseCompletedOn(createAdminClient(), stepId, date, reason, session.userId);
   if (error) return { ok: false, error };
