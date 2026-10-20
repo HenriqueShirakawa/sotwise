@@ -50,7 +50,7 @@ import {
   type ShipmentStepPatch,
 } from "./actions";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
-import { StepLogSection } from "@/components/checklist/step-log-section";
+import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 
@@ -342,6 +342,11 @@ export function ShipmentDetailClient({
     () => (searchParams.get("step") as ChecklistStep | null) ?? null
   );
   const [infoOpen, setInfoOpen] = useState(true);
+  // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
+  const logCounts = useStepLogCounts(
+    { kind: "pre_loading", preLoadingId: shipment.pre_loading_id },
+    JSON.stringify(steps)
+  );
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(
     () => new Set(deepLinkStep ? [deepLinkStep] : [])
   );
@@ -608,6 +613,15 @@ export function ShipmentDetailClient({
                       <Lock className="size-3.5 text-slate-400" aria-label="Read-only" />
                     )}
                   </button>
+                  <StepLogButton
+                    owner={{
+                      kind: "pre_loading",
+                      preLoadingId: shipment.pre_loading_id,
+                      step: s.step,
+                    }}
+                    count={logCounts[s.step]}
+                    stepLabel={STEP_LABELS[s.step] ?? s.step}
+                  />
                   <button
                     type="button"
                     aria-label={open ? "Collapse" : "Expand"}
@@ -752,14 +766,6 @@ export function ShipmentDetailClient({
                       step={s.step}
                       attachments={s.attachments}
                       readOnly={readOnly}
-                    />
-                    <StepLogSection
-                      owner={{
-                        kind: "pre_loading",
-                        preLoadingId: shipment.pre_loading_id,
-                        step: s.step,
-                      }}
-                      refreshKey={JSON.stringify(s)}
                     />
                   </div>
                 )}
