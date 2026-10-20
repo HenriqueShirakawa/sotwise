@@ -10,6 +10,25 @@ export type StepLogScope =
   | { kind: "order"; orderId: string }
   | { kind: "pre_loading"; preLoadingId: string };
 
+type Admin = ReturnType<typeof createAdminClient>;
+
+/**
+ * Trocas do "Order received date" que vieram do GSS (API). O log só grava
+ * alteração de usuário, mas esse campo é exceção (20/10/2026): o History da
+ * etapa Order mostra também as do GSS — lidas da tabela de revisões, onde já
+ * ficam gravadas, e marcadas como "GSS".
+ */
+async function gssReceivedDateRevisions(admin: Admin, stepIds: string[]) {
+  if (stepIds.length === 0) return [];
+  const { data } = await admin
+    .from("checklist_step_revisions")
+    .select("id, step_id, previous_date, new_date, reason, changed_at")
+    .eq("kind", "order_received_date")
+    .eq("source", "gss")
+    .in("step_id", stepIds);
+  return data ?? [];
+}
+
 /**
  * Quantas entradas de History cada etapa tem — UMA consulta por tela, para o
  * contador ao lado do chevron (o detalhe só carrega quando o popup abre).
@@ -40,6 +59,12 @@ export async function loadStepLogCounts(
   for (const row of (rows ?? []) as Record<string, string | null>[]) {
     const step = stepOf.get(row[column] ?? "");
     if (step) counts[step] = (counts[step] ?? 0) + 1;
+  }
+  if (scope.kind === "order") {
+    for (const rev of await gssReceivedDateRevisions(admin, [...stepOf.keys()])) {
+      const step = stepOf.get(rev.step_id);
+      if (step) counts[step] = (counts[step] ?? 0) + 1;
+    }
   }
   return counts;
 }
@@ -72,6 +97,8 @@ export type StepLogEntry = {
   factory_name: string | null;
   /** Motivo da correção do admin (Completed on travado). */
   reason: string | null;
+  /** "gss" = troca do Order received date vinda da API (selo "GSS"). */
+  source: "user" | "gss";
 };
 
 type Lookup = "profiles" | "factories" | "cities" | "pols" | "carriers" | "agents" | "contacts";
@@ -120,7 +147,30 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
     .select("id, action, changes, actor_id, created_at")
     .eq(owner.kind === "order" ? "checklist_step_id" : "pre_loading_step_id", stepId)
     .order("created_at", { ascending: false });
-  if (!rows || rows.length === 0) return [];
+
+  const gssEntries: StepLogEntry[] =
+    owner.kind === "order"
+      ? (await gssReceivedDateRevisions(admin, [stepId])).map((rev) => ({
+          id: rev.id,
+          action: "update" as const,
+          created_at: rev.changed_at,
+          actor_name: "GSS",
+          changes: [
+            {
+              field: "order_received_date",
+              label: FIELDS.order_received_date.label,
+              kind: "date" as const,
+              from: rev.previous_date,
+              to: rev.new_date,
+            },
+          ],
+          file_name: null,
+          factory_name: null,
+          reason: rev.reason,
+          source: "gss" as const,
+        }))
+      : [];
+  if ((!rows || rows.length === 0) && gssEntries.length === 0) return [];
 
   // Junta todos os ids por tabela pra resolver os nomes de uma vez só.
   const idsByLookup = new Map<Lookup, Set<string>>();
@@ -129,7 +179,7 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
     if (!idsByLookup.has(lookup)) idsByLookup.set(lookup, new Set());
     idsByLookup.get(lookup)!.add(id);
   };
-  for (const row of rows) {
+  for (const row of rows ?? []) {
     want("profiles", row.actor_id);
     const changes = row.changes as Record<string, unknown>;
     want("factories", changes.factory_id);
@@ -165,7 +215,7 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
   };
 
   const order = Object.keys(FIELDS);
-  return rows.map((row) => {
+  const userEntries: StepLogEntry[] = (rows ?? []).map((row) => {
     const raw = row.changes as Record<string, unknown>;
     const isAttachment = row.action === "attachment_added" || row.action === "attachment_removed";
     const changes: StepLogChange[] = isAttachment
@@ -192,6 +242,12 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
           ? (names.get(raw.factory_id) ?? null)
           : null,
       reason: typeof raw.reason === "string" ? raw.reason : null,
+      source: "user" as const,
     };
   });
+
+  // Mais recente primeiro, juntando usuário e GSS.
+  return [...userEntries, ...gssEntries].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at)
+  );
 }
