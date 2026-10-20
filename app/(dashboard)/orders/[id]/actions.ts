@@ -9,7 +9,11 @@ import {
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
 } from "@/lib/checklist-completion";
-import { reviseCompletedOn, setOrderReceivedDate } from "@/lib/checklist-revisions";
+import {
+  reviseCompletedOn,
+  setDepositDate,
+  setOrderReceivedDate,
+} from "@/lib/checklist-revisions";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
@@ -136,11 +140,15 @@ export async function updateChecklistStep(
   const dateError = validateStepDates(current, patch, current.step);
   if (dateError) return { ok: false, error: dateError };
 
-  // Order conclui pelo "Order received date"; PO/PI pelo gatilho do GSS — o
-  // campo é travado e só o admin corrige, com motivo (reviseStepCompletedOn).
+  // Order conclui pelo "Order received date", Deposit Payment pelo "Deposit date";
+  // PO/PI pelo gatilho do GSS — o campo é travado e só o admin corrige, com
+  // motivo (reviseStepCompletedOn).
   if ("completed_on" in patch && patch.completed_on !== current.completed_on) {
     if (current.step === "order") {
       return { ok: false, error: "Set the order received date to complete this step." };
+    }
+    if (current.step === "deposit_payment") {
+      return { ok: false, error: "Set the deposit date to complete this step." };
     }
     if (LOCKED_COMPLETED_ON_STEPS.has(current.step)) {
       return { ok: false, error: LOCKED_COMPLETED_ON_ERROR };
@@ -167,15 +175,11 @@ export async function updateChecklistStep(
     userId: session.userId,
   });
 
-  // Deposit Payment concluído ou desligado: os lotes In Negotiation com Factory
-  // x Category vão para In Production (docs §3.7.2). Reabrir não rebaixa.
-  if (current.step === "deposit_payment" && (patch.completed_on || patch.enabled === false)) {
-    const promoteError = await promoteBatchesToProduction(admin, orderId);
+  // Deposit Payment desligado no toggle: vale como resolvido (docs §3.7.2). A
+  // conclusão agora vem do "Deposit date" (saveDepositDate), não deste save.
+  if (current.step === "deposit_payment" && patch.enabled === false) {
+    const promoteError = await settleDepositPayment(admin, orderId);
     if (promoteError) return { ok: false, error: promoteError };
-    const statusError = await syncOrderStatus(admin, [orderId]);
-    if (statusError) return { ok: false, error: statusError };
-    sendBatchStatusToGss({ orderIds: [orderId] });
-    await revalidateBatchViews(orderId);
   }
 
   // Atribuir/trocar responsável ou concluir/reabrir uma etapa muda a To do list
@@ -212,6 +216,50 @@ export async function saveOrderReceivedDate(
     reason,
   });
   if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
+/**
+ * Deposit Payment "resolvido" — Deposit date gravado ou toggle desligado: os
+ * lotes In Negotiation com Factory x Category da Order vão para In Production
+ * (docs §3.7.2) e o status novo é empurrado ao GSS. Reabrir não rebaixa nada.
+ * Devolve a mensagem de erro, ou null.
+ */
+async function settleDepositPayment(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string
+): Promise<string | null> {
+  const promoteError = await promoteBatchesToProduction(admin, orderId);
+  if (promoteError) return promoteError;
+  const statusError = await syncOrderStatus(admin, [orderId]);
+  if (statusError) return statusError;
+  sendBatchStatusToGss({ orderIds: [orderId] });
+  await revalidateBatchViews(orderId);
+  return null;
+}
+
+/**
+ * "Deposit date" da etapa Deposit Payment: a data em que o cliente depositou de
+ * fato. Motivo é obrigatório em toda gravação; a 1ª conclui a etapa (Completed
+ * on = hoje) e resolve o Deposit, promovendo os lotes In Negotiation.
+ */
+export async function saveDepositDate(
+  orderId: string,
+  date: string,
+  reason: string
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!date) return { ok: false, error: "Choose the deposit date." };
+  const admin = createAdminClient();
+  const error = await setDepositDate(admin, orderId, date, {
+    source: "manual",
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  const settleError = await settleDepositPayment(admin, orderId);
+  if (settleError) return { ok: false, error: settleError };
   await refreshChecklistViews(orderId);
   return { ok: true };
 }

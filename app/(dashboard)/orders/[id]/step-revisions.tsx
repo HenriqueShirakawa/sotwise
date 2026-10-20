@@ -17,9 +17,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import type { ChecklistStep } from "@/types/database";
+
 import {
   getStepRevisions,
   reviseStepCompletedOn,
+  saveDepositDate,
   saveOrderReceivedDate,
   type StepRevision,
 } from "./actions";
@@ -32,9 +35,23 @@ import {
  * uma data nova (motivo obrigatório depois da 1ª); abaixo, cada registro é um
  * item expansível com o detalhe — de → para, quando, quem (ou GSS), motivo e,
  * no PO, a lista de Factory × Category recebida com o que mudou.
+ *
+ * O Deposit Payment entrou em 20/10 pelo card do cliente ("Deposit date"): usa o
+ * mesmo popup do Order — só o formulário, porque o histórico aparece no History
+ * da etapa —, mas com motivo obrigatório já na 1ª gravação.
  */
 
-export type RevisionStep = "order" | "po" | "pi";
+export type RevisionStep = "order" | "po" | "pi" | "deposit_payment";
+
+/**
+ * Etapas cujo popup é SÓ o formulário (sem a lista de registros): o que mudou
+ * aparece no History da etapa. São também as que não têm "Revise" no Completed
+ * on — a correção é feita na data que serve de gatilho.
+ */
+export const FORM_ONLY_REVISIONS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "order",
+  "deposit_payment",
+]);
 
 /** Número em destaque com a quantidade de revisões — clicável. */
 export function RevisionBadge({ count, onClick }: { count: number; onClick: () => void }) {
@@ -56,6 +73,15 @@ const TITLES: Record<RevisionStep, string> = {
   order: "Order received date",
   po: "PO — Factory × Category",
   pi: "PI status",
+  deposit_payment: "Deposit date",
+};
+
+/** Rótulo do campo de data dentro do formulário. */
+const DATE_LABELS: Record<RevisionStep, string> = {
+  order: "Order received date",
+  po: "Completed on",
+  pi: "Completed on",
+  deposit_payment: "Deposit date",
 };
 
 const KIND_LABELS: Record<StepRevision["kind"], string> = {
@@ -63,6 +89,7 @@ const KIND_LABELS: Record<StepRevision["kind"], string> = {
   fxc: "Factory × Category received",
   pi_status: "PI status",
   completed_on: "Completed on",
+  deposit_date: "Deposit date",
 };
 
 type FxcItem = { factory: string; category: string };
@@ -87,6 +114,7 @@ export function StepRevisionsModal({
   canCorrect: boolean;
 }) {
   const router = useRouter();
+  const formOnly = FORM_ONLY_REVISIONS.has(step);
   const [pending, startTransition] = useTransition();
   const [rows, setRows] = useState<StepRevision[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -102,12 +130,12 @@ export function StepRevisionsModal({
     setRows(null);
     setDate("");
     setReason("");
-    // Order: o popup é só o formulário (o que mudou fica no History da etapa).
-    setAdding(step === "order");
+    // Order/Deposit: o popup é só o formulário (o que mudou fica no History).
+    setAdding(formOnly);
   }
 
   useEffect(() => {
-    if (!openFor || step === "order") return;
+    if (!openFor || FORM_ONLY_REVISIONS.has(step)) return;
     let cancelled = false;
     getStepRevisions(openFor)
       .then((r) => !cancelled && setRows(r))
@@ -121,9 +149,11 @@ export function StepRevisionsModal({
     };
   }, [openFor, step]);
 
-  // Order grava a received date; o Completed on de PO/PI é travado (vem do GSS)
-  // e só o admin corrige — sempre com motivo, até quando ainda está vazio.
-  const canAdd = step === "order" || canCorrect;
+  // Order grava a received date e o Deposit Payment a deposit date; o Completed
+  // on de PO/PI é travado (vem do GSS) e só o admin corrige — sempre com motivo,
+  // até quando ainda está vazio. No Deposit o motivo também é sempre obrigatório
+  // (pedido do usuário); só no Order a 1ª gravação é livre.
+  const canAdd = formOnly || canCorrect;
   const reasonRequired = step === "order" ? !!currentDate : true;
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
@@ -132,16 +162,16 @@ export function StepRevisionsModal({
       const res =
         step === "order"
           ? await saveOrderReceivedDate(orderId, date, reason.trim() || null)
-          : await reviseStepCompletedOn(orderId, stepId, date, reason);
+          : step === "deposit_payment"
+            ? await saveDepositDate(orderId, date, reason.trim())
+            : await reviseStepCompletedOn(orderId, stepId, date, reason);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
-      toast.success(
-        currentDate ? "Revision saved." : step === "order" ? "Order received date saved." : "Completion date saved."
-      );
+      toast.success(currentDate ? "Revision saved." : `${DATE_LABELS[step]} saved.`);
       router.refresh();
-      if (step === "order") {
+      if (formOnly) {
         onOpenChange(false);
         return;
       }
@@ -181,20 +211,14 @@ export function StepRevisionsModal({
                   onClick={() => setAdding(true)}
                 >
                   <Plus className="size-4" />
-                  {step === "order"
-                    ? currentDate
-                      ? "Revise order received date"
-                      : "Set order received date"
-                    : currentDate
-                      ? "Revise completion date"
-                      : "Set completion date"}
+                  {currentDate
+                    ? `Revise ${DATE_LABELS[step].toLowerCase()}`
+                    : `Set ${DATE_LABELS[step].toLowerCase()}`}
                 </Button>
               ) : (
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-foreground">
-                      {step === "order" ? "Order received date" : "Completed on"}
-                    </Label>
+                    <Label className="text-foreground">{DATE_LABELS[step]}</Label>
                     <DatePicker
                       value={date || null}
                       onChange={(v) => setDate(v ?? "")}
@@ -220,9 +244,7 @@ export function StepRevisionsModal({
                       variant="outline"
                       className="flex-1 bg-white"
                       disabled={pending}
-                      onClick={() =>
-                        step === "order" ? onOpenChange(false) : setAdding(false)
-                      }
+                      onClick={() => (formOnly ? onOpenChange(false) : setAdding(false))}
                     >
                       Cancel
                     </Button>
@@ -240,7 +262,7 @@ export function StepRevisionsModal({
             </div>
           )}
 
-          {step !== "order" && (
+          {!formOnly && (
             <div className="space-y-2">
             {rows === null ? (
               <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
