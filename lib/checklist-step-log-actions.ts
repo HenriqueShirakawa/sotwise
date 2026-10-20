@@ -3,7 +3,46 @@
 import { requireInternal } from "@/lib/dal";
 import type { StepOwner } from "@/lib/checklist-email-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChecklistStepLogAction } from "@/types/database";
+import type { ChecklistStep, ChecklistStepLogAction } from "@/types/database";
+
+/** De onde contar o log: o checklist da Order ou o checklist único do PL/Shipment. */
+export type StepLogScope =
+  | { kind: "order"; orderId: string }
+  | { kind: "pre_loading"; preLoadingId: string };
+
+/**
+ * Quantas entradas de History cada etapa tem — UMA consulta por tela, para o
+ * contador ao lado do chevron (o detalhe só carrega quando o popup abre).
+ */
+export async function loadStepLogCounts(
+  scope: StepLogScope
+): Promise<Partial<Record<ChecklistStep, number>>> {
+  await requireInternal();
+  const admin = createAdminClient();
+
+  const { data: steps } =
+    scope.kind === "order"
+      ? await admin.from("order_checklist_steps").select("id, step").eq("order_id", scope.orderId)
+      : await admin
+          .from("pre_loading_checklist_steps")
+          .select("id, step")
+          .eq("pre_loading_id", scope.preLoadingId);
+  if (!steps || steps.length === 0) return {};
+
+  const stepOf = new Map(steps.map((s) => [s.id, s.step as ChecklistStep]));
+  const column = scope.kind === "order" ? "checklist_step_id" : "pre_loading_step_id";
+  const { data: rows } = await admin
+    .from("checklist_step_log")
+    .select(column)
+    .in(column, [...stepOf.keys()]);
+
+  const counts: Partial<Record<ChecklistStep, number>> = {};
+  for (const row of (rows ?? []) as Record<string, string | null>[]) {
+    const step = stepOf.get(row[column] ?? "");
+    if (step) counts[step] = (counts[step] ?? 0) + 1;
+  }
+  return counts;
+}
 
 /**
  * Leitura do log de alterações de UMA etapa (`checklist_step_log`, ver

@@ -49,7 +49,7 @@ import {
 import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
 import { ViewBatchLinesModal } from "./view-batch-lines-modal";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
-import { StepLogSection } from "@/components/checklist/step-log-section";
+import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 /** Um `pol` é a junção (cidade, porto): a cidade distingue linhas de mesmo nome
@@ -345,6 +345,11 @@ export function PlChecklistClient({
     () => (searchParams.get("step") as ChecklistStep | null) ?? null
   );
   const [infoOpen, setInfoOpen] = useState(true);
+  // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
+  const logCounts = useStepLogCounts(
+    { kind: "pre_loading", preLoadingId: preLoading.id },
+    JSON.stringify(steps)
+  );
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(
     () => new Set(deepLinkStep ? [deepLinkStep] : [])
   );
@@ -587,6 +592,11 @@ export function PlChecklistClient({
                   >
                     {STEP_LABELS[s.step]}
                   </button>
+                  <StepLogButton
+                    owner={{ kind: "pre_loading", preLoadingId: preLoading.id, step: s.step }}
+                    count={logCounts[s.step]}
+                    stepLabel={STEP_LABELS[s.step] ?? s.step}
+                  />
                   <button
                     type="button"
                     aria-label={open ? "Collapse" : "Expand"}
@@ -797,10 +807,6 @@ export function PlChecklistClient({
                       recordPath={`/pre-loading/${preLoading.id}`}
                       responsibleId={s.responsible_id}
                       done={s.done}
-                    />
-                    <StepLogSection
-                      owner={{ kind: "pre_loading", preLoadingId: preLoading.id, step: s.step }}
-                      refreshKey={JSON.stringify(s)}
                     />
                   </div>
                 )}
