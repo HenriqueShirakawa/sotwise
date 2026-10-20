@@ -134,8 +134,10 @@ const ACTION_BADGES: Partial<Record<StepLogEntry["action"], string>> = {
 };
 
 function LogCard({ entry }: { entry: StepLogEntry }) {
-  // Com motivo = correção do admin num "Completed on" travado.
-  const badge = entry.reason ? "Correction" : ACTION_BADGES[entry.action];
+  // GSS = troca do Order received date vinda da API; com motivo (de usuário) =
+  // correção do admin num "Completed on" travado.
+  const badge =
+    entry.source === "gss" ? "GSS" : entry.reason ? "Correction" : ACTION_BADGES[entry.action];
   return (
     <li className="rounded-md border bg-white px-3 py-2 text-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
