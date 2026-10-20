@@ -1289,6 +1289,16 @@ Pedido do usuário: **todas** as etapas do checklist (Order #1–10, Pre-loading
 - **Tela (revisto 20/10 a pedido do usuário — o pill dentro da etapa, junto do "Emails sent", poluía):** só **ícone + quantidade no cabeçalho da etapa**, ao lado do chevron (some quando não há log); clicar abre um **popup** com a lista, mais recente primeiro. Campo que estava vazio mostra só o valor novo ("Completed on: 20/10/2026", sem "— →"). Contadores de todas as etapas numa consulta só por tela (`loadStepLogCounts`), recarregam a cada save. Código: `components/checklist/step-log-section.tsx` (`StepLogButton`, `useStepLogCounts`).
 - Não há histórico anterior a 20/10/2026 (nem do Bubble).
 
+##### "Completed on" travado nas etapas com gatilho (decisão 2026-10-20)
+
+Pedido do usuário: o "Completed on" fica **bloqueado** — quem conclui a etapa são as ações/gatilhos, não a mão. **Toda etapa vai ter gatilho** (ainda em definição); por enquanto só trava onde o gatilho já existe.
+
+- **Lista única:** `LOCKED_COMPLETED_ON_STEPS` (`lib/checklist-completion.ts`) — hoje Order, PO, PI (gatilhos de `lib/checklist-revisions`) + Consolidation Point, City, Port of Loading, Shipping Docs, Agents, Booking, BL, Original Docs (auto-conclusão do PL). **Etapa que ganhar gatilho entra nessa lista e trava sozinha** (tela + servidor).
+- **Loading date fica FORA:** o Confirm Shipping exige ela concluída antes de liberar (o popup só revisa a data) — travar impediria o embarque.
+- **Trava na tela e no servidor:** o save normal recusa mexer no Completed on dessas etapas (`LOCKED_COMPLETED_ON_ERROR`).
+- **Correção só por admin/owner, com motivo obrigatório:** Order/PO/PI pelo popup de revisões (botão "Set"/"Revise", vira `checklist_step_revisions`); PL/Shipment pelo botão **"Correct"** (`components/checklist/locked-completed-on.tsx` → `lib/completed-on-correction.ts`), que aceita data vazia pra reabrir e grava o motivo no History (`changes.reason`, badge "Correction").
+- A API do GSS não passa por essa trava (é ela o gatilho).
+
 ##### E-mail manual por etapa + histórico (decisão 2026-09-08)
 
 Pedido do cliente: em cada etapa do checklist (Order/Pre-loading/Shipment), poder mandar um e-mail escolhendo à mão quem recebe — diferente do módulo de mensagens (`messages`, 100% interno, nunca sai e-mail de verdade) e do outbox de notificação de cliente (`client_notifications`, automático por trigger, destinatário sempre o `client` do pedido). Descartado o caminho "alias externo com reply-all": o cliente quer poder **excluir** gente do envio, o que um alias compartilhado não permite.

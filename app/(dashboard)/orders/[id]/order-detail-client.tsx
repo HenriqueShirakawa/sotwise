@@ -457,22 +457,19 @@ function ViewBatchModal({
 
 /**
  * "Completed on" das etapas Order/PO/PI (20/10/2026): concluem pelo próprio
- * gatilho, sem exigir Estimated date. Order é só leitura (vem do "Order received
- * date"); PO/PI aceitam o 1º preenchimento à mão e, depois, só revisão com
- * motivo — pelo popup.
+ * gatilho, sem exigir Estimated date. Campo TRAVADO para todos — Order vem do
+ * "Order received date", PO/PI do GSS; só admin/owner corrige PO/PI, com
+ * motivo, pelo popup de revisões.
  */
 function TriggerCompletedOn({
   step,
-  pending,
-  onSave,
+  canCorrect,
   onRevise,
 }: {
   step: ChecklistStepRow;
-  pending: boolean;
-  onSave: (value: string | null) => void;
+  canCorrect: boolean;
   onRevise: () => void;
 }) {
-  const locked = step.step === "order" || !!step.completed_on;
   return (
     <div>
       <div className="flex items-center gap-1.5">
@@ -480,24 +477,21 @@ function TriggerCompletedOn({
         {step.step === "po" && (
           <RevisionBadge count={step.revision_count} onClick={onRevise} />
         )}
-        {step.step !== "order" && step.completed_on && (
+        {step.step !== "order" && canCorrect && (
           <button
             type="button"
             className="text-xs font-medium text-primary hover:underline"
             onClick={onRevise}
           >
-            Revise
+            {step.completed_on ? "Revise" : "Set"}
           </button>
         )}
       </div>
       <DatePicker
         value={step.completed_on}
-        disabled={pending || locked}
-        max={todayIso()}
-        placeholder={step.step === "order" ? "Set the received date" : "dd/mm/yyyy"}
-        onChange={(v) => {
-          if (!locked && v !== (step.completed_on ?? null)) onSave(v);
-        }}
+        disabled
+        placeholder={step.step === "order" ? "Set the received date" : "Set automatically"}
+        onChange={() => {}}
         className="mt-1 bg-white"
       />
     </div>
@@ -653,6 +647,7 @@ export function OrderDetailClient({
   steps,
   viewPrefs,
   currentUserId,
+  canCorrectCompletedOn,
 }: {
   orderId: string;
   order: OrderDetail;
@@ -667,6 +662,8 @@ export function OrderDetailClient({
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
   currentUserId: string;
+  /** Admin/owner: corrige o "Completed on" travado das etapas com gatilho. */
+  canCorrectCompletedOn: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1105,8 +1102,7 @@ export function OrderDetailClient({
                         {TRIGGER_COMPLETED_STEPS.has(s.step) ? (
                           <TriggerCompletedOn
                             step={s}
-                            pending={stepPending}
-                            onSave={(v) => saveStepField(s, { completed_on: v })}
+                            canCorrect={canCorrectCompletedOn}
                             onRevise={() => setRevisionsFor(s)}
                           />
                         ) : (
@@ -1234,6 +1230,7 @@ export function OrderDetailClient({
               ? order.order_received_date
               : revisionsFor.completed_on
           }
+          canCorrect={canCorrectCompletedOn}
         />
       )}
     </div>
