@@ -140,6 +140,8 @@ export type ChecklistStepLogAction =
   | "confirm_shipping"
   | "attachment_added"
   | "attachment_removed";
+export type ChecklistRevisionKind = "order_received_date" | "fxc" | "pi_status" | "completed_on";
+export type ChecklistRevisionSource = "manual" | "gss";
 
 export type Database = {
   public: {
@@ -708,6 +710,9 @@ export type Database = {
           operational_responsible_id: UUID | null;
           status: OrderStatus;
           date_po: DateStr | null;
+          order_received_date: DateStr | null;
+          pi_status: string | null;
+          pi_status_date: DateStr | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -731,6 +736,9 @@ export type Database = {
           operational_responsible_id?: UUID | null;
           status?: OrderStatus;
           date_po?: DateStr | null;
+          order_received_date?: DateStr | null;
+          pi_status?: string | null;
+          pi_status_date?: DateStr | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
@@ -943,6 +951,37 @@ export type Database = {
           created_at?: Timestamp;
         };
         Update: Partial<Database["public"]["Tables"]["checklist_step_log"]["Insert"]>;
+        Relationships: [];
+      };
+      // Revisões das etapas Order/PO/PI (20261020130000) — ver lib/checklist-revisions.ts.
+      checklist_step_revisions: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          step_id: UUID;
+          kind: ChecklistRevisionKind;
+          previous_date: DateStr | null;
+          new_date: DateStr | null;
+          payload: Record<string, unknown>;
+          reason: string | null;
+          source: ChecklistRevisionSource;
+          changed_by: UUID | null;
+          changed_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          order_id: UUID;
+          step_id: UUID;
+          kind: ChecklistRevisionKind;
+          previous_date?: DateStr | null;
+          new_date?: DateStr | null;
+          payload?: Record<string, unknown>;
+          reason?: string | null;
+          source?: ChecklistRevisionSource;
+          changed_by?: UUID | null;
+          changed_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["checklist_step_revisions"]["Insert"]>;
         Relationships: [];
       };
       // Serve às duas origens de checklist: exatamente UMA de

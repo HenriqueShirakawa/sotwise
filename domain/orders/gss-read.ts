@@ -123,6 +123,9 @@ type OrderRow = {
   schedule_requested: DateStr | null;
   client_reference: string | null;
   date_po: DateStr | null;
+  order_received_date: DateStr | null;
+  pi_status: string | null;
+  pi_status_date: DateStr | null;
   is_active: boolean;
   order_type_id: UUID | null;
   client_id: UUID | null;
@@ -137,6 +140,7 @@ type OrderRow = {
 
 const ORDER_COLUMNS =
   "id, gss_id, po_number, status, asap, schedule_requested, client_reference, date_po, is_active, " +
+  "order_received_date, pi_status, pi_status_date, " +
   "order_type_id, client_id, business_unit_id, exporter_id, leader_id, requester_id, " +
   "operational_responsible_id, " +
   "created_at, updated_at";
@@ -171,6 +175,11 @@ export type GssOrderRead = {
   schedule_requested: Unix | null;
   client_reference: string | null;
   date_po: Unix | null;
+  /** Etapa Order: data do pedido final do cliente (a vigente, após revisões). */
+  order_received_date: Unix | null;
+  /** Etapa PI: último status recebido do GSS + a data dele. */
+  pi_status: string | null;
+  pi_status_date: Unix | null;
   is_active: boolean;
   order_type: LibraryRef | null;
   client: LibraryRef | null;
@@ -417,6 +426,9 @@ export async function listGssOrders(
       schedule_requested: dayToUnix(row.schedule_requested),
       client_reference: row.client_reference,
       date_po: dayToUnix(row.date_po),
+      order_received_date: dayToUnix(row.order_received_date),
+      pi_status: row.pi_status,
+      pi_status_date: dayToUnix(row.pi_status_date),
       is_active: row.is_active,
       order_type: row.order_type_id ? orderTypes.get(row.order_type_id) ?? null : null,
       client: row.client_id ? clients.get(row.client_id) ?? null : null,

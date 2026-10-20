@@ -2,6 +2,8 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
+import { recordPiStatus, setOrderReceivedDate } from "@/lib/checklist-revisions";
+import { todayIso } from "@/lib/format";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { fail, isUuid, type WriteResult } from "@/domain/api/write-result";
@@ -189,6 +191,36 @@ export async function applyOrderItems(
 }
 
 /**
+ * Campos de checklist do payload (Order received date, status da PI) → etapas
+ * Order e PI, com revisões (lib/checklist-revisions). Não são colunas soltas:
+ * a 1ª gravação conclui a etapa e as seguintes viram revisão.
+ */
+export async function applyChecklistFields(
+  admin: AdminClient,
+  orderId: string,
+  input: Pick<
+    GssOrderHeaderInput,
+    "order_received_date" | "pi_status" | "pi_status_date" | "revision_reason"
+  >
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const who = { source: "gss" as const, userId: null, reason: input.revision_reason ?? null };
+
+  if (input.order_received_date !== undefined) {
+    const error = await setOrderReceivedDate(admin, orderId, input.order_received_date, who);
+    if (error) return { ok: false, error };
+  }
+  if (input.pi_status_date !== undefined && input.pi_status === undefined) {
+    return { ok: false, error: "pi_status_date requires pi_status." };
+  }
+  if (input.pi_status !== undefined) {
+    const date = input.pi_status_date ?? todayIso();
+    const error = await recordPiStatus(admin, orderId, input.pi_status, date, who);
+    if (error) return { ok: false, error };
+  }
+  return { ok: true };
+}
+
+/**
  * `{id}` das rotas de order: UUID ou o `po_number` (ex.: /api/orders/1230).
  * Só orders vivas (o GET de orders esconde as soft-deleted).
  */
@@ -218,14 +250,25 @@ export async function patchOrder(
   const built = await buildOrderFields(admin, input);
   if (!built.ok) return fail(400, built.error);
 
-  const { data, error } = await admin
-    .from("orders")
-    .update(built.fields as never)
-    .eq("id", orderId)
-    .select("id, po_number, is_active")
-    .maybeSingle();
+  // Só campos de checklist (sem cabeçalho) → nada para o SET; lê pra devolver.
+  const { data, error } =
+    Object.keys(built.fields).length > 0
+      ? await admin
+          .from("orders")
+          .update(built.fields as never)
+          .eq("id", orderId)
+          .select("id, po_number, is_active")
+          .maybeSingle()
+      : await admin
+          .from("orders")
+          .select("id, po_number, is_active")
+          .eq("id", orderId)
+          .maybeSingle();
   if (error) return fail(500, error.message);
   if (!data) return fail(404, "Order not found.");
+
+  const checklist = await applyChecklistFields(admin, orderId, input);
+  if (!checklist.ok) return fail(400, checklist.error);
 
   refreshOrderViews();
   await broadcastOrderStatusPing({ order_ids: [orderId] });
