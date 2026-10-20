@@ -1026,7 +1026,9 @@ export function OrderDetailClient({
                       count={logCounts[s.step]}
                       stepLabel={STEP_LABELS[s.step]}
                     />
-                    {TOGGLEABLE_STEPS.has(s.step) && (
+                    {/* Etapa sem toggle reserva o espaço dele (w-9 = Switch),
+                        pra o History ficar na mesma coluna em todas as linhas. */}
+                    {TOGGLEABLE_STEPS.has(s.step) ? (
                       <Switch
                         checked={s.enabled}
                         disabled={stepPending}
@@ -1034,6 +1036,8 @@ export function OrderDetailClient({
                           saveStepField(s, { enabled: checked })
                         }
                       />
+                    ) : (
+                      <span aria-hidden className="w-9 shrink-0" />
                     )}
                     <button
                       type="button"
