@@ -67,7 +67,7 @@ import {
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
-import { StepLogSection } from "@/components/checklist/step-log-section";
+import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 import { RevisionBadge, StepRevisionsModal, type RevisionStep } from "./step-revisions";
 
 const STEP_LABELS: Record<ChecklistStep, string> = {
@@ -684,6 +684,8 @@ export function OrderDetailClient({
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   // Popup de revisões das etapas Order/PO/PI.
   const [revisionsFor, setRevisionsFor] = useState<ChecklistStepRow | null>(null);
+  // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
+  const logCounts = useStepLogCounts({ kind: "order", orderId }, JSON.stringify(steps));
 
   useEffect(() => {
     if (!deepLinkStep) return;
@@ -1021,6 +1023,11 @@ export function OrderDetailClient({
                     >
                       {STEP_LABELS[s.step]}
                     </button>
+                    <StepLogButton
+                      owner={{ kind: "order", stepId: s.id }}
+                      count={logCounts[s.step]}
+                      stepLabel={STEP_LABELS[s.step]}
+                    />
                     {TOGGLEABLE_STEPS.has(s.step) && (
                       <Switch
                         checked={s.enabled}
@@ -1189,10 +1196,6 @@ export function OrderDetailClient({
                       ) : (
                         <AttachmentsSection orderId={orderId} step={s} />
                       )}
-                      <StepLogSection
-                        owner={{ kind: "order", stepId: s.id }}
-                        refreshKey={JSON.stringify(s)}
-                      />
                       {s.step === "po" && (
                         <Button
                           type="button"

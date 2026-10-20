@@ -1,78 +1,129 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, History } from "lucide-react";
+import { History } from "lucide-react";
 
 import { formatDateNumeric, formatDateTime } from "@/lib/format";
 import type { StepOwner } from "@/lib/checklist-email-actions";
 import {
   loadStepLog,
+  loadStepLogCounts,
   type StepLogChange,
   type StepLogEntry,
+  type StepLogScope,
 } from "@/lib/checklist-step-log-actions";
+import type { ChecklistStep } from "@/types/database";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 /**
  * "History" por etapa do checklist (20/10/2026) — log de toda alteração que um
  * usuário fez na etapa (campos, anexos, auto-conclusão, Confirm Shipping), nas
- * 3 telas. Mesmo pill expansível de "Emails sent" (`StepEmailSection`).
+ * 3 telas.
  *
- * `refreshKey` muda quando a etapa muda na tela (save → revalidate traz os
- * dados novos) — aí o log recarrega sozinho, sem F5.
+ * Fica no CABEÇALHO da etapa, ao lado do chevron: só ícone + quantidade; o
+ * detalhe abre num popup (pedido do usuário, 20/10 — o bloco dentro da etapa,
+ * junto do "Emails sent", poluía demais).
  */
-export function StepLogSection({ owner, refreshKey }: { owner: StepOwner; refreshKey: string }) {
+
+/**
+ * Contador de History de todas as etapas da tela, numa consulta só.
+ * `refreshKey` muda quando o checklist muda (save → revalidate) — aí recarrega.
+ */
+export function useStepLogCounts(
+  scope: StepLogScope,
+  refreshKey: string
+): Partial<Record<ChecklistStep, number>> {
+  const [counts, setCounts] = useState<Partial<Record<ChecklistStep, number>>>({});
+  const scopeKey = JSON.stringify(scope);
+  useEffect(() => {
+    let cancelled = false;
+    loadStepLogCounts(JSON.parse(scopeKey) as StepLogScope)
+      .then((c) => !cancelled && setCounts(c))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [scopeKey, refreshKey]);
+  return counts;
+}
+
+/** Ícone + quantidade no cabeçalho da etapa; clicar abre o popup. Sem log, some. */
+export function StepLogButton({
+  owner,
+  count,
+  stepLabel,
+}: {
+  owner: StepOwner;
+  count: number | undefined;
+  stepLabel: string;
+}) {
   const [open, setOpen] = useState(false);
+  if (!count) return null;
+  return (
+    <>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+        aria-label={`History (${count})`}
+        title="History"
+        onClick={() => setOpen(true)}
+      >
+        <History className="size-3.5" />
+        {count}
+      </button>
+      {open && (
+        <StepLogDialog owner={owner} stepLabel={stepLabel} onClose={() => setOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function StepLogDialog({
+  owner,
+  stepLabel,
+  onClose,
+}: {
+  owner: StepOwner;
+  stepLabel: string;
+  onClose: () => void;
+}) {
   const [entries, setEntries] = useState<StepLogEntry[] | null>(null);
   const ownerKey = JSON.stringify(owner);
 
   useEffect(() => {
     let cancelled = false;
-    loadStepLog(JSON.parse(ownerKey) as StepOwner).then((rows) => {
-      if (!cancelled) setEntries(rows);
-    });
+    loadStepLog(JSON.parse(ownerKey) as StepOwner)
+      .then((rows) => !cancelled && setEntries(rows))
+      .catch(() => !cancelled && setEntries([]));
     return () => {
       cancelled = true;
     };
-  }, [ownerKey, refreshKey]);
-
-  const count = entries?.length ?? null;
+  }, [ownerKey]);
 
   return (
-    <div>
-      <button
-        type="button"
-        className={`flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-          count
-            ? "border-slate-400 bg-transparent text-slate-700 hover:bg-slate-50"
-            : "border-transparent text-muted-foreground disabled:cursor-default"
-        }`}
-        disabled={!count}
-        aria-expanded={count ? open : undefined}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <History className={`size-4 ${count ? "text-slate-600" : "text-slate-400"}`} />
-        History
-        <span
-          className={`rounded-md px-2 py-0.5 text-xs ${
-            count ? "text-slate-700" : "bg-slate-200 text-slate-600"
-          }`}
-        >
-          {count ?? "…"}
-        </span>
-        {!!count && (
-          <ChevronDown
-            className={`size-3.5 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
-          />
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg text-primary">History · {stepLabel}</DialogTitle>
+        </DialogHeader>
+        {entries === null ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
+        ) : entries.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">No changes yet.</p>
+        ) : (
+          <ol className="space-y-1.5">
+            {entries.map((entry) => (
+              <LogCard key={entry.id} entry={entry} />
+            ))}
+          </ol>
         )}
-      </button>
-
-      {open && entries && entries.length > 0 && (
-        <ol className="mt-2 space-y-1.5">
-          {entries.map((entry) => (
-            <LogCard key={entry.id} entry={entry} />
-          ))}
-        </ol>
-      )}
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -84,7 +135,7 @@ const ACTION_BADGES: Partial<Record<StepLogEntry["action"], string>> = {
 function LogCard({ entry }: { entry: StepLogEntry }) {
   const badge = ACTION_BADGES[entry.action];
   return (
-    <li className="rounded-md bg-white px-3 py-2 text-sm">
+    <li className="rounded-md border bg-white px-3 py-2 text-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="font-medium text-slate-800">{entry.actor_name}</span>
         <span>{formatDateTime(entry.created_at)}</span>
