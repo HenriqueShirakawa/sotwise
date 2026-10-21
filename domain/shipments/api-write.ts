@@ -6,6 +6,7 @@ import { scheduleClientNotificationDispatch } from "@/domain/client/notification
 import { validateStepDates } from "@/lib/checklist-completion";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
+import { setPlStepEventDate } from "@/lib/pl-step-event-date";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -17,7 +18,7 @@ import {
   deletePreLoadingRecord,
   syncPreLoadingRelations,
 } from "@/domain/pre-loadings/write";
-import { SHIPMENT_STEPS } from "@/lib/checklist";
+import { EVENT_DATE_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import type { ChecklistStep, TablesUpdate } from "@/types/database";
 
 import { getShipment, type ShipmentRead } from "./api-read";
@@ -455,6 +456,12 @@ export async function patchShipmentStep(
     (k) => input[k] !== undefined && !allowed.has(k)
   );
   if (wrong.length) return fail(400, `Step '${step}' doesn't take: ${wrong.join(", ")}.`);
+  // Shipping Date / ETA / ATA / Delivered: o Completed on é o dia em que a data
+  // do fato é informada (21/10/2026) — por aqui só entra a `date`.
+  const eventStep = !!EVENT_DATE_STEPS[checklistStep];
+  if (eventStep && input.completed_on !== undefined) {
+    return fail(400, `Step '${step}' is completed by its 'date' — send 'date' instead of 'completed_on'.`);
+  }
 
   const loaded = await loadPl(admin, id);
   if (!loaded.ok) return loaded;
@@ -512,12 +519,28 @@ export async function patchShipmentStep(
   // Quem conclui a etapa assina (null = token de integração).
   if (patch.completed_on) values.signed_by_id = actor.userId;
 
-  const { error } = existing
-    ? await admin.from("pre_loading_checklist_steps").update(values as never).eq("id", existing.id)
-    : await admin
-        .from("pre_loading_checklist_steps")
-        .insert({ pre_loading_id: id, step: checklistStep, ...values } as never);
-  if (error) return fail(500, error.message);
+  // Só a `date` (sem outro campo) não passa pelo write genérico.
+  if (Object.keys(patch).length > 0) {
+    const { error } = existing
+      ? await admin.from("pre_loading_checklist_steps").update(values as never).eq("id", existing.id)
+      : await admin
+          .from("pre_loading_checklist_steps")
+          .insert({ pre_loading_id: id, step: checklistStep, ...values } as never);
+    if (error) return fail(500, error.message);
+  }
+
+  if (input.date !== undefined) {
+    const saved = await setPlStepEventDate(admin, id, checklistStep, input.date, {
+      userId: actor.userId,
+      reason: input.reason,
+    });
+    if (saved.error) return fail(400, saved.error);
+    if (checklistStep === "delivered" && saved.completed && pl.shipment) {
+      const ruleError = await applyDeliveredRule(admin, pl.shipment.id, id, true);
+      if (ruleError) return fail(500, ruleError);
+      await scheduleClientNotificationDispatch();
+    }
+  }
 
   if (checklistStep === "delivered" && "completed_on" in patch && pl.shipment) {
     const ruleError = await applyDeliveredRule(admin, pl.shipment.id, id, completedOn != null);

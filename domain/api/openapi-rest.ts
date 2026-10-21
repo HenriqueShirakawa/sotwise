@@ -528,7 +528,9 @@ export const restPaths = {
         "- Step-specific fields are only accepted on their step: `consolidation_point` (consolidation_point), `city` (city), `pol` (port_of_loading), " +
           "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (booking).",
         "- A step that gets everything it needs (+ an estimated date) closes by itself.",
-        "- Completing `delivered` sets the shipment and its batches to `delivered`; clearing it reopens them (`in_transit`).",
+        "- `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
+          "the first `date` completes the step (`completed_on` = that day); changing it later needs `reason`. Only `eta_brazil` accepts a future date.",
+        "- Completing `delivered` sets the shipment and its batches to `delivered`.",
         "- Attachments (Shipping Docs, BL, Original Docs) are uploaded in SOTWISE only.",
         "",
         "Returns the PL (`GET /api/shipments/{id}` shape).",
@@ -542,6 +544,11 @@ export const restPaths = {
               dates: { summary: "Dates", value: { estimated_date: du("2026-09-05"), completed_on: du("2026-09-06") } },
               booking: { summary: "Booking", value: { booking_number: "BK123456", cutoff_date: du("2026-07-05"), estimated_date: du("2026-07-04") } },
               reopen: { summary: "Reopen", value: { completed_on: null } },
+              eventDate: { summary: "Shipping / ETA / ATA / Delivered date", value: { date: du("2026-10-20") } },
+              reviseEventDate: {
+                summary: "Revise that date",
+                value: { date: du("2026-10-22"), reason: "Vessel delayed" },
+              },
             },
           },
         },
@@ -734,6 +741,8 @@ export const restSchemas = {
       contact_china: refNullable,
       booking_number: { type: ["string", "null"], maxLength: 100 },
       cutoff_date: inDayNullable,
+      date: { ...inDay, description: "shipping_date / eta_brazil / ata_brazil / delivered only." },
+      reason: { type: "string", maxLength: 2000, description: "Required when changing a `date` already set." },
     },
   },
 };
