@@ -25,7 +25,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  *  - **Deposit Payment**: o usuário grava o "Deposit date" (quando o cliente
  *    depositou de fato), sempre com motivo. A 1ª gravação conclui a etapa com
  *    Completed on = o dia da gravação.
- *  - **Place the Order**: conclui quando a última fábrica do pedido recebe
+ *  - **Place the Order**: conclui quando a 1ª fábrica do pedido recebe
  *    documento (Completed on = hoje). Sem revisões — só o History.
  *
  * A 1ª linha de cada tipo (`order_received_date`, `fxc`, `pi_status`,
@@ -386,9 +386,10 @@ export async function completePlaceTheOrderIfCovered(
     if (ofcRes.error) throw new Error(ofcRes.error.message);
     if (attRes.error) throw new Error(attRes.error.message);
 
+    // Basta UMA fábrica do pedido com documento (21/10/2026; antes eram todas).
     const factories = new Set((ofcRes.data ?? []).map((o) => o.factory_id));
-    const withDoc = new Set((attRes.data ?? []).map((a) => a.factory_id));
-    if (factories.size === 0 || [...factories].some((f) => !withDoc.has(f))) return;
+    const anyWithDoc = (attRes.data ?? []).some((a) => !!a.factory_id && factories.has(a.factory_id));
+    if (!anyWithDoc) return;
 
     await completeByTrigger(admin, step, todayIso(), userId);
   } catch (err) {

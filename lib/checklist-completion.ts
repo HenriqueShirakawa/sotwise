@@ -29,9 +29,7 @@ export type ChecklistFacts = {
   // ── fase Order ────────────────────────────────────────────────────────────
   /** PO: entradas Factory × Category cadastradas no pedido. */
   factoryCategoryCount?: number;
-  /** Place the Order: fábricas distintas do pedido (agrupamento da etapa). */
-  placeOrderFactoriesTotal?: number;
-  /** Place the Order: quantas dessas fábricas já têm ao menos um documento. */
+  /** Place the Order: quantas fábricas do pedido já têm ao menos um documento. */
   placeOrderFactoriesWithDoc?: number;
   /** ETD: "Initial date" preenchido em TODAS as entradas Factory × Category. */
   etdInitialFilled?: boolean;
@@ -68,13 +66,9 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if ((f.factoryCategoryCount ?? 0) === 0) missing.push("Factory × Category entries");
       break;
     case "place_the_order": {
-      // Não basta UM documento na etapa: CADA fábrica do agrupamento precisa do
-      // seu. A etapa só fecha quando todas têm ao menos um doc anexado.
-      const total = f.placeOrderFactoriesTotal ?? 0;
-      const withDoc = f.placeOrderFactoriesWithDoc ?? 0;
-      if (total === 0) missing.push("a document for every factory");
-      else if (withDoc < total)
-        missing.push(`a document for every factory (${withDoc}/${total})`);
+      // Basta UMA fábrica do agrupamento com documento (21/10/2026; antes era
+      // cada fábrica). Anexo sem fábrica não conta.
+      if ((f.placeOrderFactoriesWithDoc ?? 0) === 0) missing.push("a document for a factory");
       break;
     }
     case "etd":
@@ -166,7 +160,7 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
 /**
  * Etapas com "Completed on" TRAVADO (20/10/2026): quem grava a data é o gatilho
  * da etapa, não a mão — Order/PO/PI/Deposit Payment pelo lib/checklist-revisions,
- * Place the Order quando a última fábrica recebe documento (idem), as do
+ * Place the Order quando a 1ª fábrica recebe documento (idem), as do
  * PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
  * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
  *
