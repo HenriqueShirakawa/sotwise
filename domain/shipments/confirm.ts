@@ -1,5 +1,5 @@
 import { STEP_LABELS } from "@/lib/checklist";
-import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
+import { isReadyToShip, plStepFacts } from "@/lib/checklist-completion";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
@@ -89,7 +89,7 @@ export async function confirmShippingRecord(
   const { data: steps } = await admin
     .from("pre_loading_checklist_steps")
     .select(
-      "id, step, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+      "id, step, estimated_date, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
     )
     .eq("pre_loading_id", preLoadingId);
 
@@ -128,9 +128,11 @@ export async function confirmShippingRecord(
   const pending = PL_STEPS.filter((step) => {
     const s = byStep.get(step);
     if (!s) return true;
-    return !isStepChecked(
+    // Loading Date: quem conclui é este próprio popup — basta a estimativa.
+    return !isReadyToShip(
       step,
-      plStepFacts(s, attachmentCount.get(s.id) ?? 0, contactCountByAgent)
+      plStepFacts(s, attachmentCount.get(s.id) ?? 0, contactCountByAgent),
+      s.estimated_date
     );
   });
   if (pending.length > 0) {
