@@ -1166,7 +1166,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 14 | Shipping Docs | documento |
 | 15 | Agents | os 5: carrier agent, agent Brazil, agent China, contact Brazil, contact China |
 | 16 | Booking | booking number |
-| 17 | Loading Date | — |
+| 17 | Loading Date | — (desde 21/10/2026 a etapa no Pre-loading tem só Estimated date + Responsible; o Completed on vem do popup do Confirm Shipping — ver §Completed on travado) |
 | 18 | Shipping Date | o **Shipping date** (data do embarque) — ver nota abaixo |
 | 19 | BL | documento |
 | 20 | Original Docs | documento |
@@ -1339,7 +1339,7 @@ Pedido do usuário: **todas** as etapas do checklist (Order #1–10, Pre-loading
 Pedido do usuário: o "Completed on" fica **bloqueado** — quem conclui a etapa são as ações/gatilhos, não a mão. **Toda etapa vai ter gatilho** (ainda em definição); por enquanto só trava onde o gatilho já existe.
 
 - **Lista única:** `LOCKED_COMPLETED_ON_STEPS` (`lib/checklist-completion.ts`) — hoje Order, PO, PI, Deposit Payment (gatilhos de `lib/checklist-revisions`) + Consolidation Point, City, Port of Loading, Shipping Docs, Agents, Booking, BL, Original Docs (auto-conclusão do PL). **Etapa que ganhar gatilho entra nessa lista e trava sozinha** (tela + servidor).
-- **Loading date fica FORA:** o Confirm Shipping exige ela concluída antes de liberar (o popup só revisa a data) — travar impediria o embarque.
+- ~~**Loading date fica FORA:** o Confirm Shipping exige ela concluída antes de liberar (o popup só revisa a data) — travar impediria o embarque.~~ **Superado em 21/10/2026:** na tela do Pre-loading a etapa Loading Date passou a ter **só Estimated date e Responsible** (sem Completed on, Signed by e anexos — pedido do usuário). Quem informa a data real e conclui a etapa é o **popup do Confirm Shipping** (a RPC grava o Completed on). Por isso o botão Confirm Shipping libera com a Loading Date só com Estimated date (`CONFIRM_SHIPPING_COMPLETES` / `isReadyToShip` em `lib/checklist-completion.ts`, tela e servidor), e ela entrou em `LOCKED_COMPLETED_ON_STEPS` (depois do embarque, só admin/owner corrige pelo "Correct" no Shipment).
 - **Trava na tela e no servidor:** o save normal recusa mexer no Completed on dessas etapas (`LOCKED_COMPLETED_ON_ERROR`).
 - **Correção só por admin/owner, com motivo obrigatório:** Order/PO/PI pelo popup de revisões (botão "Set"/"Revise", vira `checklist_step_revisions`); PL/Shipment pelo botão **"Correct"** (`components/checklist/locked-completed-on.tsx` → `lib/completed-on-correction.ts`), que aceita data vazia pra reabrir e grava o motivo no History (`changes.reason`, badge "Correction").
 - A API do GSS não passa por essa trava (é ela o gatilho).

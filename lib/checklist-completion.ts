@@ -176,11 +176,9 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
  * Place the Order quando a 1ª fábrica recebe documento e ETD quando a última
  * Initial Date é preenchida (idem), as do
  * PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete) e Shipping Date/ETA/
- * ATA/Delivered pela data do fato (lib/pl-step-event-date). Só admin/owner
+ * ATA/Delivered pela data do fato (lib/pl-step-event-date) e Loading date pelo
+ * popup do Confirm Shipping (CONFIRM_SHIPPING_COMPLETES). Só admin/owner
  * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
- *
- * Loading date fica FORA de propósito: o Confirm Shipping exige ela concluída
- * antes de liberar (o popup só revisa a data), então ela precisa ser manual.
  */
 export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   ...TRIGGER_COMPLETED_STEPS,
@@ -192,6 +190,7 @@ export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<Che
   "shipping_docs",
   "agents",
   "booking",
+  "loading_date",
   "bl",
   "original_docs",
   "shipping_date",
@@ -199,6 +198,26 @@ export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<Che
   "ata_brazil",
   "delivered",
 ]);
+
+/**
+ * Etapas do PL que o próprio Confirm Shipping conclui (21/10/2026): na tela do
+ * Pre-loading a Loading Date tem só Estimated date e Responsible — a data real
+ * é informada no popup do embarque, que grava o Completed on. Por isso, para
+ * liberar o Confirm Shipping, basta ela ter o Estimated date.
+ */
+export const CONFIRM_SHIPPING_COMPLETES: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "loading_date",
+]);
+
+/** A etapa do PL já não segura o Confirm Shipping? */
+export function isReadyToShip(
+  step: ChecklistStep,
+  facts: ChecklistFacts,
+  estimatedDate: string | null
+): boolean {
+  if (CONFIRM_SHIPPING_COMPLETES.has(step)) return !!estimatedDate || !!facts.completedOn;
+  return isStepChecked(step, facts);
+}
 
 export const LOCKED_COMPLETED_ON_ERROR =
   "This step is completed automatically. Only an admin can correct the date, with a reason.";

@@ -18,6 +18,7 @@ import { formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import {
+  CONFIRM_SHIPPING_COMPLETES,
   hasExtraRequirements,
   LOCKED_COMPLETED_ON_STEPS,
   missingLabel,
@@ -446,6 +447,11 @@ export function PlChecklistClient({
   }
 
   const doneCount = steps.filter((s) => s.done).length;
+  // Loading Date conclui no próprio popup do Confirm Shipping: para liberar o
+  // botão basta o Estimated date (mesma regra do servidor, isReadyToShip).
+  const readyToShip = steps.every(
+    (s) => s.done || (CONFIRM_SHIPPING_COMPLETES.has(s.step) && !!s.estimated_date)
+  );
 
   return (
     <div>
@@ -640,7 +646,9 @@ export function PlChecklistClient({
                         options={profiles}
                         onChange={(v) => save(s.step, { responsible_id: v })}
                       />
-                      {LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
+                      {/* Loading Date: só Estimated date e Responsible aqui — a
+                          data real e a conclusão vêm do Confirm Shipping. */}
+                      {CONFIRM_SHIPPING_COMPLETES.has(s.step) ? null : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
                         <LockedCompletedOn
                           value={s.completed_on}
                           canCorrect={canCorrectCompletedOn}
@@ -672,14 +680,16 @@ export function PlChecklistClient({
                       )}
                       {/* Travado: quem conclui a etapa (Completed on) assina —
                           preenchido pelo servidor, não editável aqui. */}
-                      <SelectField
-                        label="Signed by"
-                        value={s.signed_by_id}
-                        options={profiles}
-                        placeholder="—"
-                        disabled
-                        onChange={() => {}}
-                      />
+                      {!CONFIRM_SHIPPING_COMPLETES.has(s.step) && (
+                        <SelectField
+                          label="Signed by"
+                          value={s.signed_by_id}
+                          options={profiles}
+                          placeholder="—"
+                          disabled
+                          onChange={() => {}}
+                        />
+                      )}
                     </div>
 
                     {s.step === "consolidation_point" && (
@@ -814,11 +824,13 @@ export function PlChecklistClient({
                       </div>
                     )}
 
-                    <AttachmentsSection
-                      preLoadingId={preLoading.id}
-                      step={s.step}
-                      attachments={s.attachments}
-                    />
+                    {!CONFIRM_SHIPPING_COMPLETES.has(s.step) && (
+                      <AttachmentsSection
+                        preLoadingId={preLoading.id}
+                        step={s.step}
+                        attachments={s.attachments}
+                      />
+                    )}
                     <StepEmailSection
                       owner={{ kind: "pre_loading", preLoadingId: preLoading.id, step: s.step }}
                       feature="pre_loading"
@@ -848,7 +860,7 @@ export function PlChecklistClient({
         </Button>
         <Button
           className="h-11 min-w-64 rounded-xl"
-          disabled={alreadyShipped || doneCount < steps.length}
+          disabled={alreadyShipped || !readyToShip}
           onClick={() => setShipOpen(true)}
         >
           {alreadyShipped ? "Shipping confirmed" : "Confirm Shipping"}
