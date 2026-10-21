@@ -43,9 +43,9 @@ type StepRow = {
 };
 
 /**
- * Data que a lista e os filtros usam pra uma etapa já cumprida. Shipping/ETA/
- * ATA/Delivered têm a data do fato (`event_date`, 21/10/2026) — o Completed on
- * delas é o dia em que ela foi informada.
+ * Data que a lista e os filtros usam pra uma etapa já cumprida. Loading/Shipping/
+ * ETA/ATA/Delivered têm a data do fato (`event_date`, 21/10/2026) — o Completed
+ * on delas é o dia em que ela foi informada.
  */
 const stepDate = (s: StepRow | undefined) =>
   s?.event_date ?? s?.completed_on ?? s?.estimated_date ?? null;
@@ -279,7 +279,9 @@ export default async function ShipmentsPage() {
       container_number: s.container_number,
       ship_model: s.shipment_model_id ? (modelNameById.get(s.shipment_model_id) ?? null) : null,
       shipment_model_id: s.shipment_model_id,
-      loading_date: st.loading_date?.estimated_date ?? st.loading_date?.completed_on ?? null,
+      // A Loading date do popup do Confirm Shipping (21/10/2026) — também é a
+      // que o filtro de range usa.
+      loading_date: stepDate(st.loading_date),
       ship_date: stepDate(st.shipping_date),
       eta: stepDate(st.eta_brazil),
       // Só filtráveis — não têm coluna na lista (docs §3.10.2).

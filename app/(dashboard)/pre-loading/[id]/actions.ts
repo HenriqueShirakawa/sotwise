@@ -8,6 +8,7 @@ import {
   validateStepDates,
 } from "@/lib/checklist-completion";
 import { correctPlStepCompletedOn } from "@/lib/completed-on-correction";
+import { todayIso } from "@/lib/format";
 import {
   diffStepFields,
   PL_STEP_LOG_COLUMNS,
@@ -350,11 +351,11 @@ export async function confirmShipping(
   const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
 
-  // A RPC grava o "Completed on" da etapa Loading date (revisável no popup) —
-  // lido antes pra entrar no log da etapa.
+  // A confirmação grava na etapa Loading date a data do popup (data real),
+  // o Completed on (hoje) e o Signed by — lido antes pra entrar no log da etapa.
   const { data: loadingStep } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, completed_on")
+    .select("id, completed_on, event_date, signed_by_id")
     .eq("pre_loading_id", preLoadingId)
     .eq("step", "loading_date")
     .maybeSingle();
@@ -363,19 +364,22 @@ export async function confirmShipping(
   if (!result.ok) return { ok: false, error: result.error };
 
   if (loadingStep) {
+    const today = todayIso();
     await writeStepLog(admin, {
       owner: { preLoadingStepId: loadingStep.id },
       step: "loading_date",
       action: "confirm_shipping",
-      changes:
-        loadingStep.completed_on !== input.loading_date_completed_on
-          ? {
-              completed_on: {
-                from: loadingStep.completed_on,
-                to: input.loading_date_completed_on,
-              },
-            }
-          : {},
+      changes: {
+        ...(loadingStep.event_date !== input.loading_date_completed_on
+          ? { event_date: { from: loadingStep.event_date, to: input.loading_date_completed_on } }
+          : {}),
+        ...(loadingStep.completed_on !== today
+          ? { completed_on: { from: loadingStep.completed_on, to: today } }
+          : {}),
+        ...(loadingStep.signed_by_id !== session.userId
+          ? { signed_by_id: { from: loadingStep.signed_by_id, to: session.userId } }
+          : {}),
+      },
       userId: session.userId,
     });
   }
