@@ -757,8 +757,8 @@ export function OrderDetailClient({
   // está concluída é a regra de lib/checklist-completion, que também consulta
   // anexos, entradas Factory×Category e ETD. Derivado aqui, uma vez.
   const checkedSteps = useMemo(() => {
-    // Place the Order agrupa por fábrica e exige um doc em CADA uma — quantas
-    // fábricas o pedido tem e, por etapa, quantas já têm anexo.
+    // Place the Order agrupa por fábrica e fecha com doc em pelo menos UMA —
+    // por etapa, quantas fábricas do pedido já têm anexo.
     const placeOrderFactoryIds = new Set(ofc.map((o) => o.factory_id));
     return steps.map((s) => {
       const facts: ChecklistFacts = {
@@ -768,7 +768,6 @@ export function OrderDetailClient({
         etdInitialFilled,
       };
       if (s.step === "place_the_order") {
-        facts.placeOrderFactoriesTotal = placeOrderFactoryIds.size;
         facts.placeOrderFactoriesWithDoc = new Set(
           s.attachments
             .map((a) => a.factory_id)
