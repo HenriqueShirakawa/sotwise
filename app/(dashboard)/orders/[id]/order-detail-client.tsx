@@ -24,6 +24,7 @@ import {
   hasExtraRequirements,
   isStepChecked,
   missingLabel,
+  LOCKED_COMPLETED_ON_STEPS,
   TRIGGER_COMPLETED_STEPS,
   type ChecklistFacts,
 } from "@/lib/checklist-completion";
@@ -57,6 +58,7 @@ import {
 } from "@/components/ui/dialog";
 
 import {
+  correctOrderStepCompletedOn,
   deleteStepAttachment,
   getAttachmentDownloadUrl,
   updateBatchStatus,
@@ -67,6 +69,7 @@ import {
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
 import { EtdStepTable } from "./etd-step";
+import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 import {
   FORM_ONLY_REVISIONS,
@@ -130,6 +133,8 @@ export type ChecklistStepRow = {
     factory_id: string | null;
     file_name: string | null;
     file_path: string;
+    /** Momento do upload — no Place the Order vira a data da fábrica. */
+    created_at: string;
   }[];
   /** Order/PO/PI: quantas revisões a etapa tem (badge). */
   revision_count: number;
@@ -1124,6 +1129,16 @@ export function OrderDetailClient({
                             step={s}
                             canCorrect={canCorrectCompletedOn}
                             onRevise={() => setRevisionsFor(s)}
+                          />
+                        ) : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
+                          // Place the Order: fecha sozinha quando a última
+                          // fábrica recebe documento (lib/checklist-revisions).
+                          <LockedCompletedOn
+                            value={s.completed_on}
+                            canCorrect={canCorrectCompletedOn}
+                            onCorrect={(date, reason) =>
+                              correctOrderStepCompletedOn(orderId, s.id, date, reason)
+                            }
                           />
                         ) : (
                           <div>
