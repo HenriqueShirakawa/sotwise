@@ -18,13 +18,13 @@ import {
 } from "./order-detail-client";
 
 // Ordem exata do Bubble — só os passos da fase "order" (pre-loading/shipment
-// têm suas próprias telas).
+// têm suas próprias telas). Packing Confirm. fica de fora: oculta do front
+// (HIDDEN_STEPS em lib/checklist, 20/10/2026).
 const STEP_ORDER: ChecklistStep[] = [
   "order",
   "po",
   "pi",
   "deposit_payment",
-  "packing_confirm",
   "condition_confirm",
   "place_the_order",
   "etd",
