@@ -135,13 +135,10 @@ export default async function OrderDetailPage({
   const attachmentsRes = stepIds.length
     ? await admin
         .from("step_attachments")
-        .select("id, checklist_step_id, factory_id, file_name, file_path")
+        .select("id, checklist_step_id, factory_id, file_name, file_path, created_at")
         .in("checklist_step_id", stepIds)
     : { data: [] };
-  const attachmentsByStep = new Map<
-    string,
-    { id: string; factory_id: string | null; file_name: string | null; file_path: string }[]
-  >();
+  const attachmentsByStep = new Map<string, ChecklistStepRow["attachments"]>();
   for (const a of attachmentsRes.data ?? []) {
     // checklist_step_id é nullable desde que a tabela passou a servir também
     // às etapas de Pre-loading — aqui o filtro `.in()` já garante que veio.
@@ -152,6 +149,7 @@ export default async function OrderDetailPage({
       factory_id: a.factory_id,
       file_name: a.file_name,
       file_path: a.file_path,
+      created_at: a.created_at,
     });
     attachmentsByStep.set(a.checklist_step_id, arr);
   }

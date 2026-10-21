@@ -166,7 +166,8 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
 /**
  * Etapas com "Completed on" TRAVADO (20/10/2026): quem grava a data é o gatilho
  * da etapa, não a mão — Order/PO/PI/Deposit Payment pelo lib/checklist-revisions,
- * as do PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
+ * Place the Order quando a última fábrica recebe documento (idem), as do
+ * PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
  * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
  *
  * Loading date fica FORA de propósito: o Confirm Shipping exige ela concluída
@@ -174,6 +175,7 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
  */
 export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   ...TRIGGER_COMPLETED_STEPS,
+  "place_the_order",
   "consolidation_point",
   "city",
   "port_of_loading",

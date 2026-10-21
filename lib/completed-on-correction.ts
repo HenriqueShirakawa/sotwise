@@ -61,3 +61,51 @@ export async function correctPlStepCompletedOn(
   });
   return null;
 }
+
+/**
+ * Mesma correção para as etapas travadas da Order que fecham por gatilho SEM
+ * popup de revisões próprio — hoje só Place the Order (Order/PO/PI/Deposit
+ * Payment têm o deles, em lib/checklist-revisions). `date` null reabre a etapa.
+ */
+export async function correctOrderStepCompletedOn(
+  admin: Admin,
+  stepId: string,
+  date: string | null,
+  reason: string,
+  userId: string
+): Promise<string | null> {
+  if (!reason.trim()) return "A reason is required to correct the completion date.";
+  if (date && date > todayIso()) return "The completion date can't be in the future.";
+
+  const { data: current, error: readError } = await admin
+    .from("order_checklist_steps")
+    .select("id, step, completed_on, signed_by_id")
+    .eq("id", stepId)
+    .maybeSingle();
+  if (readError) return readError.message;
+  if (!current) return "Checklist step not found.";
+  if (current.step !== "place_the_order") return "This step can't be corrected here.";
+  if (current.completed_on === date) return null;
+
+  const signedBy = date ? userId : null;
+  const { error } = await admin
+    .from("order_checklist_steps")
+    .update({ completed_on: date, done: date != null, signed_by_id: signedBy })
+    .eq("id", current.id);
+  if (error) return error.message;
+
+  await writeStepLog(admin, {
+    owner: { checklistStepId: current.id },
+    step: current.step,
+    action: "update",
+    changes: {
+      completed_on: { from: current.completed_on, to: date },
+      ...(current.signed_by_id !== signedBy
+        ? { signed_by_id: { from: current.signed_by_id, to: signedBy } }
+        : {}),
+      reason: reason.trim(),
+    },
+    userId,
+  });
+  return null;
+}

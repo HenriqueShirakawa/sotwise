@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
+import { formatDate } from "@/lib/format";
 
 import {
   deleteStepAttachment,
@@ -174,9 +175,10 @@ export function PlaceOrderFactoryGroups({
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
-      <div className="hidden grid-cols-[1fr_160px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+      <div className="hidden grid-cols-[1fr_120px_110px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
         <span>Factory</span>
         <span>N° of categories</span>
+        <span>Placed on</span>
         <span />
         <span />
       </div>
@@ -189,9 +191,15 @@ export function PlaceOrderFactoryGroups({
           const open = expanded.has(g.factory_id);
           const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
           const categoryCount = new Set(g.entries.map((e) => e.category_name)).size;
+          // Data da fábrica = o 1º documento anexado a ela (o upload fica no
+          // History da etapa). Sem documento, sem data.
+          const placedAt = groupAttachments.reduce<string | null>(
+            (min, a) => (!min || a.created_at < min ? a.created_at : min),
+            null
+          );
           return (
             <div key={g.factory_id} className="border-t">
-              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_160px_128px_40px]">
+              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_120px_110px_128px_40px]">
                 <span className="flex min-w-0 items-center gap-2">
                   {/* Verde = fábrica já tem documento; âmbar = ainda falta. A
                       etapa só conclui quando todas estão verdes. */}
@@ -214,11 +222,18 @@ export function PlaceOrderFactoryGroups({
                     {categoryCount === 1 ? " category" : " categories"}
                   </span>
                 </span>
+                <span
+                  className="text-slate-700 max-sm:col-start-1 max-sm:text-xs max-sm:text-slate-500"
+                  title="Date the first document of this factory was attached"
+                >
+                  <span className="sm:hidden">Placed on </span>
+                  {placedAt ? formatDate(placedAt) : "—"}
+                </span>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="justify-self-start max-sm:col-start-1 max-sm:row-start-3"
+                  className="justify-self-start max-sm:col-start-1 max-sm:row-start-4"
                   disabled={pending}
                   onClick={() => attachTo(g.factory_id)}
                 >

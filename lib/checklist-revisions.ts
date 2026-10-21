@@ -25,6 +25,8 @@ type Admin = ReturnType<typeof createAdminClient>;
  *  - **Deposit Payment**: o usuário grava o "Deposit date" (quando o cliente
  *    depositou de fato), sempre com motivo. A 1ª gravação conclui a etapa com
  *    Completed on = o dia da gravação.
+ *  - **Place the Order**: conclui quando a última fábrica do pedido recebe
+ *    documento (Completed on = hoje). Sem revisões — só o History.
  *
  * A 1ª linha de cada tipo (`order_received_date`, `fxc`, `pi_status`,
  * `deposit_date`) é o registro ORIGINAL — nunca se perde. Revisões = as linhas
@@ -347,6 +349,50 @@ export async function recordFxcDelivery(
     if (!previous) await completeByTrigger(admin, step, today, who.userId);
   } catch (err) {
     console.error("[checklist-revisions] fxc", err instanceof Error ? err.message : err);
+  }
+}
+
+// ── Place the Order ──────────────────────────────────────────────────────────
+
+/**
+ * Place the Order (20/10/2026, card "Ajustes Data e Logs"): cada fábrica do
+ * pedido ganha a sua data quando recebe o 1º documento (o upload já vai pro
+ * History com a fábrica). Quando a ÚLTIMA fábrica sem documento recebe o dela,
+ * a etapa conclui sozinha — Completed on = hoje, Signed by = quem anexou.
+ * Chamada depois de cada anexo da etapa; nunca derruba o upload.
+ */
+export async function completePlaceTheOrderIfCovered(
+  admin: Admin,
+  stepId: string,
+  userId: string
+): Promise<void> {
+  try {
+    const { data: step, error } = await admin
+      .from("order_checklist_steps")
+      .select("id, order_id, step, completed_on")
+      .eq("id", stepId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!step || step.step !== "place_the_order" || step.completed_on) return;
+
+    const [ofcRes, attRes] = await Promise.all([
+      admin
+        .from("order_factory_category")
+        .select("factory_id")
+        .eq("order_id", step.order_id)
+        .eq("is_active", true),
+      admin.from("step_attachments").select("factory_id").eq("checklist_step_id", stepId),
+    ]);
+    if (ofcRes.error) throw new Error(ofcRes.error.message);
+    if (attRes.error) throw new Error(attRes.error.message);
+
+    const factories = new Set((ofcRes.data ?? []).map((o) => o.factory_id));
+    const withDoc = new Set((attRes.data ?? []).map((a) => a.factory_id));
+    if (factories.size === 0 || [...factories].some((f) => !withDoc.has(f))) return;
+
+    await completeByTrigger(admin, step, todayIso(), userId);
+  } catch (err) {
+    console.error("[checklist-revisions] place_the_order", err instanceof Error ? err.message : err);
   }
 }
 
