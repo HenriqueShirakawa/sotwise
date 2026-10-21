@@ -52,11 +52,24 @@ export type ChecklistFacts = {
   contactBrazilOptions?: number;
   contactChinaOptions?: number;
   bookingNumber?: string | null;
+  /**
+   * PL com 2+ clientes (21/10/2026): Shipping Docs e Booking passam a ser por
+   * cliente — a etapa só fecha quando TODOS têm documento / Booking number.
+   * Ausente (ou 1 cliente) = regra de sempre, um documento / um booking no PL.
+   */
+  perClient?: PlPerClient;
 
   // ── fase Shipment ─────────────────────────────────────────────────────────
   /** Shipping Date / ETA / ATA / Delivered: a data do fato (EVENT_DATE_STEPS). */
   eventDate?: string | null;
 };
+
+/** Quantos clientes o PL tem e quantos já cumpriram cada exigência por cliente. */
+export type PlPerClient = { total: number; withDoc: number; withBooking: number };
+
+/** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
+export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
+  (p?.total ?? 0) > 1;
 
 /** Condições ALÉM do "Completed on", em rótulos prontos pra UI. */
 function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
@@ -96,7 +109,11 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if (!f.polId) missing.push("a port of loading");
       break;
     case "shipping_docs":
-      if (noDocs) missing.push("a document");
+      // Vários clientes: um documento POR cliente (21/10/2026).
+      if (isPerClient(f.perClient)) {
+        const { total, withDoc } = f.perClient;
+        if (withDoc < total) missing.push(`a document for every client (${withDoc}/${total})`);
+      } else if (noDocs) missing.push("a document");
       break;
     case "agents":
       if (!f.carrierId) missing.push("a carrier");
@@ -110,7 +127,12 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
         missing.push("a contact China");
       break;
     case "booking":
-      if (!f.bookingNumber?.trim()) missing.push("the booking number");
+      // Vários clientes: um Booking number POR cliente (21/10/2026).
+      if (isPerClient(f.perClient)) {
+        const { total, withBooking } = f.perClient;
+        if (withBooking < total)
+          missing.push(`a booking number for every client (${withBooking}/${total})`);
+      } else if (!f.bookingNumber?.trim()) missing.push("the booking number");
       break;
 
     case "bl":
@@ -287,11 +309,15 @@ export type PlStepFields = {
  * `contactCountByAgent` (agente → nº de contatos cadastrados) decide se a etapa
  * Agents exige os contatos; quem não passar o mapa não exige nenhum, então uma
  * tela que não carregou contatos nunca deixa a etapa laranja por engano.
+ *
+ * `perClient` (lib/pl-clients, `loadPlPerClient`) liga a regra por cliente de
+ * Shipping Docs e Booking no PL com 2+ clientes; sem ele vale a do PL todo.
  */
 export function plStepFacts(
   s: PlStepFields,
   attachments: number,
-  contactCountByAgent?: Record<string, number>
+  contactCountByAgent?: Record<string, number>,
+  perClient?: PlPerClient
 ): ChecklistFacts {
   const contacts = (agentId: string | null | undefined) =>
     agentId ? (contactCountByAgent?.[agentId] ?? 0) : 0;
@@ -310,6 +336,7 @@ export function plStepFacts(
     contactChinaOptions: contacts(s.agent_china_id),
     bookingNumber: s.booking_number,
     eventDate: s.event_date,
+    perClient,
   };
 }
 

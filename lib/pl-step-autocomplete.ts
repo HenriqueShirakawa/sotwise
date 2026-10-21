@@ -2,6 +2,7 @@ import "server-only";
 
 import { hasExtraRequirements, isStepChecked, plStepFacts } from "@/lib/checklist-completion";
 import { writeStepLog } from "@/lib/checklist-step-log";
+import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { todayIso } from "@/lib/format";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
@@ -60,8 +61,19 @@ export async function autoCompletePlStep(
     }
   }
 
+  // Shipping Docs / Booking em PL com 2+ clientes: só fecha com TODOS cobertos.
+  const perClient =
+    step === "shipping_docs" || step === "booking"
+      ? perClientOf(await loadPlClientState(admin, preLoadingId))
+      : undefined;
+
   const today = todayIso();
-  const facts = plStepFacts({ ...s, completed_on: today }, attachments ?? 0, contactCountByAgent);
+  const facts = plStepFacts(
+    { ...s, completed_on: today },
+    attachments ?? 0,
+    contactCountByAgent,
+    perClient
+  );
   if (!isStepChecked(step, facts)) return false;
 
   // `.is(completed_on, null)`: se alguém concluiu à mão no meio tempo, não pisa.

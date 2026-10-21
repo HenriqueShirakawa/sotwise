@@ -1163,9 +1163,11 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 11 | Consolidation Point | consolidation point escolhido (cadastro de **fábricas**) |
 | 12 | City | city escolhida |
 | 13 | Port of Loading | port of loading escolhido — cadastro de **portos** (`pols`), **não** de fábricas |
-| 14 | Shipping Docs | documento |
+| 14 | Shipping Docs | documento — **com 2+ clientes no PL, um documento POR cliente** (ver nota abaixo) |
 | 15 | Agents | os 5: carrier agent, agent Brazil, agent China, contact Brazil, contact China |
-| 16 | Booking | booking number |
+| 16 | Booking | booking number — **com 2+ clientes no PL, um Booking number POR cliente** (ver nota abaixo) |
+
+> ✅ **Shipping Docs e Booking por cliente (decisão 2026-10-21, pedido do usuário).** Um PL consolida lotes de vários clientes; os clientes do PL são os das Orders dos lotes dele (mesma fonte das abas por cliente do e-mail do PL, `resolveOwnerOrders` — não `pre_loading_clients`, que é editada à mão). Com **2+ clientes**: **Shipping Docs** vira uma linha por cliente, cada uma com o próprio "+ Attach" e a data do 1º documento (`step_attachments.client_id`); a etapa fecha sozinha quando **todos** os clientes têm ao menos um documento. **Booking** ganha um campo "Booking number — Cliente" por cliente (`pre_loading_client_bookings`, migration `20261021130000`); o **Cut-off continua um só** no PL; a etapa fecha quando **todos** têm Booking number. Com 1 cliente nada muda (anexo sem cliente, `booking_number` na própria etapa). Documento / Booking number antigos, sem cliente, **valem para todos** os clientes. A regra entra na conclusão em todo lugar (tela do PL, auto-conclusão, trava do Confirm Shipping, tela do Shipment) via `lib/pl-clients.ts` + `perClient` em `plStepFacts`. O History mostra o cliente do documento e grava o Booking number como "Cliente: número". A API de etapas (`PATCH /api/shipments/{id}/steps/booking`) segue gravando o `booking_number` da etapa (vale para todos).
 | 17 | Loading Date | — (desde 21/10/2026 Completed on e Signed by ficam trancados no Pre-loading e são preenchidos ao finalizar o popup do Confirm Shipping — ver §Completed on travado) |
 | 18 | Shipping Date | o **Shipping date** (data do embarque) — ver nota abaixo |
 | 19 | BL | documento |

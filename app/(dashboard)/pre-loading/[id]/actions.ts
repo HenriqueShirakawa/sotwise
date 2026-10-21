@@ -251,7 +251,9 @@ export async function registerPreLoadingAttachment(
   preLoadingId: string,
   step: ChecklistStep,
   filePath: string,
-  fileName: string
+  fileName: string,
+  /** Shipping Docs de PL com 2+ clientes: o cliente do documento (21/10/2026). */
+  clientId: string | null = null
 ): Promise<ActionResult> {
   const session = await requireFeature("pre_loading", "edit");
   const admin = createAdminClient();
@@ -264,6 +266,7 @@ export async function registerPreLoadingAttachment(
 
   const { error: insertError } = await admin.from("step_attachments").insert({
     pre_loading_step_id: stepRow.id,
+    client_id: step === "shipping_docs" ? clientId : null,
     file_path: filePath,
     file_name: fileName,
     uploaded_by: session.userId,
@@ -277,7 +280,10 @@ export async function registerPreLoadingAttachment(
     owner: { preLoadingStepId: stepRow.id },
     step,
     action: "attachment_added",
-    changes: { file_name: fileName },
+    changes: {
+      file_name: fileName,
+      ...(step === "shipping_docs" && clientId ? { client_id: clientId } : {}),
+    },
     userId: session.userId,
   });
 
@@ -308,6 +314,79 @@ export async function getPreLoadingAttachmentUrl(
   if (error || !data) return { ok: false, error: error?.message ?? "Failed to sign URL." };
 
   return { ok: true, url: data.signedUrl };
+}
+
+/**
+ * Booking number de UM cliente do PL (21/10/2026) — PL com 2+ clientes tem um
+ * Booking number por cliente; a etapa Booking fecha sozinha quando todos têm
+ * (lib/pl-step-autocomplete). Vazio apaga o do cliente. Vai pro History da etapa
+ * como "Cliente: número".
+ */
+export async function savePlClientBooking(
+  preLoadingId: string,
+  clientId: string,
+  bookingNumber: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("pre_loading", "edit");
+  const admin = createAdminClient();
+  const value = bookingNumber?.trim() || null;
+  if (value && value.length > 100) return { ok: false, error: "Booking number is too long." };
+
+  const [{ data: existing, error: readError }, { data: client }] = await Promise.all([
+    admin
+      .from("pre_loading_client_bookings")
+      .select("id, booking_number")
+      .eq("pre_loading_id", preLoadingId)
+      .eq("client_id", clientId)
+      .maybeSingle(),
+    admin.from("clients").select("name").eq("id", clientId).maybeSingle(),
+  ]);
+  if (readError) return { ok: false, error: readError.message };
+  const previous = existing?.booking_number ?? null;
+  if (previous === value) return { ok: true };
+
+  const { error } = value
+    ? await admin
+        .from("pre_loading_client_bookings")
+        .upsert(
+          {
+            pre_loading_id: preLoadingId,
+            client_id: clientId,
+            booking_number: value,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "pre_loading_id,client_id" }
+        )
+    : await admin.from("pre_loading_client_bookings").delete().eq("id", existing!.id);
+  if (error) return { ok: false, error: error.message };
+
+  const stepRow = await ensureStepId(admin, preLoadingId, "booking");
+  if ("error" in stepRow) return { ok: false, error: stepRow.error };
+  const label = client?.name ?? "Client";
+  await writeStepLog(admin, {
+    owner: { preLoadingStepId: stepRow.id },
+    step: "booking",
+    action: "update",
+    changes: {
+      booking_number: {
+        from: previous ? `${label}: ${previous}` : null,
+        to: value ? `${label}: ${value}` : null,
+      },
+    },
+    userId: session.userId,
+  });
+
+  const completed = value
+    ? await autoCompletePlStep(admin, preLoadingId, "booking", session.userId)
+    : false;
+
+  revalidatePath("/pre-loading/[id]", "page");
+  revalidatePath("/pre-loading");
+  if (completed) {
+    revalidatePath("/todo");
+    await broadcastPreLoadingPing();
+  }
+  return { ok: true };
 }
 
 export async function deletePreLoadingStepAttachment(

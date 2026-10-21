@@ -218,6 +218,12 @@ export default async function PreLoadingPage() {
 
   const shippedPlIds = new Set(shipmentRows.map((s) => s.pre_loading_id));
 
+  // PL com 2+ clientes guarda o Booking number por cliente (21/10/2026).
+  const clientBookingRows = await fetchAll<{ pre_loading_id: string }>((from, to) =>
+    admin.from("pre_loading_client_bookings").select("pre_loading_id").range(from, to)
+  );
+  const plsWithClientBooking = new Set(clientBookingRows.map((b) => b.pre_loading_id));
+
   const rows: PreLoadingRow[] = [];
   for (const pl of preLoadings) {
     const steps = stepsByPreLoading.get(pl.id) ?? {};
@@ -261,9 +267,13 @@ export default async function PreLoadingPage() {
       // "Cut-off" da etapa Booking — data livre, sem regra de conclusão.
       cutoff: steps.booking?.cutoff_date ?? null,
       // "Booking Status" = etapa "Booking" do checklist concluída — que exige
-      // o booking number além da data (ver lib/checklist-completion).
+      // o booking number além da data (ver lib/checklist-completion). Com 2+
+      // clientes o número é por cliente; a conclusão (travada, só a
+      // auto-conclusão grava) já garante que todos têm.
       booking_confirmed: steps.booking
-        ? isStepChecked("booking", plStepFacts(steps.booking, 0))
+        ? plsWithClientBooking.has(pl.id)
+          ? !!steps.booking.completed_on
+          : isStepChecked("booking", plStepFacts(steps.booking, 0))
         : false,
       total_pos: orderIdsByPreLoading.get(pl.id)?.size ?? 0,
       order_ids: plOrderIds,

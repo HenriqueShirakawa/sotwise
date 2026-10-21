@@ -102,7 +102,15 @@ export type StepLogEntry = {
   source: "user" | "gss";
 };
 
-type Lookup = "profiles" | "factories" | "cities" | "pols" | "carriers" | "agents" | "contacts";
+type Lookup =
+  | "profiles"
+  | "factories"
+  | "cities"
+  | "pols"
+  | "carriers"
+  | "agents"
+  | "contacts"
+  | "clients";
 
 /** Rótulo e tipo de cada coluna do log, na ordem em que aparecem na tela. */
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
@@ -187,6 +195,7 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
     want("profiles", row.actor_id);
     const changes = row.changes as Record<string, unknown>;
     want("factories", changes.factory_id);
+    want("clients", changes.client_id);
     for (const [field, value] of Object.entries(changes)) {
       const lookup = FIELDS[field]?.lookup;
       if (!lookup || !value || typeof value !== "object") continue;
@@ -245,9 +254,13 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
       changes,
       file_name: isAttachment ? ((raw.file_name as string | null) ?? null) : null,
       factory_name:
+        // De quem é o documento: a fábrica (Place the Order) ou o cliente
+        // (Shipping Docs de PL com 2+ clientes).
         isAttachment && typeof raw.factory_id === "string"
           ? (names.get(raw.factory_id) ?? null)
-          : null,
+          : isAttachment && typeof raw.client_id === "string"
+            ? (names.get(raw.client_id) ?? null)
+            : null,
       reason: typeof raw.reason === "string" ? raw.reason : null,
       source: "user" as const,
     };
