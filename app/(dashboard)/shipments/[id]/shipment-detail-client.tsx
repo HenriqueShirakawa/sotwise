@@ -20,6 +20,7 @@ import { formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
+import { EVENT_DATE_STEPS } from "@/lib/checklist";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ import {
   registerShipmentAttachment,
   type ShipmentStepPatch,
 } from "./actions";
+import { EventDateField } from "./event-date-field";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { LOCKED_COMPLETED_ON_STEPS } from "@/lib/checklist-completion";
@@ -102,6 +104,8 @@ export type ShipmentStepRow = {
   completed_on: string | null;
   signed_by: string | null;
   notes: string | null;
+  /** Shipping Date / ETA / ATA / Delivered: a data do fato (EVENT_DATE_STEPS). */
+  event_date: string | null;
   /** Só nas etapas herdadas do PL — texto já resolvido pro read-only. */
   detail: string | null;
 };
@@ -757,6 +761,13 @@ export function ShipmentDetailClient({
                           </div>
                         </div>
 
+                        {EVENT_DATE_STEPS[s.step] && (
+                          <EventDateField
+                            preLoadingId={shipment.pre_loading_id}
+                            step={s.step}
+                            date={s.event_date}
+                          />
+                        )}
                         {s.step === "original_docs" && (
                           <div>
                             <Label className="text-xs text-muted-foreground">Notes</Label>

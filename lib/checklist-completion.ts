@@ -1,3 +1,4 @@
+import { EVENT_DATE_STEPS } from "@/lib/checklist";
 import { todayIso } from "@/lib/format";
 import type { ChecklistStep } from "@/types/database";
 
@@ -51,6 +52,10 @@ export type ChecklistFacts = {
   contactBrazilOptions?: number;
   contactChinaOptions?: number;
   bookingNumber?: string | null;
+
+  // ── fase Shipment ─────────────────────────────────────────────────────────
+  /** Shipping Date / ETA / ATA / Delivered: a data do fato (EVENT_DATE_STEPS). */
+  eventDate?: string | null;
 };
 
 /** Condições ALÉM do "Completed on", em rótulos prontos pra UI. */
@@ -113,8 +118,16 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if (noDocs) missing.push("a document");
       break;
 
-    // Inspection Report aceita documento, mas hoje ele é OPCIONAL — a etapa
-    // fecha só com a data (pode virar obrigatório mais pra frente).
+    // Data do fato (21/10/2026): a etapa fecha quando ela é informada.
+    case "shipping_date":
+    case "eta_brazil":
+    case "ata_brazil":
+    case "delivered":
+      if (!f.eventDate) missing.push(`the ${EVENT_DATE_STEPS[step]?.toLowerCase() ?? "date"}`);
+      break;
+
+    // Inspection Report (oculta desde 21/10) aceitava documento opcional — a
+    // etapa fecha só com a data.
     default:
       break;
   }
@@ -162,7 +175,8 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
  * da etapa, não a mão — Order/PO/PI/Deposit Payment pelo lib/checklist-revisions,
  * Place the Order quando a 1ª fábrica recebe documento e ETD quando a última
  * Initial Date é preenchida (idem), as do
- * PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete). Só admin/owner
+ * PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete) e Shipping Date/ETA/
+ * ATA/Delivered pela data do fato (lib/pl-step-event-date). Só admin/owner
  * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
  *
  * Loading date fica FORA de propósito: o Confirm Shipping exige ela concluída
@@ -180,6 +194,10 @@ export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<Che
   "booking",
   "bl",
   "original_docs",
+  "shipping_date",
+  "eta_brazil",
+  "ata_brazil",
+  "delivered",
 ]);
 
 export const LOCKED_COMPLETED_ON_ERROR =
@@ -238,6 +256,7 @@ export type PlStepFields = {
   contact_brazil_id?: string | null;
   contact_china_id?: string | null;
   booking_number?: string | null;
+  event_date?: string | null;
 };
 
 /**
@@ -270,6 +289,7 @@ export function plStepFacts(
     contactBrazilOptions: contacts(s.agent_brazil_id),
     contactChinaOptions: contacts(s.agent_china_id),
     bookingNumber: s.booking_number,
+    eventDate: s.event_date,
   };
 }
 
