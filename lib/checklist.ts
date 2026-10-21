@@ -56,6 +56,16 @@ export const ORDER_STEPS: ChecklistStep[] = [
   "pre_loading",
 ];
 
+/**
+ * Etapas que existem no banco mas NÃO aparecem no front (20/10/2026, card
+ * "Ajustes Data e Logs"): Packing Confirm. saiu da esteira. As linhas seguem em
+ * `order_checklist_steps` (histórico intacto) — só a Order e a To do list deixam
+ * de mostrá-las.
+ */
+export const HIDDEN_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "packing_confirm",
+]);
+
 export const PRELOADING_STEPS: ChecklistStep[] = [
   "consolidation_point",
   "city",

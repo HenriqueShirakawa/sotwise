@@ -1112,7 +1112,7 @@ Ainda no payload: **`items[]`** (opcional) traz as linhas **Factory×Category** 
 | 2 | PO | Order | — fixa |
 | 3 | PI | Order | — fixa |
 | 4 | Deposit Payment | Order | ✅ toggle |
-| 5 | Packing Confirm. | Order | ✅ toggle |
+| 5 | Packing Confirm. | Order | ✅ toggle — **oculta do front desde 20/10/2026** (ver abaixo) |
 | 6 | Condition Confirm. | Order | ✅ toggle |
 | 7 | Place the Order | Order | — fixa |
 | 8 | ETD | Order | — fixa |
@@ -1134,6 +1134,8 @@ Ainda no payload: **`items[]`** (opcional) traz as linhas **Factory×Category** 
 | 24 | Delivered | Shipment | _(a mapear)_ |
 
 > ✅ **Toggle = etapa opcional (ativar/desativar), confirmado nos prints de produção (ligado e desligado).** Algumas etapas têm um **toggle** que liga/desliga se aquela etapa **faz parte do fluxo daquele pedido específico**. Toggle **off = a etapa fica visível porém desabilitada/apagada** (texto e ícone acinzentados, toggle cinza) e **não precisa ser cumprida** — não bloqueia o avanço do pedido. Não **some** da lista; apenas fica inativa. **Não é conclusão** — a conclusão continua sendo pelo preenchimento dos campos (`completed_on`); o toggle é uma camada separada de "essa etapa se aplica a este pedido?". Na fase **Order**, as etapas com toggle são exatamente **Deposit Payment, Packing Confirm., Condition Confirm. e Balance Payment** (todas ligadas a pagamento/confirmação, que nem sempre se aplicam) — confirmado nos dois estados (on/off). As etapas com toggle das fases Preloading e Shipment ainda serão confirmadas por print. Modelado como coluna `enabled` em `order_checklist_steps` (ver abaixo).
+
+> ✅ **Packing Confirm. oculta do front (decisão 2026-10-20, card "Ajustes Data e Logs Etapas de Order, PL e Shipment").** A etapa saiu da esteira: não aparece no checklist da Order nem na To do list (linhas e filtro de Step). As linhas continuam em `order_checklist_steps` — nada é apagado, o histórico fica. Lista única `HIDDEN_STEPS` em `lib/checklist.ts`.
 
 > ⚠️ **Ordem sequencial dentro da fase — regra vs. realidade:** o esperado é que as etapas dentro de uma mesma fase sejam completadas em ordem (ex.: dentro de "Order", PO antes de PI antes de Deposit Payment...). Confirmado com o cliente que **isso não é garantido hoje no Bubble** — é um gap conhecido, não uma regra de negócio a replicar. Na versão nova, avaliar se vale a pena **impor** a ordem sequencial (bloquear conclusão de uma etapa se a anterior da mesma fase não estiver concluída) já que parece ser o comportamento pretendido, mesmo que não implementado hoje. Confirmar com o cliente se essa é uma melhoria desejada ou se a flexibilidade atual (completar fora de ordem) deve ser preservada.
 
