@@ -64,7 +64,7 @@ export async function correctPlStepCompletedOn(
 
 /**
  * Mesma correção para as etapas travadas da Order que fecham por gatilho SEM
- * popup de revisões próprio — hoje só Place the Order (Order/PO/PI/Deposit
+ * popup de revisões próprio — Place the Order e ETD (Order/PO/PI/Deposit
  * Payment têm o deles, em lib/checklist-revisions). `date` null reabre a etapa.
  */
 export async function correctOrderStepCompletedOn(
@@ -84,7 +84,9 @@ export async function correctOrderStepCompletedOn(
     .maybeSingle();
   if (readError) return readError.message;
   if (!current) return "Checklist step not found.";
-  if (current.step !== "place_the_order") return "This step can't be corrected here.";
+  if (current.step !== "place_the_order" && current.step !== "etd") {
+    return "This step can't be corrected here.";
+  }
   if (current.completed_on === date) return null;
 
   const signedBy = date ? userId : null;

@@ -1153,7 +1153,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 5 | Packing Confirm. | — |
 | 6 | Condition Confirm. | — |
 | 7 | Place the Order | documento em **pelo menos uma** fábrica do pedido (21/10/2026; antes era em cada uma — o Completed on é automático desde 20/10/2026, ver abaixo) |
-| 8 | ETD | "Initial date" preenchido em TODAS as entradas Factory × Category |
+| 8 | ETD | "Initial date" preenchido em TODAS as entradas Factory × Category ativas. **Desde 21/10/2026 a etapa conclui sozinha** quando a última Initial Date é gravada (tela, modal ou `PATCH /api/etd-factories/{id}`): Completed on = hoje, Signed by = quem gravou (`completeEtdIfFilled` em `lib/checklist-revisions.ts`). Completed on **travado** (`LOCKED_COMPLETED_ON_STEPS`); só admin/owner corrige ou reabre pelo "Correct", com motivo. O gatilho nunca reabre; entrada nova sem Initial Date depois de concluída não limpa a data. Etapa antiga já toda preenchida só conclui na próxima gravação de Initial Date. |
 | 9 | Balance Payment | — |
 | 10 | Pre-Loading | documento |
 | 11 | Consolidation Point | consolidation point escolhido (cadastro de **fábricas**) |
