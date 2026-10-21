@@ -1132,6 +1132,8 @@ export type Database = {
           contact_china_id: UUID | null;
           booking_number: string | null;
           cutoff_date: DateStr | null;
+          /** Shipping Date / ETA / ATA / Delivered: a data do fato (21/10/2026). */
+          event_date: DateStr | null;
           created_at: Timestamp;
           updated_at: Timestamp;
         };
@@ -1156,6 +1158,7 @@ export type Database = {
           contact_china_id?: UUID | null;
           booking_number?: string | null;
           cutoff_date?: DateStr | null;
+          event_date?: DateStr | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
         };

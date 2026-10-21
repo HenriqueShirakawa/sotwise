@@ -147,6 +147,10 @@ export const patchStepSchema = z
     contact_china: optionalRef,
     booking_number: z.string().trim().max(100).nullable().optional(),
     cutoff_date: apiDay.nullable().optional(),
+    /** Shipping Date / ETA / ATA / Delivered: a data do fato (21/10/2026). */
+    date: apiDay.optional(),
+    /** Motivo — obrigatório ao trocar uma `date` já gravada. */
+    reason: z.string().trim().max(2000).optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "No fields to update." });
 
@@ -159,6 +163,11 @@ export const STEP_FIELDS: Partial<Record<ChecklistStep, (keyof PatchStepInput)[]
   port_of_loading: ["pol"],
   agents: ["carrier", "agent_brazil", "agent_china", "contact_brazil", "contact_china"],
   booking: ["booking_number", "cutoff_date"],
+  // Concluem pela data do fato — o `completed_on` delas não é aceito.
+  shipping_date: ["date", "reason"],
+  eta_brazil: ["date", "reason"],
+  ata_brazil: ["date", "reason"],
+  delivered: ["date", "reason"],
 };
 
 export const COMMON_STEP_FIELDS: (keyof PatchStepInput)[] = [

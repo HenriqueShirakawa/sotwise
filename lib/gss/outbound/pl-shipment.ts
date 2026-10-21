@@ -7,7 +7,9 @@
  * guarda só "o PL X mudou", então sempre vai o último valor.
  *
  * Regra do usuário (2026-10-02): cada data vem da data CONCLUÍDA
- * (`completed_on`) da etapa do checklist —
+ * (`completed_on`) da etapa do checklist — desde 21/10/2026, em Shipping date /
+ * ETA / ATA / Delivered, da data do FATO (`event_date`; o Completed on delas
+ * virou o dia em que ela foi informada), enquanto a etapa está concluída —
  *
  *   Loading date  → loading_date      (todas em Unix segundos, às 12:00Z —
  *                                      mesmo dia no Brasil e na China; ver toGssUnix)
@@ -107,17 +109,20 @@ export async function loadPlShipmentState(
 
   const { data: steps, error: stepsError } = await db
     .from("pre_loading_checklist_steps")
-    .select("step, completed_on")
+    .select("step, completed_on, event_date")
     .eq("pre_loading_id", preLoadingId)
     .in("step", [...PL_SHIPMENT_STEPS])
-    .returns<{ step: TrackedStep; completed_on: DateStr | null }[]>();
+    .returns<{ step: TrackedStep; completed_on: DateStr | null; event_date: DateStr | null }[]>();
   if (stepsError) throw new Error(`pre_loading_checklist_steps: ${stepsError.message}`);
 
   const completedOn = Object.fromEntries(PL_SHIPMENT_STEPS.map((s) => [s, null])) as Record<
     TrackedStep,
     DateStr | null
   >;
-  for (const row of steps ?? []) completedOn[row.step] = row.completed_on;
+  // Etapa reaberta (sem Completed on) vai null mesmo com a data do fato gravada.
+  for (const row of steps ?? []) {
+    completedOn[row.step] = row.completed_on ? (row.event_date ?? row.completed_on) : null;
+  }
 
   const podGssId = pl.pods?.gss_id ? Number(pl.pods.gss_id) : null;
 

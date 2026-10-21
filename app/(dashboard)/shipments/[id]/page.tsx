@@ -63,6 +63,7 @@ type StepRow = {
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
+  event_date: string | null;
 };
 
 export const metadata = { title: "Shipment" };
@@ -134,7 +135,7 @@ export default async function ShipmentDetailPage({
       .select(
         "id, step, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
-          "agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, event_date"
       )
       .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),
@@ -411,6 +412,7 @@ export default async function ShipmentDetailPage({
         completed_on: null,
         signed_by: null,
         notes: null,
+        event_date: null,
         detail: null,
       };
     }
@@ -430,25 +432,24 @@ export default async function ShipmentDetailPage({
       completed_on: s.completed_on,
       signed_by: s.signed_by_id ? (profileNameById.get(s.signed_by_id) ?? null) : null,
       notes: s.notes,
+      event_date: s.event_date,
       detail: detailOf(s),
     };
   });
 
   const stepByKey = new Map(steps.map((s) => [s.step, s]));
+  // Shipping/ETA/Delivered: a data do fato (event_date, 21/10/2026) — o
+  // Completed on agora é o dia em que ela foi informada.
+  const eventDate = (step: ChecklistStep) =>
+    stepByKey.get(step)?.event_date ?? stepByKey.get(step)?.completed_on ?? null;
   const dates = {
     loading:
       stepByKey.get("loading_date")?.completed_on ??
       stepByKey.get("loading_date")?.estimated_date ??
       null,
-    shipment:
-      stepByKey.get("shipping_date")?.completed_on ??
-      stepByKey.get("shipping_date")?.estimated_date ??
-      null,
-    eta:
-      stepByKey.get("eta_brazil")?.completed_on ??
-      stepByKey.get("eta_brazil")?.estimated_date ??
-      null,
-    delivery: stepByKey.get("delivered")?.completed_on ?? null,
+    shipment: eventDate("shipping_date") ?? stepByKey.get("shipping_date")?.estimated_date ?? null,
+    eta: eventDate("eta_brazil") ?? stepByKey.get("eta_brazil")?.estimated_date ?? null,
+    delivery: eventDate("delivered"),
   };
 
   const profiles: Ref[] = profileRes
