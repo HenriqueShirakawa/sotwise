@@ -1,6 +1,6 @@
 "use server";
 
-import { EVENT_DATE_STEPS } from "@/lib/checklist";
+import { EVENT_DATE_LABELS } from "@/lib/checklist";
 import { requireInternal } from "@/lib/dal";
 import type { StepOwner } from "@/lib/checklist-email-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -108,7 +108,7 @@ type Lookup = "profiles" | "factories" | "cities" | "pols" | "carriers" | "agent
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
   order_received_date: { label: "Order received date", kind: "date" },
   deposit_date: { label: "Deposit date", kind: "date" },
-  // Shipping Date / ETA / ATA / Delivered — o rótulo real vem de EVENT_DATE_STEPS.
+  // Shipping Date / ETA / ATA / Delivered / Loading Date — o rótulo real vem de EVENT_DATE_LABELS.
   event_date: { label: "Date", kind: "date" },
   enabled: { label: "Enabled", kind: "bool" },
   estimated_date: { label: "Estimated date", kind: "date" },
@@ -231,7 +231,7 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
             field,
             label:
               field === "event_date" && owner.kind === "pre_loading"
-                ? (EVENT_DATE_STEPS[owner.step] ?? FIELDS[field].label)
+                ? (EVENT_DATE_LABELS[owner.step] ?? FIELDS[field].label)
                 : FIELDS[field].label,
             kind: FIELDS[field].kind,
             from: display(field, diff?.from),
