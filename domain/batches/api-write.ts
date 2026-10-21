@@ -2,6 +2,7 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
+import { recordFxcDelivery } from "@/lib/checklist-revisions";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
 import { sendBatchStatusToGss } from "@/lib/gss/outbound/schedule";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
@@ -224,6 +225,10 @@ async function finish(
 ): Promise<WriteResult<BatchRead>> {
   const statusError = await syncOrderStatus(admin, [orderId]);
   if (statusError) return fail(500, statusError);
+  // F×C que chegam como linhas do lote também são "leva" do PO: a 1ª conclui a
+  // etapa (PO Date = dia do recebimento); as seguintes viram revisão. Sem
+  // mudança no conjunto fábrica + categoria, nada é gravado.
+  await recordFxcDelivery(admin, orderId);
   await refreshViews(orderId);
   const batch = await getBatch(admin, batchId);
   if (!batch) return fail(500, "Batch was saved but could not be read back.");
