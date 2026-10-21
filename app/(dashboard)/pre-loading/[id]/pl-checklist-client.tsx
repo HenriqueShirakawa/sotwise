@@ -14,15 +14,17 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatDateNumeric, todayIso } from "@/lib/format";
+import { formatDate, formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import {
   CONFIRM_SHIPPING_COMPLETES,
   hasExtraRequirements,
+  isPerClient,
   LOCKED_COMPLETED_ON_STEPS,
   missingLabel,
   plStepFacts,
+  type PlPerClient,
 } from "@/lib/checklist-completion";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
@@ -49,6 +51,7 @@ import {
   getPreLoadingAttachmentUrl,
   correctPreLoadingCompletedOn,
   savePreLoadingStep,
+  savePlClientBooking,
   createPreLoadingAttachmentTicket,
   registerPreLoadingAttachment,
   type StepPatch,
@@ -85,7 +88,28 @@ export type PlBatchRow = {
   status: BatchStatus;
 };
 
-export type StepAttachment = { id: string; file_name: string | null; file_path: string };
+export type StepAttachment = {
+  id: string;
+  file_name: string | null;
+  file_path: string;
+  /** Shipping Docs de PL com 2+ clientes: o cliente do documento (21/10/2026). */
+  client_id?: string | null;
+  created_at?: string;
+};
+
+/**
+ * Shipping Docs e Booking por cliente (21/10/2026): com 2+ clientes no PL, cada
+ * cliente tem os próprios documentos e o próprio Booking number, e a etapa só
+ * fecha com todos cobertos (lib/pl-clients). Com 1 cliente, nada muda.
+ */
+export type PlPerClientView = {
+  clients: Ref[];
+  /** Booking number de cada cliente (client_id → número). */
+  bookings: Record<string, string>;
+  /** Booking number antigo, da própria etapa — vale para todos os clientes. */
+  generalBooking: string | null;
+  counts: PlPerClient;
+};
 
 export type PlStepRow = {
   step: ChecklistStep;
@@ -197,10 +221,16 @@ function AttachmentsSection({
   preLoadingId,
   step,
   attachments,
+  clientId = null,
+  canAttach = true,
 }: {
   preLoadingId: string;
   step: ChecklistStep;
   attachments: StepAttachment[];
+  /** Shipping Docs por cliente: o documento novo fica com esse cliente. */
+  clientId?: string | null;
+  /** Grupo só de leitura (documentos antigos, sem cliente): sem "+ Attach". */
+  canAttach?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -215,7 +245,7 @@ function AttachmentsSection({
       const res = await uploadDirect(
         file,
         (name, size) => createPreLoadingAttachmentTicket(preLoadingId, step, name, size),
-        (path) => registerPreLoadingAttachment(preLoadingId, step, path, file.name)
+        (path) => registerPreLoadingAttachment(preLoadingId, step, path, file.name, clientId)
       );
       if (res.ok) {
         setOpen(true);
@@ -251,10 +281,71 @@ function AttachmentsSection({
         open={open}
         onOpenChange={setOpen}
         onDownload={download}
-        onAttach={() => inputRef.current?.click()}
+        onAttach={canAttach ? () => inputRef.current?.click() : undefined}
         onRemove={remove}
       />
     </>
+  );
+}
+
+/**
+ * Shipping Docs de PL com 2+ clientes (21/10/2026): uma linha por cliente, com
+ * os documentos dele e a data do 1º anexo. A etapa fecha quando todos têm ao
+ * menos um. Documento antigo, sem cliente, aparece à parte e vale para todos.
+ */
+function ClientDocsGroups({
+  preLoadingId,
+  clients,
+  attachments,
+}: {
+  preLoadingId: string;
+  clients: Ref[];
+  attachments: StepAttachment[];
+}) {
+  const general = attachments.filter((a) => !a.client_id);
+  return (
+    <div className="overflow-hidden rounded-lg border bg-white">
+      {clients.map((c) => {
+        const docs = attachments.filter((a) => a.client_id === c.id);
+        const firstAt = docs.reduce<string | null>(
+          (min, a) => (a.created_at && (!min || a.created_at < min) ? a.created_at : min),
+          null
+        );
+        return (
+          <div key={c.id} className="space-y-2 border-t px-3 py-2.5 first:border-t-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                {/* Verde = cliente já tem documento; âmbar = ainda falta. */}
+                <span
+                  className={`size-2 shrink-0 rounded-full ${docs.length ? "bg-emerald-500" : "bg-amber-400"}`}
+                />
+                <span className="truncate font-medium text-slate-800">{c.name}</span>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {firstAt ? `Attached on ${formatDate(firstAt)}` : "No document yet"}
+              </span>
+            </div>
+            <AttachmentsSection
+              preLoadingId={preLoadingId}
+              step="shipping_docs"
+              attachments={docs}
+              clientId={c.id}
+            />
+          </div>
+        );
+      })}
+      {general.length > 0 && (
+        <div className="space-y-2 border-t px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">Without client — counts for all clients</p>
+          <AttachmentsSection
+            preLoadingId={preLoadingId}
+            step="shipping_docs"
+            attachments={general}
+            canAttach={false}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -310,6 +401,7 @@ export function PlChecklistClient({
   preLoading,
   batches,
   steps,
+  perClient,
   profiles,
   factories,
   cities,
@@ -329,6 +421,7 @@ export function PlChecklistClient({
   preLoading: PreLoadingDetail;
   batches: PlBatchRow[];
   steps: PlStepRow[];
+  perClient: PlPerClientView;
   profiles: Ref[];
   factories: Ref[];
   cities: Ref[];
@@ -441,6 +534,14 @@ export function PlChecklistClient({
   function save(step: ChecklistStep, patch: StepPatch) {
     startTransition(async () => {
       const res = await savePreLoadingStep(preLoading.id, step, patch);
+      if (res.ok) router.refresh();
+      else toast.error(res.error);
+    });
+  }
+
+  function saveClientBooking(clientId: string, bookingNumber: string | null) {
+    startTransition(async () => {
+      const res = await savePlClientBooking(preLoading.id, clientId, bookingNumber);
       if (res.ok) router.refresh();
       else toast.error(res.error);
     });
@@ -592,7 +693,12 @@ export function PlChecklistClient({
           ) : null}
           {visibleSteps.map((s) => {
             const open = isStepOpen(s.step);
-            const facts = plStepFacts(s, s.attachments.length, contactCountByAgent);
+            const facts = plStepFacts(
+              s,
+              s.attachments.length,
+              contactCountByAgent,
+              perClient.counts
+            );
             return (
               <div key={s.step} id={`step-${s.step}`} className="border-b last:border-b-0">
                 <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
@@ -792,20 +898,51 @@ export function PlChecklistClient({
                     )}
                     {s.step === "booking" && (
                       <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Booking number</Label>
-                          <Input
-                            defaultValue={s.booking_number ?? ""}
-                            disabled={pending}
-                            placeholder="Booking number"
-                            onBlur={(e) => {
-                              const v = e.target.value.trim() || null;
-                              if (v !== (s.booking_number ?? null))
-                                save(s.step, { booking_number: v });
-                            }}
-                            className="mt-1 bg-white"
-                          />
-                        </div>
+                        {isPerClient(perClient.counts) ? (
+                          // 2+ clientes: um Booking number por cliente (21/10/2026).
+                          <div className="space-y-2 sm:col-span-2">
+                            {perClient.generalBooking && (
+                              <p className="text-xs text-muted-foreground">
+                                Booking number for all clients: {perClient.generalBooking}
+                              </p>
+                            )}
+                            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                              {perClient.clients.map((c) => (
+                                <div key={c.id}>
+                                  <Label className="text-xs text-muted-foreground">
+                                    Booking number — {c.name}
+                                  </Label>
+                                  <Input
+                                    defaultValue={perClient.bookings[c.id] ?? ""}
+                                    disabled={pending}
+                                    placeholder="Booking number"
+                                    onBlur={(e) => {
+                                      const v = e.target.value.trim() || null;
+                                      if (v !== (perClient.bookings[c.id] ?? null))
+                                        saveClientBooking(c.id, v);
+                                    }}
+                                    className="mt-1 bg-white"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Booking number</Label>
+                            <Input
+                              defaultValue={s.booking_number ?? ""}
+                              disabled={pending}
+                              placeholder="Booking number"
+                              onBlur={(e) => {
+                                const v = e.target.value.trim() || null;
+                                if (v !== (s.booking_number ?? null))
+                                  save(s.step, { booking_number: v });
+                              }}
+                              className="mt-1 bg-white"
+                            />
+                          </div>
+                        )}
                         <div>
                           {/* Data livre e opcional: sem trava de passado/futuro e
                               fora da regra de conclusão da etapa. */}
@@ -824,12 +961,20 @@ export function PlChecklistClient({
                       </div>
                     )}
 
-                    {!CONFIRM_SHIPPING_COMPLETES.has(s.step) && (
-                      <AttachmentsSection
+                    {s.step === "shipping_docs" && isPerClient(perClient.counts) ? (
+                      <ClientDocsGroups
                         preLoadingId={preLoading.id}
-                        step={s.step}
+                        clients={perClient.clients}
                         attachments={s.attachments}
                       />
+                    ) : (
+                      !CONFIRM_SHIPPING_COMPLETES.has(s.step) && (
+                        <AttachmentsSection
+                          preLoadingId={preLoading.id}
+                          step={s.step}
+                          attachments={s.attachments}
+                        />
+                      )
                     )}
                     <StepEmailSection
                       owner={{ kind: "pre_loading", preLoadingId: preLoading.id, step: s.step }}

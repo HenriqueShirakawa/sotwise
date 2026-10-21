@@ -77,13 +77,14 @@ export async function readAttachmentForLog(
   const { data } = await admin
     .from("step_attachments")
     .select(
-      "checklist_step_id, pre_loading_step_id, factory_id, file_name, order_checklist_steps(step), pre_loading_checklist_steps(step)"
+      "checklist_step_id, pre_loading_step_id, factory_id, client_id, file_name, order_checklist_steps(step), pre_loading_checklist_steps(step)"
     )
     .eq("id", attachmentId)
     .maybeSingle<{
       checklist_step_id: string | null;
       pre_loading_step_id: string | null;
       factory_id: string | null;
+      client_id: string | null;
       file_name: string | null;
       order_checklist_steps: { step: ChecklistStep } | null;
       pre_loading_checklist_steps: { step: ChecklistStep } | null;
@@ -93,6 +94,7 @@ export async function readAttachmentForLog(
   const changes = {
     file_name: data.file_name,
     ...(data.factory_id ? { factory_id: data.factory_id } : {}),
+    ...(data.client_id ? { client_id: data.client_id } : {}),
   };
   if (data.checklist_step_id && data.order_checklist_steps) {
     return {

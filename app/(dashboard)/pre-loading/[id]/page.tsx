@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { requireFeature } from "@/lib/dal";
 import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
 import { fetchAll } from "@/lib/fetch-all";
+import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -207,19 +208,30 @@ export default async function PreLoadingChecklistPage({
   // elas nascem no primeiro save/anexo (ver savePreLoadingStep).
   const stepRows = stepsRes.data ?? [];
   const stepIds = stepRows.map((s) => s.id);
-  const attachmentsRes = stepIds.length
-    ? await admin
-        .from("step_attachments")
-        .select("id, pre_loading_step_id, file_name, file_path")
-        .in("pre_loading_step_id", stepIds)
-        .order("created_at")
-    : { data: [] };
+  const [attachmentsRes, clientState] = await Promise.all([
+    stepIds.length
+      ? admin
+          .from("step_attachments")
+          .select("id, pre_loading_step_id, client_id, file_name, file_path, created_at")
+          .in("pre_loading_step_id", stepIds)
+          .order("created_at")
+      : Promise.resolve({ data: [] }),
+    // Shipping Docs / Booking por cliente quando o PL tem 2+ clientes (21/10/2026).
+    loadPlClientState(admin, pl.id),
+  ]);
+  const perClient = perClientOf(clientState);
 
   const attachmentsByStepId = new Map<string, StepAttachment[]>();
   for (const a of attachmentsRes.data ?? []) {
     if (!a.pre_loading_step_id) continue;
     const arr = attachmentsByStepId.get(a.pre_loading_step_id) ?? [];
-    arr.push({ id: a.id, file_name: a.file_name, file_path: a.file_path });
+    arr.push({
+      id: a.id,
+      file_name: a.file_name,
+      file_path: a.file_path,
+      client_id: a.client_id,
+      created_at: a.created_at,
+    });
     attachmentsByStepId.set(a.pre_loading_step_id, arr);
   }
 
@@ -240,7 +252,10 @@ export default async function PreLoadingChecklistPage({
       ...s,
       // Cada etapa tem sua condição de conclusão (ver lib/checklist-completion):
       // data + cadastro escolhido / documento / número de booking.
-      done: isStepChecked(step, plStepFacts(s, attachments.length, contactCountByAgent)),
+      done: isStepChecked(
+        step,
+        plStepFacts(s, attachments.length, contactCountByAgent, perClient)
+      ),
       attachments,
     };
   });
@@ -341,6 +356,12 @@ export default async function PreLoadingChecklistPage({
       }}
       batches={batches}
       steps={steps}
+      perClient={{
+        clients: clientState.clients,
+        bookings: Object.fromEntries(clientState.bookings),
+        generalBooking: clientState.generalBooking,
+        counts: perClient,
+      }}
       profiles={profileRes
         .filter((p) => p.full_name)
         .map((p) => ({ id: p.id, name: p.full_name as string }))
