@@ -185,6 +185,15 @@ export async function confirmShippingRecord(
   });
   if (rpcError) return { ok: false, status: 409, error: rpcError.message };
 
+  // A RPC grava só o Completed on da Loading Date; quem confirmou o embarque
+  // assina a etapa (21/10/2026 — na tela do PL os dois campos são trancados).
+  const { error: signError } = await admin
+    .from("pre_loading_checklist_steps")
+    .update({ signed_by_id: createdBy, done: true })
+    .eq("pre_loading_id", preLoadingId)
+    .eq("step", "loading_date");
+  if (signError) return { ok: false, status: 500, error: signError.message };
+
   return {
     ok: true,
     shipment_id: rpcResult?.shipment_id ?? null,

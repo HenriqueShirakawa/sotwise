@@ -646,12 +646,14 @@ export function PlChecklistClient({
                         options={profiles}
                         onChange={(v) => save(s.step, { responsible_id: v })}
                       />
-                      {/* Loading Date: só Estimated date e Responsible aqui — a
-                          data real e a conclusão vêm do Confirm Shipping. */}
-                      {CONFIRM_SHIPPING_COMPLETES.has(s.step) ? null : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
+                      {LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
                         <LockedCompletedOn
                           value={s.completed_on}
-                          canCorrect={canCorrectCompletedOn}
+                          // Loading Date: trancado até para o admin — quem preenche
+                          // Completed on e Signed by é o Confirm Shipping.
+                          canCorrect={
+                            canCorrectCompletedOn && !CONFIRM_SHIPPING_COMPLETES.has(s.step)
+                          }
                           onCorrect={(date, reason) =>
                             correctPreLoadingCompletedOn(preLoading.id, s.step, date, reason)
                           }
@@ -680,16 +682,14 @@ export function PlChecklistClient({
                       )}
                       {/* Travado: quem conclui a etapa (Completed on) assina —
                           preenchido pelo servidor, não editável aqui. */}
-                      {!CONFIRM_SHIPPING_COMPLETES.has(s.step) && (
-                        <SelectField
-                          label="Signed by"
-                          value={s.signed_by_id}
-                          options={profiles}
-                          placeholder="—"
-                          disabled
-                          onChange={() => {}}
-                        />
-                      )}
+                      <SelectField
+                        label="Signed by"
+                        value={s.signed_by_id}
+                        options={profiles}
+                        placeholder="—"
+                        disabled
+                        onChange={() => {}}
+                      />
                     </div>
 
                     {s.step === "consolidation_point" && (

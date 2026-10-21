@@ -201,9 +201,10 @@ export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<Che
 
 /**
  * Etapas do PL que o próprio Confirm Shipping conclui (21/10/2026): na tela do
- * Pre-loading a Loading Date tem só Estimated date e Responsible — a data real
- * é informada no popup do embarque, que grava o Completed on. Por isso, para
- * liberar o Confirm Shipping, basta ela ter o Estimated date.
+ * Pre-loading a Loading Date mostra Completed on e Signed by TRANCADOS (nem o
+ * admin corrige ali) — a data real é informada no popup do embarque, que grava
+ * o Completed on e assina com quem confirmou. Por isso, para liberar o Confirm
+ * Shipping, basta ela ter o Estimated date.
  */
 export const CONFIRM_SHIPPING_COMPLETES: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "loading_date",
