@@ -34,7 +34,7 @@ const STEP_ORDER: ChecklistStep[] = [
   "shipping_date",
   "bl",
   "original_docs",
-  "inspection_report",
+  // inspection_report fica de fora: oculta do front (HIDDEN_STEPS, 21/10/2026).
   "eta_brazil",
   "ata_brazil",
   "delivered",

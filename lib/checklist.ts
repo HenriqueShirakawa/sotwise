@@ -57,13 +57,14 @@ export const ORDER_STEPS: ChecklistStep[] = [
 ];
 
 /**
- * Etapas que existem no banco mas NÃO aparecem no front (20/10/2026, card
- * "Ajustes Data e Logs"): Packing Confirm. saiu da esteira. As linhas seguem em
- * `order_checklist_steps` (histórico intacto) — só a Order e a To do list deixam
- * de mostrá-las.
+ * Etapas que existem no banco mas NÃO aparecem no front: Packing Confirm.
+ * (20/10/2026, card "Ajustes Data e Logs") e Inspection Report (21/10/2026,
+ * planilha de regras do checklist) saíram da esteira. As linhas seguem no banco
+ * (histórico intacto) — só a Order, o Shipment e a To do list deixam de mostrá-las.
  */
 export const HIDDEN_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "packing_confirm",
+  "inspection_report",
 ]);
 
 export const PRELOADING_STEPS: ChecklistStep[] = [
