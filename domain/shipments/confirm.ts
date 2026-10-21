@@ -1,5 +1,6 @@
 import { STEP_LABELS } from "@/lib/checklist";
 import { isReadyToShip, plStepFacts } from "@/lib/checklist-completion";
+import { todayIso } from "@/lib/format";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
@@ -38,7 +39,9 @@ export type ConfirmShippingInput = {
   container_number: string;
   seal_number: string;
   estimated_date: string; // yyyy-mm-dd — espelha loading_date.estimated_date do checklist
-  /** Completed on da etapa "loading_date" do checklist — revisável neste popup. */
+  /** Loading date REAL informada no popup — vira o `event_date` da etapa
+   *  "loading_date" (o Completed on dela é o dia da confirmação). O nome ficou
+   *  pelo contrato da API. */
   loading_date_completed_on: string; // yyyy-mm-dd
   shipment_leader_id: string;
   preloading_leader_id: string;
@@ -185,11 +188,18 @@ export async function confirmShippingRecord(
   });
   if (rpcError) return { ok: false, status: 409, error: rpcError.message };
 
-  // A RPC grava só o Completed on da Loading Date; quem confirmou o embarque
-  // assina a etapa (21/10/2026 — na tela do PL os dois campos são trancados).
+  // Loading Date (21/10/2026): a data do popup é a data REAL do carregamento
+  // (`event_date` — header do Shipment, filtro da lista, GSS); o Completed on é o
+  // dia em que o PL virou Shipment, e quem confirmou assina. A RPC grava a data
+  // do popup no Completed on; aqui ela é reposicionada.
   const { error: signError } = await admin
     .from("pre_loading_checklist_steps")
-    .update({ signed_by_id: createdBy, done: true })
+    .update({
+      event_date: input.loading_date_completed_on,
+      completed_on: todayIso(),
+      signed_by_id: createdBy,
+      done: true,
+    })
     .eq("pre_loading_id", preLoadingId)
     .eq("step", "loading_date");
   if (signError) return { ok: false, status: 500, error: signError.message };

@@ -8,6 +8,7 @@ import {
   plStepFacts,
 } from "@/lib/checklist-completion";
 import { fetchAll } from "@/lib/fetch-all";
+import { formatDateNumeric } from "@/lib/format";
 import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -378,6 +379,10 @@ export default async function ShipmentDetailPage({
         return s.pol_id ? (polNameById.get(s.pol_id) ?? null) : null;
       case "booking":
         return s.booking_number;
+      // A data real do carregamento, informada no popup do Confirm Shipping
+      // (o Completed on da etapa é o dia da confirmação).
+      case "loading_date":
+        return s.event_date ? formatDateNumeric(s.event_date) : null;
       case "agents": {
         const parts = [
           s.carrier_id && `Carrier: ${carrierNameById.get(s.carrier_id) ?? "—"}`,
@@ -438,15 +443,13 @@ export default async function ShipmentDetailPage({
   });
 
   const stepByKey = new Map(steps.map((s) => [s.step, s]));
-  // Shipping/ETA/Delivered: a data do fato (event_date, 21/10/2026) — o
-  // Completed on agora é o dia em que ela foi informada.
+  // Loading/Shipping/ETA/Delivered: a data do fato (event_date, 21/10/2026) — o
+  // Completed on agora é o dia em que ela foi informada. A Loading date é a do
+  // popup do Confirm Shipping.
   const eventDate = (step: ChecklistStep) =>
     stepByKey.get(step)?.event_date ?? stepByKey.get(step)?.completed_on ?? null;
   const dates = {
-    loading:
-      stepByKey.get("loading_date")?.completed_on ??
-      stepByKey.get("loading_date")?.estimated_date ??
-      null,
+    loading: eventDate("loading_date") ?? stepByKey.get("loading_date")?.estimated_date ?? null,
     shipment: eventDate("shipping_date") ?? stepByKey.get("shipping_date")?.estimated_date ?? null,
     eta: eventDate("eta_brazil") ?? stepByKey.get("eta_brazil")?.estimated_date ?? null,
     delivery: eventDate("delivered"),

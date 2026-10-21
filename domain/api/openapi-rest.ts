@@ -689,7 +689,11 @@ export const restSchemas = {
       container_number: { type: "string" },
       seal_number: { type: "string" },
       estimated_date: inDay,
-      loading_date_completed_on: { ...inDay, description: "Completed on of the Loading Date step." },
+      loading_date_completed_on: {
+        ...inDay,
+        description:
+          "The actual loading date (shipment header, Shipments list filter, GSS `loading_date`). The Loading Date step's `completed_on` becomes the day of the confirmation.",
+      },
       carrier: ref2,
       shipment_model: ref2,
       shipment_leader_email: emailIn,
