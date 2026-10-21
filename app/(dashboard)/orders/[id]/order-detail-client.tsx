@@ -1131,8 +1131,9 @@ export function OrderDetailClient({
                             onRevise={() => setRevisionsFor(s)}
                           />
                         ) : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
-                          // Place the Order: fecha sozinha quando a última
-                          // fábrica recebe documento (lib/checklist-revisions).
+                          // Place the Order fecha sozinha quando a 1ª fábrica
+                          // recebe documento; ETD quando a última Initial Date é
+                          // preenchida (lib/checklist-revisions).
                           <LockedCompletedOn
                             value={s.completed_on}
                             canCorrect={canCorrectCompletedOn}

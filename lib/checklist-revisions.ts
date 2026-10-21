@@ -357,8 +357,9 @@ export async function recordFxcDelivery(
 /**
  * Place the Order (20/10/2026, card "Ajustes Data e Logs"): cada fábrica do
  * pedido ganha a sua data quando recebe o 1º documento (o upload já vai pro
- * History com a fábrica). Quando a ÚLTIMA fábrica sem documento recebe o dela,
- * a etapa conclui sozinha — Completed on = hoje, Signed by = quem anexou.
+ * History com a fábrica). Quando a 1ª fábrica recebe documento (21/10/2026;
+ * antes era a ÚLTIMA), a etapa conclui sozinha — Completed on = hoje, Signed by
+ * = quem anexou.
  * Chamada depois de cada anexo da etapa; nunca derruba o upload.
  */
 export async function completePlaceTheOrderIfCovered(
@@ -394,6 +395,47 @@ export async function completePlaceTheOrderIfCovered(
     await completeByTrigger(admin, step, todayIso(), userId);
   } catch (err) {
     console.error("[checklist-revisions] place_the_order", err instanceof Error ? err.message : err);
+  }
+}
+
+// ── ETD ──────────────────────────────────────────────────────────────────────
+
+/**
+ * ETD (21/10/2026): conclui sozinha quando TODAS as entradas Factory × Category
+ * ativas do pedido têm "Initial Date" — Completed on = hoje, Signed by = quem
+ * preencheu a última (null pela API do GSS). Chamada depois de cada gravação
+ * de Initial Date (tela, modal e PATCH /api/etd-factories); nunca derruba a
+ * gravação.
+ */
+export async function completeEtdIfFilled(
+  admin: Admin,
+  orderId: string,
+  userId: string | null
+): Promise<void> {
+  try {
+    const step = await readStep(admin, orderId, "etd");
+    if (!step || step.completed_on) return;
+
+    const { data: lines, error } = await admin
+      .from("order_factory_category")
+      .select("id")
+      .eq("order_id", orderId)
+      .eq("is_active", true);
+    if (error) throw new Error(error.message);
+    const ids = (lines ?? []).map((l) => l.id);
+    if (ids.length === 0) return;
+
+    const { data: etds, error: etdError } = await admin
+      .from("etd_info")
+      .select("order_factory_category_id")
+      .in("order_factory_category_id", ids)
+      .not("initial_date", "is", null);
+    if (etdError) throw new Error(etdError.message);
+    if ((etds ?? []).length < ids.length) return;
+
+    await completeByTrigger(admin, step, todayIso(), userId);
+  } catch (err) {
+    console.error("[checklist-revisions] etd", err instanceof Error ? err.message : err);
   }
 }
 

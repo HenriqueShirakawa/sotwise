@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { apiDay } from "@/lib/api-dates";
+import { completeEtdIfFilled } from "@/lib/checklist-revisions";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { ETD_SAVED_COLUMNS, writeEtdHistory, type EtdHistorySnapshot } from "@/lib/etd-history";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -29,7 +30,8 @@ import { getGssEtdEntry, type GssEtdRead } from "./gss-read";
  *    In Production);
  *  - toda mudança de data/ready grava `etd_history` (source `api`);
  *  - `is_active` (13/10, em `etd_info`) é SÓ uma marca: grava sem trava, sem
- *    `remarks` e sem `etd_history`.
+ *    `remarks` e sem `etd_history`;
+ *  - a última `initial_date` do pedido conclui a etapa ETD (21/10/2026).
  *
  * Mesmos nomes de campo do GET (`ready_parts` = `etd_info.ready`).
  */
@@ -143,6 +145,10 @@ export async function patchEtd(
     if (changed.length > 0) {
       const historyError = await writeEtdHistory(admin, saved, changed, "api", actorId);
       if (historyError) return fail(500, historyError);
+    }
+    if (changed.includes("initial_date")) {
+      await completeEtdIfFilled(admin, line.order_id, actorId);
+      revalidatePath("/todo");
     }
 
     revalidatePath("/orders/[id]", "page");

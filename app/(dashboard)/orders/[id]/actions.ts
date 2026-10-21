@@ -10,6 +10,7 @@ import {
   validateStepDates,
 } from "@/lib/checklist-completion";
 import {
+  completeEtdIfFilled,
   completePlaceTheOrderIfCovered,
   reviseCompletedOn,
   setDepositDate,
@@ -285,7 +286,7 @@ export async function reviseStepCompletedOn(
 }
 
 /**
- * Place the Order: correção do Completed on travado pelo admin/owner, com motivo
+ * Place the Order / ETD: correção do Completed on travado pelo admin/owner, com motivo
  * (vai pro History); `date` null reabre a etapa. Ver lib/completed-on-correction.
  */
 export async function correctOrderStepCompletedOn(
@@ -528,6 +529,13 @@ export async function upsertEtdInfo(
   const historyError = await writeEtdHistory(admin, saved, changed, "row", session.userId);
   if (historyError) return { ok: false, error: historyError };
 
+  // A última Initial Date do pedido conclui a etapa ETD.
+  if (patch.initial_date) {
+    await completeEtdIfFilled(admin, orderId, session.userId);
+    revalidatePath("/todo");
+    await broadcastOrderStatusPing({ order_ids: [orderId] });
+  }
+
   // O ETD aparece na lista de Orders (coluna ETD) e é a própria tela ETD
   // Factories — revalida as duas, senão só o detalhe atualiza e as listas ficam
   // velhas até um F5.
@@ -619,6 +627,12 @@ export async function updateEtdInfoWithReason(
 
   const historyError = await writeEtdHistory(admin, saved, [field], "modal", session.userId);
   if (historyError) return { ok: false, error: historyError };
+
+  if (field === "initial_date" && value) {
+    await completeEtdIfFilled(admin, orderId, session.userId);
+    revalidatePath("/todo");
+    await broadcastOrderStatusPing({ order_ids: [orderId] });
+  }
 
   // Mesma razão do upsertEtdInfo: a edição do ETD reflete na lista de Orders e
   // na tela ETD Factories, não só no detalhe.
