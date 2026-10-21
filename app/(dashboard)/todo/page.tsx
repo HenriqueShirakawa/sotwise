@@ -113,7 +113,7 @@ export default async function TodoPage() {
         .from("order_checklist_steps")
         .select("id, order_id, step, estimated_date, responsible_id")
         .eq("enabled", true)
-        // Etapa oculta do front (Packing Confirm.) não é tarefa de ninguém.
+        // Etapa oculta do front (HIDDEN_STEPS) não é tarefa de ninguém.
         .not("step", "in", `(${[...HIDDEN_STEPS].join(",")})`)
         .is("completed_on", null)
         .not("responsible_id", "is", null)
@@ -130,6 +130,7 @@ export default async function TodoPage() {
       admin
         .from("pre_loading_checklist_steps")
         .select("id, pre_loading_id, step, estimated_date, responsible_id")
+        .not("step", "in", `(${[...HIDDEN_STEPS].join(",")})`)
         .is("completed_on", null)
         .not("responsible_id", "is", null)
         .not("estimated_date", "is", null)
