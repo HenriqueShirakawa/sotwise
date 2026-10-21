@@ -101,6 +101,16 @@ export const EVENT_DATE_STEPS: Partial<Record<ChecklistStep, string>> = {
   delivered: "Delivered date",
 };
 
+/**
+ * Rótulo do `event_date` de cada etapa que tem um (History, telas). Além das
+ * EVENT_DATE_STEPS, a Loading Date: a data real do carregamento, informada no
+ * popup do Confirm Shipping (21/10/2026).
+ */
+export const EVENT_DATE_LABELS: Partial<Record<ChecklistStep, string>> = {
+  loading_date: "Loading date",
+  ...EVENT_DATE_STEPS,
+};
+
 /** ETA é previsão de chegada — a única dessas datas que pode ser futura. */
 export const EVENT_DATE_ALLOWS_FUTURE: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "eta_brazil",

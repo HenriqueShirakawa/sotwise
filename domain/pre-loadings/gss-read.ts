@@ -97,7 +97,8 @@ const realDate = (s: StepRow | undefined) =>
 function datesFromSteps(steps: Partial<Record<TrackedStep, StepRow>>): PlDates {
   return {
     estimated_loading_date: dayToUnix(steps.loading_date?.estimated_date),
-    loading_date: dayToUnix(steps.loading_date?.completed_on),
+    // A do popup do Confirm Shipping (event_date, 21/10/2026).
+    loading_date: dayToUnix(realDate(steps.loading_date)),
     ETD: dayToUnix(steps.shipping_date?.estimated_date),
     // O ETA informado (21/10/2026); sem ele, o estimado — como antes.
     ETA_Brazil: dayToUnix(realDate(steps.eta_brazil) ?? steps.eta_brazil?.estimated_date),
