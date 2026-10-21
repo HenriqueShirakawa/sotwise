@@ -396,7 +396,7 @@ export async function registerStepAttachment(
       changes: { file_name: fileName, ...(factoryId ? { factory_id: factoryId } : {}) },
       userId: session.userId,
     });
-    // Place the Order fecha sozinha quando a última fábrica ganha documento.
+    // Place the Order fecha sozinha quando a 1ª fábrica ganha documento.
     if (stepRow.step === "place_the_order") {
       await completePlaceTheOrderIfCovered(admin, stepId, session.userId);
       await refreshChecklistViews(orderId);
