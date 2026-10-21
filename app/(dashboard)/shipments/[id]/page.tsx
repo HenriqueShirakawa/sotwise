@@ -9,6 +9,7 @@ import {
 } from "@/lib/checklist-completion";
 import { fetchAll } from "@/lib/fetch-all";
 import { formatDateNumeric } from "@/lib/format";
+import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -350,13 +351,18 @@ export default async function ShipmentDetailPage({
 
   const stepRows = stepsRes.data ?? [];
   const stepIds = stepRows.map((s) => s.id);
-  const attachmentsRes = stepIds.length
-    ? await admin
-        .from("step_attachments")
-        .select("id, pre_loading_step_id, file_name, file_path")
-        .in("pre_loading_step_id", stepIds)
-        .order("created_at")
-    : { data: [] };
+  const [attachmentsRes, clientState] = await Promise.all([
+    stepIds.length
+      ? admin
+          .from("step_attachments")
+          .select("id, pre_loading_step_id, file_name, file_path")
+          .in("pre_loading_step_id", stepIds)
+          .order("created_at")
+      : Promise.resolve({ data: [] }),
+    // Shipping Docs / Booking por cliente no PL com 2+ clientes (21/10/2026).
+    loadPlClientState(admin, pl.id),
+  ]);
+  const perClient = perClientOf(clientState);
 
   const attachmentsByStepId = new Map<string, StepAttachment[]>();
   for (const a of attachmentsRes.data ?? []) {
@@ -377,8 +383,13 @@ export default async function ShipmentDetailPage({
         return s.city_id ? (cityNameById.get(s.city_id) ?? null) : null;
       case "port_of_loading":
         return s.pol_id ? (polNameById.get(s.pol_id) ?? null) : null;
-      case "booking":
-        return s.booking_number;
+      case "booking": {
+        // 2+ clientes: o Booking number de cada um (21/10/2026).
+        const perClientBookings = clientState.clients
+          .filter((c) => clientState.bookings.has(c.id))
+          .map((c) => `${c.name}: ${clientState.bookings.get(c.id)}`);
+        return [s.booking_number, ...perClientBookings].filter(Boolean).join(" · ") || null;
+      }
       // A data real do carregamento, informada no popup do Confirm Shipping
       // (o Completed on da etapa é o dia da confirmação).
       case "loading_date":
@@ -424,7 +435,7 @@ export default async function ShipmentDetailPage({
     const attachments = attachmentsByStepId.get(s.id) ?? [];
     // Mesma regra das outras duas telas (ver lib/checklist-completion). Resolvida
     // aqui porque a tela só recebe os valores da etapa já virados em texto.
-    const facts = plStepFacts(s, attachments.length, contactCountByAgent);
+    const facts = plStepFacts(s, attachments.length, contactCountByAgent, perClient);
     return {
       step,
       done: isStepChecked(step, facts),

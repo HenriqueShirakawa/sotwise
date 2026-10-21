@@ -976,6 +976,8 @@ export type Database = {
           checklist_step_id: UUID | null;
           pre_loading_step_id: UUID | null;
           factory_id: UUID | null;
+          /** Shipping Docs de PL com 2+ clientes: o cliente do documento (21/10/2026). */
+          client_id: UUID | null;
           file_path: string;
           file_name: string | null;
           uploaded_by: UUID | null;
@@ -986,6 +988,7 @@ export type Database = {
           checklist_step_id?: UUID | null;
           pre_loading_step_id?: UUID | null;
           factory_id?: UUID | null;
+          client_id?: UUID | null;
           file_path: string;
           file_name?: string | null;
           uploaded_by?: UUID | null;
@@ -1102,6 +1105,27 @@ export type Database = {
         Row: { pre_loading_id: UUID; client_id: UUID };
         Insert: { pre_loading_id: UUID; client_id: UUID };
         Update: Partial<{ pre_loading_id: UUID; client_id: UUID }>;
+        Relationships: [];
+      };
+      /** Booking number por cliente do PL (21/10/2026) — só em PL com 2+ clientes. */
+      pre_loading_client_bookings: {
+        Row: {
+          id: UUID;
+          pre_loading_id: UUID;
+          client_id: UUID;
+          booking_number: string;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          pre_loading_id: UUID;
+          client_id: UUID;
+          booking_number: string;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["pre_loading_client_bookings"]["Insert"]>;
         Relationships: [];
       };
       pre_loading_batches: {

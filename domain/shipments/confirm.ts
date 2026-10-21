@@ -1,6 +1,7 @@
 import { STEP_LABELS } from "@/lib/checklist";
 import { isReadyToShip, plStepFacts } from "@/lib/checklist-completion";
 import { todayIso } from "@/lib/format";
+import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
 
@@ -128,13 +129,16 @@ export async function confirmShippingRecord(
     contactCountByAgent[ac.agent_id] = (contactCountByAgent[ac.agent_id] ?? 0) + 1;
   }
 
+  // Shipping Docs / Booking por cliente (PL com 2+ clientes).
+  const perClient = perClientOf(await loadPlClientState(admin, preLoadingId));
+
   const pending = PL_STEPS.filter((step) => {
     const s = byStep.get(step);
     if (!s) return true;
     // Loading Date: quem conclui é este próprio popup — basta a estimativa.
     return !isReadyToShip(
       step,
-      plStepFacts(s, attachmentCount.get(s.id) ?? 0, contactCountByAgent),
+      plStepFacts(s, attachmentCount.get(s.id) ?? 0, contactCountByAgent, perClient),
       s.estimated_date
     );
   });
