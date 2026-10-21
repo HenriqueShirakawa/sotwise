@@ -13,10 +13,11 @@ import { isActiveQuery } from "@/domain/api/is-active";
  * do PL, pre_loading_checklist_steps — ver docs/regras_de_negocio.md §3.9/
  * §3.10), o GSS só lê.
  *
- * `ETD`/`ETA_Brazil` são a data ESTIMADA (`estimated_date`) das etapas
- * "Shipping Date"/"ETA Brazil"; `shipping_date`/`ATA_Brazil`/`DELIVERED_DATE`
- * são a data REAL (`completed_on`) das etapas "Shipping Date"/"ATA Brazil"/
- * "Delivered". Mesmo par estimado/real que `estimated_loading_date`/
+ * `ETD` é a data ESTIMADA (`estimated_date`) da etapa "Shipping Date" e
+ * `ETA_Brazil` o ETA informado (ou o estimado, sem ele); `shipping_date`/
+ * `ATA_Brazil`/`DELIVERED_DATE` são a data REAL das etapas "Shipping Date"/
+ * "ATA Brazil"/"Delivered" — desde 21/10/2026 a data do fato (`event_date`),
+ * enquanto a etapa está concluída. Mesmo par estimado/real que `estimated_loading_date`/
  * `loading_date` já usa para "Loading Date". Ver docs/regras_de_negocio.md §6.2.
  */
 
@@ -85,7 +86,12 @@ type StepRow = {
   step: TrackedStep;
   estimated_date: DateStr | null;
   completed_on: DateStr | null;
+  event_date: DateStr | null;
 };
+
+/** Data REAL da etapa: a do fato (event_date, 21/10/2026), só com ela concluída. */
+const realDate = (s: StepRow | undefined) =>
+  s?.completed_on ? (s.event_date ?? s.completed_on) : null;
 
 /** Datas do feed a partir das etapas rastreadas de um PL. */
 function datesFromSteps(steps: Partial<Record<TrackedStep, StepRow>>): PlDates {
@@ -93,10 +99,11 @@ function datesFromSteps(steps: Partial<Record<TrackedStep, StepRow>>): PlDates {
     estimated_loading_date: dayToUnix(steps.loading_date?.estimated_date),
     loading_date: dayToUnix(steps.loading_date?.completed_on),
     ETD: dayToUnix(steps.shipping_date?.estimated_date),
-    ETA_Brazil: dayToUnix(steps.eta_brazil?.estimated_date),
-    ATA_Brazil: dayToUnix(steps.ata_brazil?.completed_on),
-    DELIVERED_DATE: dayToUnix(steps.delivered?.completed_on),
-    shipping_date: dayToUnix(steps.shipping_date?.completed_on),
+    // O ETA informado (21/10/2026); sem ele, o estimado — como antes.
+    ETA_Brazil: dayToUnix(realDate(steps.eta_brazil) ?? steps.eta_brazil?.estimated_date),
+    ATA_Brazil: dayToUnix(realDate(steps.ata_brazil)),
+    DELIVERED_DATE: dayToUnix(realDate(steps.delivered)),
+    shipping_date: dayToUnix(realDate(steps.shipping_date)),
   };
 }
 
@@ -106,7 +113,7 @@ export async function loadPlDates(admin: AdminClient, ids: UUID[]): Promise<Map<
   if (ids.length > 0) {
     const { data: steps, error: stepsError } = await admin
       .from("pre_loading_checklist_steps")
-      .select("pre_loading_id, step, estimated_date, completed_on")
+      .select("pre_loading_id, step, estimated_date, completed_on, event_date")
       .in("pre_loading_id", ids)
       .in("step", TRACKED_STEPS)
       .returns<StepRow[]>();

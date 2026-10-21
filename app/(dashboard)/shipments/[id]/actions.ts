@@ -22,6 +22,7 @@ import { requireFeature } from "@/lib/dal";
 import { applyDeliveredRule } from "@/domain/shipments/delivered";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
+import { setPlStepEventDate } from "@/lib/pl-step-event-date";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
@@ -89,6 +90,65 @@ export async function correctShipmentCompletedOn(
     session.userId
   );
   if (error) return { ok: false, error };
+
+  // Delivered travado desde 21/10: reabrir (ou reconcluir) pela correção do
+  // admin tem o mesmo efeito de antes no lote e no embarque.
+  if (step === "delivered") {
+    const ruleError = await applyDeliveredRuleForPl(admin, preLoadingId, date != null);
+    if (ruleError) return { ok: false, error: ruleError };
+  }
+
+  revalidateShipmentViews();
+  revalidatePath("/todo");
+  await broadcastShipmentPing();
+  if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
+  return { ok: true };
+}
+
+/** Regra do Delivered (lotes + embarque) a partir do PL. */
+async function applyDeliveredRuleForPl(
+  admin: Admin,
+  preLoadingId: string,
+  delivered: boolean
+): Promise<string | null> {
+  const { data: shipment, error } = await admin
+    .from("shipments")
+    .select("id")
+    .eq("pre_loading_id", preLoadingId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) return error.message;
+  if (!shipment) return null;
+  const ruleError = await applyDeliveredRule(admin, shipment.id, preLoadingId, delivered);
+  if (ruleError) return ruleError;
+  await scheduleClientNotificationDispatch();
+  return null;
+}
+
+/**
+ * Shipping Date / ETA / ATA / Delivered: grava a data do fato (21/10/2026, ver
+ * lib/pl-step-event-date). A 1ª conclui a etapa; trocar depois exige motivo.
+ * Concluir o Delivered entrega lotes e embarque, como antes fazia o Completed on.
+ */
+export async function saveShipmentEventDate(
+  preLoadingId: string,
+  step: ChecklistStep,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("shipments", "edit");
+  const admin = createAdminClient();
+
+  const { error, completed } = await setPlStepEventDate(admin, preLoadingId, step, date, {
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+
+  if (step === "delivered" && completed) {
+    const ruleError = await applyDeliveredRuleForPl(admin, preLoadingId, true);
+    if (ruleError) return { ok: false, error: ruleError };
+  }
 
   revalidateShipmentViews();
   revalidatePath("/todo");

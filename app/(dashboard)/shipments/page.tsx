@@ -38,10 +38,16 @@ type StepRow = {
   agent_china_id: string | null;
   estimated_date: string | null;
   completed_on: string | null;
+  event_date: string | null;
 };
 
-/** Data que a lista e os filtros usam pra uma etapa já cumprida. */
-const stepDate = (s: StepRow | undefined) => s?.completed_on ?? s?.estimated_date ?? null;
+/**
+ * Data que a lista e os filtros usam pra uma etapa já cumprida. Shipping/ETA/
+ * ATA/Delivered têm a data do fato (`event_date`, 21/10/2026) — o Completed on
+ * delas é o dia em que ela foi informada.
+ */
+const stepDate = (s: StepRow | undefined) =>
+  s?.event_date ?? s?.completed_on ?? s?.estimated_date ?? null;
 
 export const metadata = { title: "Shipments" };
 
@@ -120,7 +126,7 @@ export default async function ShipmentsPage() {
       admin
         .from("pre_loading_checklist_steps")
         .select(
-          "pre_loading_id, step, pol_id, consolidation_point_id, agent_brazil_id, agent_china_id, estimated_date, completed_on"
+          "pre_loading_id, step, pol_id, consolidation_point_id, agent_brazil_id, agent_china_id, estimated_date, completed_on, event_date"
         )
         .in("step", LIST_STEPS)
         .range(from, to)
@@ -262,8 +268,8 @@ export default async function ShipmentsPage() {
       ship_model: s.shipment_model_id ? (modelNameById.get(s.shipment_model_id) ?? null) : null,
       shipment_model_id: s.shipment_model_id,
       loading_date: st.loading_date?.estimated_date ?? st.loading_date?.completed_on ?? null,
-      ship_date: st.shipping_date?.completed_on ?? st.shipping_date?.estimated_date ?? null,
-      eta: st.eta_brazil?.completed_on ?? st.eta_brazil?.estimated_date ?? null,
+      ship_date: stepDate(st.shipping_date),
+      eta: stepDate(st.eta_brazil),
       // Só filtráveis — não têm coluna na lista (docs §3.10.2).
       bl_date: stepDate(st.bl),
       ata_date: stepDate(st.ata_brazil),

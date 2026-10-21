@@ -35,7 +35,7 @@ export async function autoCompletePlStep(
   const { data: s } = await admin
     .from("pre_loading_checklist_steps")
     .select(
-      "id, estimated_date, completed_on, signed_by_id, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+      "id, estimated_date, completed_on, signed_by_id, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number, event_date"
     )
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)

@@ -86,3 +86,22 @@ export const SHIPMENT_STEPS: ChecklistStep[] = [
   "ata_brazil",
   "delivered",
 ];
+
+/**
+ * Etapas do Shipment com data própria (21/10/2026, planilha de regras do
+ * checklist), no molde do "Order received date": o usuário informa a data do
+ * fato (`pre_loading_checklist_steps.event_date`); a 1ª gravação conclui a etapa
+ * (Completed on = o dia da gravação, travado) e trocar depois exige motivo.
+ * Valor = rótulo do campo na tela.
+ */
+export const EVENT_DATE_STEPS: Partial<Record<ChecklistStep, string>> = {
+  shipping_date: "Shipping date",
+  eta_brazil: "ETA",
+  ata_brazil: "ATA",
+  delivered: "Delivered date",
+};
+
+/** ETA é previsão de chegada — a única dessas datas que pode ser futura. */
+export const EVENT_DATE_ALLOWS_FUTURE: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "eta_brazil",
+]);
