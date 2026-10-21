@@ -1168,7 +1168,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 18 | Shipping Date | — |
 | 19 | BL | documento |
 | 20 | Original Docs | documento |
-| 21 | Inspection Report | — (aceita documento, mas **hoje é opcional**; pode virar obrigatório) |
+| 21 | Inspection Report | **oculta do front desde 21/10/2026** (planilha de regras do checklist: "retirar essa etapa do front"): some do Shipment e da To do list (`HIDDEN_STEPS` em `lib/checklist.ts`); as linhas seguem no banco. Antes: aceitava documento opcional |
 | 22 | ETA Brazil | — |
 | 23 | ATA Brazil | — |
 | 24 | Delivered | — |
