@@ -12,6 +12,7 @@ import {
 import {
   completeEtdIfFilled,
   completePlaceTheOrderIfCovered,
+  setBalanceDate,
   setDepositDate,
   setOrderReceivedDate,
 } from "@/lib/checklist-revisions";
@@ -150,6 +151,9 @@ export async function updateChecklistStep(
     if (current.step === "deposit_payment") {
       return { ok: false, error: "Set the deposit date to complete this step." };
     }
+    if (current.step === "balance_payment") {
+      return { ok: false, error: "Set the balance date to complete this step." };
+    }
     if (LOCKED_COMPLETED_ON_STEPS.has(current.step)) {
       return { ok: false, error: LOCKED_COMPLETED_ON_ERROR };
     }
@@ -260,6 +264,28 @@ export async function saveDepositDate(
   if (error) return { ok: false, error };
   const settleError = await settleDepositPayment(admin, orderId);
   if (settleError) return { ok: false, error: settleError };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
+/**
+ * "Balance date" da etapa Balance Payment (22/10/2026, igual ao Deposit): a data
+ * em que o cliente pagou o saldo. Motivo é obrigatório em toda gravação; cada
+ * uma regrava o Completed on com o dia (imutável). Sem efeito nos lotes.
+ */
+export async function saveBalanceDate(
+  orderId: string,
+  date: string,
+  reason: string
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!date) return { ok: false, error: "Choose the balance date." };
+  const error = await setBalanceDate(createAdminClient(), orderId, date, {
+    source: "manual",
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
   await refreshChecklistViews(orderId);
   return { ok: true };
 }

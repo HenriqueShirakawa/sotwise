@@ -49,7 +49,7 @@ export default async function OrderDetailPage({
   const orderQuery = admin
     .from("orders")
     .select(
-      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, date_po, order_received_date, pi_status, pi_status_date, deposit_date"
+      "id, po_number, order_type_id, business_unit_id, client_id, client_reference, requester_id, exporter_id, leader_id, operational_responsible_id, status, schedule_requested, date_po, order_received_date, pi_status, pi_status_date, deposit_date, balance_date"
     )
     .is("deleted_at", null);
   const { data: order } = await (isUuid(id) ? orderQuery.eq("id", id) : orderQuery.eq("po_number", id)).single();
@@ -287,6 +287,7 @@ export default async function OrderDetailPage({
         pi_status: order.pi_status,
         pi_status_date: order.pi_status_date,
         deposit_date: order.deposit_date,
+        balance_date: order.balance_date,
         status: order.status,
         schedule_requested: order.schedule_requested,
       }}

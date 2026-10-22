@@ -116,6 +116,7 @@ type Lookup =
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
   order_received_date: { label: "Order received date", kind: "date" },
   deposit_date: { label: "Deposit date", kind: "date" },
+  balance_date: { label: "Balance date", kind: "date" },
   // Shipping Date / ETA / ATA / Delivered / Loading Date — o rótulo real vem de EVENT_DATE_LABELS.
   event_date: { label: "Date", kind: "date" },
   enabled: { label: "Enabled", kind: "bool" },
