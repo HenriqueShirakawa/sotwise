@@ -199,8 +199,10 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
  * Initial Date é preenchida (idem), as do
  * PL/Shipment pela auto-conclusão (lib/pl-step-autocomplete) e Shipping Date/ETA/
  * ATA/Delivered pela data do fato (lib/pl-step-event-date) e Loading date pelo
- * popup do Confirm Shipping (CONFIRM_SHIPPING_COMPLETES). Só admin/owner
- * corrige, com motivo. Cada etapa que ganhar gatilho entra aqui.
+ * popup do Confirm Shipping (CONFIRM_SHIPPING_COMPLETES). Desde 22/10/2026 o
+ * Completed on é a ÚLTIMA atualização do dado da etapa (cada mudança regrava) e
+ * é IMUTÁVEL: ninguém edita, nem o admin; a etapa nunca reabre. Cada etapa que
+ * ganhar gatilho entra aqui.
  */
 export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   ...TRIGGER_COMPLETED_STEPS,
@@ -243,7 +245,7 @@ export function isReadyToShip(
 }
 
 export const LOCKED_COMPLETED_ON_ERROR =
-  "This step is completed automatically. Only an admin can correct the date, with a reason.";
+  "This step is completed automatically — its completion date can't be edited.";
 
 /**
  * "Completed on" só existe com "Estimated date" preenchido: não se conclui uma

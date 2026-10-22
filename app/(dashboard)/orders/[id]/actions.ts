@@ -12,11 +12,9 @@ import {
 import {
   completeEtdIfFilled,
   completePlaceTheOrderIfCovered,
-  reviseCompletedOn,
   setDepositDate,
   setOrderReceivedDate,
 } from "@/lib/checklist-revisions";
-import { correctOrderStepCompletedOn as correctOrderStep } from "@/lib/completed-on-correction";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
@@ -144,8 +142,7 @@ export async function updateChecklistStep(
   if (dateError) return { ok: false, error: dateError };
 
   // Order conclui pelo "Order received date", Deposit Payment pelo "Deposit date";
-  // PO/PI pelo gatilho do GSS — o campo é travado e só o admin corrige, com
-  // motivo (reviseStepCompletedOn).
+  // PO/PI pelo gatilho do GSS — o campo é imutável, ninguém edita (22/10/2026).
   if ("completed_on" in patch && patch.completed_on !== current.completed_on) {
     if (current.step === "order") {
       return { ok: false, error: "Set the order received date to complete this step." };
@@ -263,44 +260,6 @@ export async function saveDepositDate(
   if (error) return { ok: false, error };
   const settleError = await settleDepositPayment(admin, orderId);
   if (settleError) return { ok: false, error: settleError };
-  await refreshChecklistViews(orderId);
-  return { ok: true };
-}
-
-/** PO/PI: correção do Completed on pelo admin, com motivo (vira revisão). */
-export async function reviseStepCompletedOn(
-  orderId: string,
-  stepId: string,
-  date: string,
-  reason: string
-): Promise<ActionResult> {
-  const session = await requireFeature("orders", "edit");
-  if (!session.isAdmin && !session.isOwner) {
-    return { ok: false, error: "Only an admin can correct the completion date." };
-  }
-  if (!date) return { ok: false, error: "Choose the completion date." };
-  const error = await reviseCompletedOn(createAdminClient(), stepId, date, reason, session.userId);
-  if (error) return { ok: false, error };
-  await refreshChecklistViews(orderId);
-  return { ok: true };
-}
-
-/**
- * Place the Order / ETD: correção do Completed on travado pelo admin/owner, com motivo
- * (vai pro History); `date` null reabre a etapa. Ver lib/completed-on-correction.
- */
-export async function correctOrderStepCompletedOn(
-  orderId: string,
-  stepId: string,
-  date: string | null,
-  reason: string
-): Promise<ActionResult> {
-  const session = await requireFeature("orders", "edit");
-  if (!session.isAdmin && !session.isOwner) {
-    return { ok: false, error: "Only an admin can correct the completion date." };
-  }
-  const error = await correctOrderStep(createAdminClient(), stepId, date, reason, session.userId);
-  if (error) return { ok: false, error };
   await refreshChecklistViews(orderId);
   return { ok: true };
 }

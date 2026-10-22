@@ -49,7 +49,6 @@ import {
 import {
   deletePreLoadingStepAttachment,
   getPreLoadingAttachmentUrl,
-  correctPreLoadingCompletedOn,
   savePreLoadingStep,
   savePlClientBooking,
   createPreLoadingAttachmentTicket,
@@ -416,7 +415,6 @@ export function PlChecklistClient({
   preloadingLeaderId,
   alreadyShipped,
   viewPrefs,
-  canCorrectCompletedOn,
 }: {
   preLoading: PreLoadingDetail;
   batches: PlBatchRow[];
@@ -437,8 +435,6 @@ export function PlChecklistClient({
   alreadyShipped: boolean;
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
-  /** Admin/owner: corrige o "Completed on" travado das etapas com gatilho. */
-  canCorrectCompletedOn: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -753,17 +749,9 @@ export function PlChecklistClient({
                         onChange={(v) => save(s.step, { responsible_id: v })}
                       />
                       {LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
-                        <LockedCompletedOn
-                          value={s.completed_on}
-                          // Loading Date: trancado até para o admin — quem preenche
-                          // Completed on e Signed by é o Confirm Shipping.
-                          canCorrect={
-                            canCorrectCompletedOn && !CONFIRM_SHIPPING_COMPLETES.has(s.step)
-                          }
-                          onCorrect={(date, reason) =>
-                            correctPreLoadingCompletedOn(preLoading.id, s.step, date, reason)
-                          }
-                        />
+                        // Imutável: a data vem do gatilho da etapa (na Loading
+                        // Date, do Confirm Shipping) — ninguém corrige à mão.
+                        <LockedCompletedOn value={s.completed_on} />
                       ) : (
                         <div>
                           <Label className="text-xs text-muted-foreground">Completed on</Label>

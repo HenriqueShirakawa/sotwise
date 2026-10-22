@@ -3,7 +3,11 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
-import { validateStepDates } from "@/lib/checklist-completion";
+import {
+  LOCKED_COMPLETED_ON_ERROR,
+  LOCKED_COMPLETED_ON_STEPS,
+  validateStepDates,
+} from "@/lib/checklist-completion";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { setPlStepEventDate } from "@/lib/pl-step-event-date";
@@ -462,6 +466,11 @@ export async function patchShipmentStep(
   if (eventStep && input.completed_on !== undefined) {
     return fail(400, `Step '${step}' is completed by its 'date' — send 'date' instead of 'completed_on'.`);
   }
+  // Completed on das etapas com gatilho é imutável (22/10/2026): ninguém grava
+  // à mão — nem a tela, nem a API.
+  if (LOCKED_COMPLETED_ON_STEPS.has(checklistStep) && input.completed_on !== undefined) {
+    return fail(400, LOCKED_COMPLETED_ON_ERROR);
+  }
 
   const loaded = await loadPl(admin, id);
   if (!loaded.ok) return loaded;
@@ -548,9 +557,12 @@ export async function patchShipmentStep(
     await scheduleClientNotificationDispatch();
   }
 
-  // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha.
+  // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha
+  // — e, já concluída, mudar o dado (não só a previsão) regrava o Completed on.
   if (!("completed_on" in patch) && COMPLETION_FACT_COLUMNS.some((c) => c in patch)) {
-    await autoCompletePlStep(admin, id, checklistStep, actor.userId);
+    await autoCompletePlStep(admin, id, checklistStep, actor.userId, {
+      refresh: COMPLETION_FACT_COLUMNS.some((c) => c !== "estimated_date" && c in patch),
+    });
   }
 
   refreshViews();
