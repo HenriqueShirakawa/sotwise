@@ -8,13 +8,18 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
-import { formatDate } from "@/lib/format";
+import { formatDateNumeric, todayIso } from "@/lib/format";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DatePicker } from "@/components/date-picker";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import {
   deleteStepAttachment,
   getAttachmentDownloadUrl,
   createStepAttachmentTicket,
   registerStepAttachment,
+  saveFactoryPlacedDate,
 } from "./actions";
 import type { BatchRow, ChecklistStepRow, OfcRow } from "./order-detail-client";
 
@@ -110,18 +115,104 @@ function FactoryAttachments({
   );
 }
 
+/**
+ * Popup da data "Placed on" de uma fábrica (22/10/2026): a 1ª gravação é livre,
+ * trocar depois exige motivo — de → para e motivo vão pro History da etapa.
+ */
+function PlacedOnDialog({
+  orderId,
+  factory,
+  current,
+  onClose,
+}: {
+  orderId: string;
+  factory: { id: string; name: string };
+  current: string | null;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [date, setDate] = useState(current ?? "");
+  const [reason, setReason] = useState("");
+  const reasonRequired = !!current;
+  const canSave = !!date && date !== current && (!reasonRequired || reason.trim() !== "");
+
+  function save() {
+    startTransition(async () => {
+      const res = await saveFactoryPlacedDate(orderId, factory.id, date, reason.trim() || null);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(current ? "Revision saved." : "Placed-on date saved.");
+      onClose();
+      router.refresh();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-lg text-primary">Placed on — {factory.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-foreground">Placed on</Label>
+            <DatePicker
+              value={date || null}
+              onChange={(v) => setDate(v ?? "")}
+              max={todayIso()}
+              className="mt-1.5 bg-white"
+            />
+          </div>
+          {reasonRequired && (
+            <div>
+              <Label className="text-foreground">Reason</Label>
+              <Textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Why is this date changing?"
+                className="mt-1.5 bg-white"
+                rows={3}
+              />
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 bg-white"
+              disabled={pending}
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+            <Button type="button" className="flex-1" disabled={!canSave || pending} onClick={save}>
+              Save
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function PlaceOrderFactoryGroups({
   orderId,
   stepId,
   ofc,
   batches,
   attachments,
+  placedDates,
 }: {
   orderId: string;
   stepId: string;
   ofc: OfcRow[];
   batches: BatchRow[];
   attachments: ChecklistStepRow["attachments"];
+  /** factory_id → data "Placed on" (YYYY-MM-DD). */
+  placedDates: Record<string, string>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -129,6 +220,7 @@ export function PlaceOrderFactoryGroups({
   const [page, setPage] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploadFactoryId, setUploadFactoryId] = useState<string | null>(null);
+  const [dateFor, setDateFor] = useState<{ id: string; name: string } | null>(null);
 
   const groups = buildFactoryGroups(ofc, batches);
   const totalPages = Math.max(1, Math.ceil(groups.length / GROUPS_PAGE_SIZE));
@@ -175,7 +267,15 @@ export function PlaceOrderFactoryGroups({
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
-      <div className="hidden grid-cols-[1fr_120px_110px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+      {dateFor && (
+        <PlacedOnDialog
+          orderId={orderId}
+          factory={dateFor}
+          current={placedDates[dateFor.id] ?? null}
+          onClose={() => setDateFor(null)}
+        />
+      )}
+      <div className="hidden grid-cols-[1fr_120px_170px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
         <span>Factory</span>
         <span>N° of categories</span>
         <span>Placed on</span>
@@ -191,25 +291,20 @@ export function PlaceOrderFactoryGroups({
           const open = expanded.has(g.factory_id);
           const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
           const categoryCount = new Set(g.entries.map((e) => e.category_name)).size;
-          // Data da fábrica = o 1º documento anexado a ela (o upload fica no
-          // History da etapa). Sem documento, sem data.
-          const placedAt = groupAttachments.reduce<string | null>(
-            (min, a) => (!min || a.created_at < min ? a.created_at : min),
-            null
-          );
+          // Data da fábrica = a "Placed on" informada pelo usuário (22/10/2026;
+          // antes era a do 1º documento). O anexo segue opcional.
+          const placedOn = placedDates[g.factory_id] ?? null;
           return (
             <div key={g.factory_id} className="border-t">
-              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_120px_110px_128px_40px]">
+              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_120px_170px_128px_40px]">
                 <span className="flex min-w-0 items-center gap-2">
-                  {/* Verde = fábrica já tem documento; âmbar = ainda falta. A
+                  {/* Verde = fábrica já tem a data; âmbar = ainda falta. A
                       etapa só conclui quando todas estão verdes. */}
                   <span
                     aria-hidden
-                    title={
-                      groupAttachments.length > 0 ? "Document attached" : "Needs a document"
-                    }
+                    title={placedOn ? "Placed-on date set" : "Needs the placed-on date"}
                     className={`size-2 shrink-0 rounded-full ${
-                      groupAttachments.length > 0 ? "bg-emerald-500" : "bg-amber-500"
+                      placedOn ? "bg-emerald-500" : "bg-amber-500"
                     }`}
                   />
                   <span className="truncate font-medium text-slate-800">{g.factory_name}</span>
@@ -222,12 +317,16 @@ export function PlaceOrderFactoryGroups({
                     {categoryCount === 1 ? " category" : " categories"}
                   </span>
                 </span>
-                <span
-                  className="text-slate-700 max-sm:col-start-1 max-sm:text-xs max-sm:text-slate-500"
-                  title="Date the first document of this factory was attached"
-                >
-                  <span className="sm:hidden">Placed on </span>
-                  {placedAt ? formatDate(placedAt) : "—"}
+                <span className="flex items-center gap-2 text-slate-700 max-sm:col-start-1 max-sm:text-xs">
+                  <span className="sm:hidden text-slate-500">Placed on </span>
+                  <span>{placedOn ? formatDateNumeric(placedOn) : "—"}</span>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() => setDateFor({ id: g.factory_id, name: g.factory_name })}
+                  >
+                    {placedOn ? "Revise" : "Set date"}
+                  </button>
                 </span>
                 <Button
                   type="button"
