@@ -27,6 +27,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  *  - **Deposit Payment**: o usuário grava o "Deposit date" (quando o cliente
  *    depositou de fato), sempre com motivo. A 1ª gravação conclui a etapa com
  *    Completed on = o dia da gravação.
+ *  - **Balance Payment** (22/10/2026): igual ao Deposit, com o "Balance date".
  *  - **Place the Order**: conclui quando a 1ª fábrica do pedido recebe
  *    documento (Completed on = hoje). Sem revisões — só o History.
  *
@@ -180,45 +181,57 @@ export async function setOrderReceivedDate(
   return null;
 }
 
-// ── Deposit Payment ──────────────────────────────────────────────────────────
+// ── Deposit Payment / Balance Payment ────────────────────────────────────────
+
+/** As datas de pagamento que concluem etapa: coluna em `orders` → etapa + rótulo. */
+const PAYMENT_DATES = {
+  deposit_date: { step: "deposit_payment", label: "deposit date" },
+  balance_date: { step: "balance_payment", label: "balance date" },
+} as const satisfies Record<string, { step: ChecklistStep; label: string }>;
+
+type PaymentDateField = keyof typeof PAYMENT_DATES;
 
 /**
- * Grava o "Deposit date" — a data em que o cliente de fato depositou (card do
- * cliente, 20/10/2026). MOTIVO é obrigatório em TODA gravação, inclusive a 1ª
- * (decisão do usuário; difere do Order received date, cujo 1º registro é livre).
+ * Grava uma data de pagamento da Order — o "Deposit date" (Deposit Payment, card
+ * do cliente, 20/10/2026) ou o "Balance date" (Balance Payment, igual ao Deposit
+ * desde 22/10/2026): a data em que o cliente pagou de fato. MOTIVO é obrigatório
+ * em TODA gravação, inclusive a 1ª (decisão do usuário; difere do Order received
+ * date, cujo 1º registro é livre).
  *
- * A 1ª gravação conclui a etapa com Completed on = o DIA DA GRAVAÇÃO, não a data
- * do depósito — mesmo critério do Order. Revisar depois troca só o Deposit date.
- * Retorna a mensagem de erro de validação, ou null.
+ * Cada gravação regrava o Completed on com o DIA DA GRAVAÇÃO, não a data do
+ * pagamento (a última atualização, imutável). Retorna a mensagem de erro de
+ * validação, ou null.
  */
-export async function setDepositDate(
+async function setPaymentDate(
   admin: Admin,
   orderId: string,
+  field: PaymentDateField,
   date: string,
   who: Who
 ): Promise<string | null> {
-  if (date > todayIso()) return "The deposit date can't be in the future.";
+  const { step: stepKey, label } = PAYMENT_DATES[field];
+  if (date > todayIso()) return `The ${label} can't be in the future.`;
 
   const { data: order, error } = await admin
     .from("orders")
-    .select("deposit_date")
+    .select("deposit_date, balance_date")
     .eq("id", orderId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!order) return "Order not found.";
 
-  const previous = order.deposit_date;
+  const previous = order[field];
   if (previous === date) return null;
 
   const reason = reasonFor(who);
-  if (!reason) return "A reason is required to record the deposit date.";
+  if (!reason) return `A reason is required to record the ${label}.`;
 
-  const step = await readStep(admin, orderId, "deposit_payment");
+  const step = await readStep(admin, orderId, stepKey);
   if (!step) return "Checklist step not found.";
 
   const { error: upError } = await admin
     .from("orders")
-    .update({ deposit_date: date })
+    .update(field === "deposit_date" ? { deposit_date: date } : { balance_date: date })
     .eq("id", orderId);
   if (upError) throw new Error(upError.message);
 
@@ -227,7 +240,7 @@ export async function setDepositDate(
     {
       order_id: orderId,
       step_id: step.id,
-      kind: "deposit_date",
+      kind: field,
       previous_date: previous,
       new_date: date,
       reason,
@@ -240,14 +253,25 @@ export async function setDepositDate(
     owner: { checklistStepId: step.id },
     step: step.step,
     action: "update",
-    changes: { deposit_date: { from: previous, to: date }, reason },
+    changes: { [field]: { from: previous, to: date }, reason },
     userId: who.userId,
   });
 
-  // Completed on = o MOMENTO da última gravação (não a data do depósito).
+  // Completed on = o MOMENTO da última gravação (não a data do pagamento).
   await completeByTrigger(admin, step, todayIso(), who.userId);
   return null;
 }
+
+/** "Deposit date" da etapa Deposit Payment (ver `setPaymentDate`). */
+export function setDepositDate(admin: Admin, orderId: string, date: string, who: Who) {
+  return setPaymentDate(admin, orderId, "deposit_date", date, who);
+}
+
+/** "Balance date" da etapa Balance Payment (ver `setPaymentDate`). */
+export function setBalanceDate(admin: Admin, orderId: string, date: string, who: Who) {
+  return setPaymentDate(admin, orderId, "balance_date", date, who);
+}
+
 // ── PO ───────────────────────────────────────────────────────────────────────
 
 export type FxcItem = {
