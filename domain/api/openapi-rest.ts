@@ -538,6 +538,13 @@ export const restPaths = {
                     shipment_model: "027d1f3c-3ac9-400c-967e-bda0248daa89",
                     shipment_leader_email: "leader@example.com",
                     signer_email: "signer@example.com",
+                    shipment_estimates: {
+                      shipping_date: du("2026-07-12"),
+                      bl: du("2026-07-15"),
+                      original_docs: du("2026-07-20"),
+                      eta_brazil: du("2026-08-20"),
+                      ata_brazil: du("2026-08-22"),
+                    },
                   },
                 },
               },
@@ -594,7 +601,7 @@ export const restPaths = {
         "Same rules as the SOTWISE screens:",
         "- `completed_on` is never in the future and needs `estimated_date`.",
         "- Step-specific fields are only accepted on their step: `consolidation_point` (consolidation_point), `city` (city), `pol` (port_of_loading), " +
-          "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (booking).",
+          "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (Container Cut-off)/`doc_cutoff_date` (Doc Cut-off) (booking — all three required to complete it).",
         "- A step that gets everything it needs (+ an estimated date) closes by itself.",
         "- `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
           "the first `date` completes the step (`completed_on` = that day); changing it later needs `reason`. Only `eta_brazil` accepts a future date.",
@@ -610,7 +617,7 @@ export const restPaths = {
             schema: ref("ShipmentStepPatch"),
             examples: {
               dates: { summary: "Dates", value: { estimated_date: du("2026-09-05"), completed_on: du("2026-09-06") } },
-              booking: { summary: "Booking", value: { booking_number: "BK123456", cutoff_date: du("2026-07-05"), estimated_date: du("2026-07-04") } },
+              booking: { summary: "Booking", value: { booking_number: "BK123456", cutoff_date: du("2026-07-05"), doc_cutoff_date: du("2026-07-03"), estimated_date: du("2026-07-04") } },
               reopen: { summary: "Reopen", value: { completed_on: null } },
               eventDate: { summary: "Shipping / ETA / ATA / Delivered date", value: { date: du("2026-10-20") } },
               reviseEventDate: {
@@ -752,6 +759,7 @@ export const restSchemas = {
       "shipment_model",
       "shipment_leader_email",
       "signer_email",
+      "shipment_estimates",
     ],
     properties: {
       container_number: { type: "string" },
@@ -767,6 +775,13 @@ export const restSchemas = {
       shipment_leader_email: emailIn,
       signer_email: emailIn,
       preloading_leader_email: { ...emailIn, description: "Default: the PL leader." },
+      shipment_estimates: {
+        type: "object",
+        description: "Estimated date of each Shipment step — all required; stored on the steps (they show up filled in the Shipment).",
+        required: ["shipping_date", "bl", "original_docs", "eta_brazil", "ata_brazil"],
+        properties: { shipping_date: inDay, bl: inDay, original_docs: inDay, eta_brazil: inDay, ata_brazil: inDay },
+        additionalProperties: false,
+      },
       lines: {
         type: "array",
         deprecated: true,
@@ -873,7 +888,8 @@ export const restSchemas = {
       contact_brazil: refNullable,
       contact_china: refNullable,
       booking_number: { type: ["string", "null"], maxLength: 100 },
-      cutoff_date: inDayNullable,
+      cutoff_date: { ...inDayNullable, description: "`booking` — Container Cut-off." },
+      doc_cutoff_date: { ...inDayNullable, description: "`booking` — Doc Cut-off." },
       date: { ...inDay, description: "shipping_date / eta_brazil / ata_brazil / delivered only." },
       reason: { type: "string", maxLength: 2000, description: "Required when changing a `date` already set." },
     },

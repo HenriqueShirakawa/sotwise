@@ -1180,7 +1180,9 @@ export type Database = {
           contact_brazil_id: UUID | null;
           contact_china_id: UUID | null;
           booking_number: string | null;
+          /** Booking: Container Cut-off (cutoff_date) e Doc Cut-off — 22/10/2026. */
           cutoff_date: DateStr | null;
+          doc_cutoff_date: DateStr | null;
           /** Shipping Date / ETA / ATA / Delivered: a data do fato (21/10/2026). */
           event_date: DateStr | null;
           created_at: Timestamp;
@@ -1207,6 +1209,7 @@ export type Database = {
           contact_china_id?: UUID | null;
           booking_number?: string | null;
           cutoff_date?: DateStr | null;
+          doc_cutoff_date?: DateStr | null;
           event_date?: DateStr | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;

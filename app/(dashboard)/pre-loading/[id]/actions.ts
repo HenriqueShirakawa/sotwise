@@ -47,6 +47,7 @@ export type StepPatch = Partial<{
   contact_china_id: string | null;
   booking_number: string | null;
   cutoff_date: string | null;
+  doc_cutoff_date: string | null;
 }>;
 
 /** Campos que entram na regra de conclusão — só eles disparam a auto-conclusão. */
@@ -61,6 +62,8 @@ const COMPLETION_FACT_FIELDS: (keyof StepPatch)[] = [
   "contact_brazil_id",
   "contact_china_id",
   "booking_number",
+  "cutoff_date",
+  "doc_cutoff_date",
 ];
 
 function touchesCompletionFacts(patch: StepPatch): boolean {
@@ -437,6 +440,16 @@ export async function confirmShipping(
           ? { signed_by_id: { from: loadingStep.signed_by_id, to: session.userId } }
           : {}),
       },
+      userId: session.userId,
+    });
+  }
+  // Estimated dates do Shipment que o popup gravou (22/10/2026).
+  for (const c of result.estimate_changes) {
+    await writeStepLog(admin, {
+      owner: { preLoadingStepId: c.stepId },
+      step: c.step,
+      action: "confirm_shipping",
+      changes: { estimated_date: { from: c.from, to: c.to } },
       userId: session.userId,
     });
   }
