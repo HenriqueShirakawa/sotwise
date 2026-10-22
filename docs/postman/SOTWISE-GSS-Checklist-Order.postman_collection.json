@@ -1,0 +1,650 @@
+{
+  "info": {
+    "name": "SOTWISE — GSS Checklist da Order (etapas order / pi / po)",
+    "description": "Testa o endpoint que o GSS usa para atualizar as etapas do checklist da Order no SOTWISE:\n\n- `GET /api/orders/{id}/steps/{step}` — estado da etapa + revisões\n- `PATCH /api/orders/{id}/steps/{step}` — o dado que conclui a etapa\n\n`{id}` = UUID ou `po_number`. `{step}` = `order` (order_received_date) | `pi` (pi_status + pi_status_date) | `po` (items[] de Factory × Category). `reason` opcional (motivo da revisão; sem ele grava \"Updated by GSS\"). Datas em Unix (segundos) — ou, legado, `YYYY-MM-DD`.\n\nRegras (as mesmas da tela): o 1º dado conclui a etapa, os seguintes viram revisão (o original nunca se perde); o `completed_on` é sempre o dia da ÚLTIMA atualização (na PI, a data do status) e não se grava direto; valor idêntico não grava nada; campo de outra etapa → 400.\n\n**Como rodar:** environment **\"SOTWISE — GSS (prod)\"** (`base_url` + `api_token`). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-…`) e o último a apaga — nenhuma order real é tocada. O passo do PO usa `supplier_category_gss_id_1` do environment (se vazio, usa o default da collection).\n\nSwagger: `{{base_url}}/api/docs` → Orders → getOrderStep / patchOrderStep.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://sot.gssdatahub.com",
+      "type": "string"
+    },
+    {
+      "key": "default_supplier_category_gss_id",
+      "value": "11",
+      "type": "string"
+    },
+    {
+      "key": "test_po_number",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "test_order_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup — cria a order de teste (POST /api/orders) — 201",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders"
+          ]
+        },
+        "description": "Cria uma order descartável (gss_id/po_number com prefixo GSS-TEST-) para os testes não mexerem em nada real. É apagada no último passo.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"gss_id\": \"{{test_gss_id}}\",\n  \"po_number\": \"{{test_po_number}}\",\n  \"client_reference\": \"Postman — teste das etapas (descartável)\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const n = 'GSS-TEST-STEPS-' + Date.now();",
+              "pm.collectionVariables.set('test_gss_id', n);",
+              "pm.collectionVariables.set('test_po_number', n);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 — order criada', () => pm.response.to.have.status(201));",
+              "const b = pm.response.json();",
+              "pm.collectionVariables.set('test_order_id', b.data.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. GET order — etapa aberta — 200",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.test('aberta: completed_on null', () => pm.expect(d.completed_on).to.eql(null));",
+              "pm.test('sem revisões', () => pm.expect(d.revisions).to.have.length(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. PATCH order — 1º Order received date conclui a etapa — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_received_date\": {{d_received_1}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('d_received_1', Math.floor(new Date('2026-10-20T12:00:00Z').getTime() / 1000));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.test('concluída (completed_on preenchido)', () => pm.expect(d.completed_on).to.be.a('number'));",
+              "pm.test('order_received_date gravado', () => pm.expect(d.order_received_date).to.eql(Number(pm.collectionVariables.get('d_received_1'))));",
+              "pm.test('1 registro (o original)', () => pm.expect(d.revisions).to.have.length(1));",
+              "pm.test('fonte = gss', () => pm.expect(d.revisions[0].source).to.eql('gss'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. PATCH order — revisão com motivo — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_received_date\": {{d_received_2}},\n  \"reason\": \"Final PO re-sent by the client\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('d_received_2', Math.floor(new Date('2026-10-21T12:00:00Z').getTime() / 1000));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.test('2 registros: original + revisão', () => pm.expect(d.revisions).to.have.length(2));",
+              "pm.test('motivo gravado', () => pm.expect(d.revisions[1].reason).to.eql('Final PO re-sent by the client'));",
+              "pm.test('original preservado', () => pm.expect(d.revisions[0].new_date).to.eql(Number(pm.collectionVariables.get('d_received_1'))));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. PATCH order — mesmo valor não grava nada — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_received_date\": {{d_received_2}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "pm.test('continua com 2 registros', () => pm.expect(pm.response.json().data.revisions).to.have.length(2));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. PATCH order — campo de outra etapa — 400",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pi_status\": \"Issued\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400', () => pm.response.to.have.status(400));",
+              "pm.test('diz qual campo', () => pm.expect(pm.response.json().error).to.include('pi_status'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. PATCH order — data futura — 400",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"order_received_date\": {{d_future}},\n  \"reason\": \"teste\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('d_future', Math.floor(Date.now() / 1000) + 30 * 86400);"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. PATCH pi — status da PI conclui a etapa — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "pi"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pi_status\": \"Issued\",\n  \"pi_status_date\": {{d_pi}}\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('d_pi', Math.floor(new Date('2026-10-21T12:00:00Z').getTime() / 1000));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.test('pi_status gravado', () => pm.expect(d.pi_status).to.eql('Issued'));",
+              "pm.test('completed_on = data do status', () => pm.expect(d.completed_on).to.eql(Number(pm.collectionVariables.get('d_pi'))));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. PATCH po — leva de Factory × Category conclui a etapa — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/po",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "po"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"supplier_category_gss_id\": \"{{sc_id}}\",\n      \"ship_requirement\": {{d_ship}}\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const sc = pm.environment.get('supplier_category_gss_id_1') || pm.collectionVariables.get('default_supplier_category_gss_id');",
+              "pm.collectionVariables.set('sc_id', sc);",
+              "pm.collectionVariables.set('d_ship', Math.floor(new Date('2026-11-30T12:00:00Z').getTime() / 1000));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().data;",
+              "pm.test('1 linha de F×C', () => pm.expect(d.items).to.have.length(1));",
+              "pm.test('concluída', () => pm.expect(d.completed_on).to.be.a('number'));",
+              "pm.test('leva registrada (fxc)', () => pm.expect(d.revisions.map(r => r.kind)).to.include('fxc'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. PATCH po — produto inexistente — 400",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/po",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "po"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"items\": [\n    {\n      \"supplier_category_gss_id\": \"nao-existe\",\n      \"ship_requirement\": \"2026-11-30\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400', () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. GET etapa desconhecida — 404",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/xpto",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "xpto"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404', () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. GET sem token — 401",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "order"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('401', () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Cleanup — apaga a order de teste (DELETE /api/orders/{id}) — 200",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_order_id}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_order_id}}"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 — order de teste apagada', () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
