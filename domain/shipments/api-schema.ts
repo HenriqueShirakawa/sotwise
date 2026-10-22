@@ -60,6 +60,14 @@ const confirmSchema = z.strictObject({
   signer_email: email("signer"),
   /** Default: o leader do PL. */
   preloading_leader_email: email("pre-loading leader").optional(),
+  /** Estimated date das etapas do Shipment — obrigatórias (22/10/2026). */
+  shipment_estimates: z.strictObject({
+    shipping_date: apiDay,
+    bl: apiDay,
+    original_docs: apiDay,
+    eta_brazil: apiDay,
+    ata_brazil: apiDay,
+  }),
   /** Ignorado desde 13/10/2026 (sem status por linha no Confirm Shipping);
    *  aceito só pra não quebrar quem ainda manda. */
   lines: z
@@ -146,7 +154,10 @@ export const patchStepSchema = z
     contact_brazil: optionalRef,
     contact_china: optionalRef,
     booking_number: z.string().trim().max(100).nullable().optional(),
+    /** Booking: Container Cut-off. */
     cutoff_date: apiDay.nullable().optional(),
+    /** Booking: Doc Cut-off (22/10/2026). */
+    doc_cutoff_date: apiDay.nullable().optional(),
     /** Shipping Date / ETA / ATA / Delivered: a data do fato (21/10/2026). */
     date: apiDay.optional(),
     /** Motivo — obrigatório ao trocar uma `date` já gravada. */
@@ -162,7 +173,7 @@ export const STEP_FIELDS: Partial<Record<ChecklistStep, (keyof PatchStepInput)[]
   city: ["city"],
   port_of_loading: ["pol"],
   agents: ["carrier", "agent_brazil", "agent_china", "contact_brazil", "contact_china"],
-  booking: ["booking_number", "cutoff_date"],
+  booking: ["booking_number", "cutoff_date", "doc_cutoff_date"],
   // Concluem pela data do fato — o `completed_on` delas não é aceito.
   shipping_date: ["date", "reason"],
   eta_brazil: ["date", "reason"],

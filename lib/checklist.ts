@@ -88,6 +88,21 @@ export const SHIPMENT_STEPS: ChecklistStep[] = [
 ];
 
 /**
+ * Etapas do Shipment cuja Estimated date o popup do Confirm Shipping pede
+ * (obrigatórias, 22/10/2026 — card "Ajustes Data e Logs Etapas"): o que o
+ * usuário informa ali já aparece preenchido no Shipment.
+ */
+export const CONFIRM_SHIPPING_ESTIMATE_STEPS = [
+  "shipping_date",
+  "bl",
+  "original_docs",
+  "eta_brazil",
+  "ata_brazil",
+] as const satisfies readonly ChecklistStep[];
+
+export type ShipmentEstimates = Record<(typeof CONFIRM_SHIPPING_ESTIMATE_STEPS)[number], string>;
+
+/**
  * Etapas do Shipment com data própria (21/10/2026, planilha de regras do
  * checklist), no molde do "Order received date": o usuário informa a data do
  * fato (`pre_loading_checklist_steps.event_date`); a 1ª gravação conclui a etapa
@@ -111,7 +126,9 @@ export const EVENT_DATE_LABELS: Partial<Record<ChecklistStep, string>> = {
   ...EVENT_DATE_STEPS,
 };
 
-/** ETA é previsão de chegada — a única dessas datas que pode ser futura. */
+/** Datas que podem ser futuras: ETA e, desde 22/10/2026 (card "Ajustes Data e
+ *  Logs Etapas", decisão do usuário), também o ATA. */
 export const EVENT_DATE_ALLOWS_FUTURE: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "eta_brazil",
+  "ata_brazil",
 ]);

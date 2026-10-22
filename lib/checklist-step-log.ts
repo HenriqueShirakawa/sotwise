@@ -35,12 +35,13 @@ export const STEP_LOG_FIELDS = [
   "contact_china_id",
   "booking_number",
   "cutoff_date",
+  "doc_cutoff_date",
 ] as const;
 
 /** O que ler de `pre_loading_checklist_steps` antes de gravar, pro diff (a
  *  tabela do PL não tem `enabled` — só a de Order). */
 export const PL_STEP_LOG_COLUMNS =
-  "id, estimated_date, responsible_id, completed_on, signed_by_id, notes, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date" as const;
+  "id, estimated_date, responsible_id, completed_on, signed_by_id, notes, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date" as const;
 
 export type StepLogField = (typeof STEP_LOG_FIELDS)[number];
 export type StepLogChanges = Partial<Record<StepLogField, { from: unknown; to: unknown }>>;

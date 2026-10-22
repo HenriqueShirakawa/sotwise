@@ -77,8 +77,10 @@ export type PreLoadingRow = {
   loading_date: string | null;
   completed: boolean;
   booking_confirmed: boolean;
-  /** "Cut-off" da etapa Booking (YYYY-MM-DD) — opcional. */
+  /** Container Cut-off da etapa Booking (YYYY-MM-DD). */
   cutoff: string | null;
+  /** Doc Cut-off da etapa Booking (YYYY-MM-DD) — 22/10/2026. */
+  doc_cutoff: string | null;
   total_pos: number;
   order_ids: string[];
   batch_ids: string[];
@@ -121,7 +123,8 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "loading_date", label: "Loading Date" },
   { id: "completed", label: "Preloading completed?" },
   { id: "booking_confirmed", label: "Booking Status" },
-  { id: "cutoff", label: "Cut-off" },
+  { id: "cutoff", label: "Container Cut-off" },
+  { id: "doc_cutoff", label: "Doc Cut-off" },
   { id: "total_pos", label: "Total PO's" },
 ];
 
@@ -337,10 +340,20 @@ export function PreLoadingClient({
         // texto, e o sort automático do TanStack não trata null.
         id: "cutoff",
         accessorFn: (r) => r.cutoff ?? "",
-        header: ({ column }) => <SortableHeader label="Cut-off" column={column} />,
+        header: ({ column }) => <SortableHeader label="Container Cut-off" column={column} />,
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-slate-600">
             {formatDateNumeric(row.original.cutoff)}
+          </span>
+        ),
+      },
+      {
+        id: "doc_cutoff",
+        accessorFn: (r) => r.doc_cutoff ?? "",
+        header: ({ column }) => <SortableHeader label="Doc Cut-off" column={column} />,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-slate-600">
+            {formatDateNumeric(row.original.doc_cutoff)}
           </span>
         ),
       },
