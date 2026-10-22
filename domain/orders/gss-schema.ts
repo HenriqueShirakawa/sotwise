@@ -59,12 +59,12 @@ export const gssOrderSchema = z.object({
   // Só uma marca (2026-10-13): inativa continua aparecendo e seguindo as regras.
   is_active: z.boolean().optional(),
   // Checklist Order/PI (2026-10-20, lib/checklist-revisions): data do pedido
-  // final do cliente (conclui a etapa Order) e status da PI no GSS, texto livre
-  // (conclui a etapa PI). Trocas posteriores viram revisões — `revision_reason`
+  // final do cliente (conclui a etapa Order) e status da PI no GSS, boolean
+  // (true conclui a etapa PI; 22/10). Trocas posteriores viram revisões — `revision_reason`
   // é o motivo delas (sem ele grava "Updated by GSS"). Não aceitam null: a 1ª
   // data nunca se perde.
   order_received_date: apiDay.optional(),
-  pi_status: z.string().trim().min(1, "pi_status cannot be empty.").max(200).optional(),
+  pi_status: z.boolean({ error: "pi_status must be true or false." }).optional(),
   pi_status_date: apiDay.optional(),
   revision_reason: z.string().trim().max(500, "revision_reason is too long.").optional(),
   // Linhas Factory×Category da order (order_factory_category). Opcional: pode

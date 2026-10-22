@@ -557,19 +557,19 @@ export async function completeEtdIfFilled(
 // ── PI ───────────────────────────────────────────────────────────────────────
 
 /**
- * Status da PI vindo do GSS (texto livre) + data. O 1º conclui a PI com
- * Completed on = a data do status; os seguintes viram revisões. Mesmo status e
- * mesma data de novo → nada.
+ * Status da PI vindo do GSS (boolean, 22/10/2026) + data. `true` conclui a PI
+ * com Completed on = a data do status; `false` só grava (histórico) — não
+ * conclui nem reabre. A 1ª gravação é o registro original, as seguintes viram
+ * revisões. Mesmo status e mesma data de novo → nada.
  */
 export async function recordPiStatus(
   admin: Admin,
   orderId: string,
-  status: string,
+  status: boolean,
   date: string,
   who: Who
 ): Promise<string | null> {
-  const clean = status.trim();
-  if (!clean) return "pi_status can't be empty.";
+  const clean = status;
 
   const { data: order, error } = await admin
     .from("orders")
@@ -589,7 +589,7 @@ export async function recordPiStatus(
     .eq("id", orderId);
   if (upError) throw new Error(upError.message);
 
-  const first = !order.pi_status && !order.pi_status_date;
+  const first = order.pi_status === null && !order.pi_status_date;
   await insertRevision(
     admin,
     {
@@ -604,7 +604,9 @@ export async function recordPiStatus(
     who
   );
 
-  // Cada status novo regrava o Completed on com a data dele (a última
+  // PI não emitida: fica no histórico, a etapa não conclui (e nunca reabre).
+  if (!clean) return null;
+  // Cada `true` novo regrava o Completed on com a data dele (a última
   // atualização). Nunca futuro: status com data adiante fica com hoje.
   const today = todayIso();
   await completeByTrigger(admin, step, date > today ? today : date, who.userId);
