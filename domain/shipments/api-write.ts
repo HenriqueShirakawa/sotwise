@@ -290,6 +290,7 @@ export async function patchShipment(
         carrier_id: carrier.id,
         shipment_model_id: model.id,
         signer_id: signer.id!,
+        shipment_estimates: c.shipment_estimates,
       },
       actorId
     );
@@ -442,6 +443,8 @@ const COMPLETION_FACT_COLUMNS = [
   "contact_brazil_id",
   "contact_china_id",
   "booking_number",
+  "cutoff_date",
+  "doc_cutoff_date",
 ];
 
 export async function patchShipmentStep(
@@ -490,6 +493,7 @@ export async function patchShipmentStep(
   if (input.notes !== undefined) patch.notes = input.notes;
   if (input.booking_number !== undefined) patch.booking_number = input.booking_number;
   if (input.cutoff_date !== undefined) patch.cutoff_date = input.cutoff_date;
+  if (input.doc_cutoff_date !== undefined) patch.doc_cutoff_date = input.doc_cutoff_date;
   if (input.responsible_email !== undefined) {
     const person = await resolvePerson(admin, input.responsible_email);
     if (!person.ok) return person;

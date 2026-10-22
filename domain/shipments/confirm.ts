@@ -1,4 +1,8 @@
-import { STEP_LABELS } from "@/lib/checklist";
+import {
+  CONFIRM_SHIPPING_ESTIMATE_STEPS,
+  STEP_LABELS,
+  type ShipmentEstimates,
+} from "@/lib/checklist";
 import { isReadyToShip, plStepFacts } from "@/lib/checklist-completion";
 import { todayIso } from "@/lib/format";
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
@@ -49,10 +53,21 @@ export type ConfirmShippingInput = {
   carrier_id: string;
   shipment_model_id: string;
   signer_id: string;
+  /** Estimated date das etapas do Shipment (yyyy-mm-dd), todas obrigatórias —
+   *  gravadas nas próprias etapas (22/10/2026). */
+  shipment_estimates: ShipmentEstimates;
 };
 
+/** Estimated date que o Confirm Shipping trocou numa etapa — pro History. */
+export type EstimateChange = { stepId: string; step: ChecklistStep; from: string | null; to: string };
+
 export type ConfirmShippingResult =
-  | { ok: true; shipment_id: string | null; changed_order_ids: string[] }
+  | {
+      ok: true;
+      shipment_id: string | null;
+      changed_order_ids: string[];
+      estimate_changes: EstimateChange[];
+    }
   | { ok: false; status: 400 | 404 | 409 | 500; error: string };
 
 export async function confirmShippingRecord(
@@ -75,6 +90,16 @@ export async function confirmShippingRecord(
   if (required.some((v) => !v || !String(v).trim())) {
     return { ok: false, status: 400, error: "Fill in all required fields." };
   }
+  const missingEstimates = CONFIRM_SHIPPING_ESTIMATE_STEPS.filter(
+    (step) => !/^\d{4}-\d{2}-\d{2}$/.test(input.shipment_estimates?.[step] ?? "")
+  );
+  if (missingEstimates.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Fill in the estimated date of: ${missingEstimates.map((s) => STEP_LABELS[s]).join(", ")}.`,
+    };
+  }
 
   const { data: pl, error: plErr } = await admin
     .from("pre_loadings")
@@ -93,7 +118,7 @@ export async function confirmShippingRecord(
   const { data: steps } = await admin
     .from("pre_loading_checklist_steps")
     .select(
-      "id, step, estimated_date, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number"
+      "id, step, estimated_date, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date"
     )
     .eq("pre_loading_id", preLoadingId);
 
@@ -173,6 +198,12 @@ export async function confirmShippingRecord(
     return { ok: false, status: 409, error: "This Pre-loading has no Factory x Category lines." };
   }
 
+  // Estimated dates das etapas do Shipment (popup, 22/10/2026). Antes da RPC:
+  // se a gravação falhar, nenhum shipment nasce; se a RPC falhar depois, ficam
+  // só previsões — o usuário confirma de novo com elas já preenchidas.
+  const estimates = await saveShipmentEstimates(admin, preLoadingId, input.shipment_estimates);
+  if (!estimates.ok) return { ok: false, status: 500, error: estimates.error };
+
   // Shipment + lotes em in_transit + completed_on do checklist + confirma o PL — tudo numa função de banco (RPC), rodando
   // como uma única transação: uma falha no meio desfaz tudo, em vez de deixar
   // o shipment órfão. Ver
@@ -212,5 +243,43 @@ export async function confirmShippingRecord(
     ok: true,
     shipment_id: rpcResult?.shipment_id ?? null,
     changed_order_ids: rpcResult?.changed_order_ids ?? [],
+    estimate_changes: estimates.changes,
   };
+}
+
+/** Grava a Estimated date de cada etapa do Shipment (a linha nasce se faltar). */
+async function saveShipmentEstimates(
+  admin: Admin,
+  preLoadingId: string,
+  estimates: ShipmentEstimates
+): Promise<{ ok: true; changes: EstimateChange[] } | { ok: false; error: string }> {
+  const { data: rows, error } = await admin
+    .from("pre_loading_checklist_steps")
+    .select("id, step, estimated_date")
+    .eq("pre_loading_id", preLoadingId)
+    .in("step", [...CONFIRM_SHIPPING_ESTIMATE_STEPS]);
+  if (error) return { ok: false, error: error.message };
+  const byStep = new Map((rows ?? []).map((r) => [r.step, r]));
+
+  const changes: EstimateChange[] = [];
+  for (const step of CONFIRM_SHIPPING_ESTIMATE_STEPS) {
+    const to = estimates[step];
+    const row = byStep.get(step);
+    if (row?.estimated_date === to) continue;
+    const { data: saved, error: saveError } = row
+      ? await admin
+          .from("pre_loading_checklist_steps")
+          .update({ estimated_date: to })
+          .eq("id", row.id)
+          .select("id")
+          .single()
+      : await admin
+          .from("pre_loading_checklist_steps")
+          .insert({ pre_loading_id: preLoadingId, step, estimated_date: to })
+          .select("id")
+          .single();
+    if (saveError || !saved) return { ok: false, error: saveError?.message ?? "Could not save the estimates." };
+    changes.push({ stepId: saved.id, step, from: row?.estimated_date ?? null, to });
+  }
+  return { ok: true, changes };
 }

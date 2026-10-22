@@ -7,6 +7,12 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
+import {
+  CONFIRM_SHIPPING_ESTIMATE_STEPS,
+  STEP_LABELS,
+  type ShipmentEstimates,
+} from "@/lib/checklist";
+import type { ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/date-picker";
 import { Input } from "@/components/ui/input";
@@ -117,6 +123,7 @@ export function ConfirmShippingModal({
   carriers,
   shipmentModels,
   lines,
+  shipmentEstimates,
 }: {
   onClose: () => void;
   preLoadingId: string;
@@ -134,6 +141,8 @@ export function ConfirmShippingModal({
   carriers: Ref[];
   shipmentModels: Ref[];
   lines: ShipmentLine[];
+  /** Estimated date já gravada nas etapas do Shipment (ponto de partida). */
+  shipmentEstimates: Partial<Record<ChecklistStep, string | null>>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -146,6 +155,13 @@ export function ConfirmShippingModal({
   const [carrierId, setCarrierId] = useState("");
   const [shipmentModelId, setShipmentModelId] = useState("");
   const [signerId, setSignerId] = useState(currentUserId);
+  // Estimated date de cada etapa do Shipment — obrigatórias (22/10/2026).
+  const [estimates, setEstimates] = useState<ShipmentEstimates>(
+    () =>
+      Object.fromEntries(
+        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [step, shipmentEstimates[step] ?? ""])
+      ) as ShipmentEstimates
+  );
   // Só uma coluna é prioritária por vez; a outra entra como critério de desempate.
   const [primarySort, setPrimarySort] = useState<SortKey>("factory");
 
@@ -167,7 +183,8 @@ export function ConfirmShippingModal({
     preLoadingLeaderId &&
     carrierId &&
     shipmentModelId &&
-    signerId;
+    signerId &&
+    CONFIRM_SHIPPING_ESTIMATE_STEPS.every((step) => estimates[step]);
   const canConfirm = Boolean(headerFilled && lines.length > 0);
 
   function confirm() {
@@ -182,6 +199,7 @@ export function ConfirmShippingModal({
         carrier_id: carrierId,
         shipment_model_id: shipmentModelId,
         signer_id: signerId,
+        shipment_estimates: estimates,
       });
       if (res.ok) {
         toast.success(`Shipment created for PL - ${plNumber}.`);
@@ -279,6 +297,26 @@ export function ConfirmShippingModal({
               onChange={(v) => setLoadingDate(v ?? "")}
               className="mt-1 bg-white"
             />
+          </div>
+        </div>
+
+        {/* Previsões das etapas do Shipment: já aparecem preenchidas nele. */}
+        <div>
+          <p className="text-sm font-medium text-slate-800">Shipment estimated dates</p>
+          <div className="mt-2 grid gap-4 sm:grid-cols-3">
+            {CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => (
+              <div key={step}>
+                <Label className="text-xs text-muted-foreground">
+                  {STEP_LABELS[step]} <span className="text-rose-500">*</span>
+                </Label>
+                <DatePicker
+                  value={estimates[step]}
+                  ariaLabel={`${STEP_LABELS[step]} estimated date`}
+                  onChange={(v) => setEstimates((e) => ({ ...e, [step]: v ?? "" }))}
+                  className="mt-1 bg-white"
+                />
+              </div>
+            ))}
           </div>
         </div>
 

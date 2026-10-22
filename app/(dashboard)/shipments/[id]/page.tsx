@@ -137,7 +137,7 @@ export default async function ShipmentDetailPage({
       .select(
         "id, step, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
-          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, event_date"
+          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date, event_date"
       )
       .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),
