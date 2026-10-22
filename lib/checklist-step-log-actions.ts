@@ -117,6 +117,8 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   order_received_date: { label: "Order received date", kind: "date" },
   deposit_date: { label: "Deposit date", kind: "date" },
   balance_date: { label: "Balance date", kind: "date" },
+  // Place the Order: "Fábrica: dd/mm/yyyy" (uma data por fábrica, 22/10/2026).
+  placed_on: { label: "Placed on", kind: "text" },
   // Shipping Date / ETA / ATA / Delivered / Loading Date — o rótulo real vem de EVENT_DATE_LABELS.
   event_date: { label: "Date", kind: "date" },
   enabled: { label: "Enabled", kind: "bool" },

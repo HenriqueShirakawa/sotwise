@@ -205,6 +205,14 @@ export default async function OrderDetailPage({
   // Status: a entrada marcada Partial migra para o lote-filho do split e perde
   // o loading_status atual, mas o embarque que a carregou continua registrado.
   const batchIds = (batchesRes.data ?? []).map((b) => b.id);
+  // Place the Order: data "Placed on" de cada fábrica (22/10/2026).
+  const { data: placedRows } = await admin
+    .from("order_factory_placed_dates")
+    .select("factory_id, placed_on")
+    .eq("order_id", order.id);
+  const placedDates = Object.fromEntries(
+    (placedRows ?? []).map((r) => [r.factory_id, r.placed_on])
+  );
   const [loadedRes, plLinksRes] = batchIds.length
     ? await Promise.all([
         admin
@@ -306,6 +314,7 @@ export default async function OrderDetailPage({
       steps={steps}
       viewPrefs={readViewPrefs(profile.ui_preferences)}
       currentUserId={userId}
+      placedDates={placedDates}
     />
   );
 }

@@ -11,8 +11,8 @@ import {
 } from "@/lib/checklist-completion";
 import {
   completeEtdIfFilled,
-  completePlaceTheOrderIfCovered,
   setBalanceDate,
+  setFactoryPlacedDate,
   setDepositDate,
   setOrderReceivedDate,
 } from "@/lib/checklist-revisions";
@@ -290,6 +290,28 @@ export async function saveBalanceDate(
   return { ok: true };
 }
 
+/**
+ * Place the Order: data "Placed on" de UMA fábrica (22/10/2026). A 1ª gravação é
+ * livre, trocar depois exige motivo; com todas as fábricas datadas, a etapa
+ * conclui (e cada data nova regrava o Completed on). Ver lib/checklist-revisions.
+ */
+export async function saveFactoryPlacedDate(
+  orderId: string,
+  factoryId: string,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  const error = await setFactoryPlacedDate(createAdminClient(), orderId, factoryId, date, {
+    source: "manual",
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
 export type StepRevision = {
   id: string;
   kind: ChecklistRevisionKind;
@@ -382,12 +404,8 @@ export async function registerStepAttachment(
       changes: { file_name: fileName, ...(factoryId ? { factory_id: factoryId } : {}) },
       userId: session.userId,
     });
-    // Place the Order fecha sozinha quando a 1ª fábrica ganha documento.
-    if (stepRow.step === "place_the_order") {
-      await completePlaceTheOrderIfCovered(admin, stepId, session.userId);
-      await refreshChecklistViews(orderId);
-      return { ok: true };
-    }
+    // Place the Order: o anexo por fábrica é opcional desde 22/10/2026 — quem
+    // conclui a etapa é a data "Placed on" de cada fábrica (saveFactoryPlacedDate).
   }
 
   revalidatePath("/orders/[id]", "page");
