@@ -121,7 +121,8 @@ export type ChecklistRevisionKind =
   | "fxc"
   | "pi_status"
   | "completed_on"
-  | "deposit_date";
+  | "deposit_date"
+  | "balance_date";
 export type ChecklistRevisionSource = "manual" | "gss";
 
 export type Database = {
@@ -695,6 +696,8 @@ export type Database = {
           pi_status: string | null;
           pi_status_date: DateStr | null;
           deposit_date: DateStr | null;
+          /** Etapa Balance Payment: data em que o cliente pagou o saldo (22/10/2026). */
+          balance_date: DateStr | null;
           deleted_at: Timestamp | null;
           created_at: Timestamp;
           updated_at: Timestamp;
@@ -722,6 +725,7 @@ export type Database = {
           pi_status?: string | null;
           pi_status_date?: DateStr | null;
           deposit_date?: DateStr | null;
+          balance_date?: DateStr | null;
           deleted_at?: Timestamp | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;
