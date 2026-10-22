@@ -393,7 +393,7 @@ export async function patchShipment(
       const { data } = await admin.from("pre_loading_batches").select("batch_id").eq("pre_loading_id", id);
       batchIds = (data ?? []).map((b) => b.batch_id);
     }
-    const relError = await syncPreLoadingRelations(admin, id, clientIds, batchIds);
+    const relError = await syncPreLoadingRelations(admin, id, clientIds, batchIds, actorId);
     if (relError) return fail(500, relError);
   }
 

@@ -72,7 +72,7 @@ export async function updatePreLoading(
   id: string,
   input: PreLoadingInput
 ): Promise<ActionResult> {
-  await requireFeature("pre_loading", "edit");
+  const session = await requireFeature("pre_loading", "edit");
 
   const parsed = preLoadingSchema.safeParse(input);
   if (!parsed.success) {
@@ -99,7 +99,13 @@ export async function updatePreLoading(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  const relError = await syncPreLoadingRelations(admin, id, d.client_ids, d.batch_ids);
+  const relError = await syncPreLoadingRelations(
+    admin,
+    id,
+    d.client_ids,
+    d.batch_ids,
+    session.userId
+  );
   if (relError) return { ok: false, error: relError };
 
   revalidatePath(PATH);

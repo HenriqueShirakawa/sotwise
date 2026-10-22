@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
@@ -21,8 +22,10 @@ import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
 import {
+  allBatchesInPreLoading,
   hasExtraRequirements,
   isStepChecked,
+  PRELOADING_ONWARD,
   missingLabel,
   LOCKED_COMPLETED_ON_STEPS,
   TRIGGER_COMPLETED_STEPS,
@@ -167,6 +170,8 @@ export type BatchRow = {
   batch_number: string;
   status: BatchStatus;
   split_from_batch_id: string | null;
+  /** PL em que o lote está (etapa Pre-Loading, 22/10/2026) — null fora de PL. */
+  pl?: { id: string; pl_number: string; created_date: string } | null;
 };
 
 export type Ref = { id: string; name: string };
@@ -538,6 +543,67 @@ function TriggerDateField({
   );
 }
 
+/**
+ * Etapa Pre-Loading (22/10/2026): os lotes da Order, como no cabeçalho, com o PL
+ * em que cada um está (link pra ele) e a data de criação desse PL — o lote pode
+ * ter entrado num PL que já existia; a data é a do PL. A etapa fecha quando
+ * todos os lotes (fora cancelados) estão em Pre-Loading ou adiante.
+ */
+function PreLoadingBatchesTable({ batches }: { batches: BatchRow[] }) {
+  const rows = batches.filter((b) => b.status !== "canceled");
+  return (
+    <div className="overflow-hidden rounded-lg border bg-white">
+      <div className="hidden grid-cols-[1fr_1fr_1fr_1fr] gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+        <span>Batch No.</span>
+        <span>Status</span>
+        <span>PL</span>
+        <span>PL created</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-3 py-3 text-sm text-muted-foreground">No batches for this order.</p>
+      ) : (
+        rows.map((b) => {
+          const inPl = PRELOADING_ONWARD.includes(b.status);
+          return (
+            <div
+              key={b.id}
+              className="grid grid-cols-2 items-center gap-2 border-t px-3 py-2.5 text-sm first:border-t-0 sm:grid-cols-[1fr_1fr_1fr_1fr] sm:first:border-t"
+            >
+              <span className="flex items-center gap-2 font-medium text-slate-800">
+                {/* Verde = lote já em Pre-Loading (ou adiante); âmbar = falta. */}
+                <span
+                  className={`size-2 shrink-0 rounded-full ${inPl ? "bg-emerald-500" : "bg-amber-400"}`}
+                />
+                {b.batch_number}
+              </span>
+              <span>
+                <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
+              </span>
+              <span className="text-slate-700">
+                <span className="text-xs text-muted-foreground sm:hidden">PL </span>
+                {b.pl ? (
+                  <Link
+                    href={`/pre-loading/${b.pl.pl_number}`}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    PL - {b.pl.pl_number}
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </span>
+              <span className="text-slate-700">
+                <span className="text-xs text-muted-foreground sm:hidden">Created </span>
+                {b.pl ? formatDateNumeric(b.pl.created_date) : "—"}
+              </span>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 /** Etapa PI: último status vindo do GSS + data + badge de revisões. */
 function PiStatusField({
   status,
@@ -749,6 +815,7 @@ export function OrderDetailClient({
         attachments: s.attachments.length,
         factoryCategoryCount: ofc.length,
         etdInitialFilled,
+        batchesInPreLoading: allBatchesInPreLoading(batches.map((b) => b.status)),
       };
       if (s.step === "place_the_order") {
         facts.placeOrderFactoriesWithDoc = new Set(
@@ -759,7 +826,7 @@ export function OrderDetailClient({
       }
       return { ...s, facts, done: isStepChecked(s.step, facts) };
     });
-  }, [steps, ofc, etdInitialFilled]);
+  }, [steps, ofc, etdInitialFilled, batches]);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para
   // qualquer regra que dependa do checklist completo — esconder uma etapa é
@@ -1204,6 +1271,13 @@ export function OrderDetailClient({
                           etdByOfc={etdByOfc}
                           factories={factories}
                         />
+                      ) : s.step === "pre_loading" ? (
+                        <>
+                          <PreLoadingBatchesTable batches={batches} />
+                          {/* Documento opcional desde 22/10/2026 — a etapa fecha
+                              pelos lotes em Pre-Loading. */}
+                          <AttachmentsSection orderId={orderId} step={s} />
+                        </>
                       ) : (
                         <AttachmentsSection orderId={orderId} step={s} />
                       )}

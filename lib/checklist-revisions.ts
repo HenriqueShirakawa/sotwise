@@ -1,9 +1,11 @@
 import "server-only";
 
+import { allBatchesInPreLoading } from "@/lib/checklist-completion";
 import { todayIso } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type {
+  BatchStatus,
   ChecklistRevisionKind,
   ChecklistRevisionSource,
   ChecklistStep,
@@ -398,6 +400,46 @@ export async function completePlaceTheOrderIfCovered(
     await completeByTrigger(admin, step, todayIso(), userId);
   } catch (err) {
     console.error("[checklist-revisions] place_the_order", err instanceof Error ? err.message : err);
+  }
+}
+
+// ── Pre-Loading (etapa da Order) ─────────────────────────────────────────────
+
+/**
+ * Pre-Loading da Order (22/10/2026): conclui quando TODOS os lotes da Order
+ * (fora os cancelados) estão em Pre-Loading ou adiante. Chamada quando lotes
+ * entram num PL (domain/pre-loadings/write `syncPreLoadingRelations`) — cada
+ * lote que entra num PL é atualização da etapa, então, com a condição cumprida,
+ * o Completed on vira o dia dela (a última atualização). Nunca reabre: lote novo
+ * da Order ainda fora de PL só deixa a etapa pendente no ícone.
+ */
+export async function completeOrderPreLoadingIfReady(
+  admin: Admin,
+  orderIds: string[],
+  userId: string | null
+): Promise<void> {
+  const ids = [...new Set(orderIds)].filter(Boolean);
+  if (ids.length === 0) return;
+  try {
+    const { data: batches, error } = await admin
+      .from("batches")
+      .select("order_id, status")
+      .in("order_id", ids)
+      .neq("status", "canceled");
+    if (error) throw new Error(error.message);
+
+    const byOrder = new Map<string, BatchStatus[]>();
+    for (const b of batches ?? []) {
+      byOrder.set(b.order_id, [...(byOrder.get(b.order_id) ?? []), b.status]);
+    }
+    for (const orderId of ids) {
+      const statuses = byOrder.get(orderId) ?? [];
+      if (!allBatchesInPreLoading(statuses)) continue;
+      const step = await readStep(admin, orderId, "pre_loading");
+      if (step) await completeByTrigger(admin, step, todayIso(), userId);
+    }
+  } catch (err) {
+    console.error("[checklist-revisions] pre_loading", err instanceof Error ? err.message : err);
   }
 }
 

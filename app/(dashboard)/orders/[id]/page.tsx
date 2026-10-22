@@ -12,6 +12,7 @@ import type { ChecklistStep, LoadingStatus } from "@/types/database";
 
 import {
   OrderDetailClient,
+  type BatchRow,
   type ChecklistStepRow,
   type EtdInfoRow,
   type OfcRow,
@@ -204,12 +205,42 @@ export default async function OrderDetailPage({
   // Status: a entrada marcada Partial migra para o lote-filho do split e perde
   // o loading_status atual, mas o embarque que a carregou continua registrado.
   const batchIds = (batchesRes.data ?? []).map((b) => b.id);
-  const loadedRes = batchIds.length
-    ? await admin
-        .from("shipment_loaded_lines")
-        .select("batch_id, order_factory_category_id, loading_status")
-        .in("batch_id", batchIds)
-    : { data: [] };
+  const [loadedRes, plLinksRes] = batchIds.length
+    ? await Promise.all([
+        admin
+          .from("shipment_loaded_lines")
+          .select("batch_id, order_factory_category_id, loading_status")
+          .in("batch_id", batchIds),
+        // PL de cada lote — etapa Pre-Loading (22/10/2026): referência + data de
+        // criação do PL, com link pra ele.
+        admin
+          .from("pre_loading_batches")
+          .select("batch_id, pre_loadings(id, pl_number, created_date, deleted_at)")
+          .in("batch_id", batchIds)
+          .returns<
+            {
+              batch_id: string;
+              pre_loadings: {
+                id: string;
+                pl_number: string;
+                created_date: string;
+                deleted_at: string | null;
+              } | null;
+            }[]
+          >(),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const plByBatch = new Map<string, NonNullable<BatchRow["pl"]>>();
+  for (const l of plLinksRes.data ?? []) {
+    const pl = l.pre_loadings;
+    if (pl && !pl.deleted_at) {
+      plByBatch.set(l.batch_id, {
+        id: pl.id,
+        pl_number: pl.pl_number,
+        created_date: pl.created_date,
+      });
+    }
+  }
   const loadedByBatch: Record<string, Record<string, LoadingStatus>> = {};
   for (const l of loadedRes.data ?? []) {
     (loadedByBatch[l.batch_id] ??= {})[l.order_factory_category_id] = l.loading_status;
@@ -264,6 +295,7 @@ export default async function OrderDetailPage({
         batch_number: b.batch_number,
         status: b.status,
         split_from_batch_id: b.split_from_batch_id,
+        pl: plByBatch.get(b.id) ?? null,
       }))}
       ofc={ofc}
       etdByOfc={etdByOfc}
