@@ -129,8 +129,9 @@ export type PlStepRow = {
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
-  /** Etapa Booking: "Cut-off" — data livre, opcional (não conta pra concluir). */
+  /** Etapa Booking: Container Cut-off e Doc Cut-off — obrigatórios (22/10/2026). */
   cutoff_date: string | null;
+  doc_cutoff_date: string | null;
 };
 
 /** As 7 etapas da fase pre-loading, na ordem do Bubble (docs §3.9.5). */
@@ -411,6 +412,7 @@ export function PlChecklistClient({
   carriers,
   shipmentModels,
   shipmentLines,
+  shipmentEstimates,
   currentUserId,
   preloadingLeaderId,
   alreadyShipped,
@@ -430,6 +432,8 @@ export function PlChecklistClient({
   carriers: Ref[];
   shipmentModels: Ref[];
   shipmentLines: ShipmentLine[];
+  /** Estimated date já gravada nas etapas do Shipment — o popup parte delas. */
+  shipmentEstimates: Partial<Record<ChecklistStep, string | null>>;
   currentUserId: string;
   preloadingLeaderId: string | null;
   alreadyShipped: boolean;
@@ -931,17 +935,30 @@ export function PlChecklistClient({
                             />
                           </div>
                         )}
+                        {/* Os dois cut-offs são obrigatórios pra fechar a etapa
+                            (22/10/2026); sem trava de passado/futuro. */}
                         <div>
-                          {/* Data livre e opcional: sem trava de passado/futuro e
-                              fora da regra de conclusão da etapa. */}
-                          <Label className="text-xs text-muted-foreground">Cut-off</Label>
+                          <Label className="text-xs text-muted-foreground">Container Cut-off</Label>
                           <DatePicker
                             value={s.cutoff_date}
                             disabled={pending}
-                            ariaLabel="Cut-off"
+                            ariaLabel="Container Cut-off"
                             onChange={(v) => {
                               if (v !== (s.cutoff_date ?? null))
                                 save(s.step, { cutoff_date: v });
+                            }}
+                            className="mt-1 bg-white"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Doc Cut-off</Label>
+                          <DatePicker
+                            value={s.doc_cutoff_date}
+                            disabled={pending}
+                            ariaLabel="Doc Cut-off"
+                            onChange={(v) => {
+                              if (v !== (s.doc_cutoff_date ?? null))
+                                save(s.step, { doc_cutoff_date: v });
                             }}
                             className="mt-1 bg-white"
                           />
@@ -1015,6 +1032,7 @@ export function PlChecklistClient({
           carriers={carriers}
           shipmentModels={shipmentModels}
           lines={shipmentLines}
+          shipmentEstimates={shipmentEstimates}
         />
       )}
 

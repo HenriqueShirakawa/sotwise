@@ -67,6 +67,9 @@ export type ChecklistFacts = {
   contactBrazilOptions?: number;
   contactChinaOptions?: number;
   bookingNumber?: string | null;
+  /** Booking: Container Cut-off e Doc Cut-off, os dois obrigatórios (22/10/2026). */
+  containerCutoff?: string | null;
+  docCutoff?: string | null;
   /**
    * PL com 2+ clientes (21/10/2026): Shipping Docs e Booking passam a ser por
    * cliente — a etapa só fecha quando TODOS têm documento / Booking number.
@@ -78,6 +81,9 @@ export type ChecklistFacts = {
   /** Shipping Date / ETA / ATA / Delivered: a data do fato (EVENT_DATE_STEPS). */
   eventDate?: string | null;
 };
+
+/** Desde quando o Booking exige Container Cut-off e Doc Cut-off (22/10/2026). */
+export const BOOKING_CUTOFFS_REQUIRED_FROM = "2026-10-22";
 
 /** Quantos clientes o PL tem e quantos já cumpriram cada exigência por cliente. */
 export type PlPerClient = { total: number; withDoc: number; withBooking: number };
@@ -153,6 +159,12 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
         if (withBooking < total)
           missing.push(`a booking number for every client (${withBooking}/${total})`);
       } else if (!f.bookingNumber?.trim()) missing.push("the booking number");
+      // Os cut-offs entraram em 22/10/2026: Booking concluído antes disso segue
+      // concluído (a etapa nunca reabre).
+      if (!(f.completedOn && f.completedOn < BOOKING_CUTOFFS_REQUIRED_FROM)) {
+        if (!f.containerCutoff) missing.push("the container cut-off");
+        if (!f.docCutoff) missing.push("the doc cut-off");
+      }
       break;
 
     case "bl":
@@ -324,6 +336,8 @@ export type PlStepFields = {
   contact_brazil_id?: string | null;
   contact_china_id?: string | null;
   booking_number?: string | null;
+  cutoff_date?: string | null;
+  doc_cutoff_date?: string | null;
   event_date?: string | null;
 };
 
@@ -361,6 +375,8 @@ export function plStepFacts(
     contactBrazilOptions: contacts(s.agent_brazil_id),
     contactChinaOptions: contacts(s.agent_china_id),
     bookingNumber: s.booking_number,
+    containerCutoff: s.cutoff_date,
+    docCutoff: s.doc_cutoff_date,
     eventDate: s.event_date,
     perClient,
   };

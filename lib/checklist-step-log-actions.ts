@@ -136,7 +136,8 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   contact_brazil_id: { label: "Contact Brazil", kind: "text", lookup: "contacts" },
   contact_china_id: { label: "Contact China", kind: "text", lookup: "contacts" },
   booking_number: { label: "Booking number", kind: "text" },
-  cutoff_date: { label: "Cut-off", kind: "date" },
+  cutoff_date: { label: "Container cut-off", kind: "date" },
+  doc_cutoff_date: { label: "Doc cut-off", kind: "date" },
 };
 
 type Diff = Record<string, { from: unknown; to: unknown }>;

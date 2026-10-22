@@ -247,17 +247,17 @@ export function FiltersModal({
                 />
               </div>
             </Field>
-            <Field label="Cut-off">
+            <Field label="Container Cut-off">
               <div className="grid grid-cols-2 gap-3">
                 <DatePicker
                   value={draft.cutoff_from}
                   onChange={(v) => set("cutoff_from", v ?? "")}
-                  ariaLabel="Cut-off from"
+                  ariaLabel="Container cut-off from"
                 />
                 <DatePicker
                   value={draft.cutoff_to}
                   onChange={(v) => set("cutoff_to", v ?? "")}
-                  ariaLabel="Cut-off to"
+                  ariaLabel="Container cut-off to"
                 />
               </div>
             </Field>
