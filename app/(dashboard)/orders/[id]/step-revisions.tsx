@@ -96,6 +96,13 @@ const KIND_LABELS: Record<StepRevision["kind"], string> = {
   balance_date: "Balance date",
 };
 
+/** Status da PI (boolean desde 22/10/2026) como aparece na tela. */
+export const piStatusLabel = (status: boolean) => (status ? "Issued" : "Not issued");
+
+/** Status do histórico; texto livre de antes de 22/10 conta como emitida. */
+const piStatusOf = (v: unknown): string | null =>
+  typeof v === "boolean" ? piStatusLabel(v) : typeof v === "string" && v ? piStatusLabel(true) : null;
+
 type FxcItem = { factory: string; category: string };
 
 export function StepRevisionsModal({
@@ -288,9 +295,8 @@ export function StepRevisionsModal({
 function RevisionItem({ row, original }: { row: StepRevision; original: boolean }) {
   const [open, setOpen] = useState(false);
   const who = row.source === "gss" ? "GSS" : (row.changed_by_name ?? "—");
-  const status = typeof row.payload.status === "string" ? row.payload.status : null;
-  const previousStatus =
-    typeof row.payload.previous_status === "string" ? row.payload.previous_status : null;
+  const status = piStatusOf(row.payload.status);
+  const previousStatus = piStatusOf(row.payload.previous_status);
   const items = (row.payload.items as FxcItem[] | undefined) ?? [];
   const added = (row.payload.added as FxcItem[] | undefined) ?? [];
   const removed = (row.payload.removed as FxcItem[] | undefined) ?? [];

@@ -693,7 +693,7 @@ export type Database = {
           status: OrderStatus;
           date_po: DateStr | null;
           order_received_date: DateStr | null;
-          pi_status: string | null;
+          pi_status: boolean | null;
           pi_status_date: DateStr | null;
           deposit_date: DateStr | null;
           /** Etapa Balance Payment: data em que o cliente pagou o saldo (22/10/2026). */
@@ -722,7 +722,7 @@ export type Database = {
           status?: OrderStatus;
           date_po?: DateStr | null;
           order_received_date?: DateStr | null;
-          pi_status?: string | null;
+          pi_status?: boolean | null;
           pi_status_date?: DateStr | null;
           deposit_date?: DateStr | null;
           balance_date?: DateStr | null;

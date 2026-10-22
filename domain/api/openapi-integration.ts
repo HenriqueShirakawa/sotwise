@@ -108,10 +108,9 @@ export const orderChecklistFieldsIn = {
       "Order step: date the client's final order was received. The first one completes the step; later changes are kept as revisions (the original is never lost). Not nullable.",
   },
   pi_status: {
-    type: "string",
-    maxLength: 200,
+    type: "boolean",
     description:
-      "PI step: PI status in GSS, free text (e.g. issued, revised). The first one completes the step; each later status/date is kept as a revision. Same status + date again → no-op.",
+      "PI step: `true` = PI issued in GSS (completes the step, Completed on = `pi_status_date`); `false` = not issued yet (recorded only; a completed step never reopens). Each later status/date is kept as a revision. Same status + date again → no-op.",
   },
   pi_status_date: {
     ...inDay,
@@ -797,7 +796,7 @@ export const integrationSchemas = {
       client_reference: { type: ["string", "null"] },
       date_po: nullableDate,
       order_received_date: { ...nullableDate, description: "Order step — current value (after revisions)." },
-      pi_status: { type: ["string", "null"], description: "PI step — last status received from GSS." },
+      pi_status: { type: ["boolean", "null"], description: "PI step — last status received from GSS (`true` = PI issued)." },
       pi_status_date: nullableDate,
       order_type: ref("LibraryRefNamed"),
       client: ref("LibraryRefNamed"),
