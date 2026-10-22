@@ -53,6 +53,40 @@ Referência do endpoint: `app/api/orders/route.ts` · schema do POST: `domain/or
 
 ---
 
+# Checklist da Order pelo GSS — `SOTWISE-GSS-Checklist-Order.postman_collection.json`
+
+Testa o endpoint por onde o **GSS atualiza as etapas do checklist da Order** (22/10/2026): `GET`/`PATCH /api/orders/{id}/steps/{step}`, com `{step}` = `order` | `pi` | `po`. Mesmo environment **"SOTWISE — GSS (prod)"** (`base_url` + `api_token`).
+
+Rode a collection **inteira, na ordem** (Runner): o passo 0 cria uma order descartável (`GSS-TEST-STEPS-…`) e o passo 12 a apaga — nenhuma order real é tocada.
+
+| # | Cenário | Esperado |
+|---|---|---|
+| 0 | Cria a order de teste (`POST /api/orders`) | `201` |
+| 1 | `GET .../steps/order` — etapa aberta | `200`, `completed_on: null`, sem revisões |
+| 2 | `PATCH order` — 1º `order_received_date` | `200`, etapa concluída, 1 registro (original) |
+| 3 | `PATCH order` — troca com `reason` | `200`, 2 registros, motivo gravado, original preservado |
+| 4 | `PATCH order` — mesmo valor | `200`, nada novo |
+| 5 | `PATCH order` com campo de outra etapa (`pi_status`) | `400` dizendo qual campo |
+| 6 | `PATCH order` — data futura | `400` |
+| 7 | `PATCH pi` — `pi_status` + `pi_status_date` | `200`, `completed_on` = data do status |
+| 8 | `PATCH po` — `items[]` | `200`, 1 linha de F×C, leva registrada |
+| 9 | `PATCH po` — produto inexistente | `400` |
+| 10 | Etapa desconhecida | `404` |
+| 11 | Sem token | `401` |
+| 12 | Apaga a order de teste | `200` |
+
+O passo 8 usa `supplier_category_gss_id_1` do environment (se vazio, o default da collection, `11`). Datas vão em **Unix (segundos)** — geradas nos pre-request scripts.
+
+Rodada em 22/10/2026 pelo Postman CLI (servidor local, mesmo código da produção): **13 requests, 29 asserções, 0 falhas**.
+
+```bash
+postman collection run docs/postman/SOTWISE-GSS-Checklist-Order.postman_collection.json -e docs/postman/SOTWISE-GSS.postman_environment.json --env-var "api_token=<API_TOKEN>"
+```
+
+Referência: `app/api/orders/[id]/steps/[step]/route.ts` · regras: `domain/orders/steps-api.ts` · Swagger: `{{base_url}}/api/docs` → Orders → `getOrderStep` / `patchOrderStep`.
+
+---
+
 # Collection completa — `SOTWISE-x-GSS-Swagger.postman_collection.json`
 
 **Todas** as chamadas dos dois Swaggers numa collection só, gerada por script (não editar à mão):
@@ -66,7 +100,7 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 | Folder | Fonte | Base | Auth |
 |---|---|---|---|
 | `1. GSS` | Swagger do GSS (140 operações) | `{{gss_base}}` = `https://api.gssdatahub.com/v1` | CF Access (`gss_cf_client_id`/`gss_cf_client_secret`) + `Bearer {{gss_access}}` |
-| `2. SOTWISE` | `/api/openapi.json` (51 operações; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
+| `2. SOTWISE` | `/api/openapi.json` (69 operações em 22/10/2026; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
 
 **Token do GSS é automático:** o pre-request do folder GSS renova `gss_access` (refresh → login com `gss_username`/`gss_password`) quando falta ou está para expirar. Basta preencher as 4 variáveis `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` no environment (valores = `GSS_CF_ACCESS_CLIENT_ID`, `GSS_CF_ACCESS_CLIENT_SECRET`, `GSS_USERNAME`, `GSS_PASSWORD`).
 
