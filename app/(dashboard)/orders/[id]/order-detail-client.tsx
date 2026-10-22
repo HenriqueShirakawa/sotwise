@@ -76,6 +76,7 @@ import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log
 import {
   RevisionBadge,
   StepRevisionsModal,
+  piStatusLabel,
   type RevisionStep,
 } from "./step-revisions";
 
@@ -189,8 +190,8 @@ type OrderDetail = {
   date_po: string | null;
   /** Etapa Order: data do pedido final (a vigente, após revisões). */
   order_received_date: string | null;
-  /** Etapa PI: último status vindo do GSS + data. */
-  pi_status: string | null;
+  /** Etapa PI: último status vindo do GSS (true = emitida) + data. */
+  pi_status: boolean | null;
   pi_status_date: string | null;
   /** Etapa Deposit Payment: data em que o cliente depositou (a vigente). */
   deposit_date: string | null;
@@ -607,14 +608,14 @@ function PreLoadingBatchesTable({ batches }: { batches: BatchRow[] }) {
   );
 }
 
-/** Etapa PI: último status vindo do GSS + data + badge de revisões. */
+/** Etapa PI: último status vindo do GSS (emitida ou não) + data + badge de revisões. */
 function PiStatusField({
   status,
   date,
   revisions,
   onOpen,
 }: {
-  status: string | null;
+  status: boolean | null;
   date: string | null;
   revisions: number;
   onOpen: () => void;
@@ -625,12 +626,14 @@ function PiStatusField({
         <p className="text-xs text-muted-foreground">PI status (GSS)</p>
         <div className="mt-0.5 flex items-center gap-2">
           <span className="text-sm font-medium text-slate-800">
-            {status ? `${status} · ${formatDateNumeric(date)}` : "Not received yet"}
+            {status === null
+              ? "Not received yet"
+              : `${piStatusLabel(status)} · ${formatDateNumeric(date)}`}
           </span>
           <RevisionBadge count={revisions} onClick={onOpen} />
         </div>
       </div>
-      {status && (
+      {status !== null && (
         <Button type="button" variant="ghost" size="sm" onClick={onOpen}>
           Details
         </Button>

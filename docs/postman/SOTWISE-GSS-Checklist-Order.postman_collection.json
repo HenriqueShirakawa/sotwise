@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SOTWISE — GSS Checklist da Order (etapas order / pi / po)",
-    "description": "Testa o endpoint que o GSS usa para atualizar as etapas do checklist da Order no SOTWISE:\n\n- `GET /api/orders/{id}/steps/{step}` — estado da etapa + revisões\n- `PATCH /api/orders/{id}/steps/{step}` — o dado que conclui a etapa\n\n`{id}` = UUID ou `po_number`. `{step}` = `order` (order_received_date) | `pi` (pi_status + pi_status_date) | `po` (items[] de Factory × Category). `reason` opcional (motivo da revisão; sem ele grava \"Updated by GSS\"). Datas em Unix (segundos) — ou, legado, `YYYY-MM-DD`.\n\nRegras (as mesmas da tela): o 1º dado conclui a etapa, os seguintes viram revisão (o original nunca se perde); o `completed_on` é sempre o dia da ÚLTIMA atualização (na PI, a data do status) e não se grava direto; valor idêntico não grava nada; campo de outra etapa → 400.\n\n**Como rodar:** environment **\"SOTWISE — GSS (prod)\"** (`base_url` + `api_token`). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-…`) e o último a apaga — nenhuma order real é tocada. O passo do PO usa `supplier_category_gss_id_1` do environment (se vazio, usa o default da collection).\n\nSwagger: `{{base_url}}/api/docs` → Orders → getOrderStep / patchOrderStep.",
+    "description": "Testa o endpoint que o GSS usa para atualizar as etapas do checklist da Order no SOTWISE:\n\n- `GET /api/orders/{id}/steps/{step}` — estado da etapa + revisões\n- `PATCH /api/orders/{id}/steps/{step}` — o dado que conclui a etapa\n\n`{id}` = UUID ou `po_number`. `{step}` = `order` (order_received_date) | `pi` (pi_status boolean: true = PI emitida, conclui; false = só grava + pi_status_date) | `po` (items[] de Factory × Category). `reason` opcional (motivo da revisão; sem ele grava \"Updated by GSS\"). Datas em Unix (segundos) — ou, legado, `YYYY-MM-DD`.\n\nRegras (as mesmas da tela): o 1º dado conclui a etapa, os seguintes viram revisão (o original nunca se perde); o `completed_on` é sempre o dia da ÚLTIMA atualização (na PI, a data do status) e não se grava direto; valor idêntico não grava nada; campo de outra etapa → 400.\n\n**Como rodar:** environment **\"SOTWISE — GSS (prod)\"** (`base_url` + `api_token`). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-…`) e o último a apaga — nenhuma order real é tocada. O passo do PO usa `supplier_category_gss_id_1` do environment (se vazio, usa o default da collection).\n\nSwagger: `{{base_url}}/api/docs` → Orders → getOrderStep / patchOrderStep.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -315,7 +315,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"pi_status\": \"Issued\"\n}",
+          "raw": "{\n  \"pi_status\": true\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -391,7 +391,7 @@
       ]
     },
     {
-      "name": "7. PATCH pi — status da PI conclui a etapa — 200",
+      "name": "7. PATCH pi — pi_status true (PI emitida) conclui a etapa — 200",
       "request": {
         "method": "PATCH",
         "header": [
@@ -415,7 +415,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"pi_status\": \"Issued\",\n  \"pi_status_date\": {{d_pi}}\n}",
+          "raw": "{\n  \"pi_status\": true,\n  \"pi_status_date\": {{d_pi}}\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -440,8 +440,54 @@
             "exec": [
               "pm.test('200', () => pm.response.to.have.status(200));",
               "const d = pm.response.json().data;",
-              "pm.test('pi_status gravado', () => pm.expect(d.pi_status).to.eql('Issued'));",
+              "pm.test('pi_status gravado', () => pm.expect(d.pi_status).to.eql(true));",
               "pm.test('completed_on = data do status', () => pm.expect(d.completed_on).to.eql(Number(pm.collectionVariables.get('d_pi'))));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7b. PATCH pi — pi_status em texto — 400",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "pi"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pi_status\": \"Issued\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400', () => pm.response.to.have.status(400));",
+              "pm.test('pede boolean', () => pm.expect(JSON.stringify(pm.response.json())).to.include('true or false'));"
             ]
           }
         }

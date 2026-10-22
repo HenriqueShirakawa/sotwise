@@ -237,7 +237,7 @@ export const restPaths = {
       summary: "Update an order checklist step",
       description: [
         "Sends the data that completes the step — same rules as the SOTWISE screens:",
-        "- `order`: `order_received_date`. `pi`: `pi_status` (+ `pi_status_date`, default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay).",
+        "- `order`: `order_received_date`. `pi`: `pi_status` boolean — `true` (PI issued) completes the step, `false` is only recorded (never reopens) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay).",
         "- The first value completes the step; later changes become revisions (the original is kept). `reason` is the revision reason (default: \"Updated by GSS\").",
         "- `completed_on` is always the day of the LAST update (for `pi`, the status date) and can't be set directly. A repeated, identical value changes nothing.",
         "- Fields of another step → 400.",
@@ -255,7 +255,7 @@ export const restPaths = {
                 summary: "Revise the order received date",
                 value: { order_received_date: du("2026-10-21"), reason: "Final PO re-sent by the client" },
               },
-              pi: { summary: "PI status", value: { pi_status: "Issued", pi_status_date: du("2026-10-21") } },
+              pi: { summary: "PI issued", value: { pi_status: true, pi_status_date: du("2026-10-21") } },
               po: {
                 summary: "Factory × Category",
                 value: { items: [{ supplier_category_gss_id: "1234", ship_requirement: du("2026-11-30") }] },
@@ -804,7 +804,7 @@ export const restSchemas = {
       completed_on: { ...nullableDate, description: "Day of the last update of the step's data (null = open)." },
       done: { type: "boolean" },
       order_received_date: { ...nullableDate, description: "`order` only — current value." },
-      pi_status: { type: ["string", "null"], description: "`pi` only — current status." },
+      pi_status: { type: ["boolean", "null"], description: "`pi` only — `true` = PI issued." },
       pi_status_date: { ...nullableDate, description: "`pi` only." },
       items: {
         type: "array",
@@ -827,7 +827,7 @@ export const restSchemas = {
             kind: { type: "string", enum: ["order_received_date", "fxc", "pi_status", "completed_on"] },
             previous_date: nullableDate,
             new_date: nullableDate,
-            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status." },
+            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status (boolean)." },
             reason: { type: ["string", "null"] },
             source: { type: "string", enum: ["manual", "gss"] },
             changed_at: { type: "string", format: "date-time" },
@@ -841,7 +841,7 @@ export const restSchemas = {
     description: "Only the fields of the step in the path (plus `reason`).",
     properties: {
       order_received_date: { ...inDay, description: "`order` — required there; never in the future." },
-      pi_status: { type: "string", minLength: 1, maxLength: 200, description: "`pi` — required there." },
+      pi_status: { type: "boolean", description: "`pi` — required there. `true` = PI issued (completes the step); `false` = not yet (recorded only)." },
       pi_status_date: { ...inDay, description: "`pi` — default today." },
       items: {
         type: "array",

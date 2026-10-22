@@ -124,7 +124,7 @@ type OrderRow = {
   client_reference: string | null;
   date_po: DateStr | null;
   order_received_date: DateStr | null;
-  pi_status: string | null;
+  pi_status: boolean | null;
   pi_status_date: DateStr | null;
   is_active: boolean;
   order_type_id: UUID | null;
@@ -177,8 +177,8 @@ export type GssOrderRead = {
   date_po: Unix | null;
   /** Etapa Order: data do pedido final do cliente (a vigente, após revisões). */
   order_received_date: Unix | null;
-  /** Etapa PI: último status recebido do GSS + a data dele. */
-  pi_status: string | null;
+  /** Etapa PI: último status recebido do GSS (true = emitida) + a data dele. */
+  pi_status: boolean | null;
   pi_status_date: Unix | null;
   is_active: boolean;
   order_type: LibraryRef | null;
