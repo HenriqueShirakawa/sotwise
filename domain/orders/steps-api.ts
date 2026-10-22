@@ -43,7 +43,8 @@ const reason = z.string().trim().max(500, "reason is too long.").optional();
 export const orderStepPatchSchemas = {
   order: z.strictObject({ order_received_date: apiDay, reason }),
   pi: z.strictObject({
-    pi_status: z.string().trim().min(1, "pi_status cannot be empty.").max(200),
+    /** true = PI emitida (conclui a etapa); false = ainda não (só grava). */
+    pi_status: z.boolean({ error: "pi_status must be true or false." }),
     /** Ausente → hoje. */
     pi_status_date: apiDay.optional(),
     reason,
@@ -74,7 +75,7 @@ export type OrderStepRead = {
   done: boolean;
   /** O dado vigente da etapa. */
   order_received_date?: Unix | null;
-  pi_status?: string | null;
+  pi_status?: boolean | null;
   pi_status_date?: Unix | null;
   /** PO: as Factory × Category ativas da order. */
   items?: { id: UUID; factory: string; category: string; ship_requirement: Unix | null }[];
