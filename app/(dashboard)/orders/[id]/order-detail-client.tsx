@@ -58,7 +58,6 @@ import {
 } from "@/components/ui/dialog";
 
 import {
-  correctOrderStepCompletedOn,
   deleteStepAttachment,
   getAttachmentDownloadUrl,
   updateBatchStatus,
@@ -72,7 +71,6 @@ import { EtdStepTable } from "./etd-step";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 import {
-  FORM_ONLY_REVISIONS,
   RevisionBadge,
   StepRevisionsModal,
   type RevisionStep,
@@ -476,17 +474,16 @@ const TRIGGER_PLACEHOLDER: Partial<Record<ChecklistStep, string>> = {
 /**
  * "Completed on" das etapas de gatilho — Order/PO/PI/Deposit Payment
  * (TRIGGER_COMPLETED_STEPS, 20/10/2026): concluem pelo próprio gatilho, sem
- * exigir Estimated date. Campo TRAVADO para todos — Order vem do "Order received
- * date", Deposit Payment do "Deposit date", PO/PI do GSS; só admin/owner corrige
- * PO/PI, com motivo, pelo popup de revisões.
+ * exigir Estimated date. Campo TRAVADO e imutável (22/10/2026) — Order vem do
+ * "Order received date", Deposit Payment do "Deposit date", PO/PI do GSS, sempre
+ * com o dia da última atualização; ninguém corrige à mão, nem o admin. O PO
+ * mantém o contador das levas de F×C, que abre o popup só de leitura.
  */
 function TriggerCompletedOn({
   step,
-  canCorrect,
   onRevise,
 }: {
   step: ChecklistStepRow;
-  canCorrect: boolean;
   onRevise: () => void;
 }) {
   return (
@@ -495,17 +492,6 @@ function TriggerCompletedOn({
         <Label className="text-xs text-muted-foreground">Completed on</Label>
         {step.step === "po" && (
           <RevisionBadge count={step.revision_count} onClick={onRevise} />
-        )}
-        {/* Order e Deposit Payment se corrigem pelo próprio campo de data
-            (received date / deposit date); PO e PI pelo popup de revisões. */}
-        {!FORM_ONLY_REVISIONS.has(step.step) && canCorrect && (
-          <button
-            type="button"
-            className="text-xs font-medium text-primary hover:underline"
-            onClick={onRevise}
-          >
-            {step.completed_on ? "Revise" : "Set"}
-          </button>
         )}
       </div>
       <DatePicker
@@ -672,7 +658,6 @@ export function OrderDetailClient({
   steps,
   viewPrefs,
   currentUserId,
-  canCorrectCompletedOn,
 }: {
   orderId: string;
   order: OrderDetail;
@@ -687,8 +672,6 @@ export function OrderDetailClient({
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
   currentUserId: string;
-  /** Admin/owner: corrige o "Completed on" travado das etapas com gatilho. */
-  canCorrectCompletedOn: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1124,22 +1107,12 @@ export function OrderDetailClient({
                           )}
                         </div>
                         {TRIGGER_COMPLETED_STEPS.has(s.step) ? (
-                          <TriggerCompletedOn
-                            step={s}
-                            canCorrect={canCorrectCompletedOn}
-                            onRevise={() => setRevisionsFor(s)}
-                          />
+                          <TriggerCompletedOn step={s} onRevise={() => setRevisionsFor(s)} />
                         ) : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
                           // Place the Order fecha sozinha quando a 1ª fábrica
                           // recebe documento; ETD quando a última Initial Date é
                           // preenchida (lib/checklist-revisions).
-                          <LockedCompletedOn
-                            value={s.completed_on}
-                            canCorrect={canCorrectCompletedOn}
-                            onCorrect={(date, reason) =>
-                              correctOrderStepCompletedOn(orderId, s.id, date, reason)
-                            }
-                          />
+                          <LockedCompletedOn value={s.completed_on} />
                         ) : (
                           <div>
                             <Label className="text-xs text-muted-foreground">
@@ -1274,7 +1247,6 @@ export function OrderDetailClient({
                 ? order.deposit_date
                 : revisionsFor.completed_on
           }
-          canCorrect={canCorrectCompletedOn}
         />
       )}
     </div>

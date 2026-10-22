@@ -8,7 +8,6 @@ import {
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
 } from "@/lib/checklist-completion";
-import { correctPlStepCompletedOn } from "@/lib/completed-on-correction";
 import {
   diffStepFields,
   PL_STEP_LOG_COLUMNS,
@@ -65,45 +64,6 @@ function canEditInheritedStep(
 }
 
 const INHERITED_DENIED = "Only an admin can edit a step inherited from the Pre-loading.";
-
-/**
- * Correção do "Completed on" travado (etapas com gatilho) — só admin/owner, com
- * motivo; `date` null reabre a etapa. Ver lib/completed-on-correction.
- */
-export async function correctShipmentCompletedOn(
-  preLoadingId: string,
-  step: ChecklistStep,
-  date: string | null,
-  reason: string
-): Promise<ActionResult> {
-  const session = await requireFeature("shipments", "edit");
-  if (!session.isAdmin && !session.isOwner) {
-    return { ok: false, error: "Only an admin can correct the completion date." };
-  }
-  const admin = createAdminClient();
-  const error = await correctPlStepCompletedOn(
-    admin,
-    preLoadingId,
-    step,
-    date,
-    reason,
-    session.userId
-  );
-  if (error) return { ok: false, error };
-
-  // Delivered travado desde 21/10: reabrir (ou reconcluir) pela correção do
-  // admin tem o mesmo efeito de antes no lote e no embarque.
-  if (step === "delivered") {
-    const ruleError = await applyDeliveredRuleForPl(admin, preLoadingId, date != null);
-    if (ruleError) return { ok: false, error: ruleError };
-  }
-
-  revalidateShipmentViews();
-  revalidatePath("/todo");
-  await broadcastShipmentPing();
-  if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
-  return { ok: true };
-}
 
 /** Regra do Delivered (lotes + embarque) a partir do PL. */
 async function applyDeliveredRuleForPl(
@@ -212,8 +172,8 @@ export async function saveShipmentStep(
   );
   if (dateError) return { ok: false, error: dateError };
 
-  // Etapa com gatilho (BL, Original Docs…): a data é da auto-conclusão; o
-  // admin corrige pela correctShipmentCompletedOn (com motivo).
+  // Etapa com gatilho (BL, Original Docs…): a data é da auto-conclusão —
+  // imutável, ninguém edita (22/10/2026).
   if (
     "completed_on" in patch &&
     (patch.completed_on ?? null) !== (existing?.completed_on ?? null) &&
@@ -341,8 +301,11 @@ export async function registerShipmentAttachment(
     userId: session.userId,
   });
 
-  // O anexo pode ser o que faltava pra etapa fechar (BL, Original Docs…).
-  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+  // O anexo pode ser o que faltava pra etapa fechar (BL, Original Docs…); com
+  // ela já concluída, documento novo regrava o Completed on (22/10/2026).
+  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
+    refresh: true,
+  });
 
   revalidateShipmentViews();
   if (completed) {

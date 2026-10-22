@@ -30,11 +30,12 @@ type Admin = ReturnType<typeof createAdminClient>;
  *
  * A 1ª linha de cada tipo (`order_received_date`, `fxc`, `pi_status`,
  * `deposit_date`) é o registro ORIGINAL — nunca se perde. Revisões = as linhas
- * depois dela, mais as correções manuais de Completed on (`completed_on`) no
- * PO/PI.
+ * depois dela (as antigas de `completed_on` são correções manuais de antes de
+ * 22/10/2026).
  *
- * Gatilho nunca REABRE etapa nem sobrescreve Completed on já preenchido: etapa
- * migrada do Bubble (ou concluída à mão) fica como está.
+ * **Completed on = a ÚLTIMA atualização (22/10/2026, decisão do usuário):** toda
+ * mudança do dado que conclui a etapa regrava o Completed on com o dia dela — e
+ * ninguém o edita à mão, nem o admin. O gatilho nunca REABRE a etapa.
  */
 
 /** O que o GSS grava como motivo quando a revisão vem dele. */
@@ -56,8 +57,9 @@ async function readStep(admin: Admin, orderId: string, step: ChecklistStep): Pro
 }
 
 /**
- * Conclui a etapa pelo gatilho — só se ainda está aberta. Signed by = quem fez
- * (null quando veio do GSS).
+ * Grava o Completed on pelo gatilho — a cada atualização do dado da etapa, não
+ * só na 1ª (22/10/2026: Completed on = a última atualização). Signed by = quem
+ * fez (null quando veio do GSS).
  */
 async function completeByTrigger(
   admin: Admin,
@@ -65,17 +67,17 @@ async function completeByTrigger(
   completedOn: string,
   userId: string | null
 ): Promise<void> {
-  if (step.completed_on) return;
   const { error } = await admin
     .from("order_checklist_steps")
     .update({ completed_on: completedOn, done: true, signed_by_id: userId })
     .eq("id", step.id);
   if (error) throw new Error(error.message);
+  if (step.completed_on === completedOn) return;
   await writeStepLog(admin, {
     owner: { checklistStepId: step.id },
     step: step.step,
     action: "auto_complete",
-    changes: { completed_on: { from: null, to: completedOn } },
+    changes: { completed_on: { from: step.completed_on, to: completedOn } },
     userId,
   });
 }
@@ -171,8 +173,8 @@ export async function setOrderReceivedDate(
     userId: who.userId,
   });
 
-  // Completed on = o MOMENTO em que a data foi informada (não a data em si).
-  if (!previous) await completeByTrigger(admin, step, todayIso(), who.userId);
+  // Completed on = o MOMENTO da última gravação (não a data em si) — a cada troca.
+  await completeByTrigger(admin, step, todayIso(), who.userId);
   return null;
 }
 
@@ -240,8 +242,8 @@ export async function setDepositDate(
     userId: who.userId,
   });
 
-  // Completed on = o MOMENTO em que a data foi informada (não a data do depósito).
-  if (!previous) await completeByTrigger(admin, step, todayIso(), who.userId);
+  // Completed on = o MOMENTO da última gravação (não a data do depósito).
+  await completeByTrigger(admin, step, todayIso(), who.userId);
   return null;
 }
 // ── PO ───────────────────────────────────────────────────────────────────────
@@ -346,7 +348,8 @@ export async function recordFxcDelivery(
       who
     );
 
-    if (!previous) await completeByTrigger(admin, step, today, who.userId);
+    // Cada leva que muda o conjunto regrava o Completed on (a última atualização).
+    await completeByTrigger(admin, step, today, who.userId);
   } catch (err) {
     console.error("[checklist-revisions] fxc", err instanceof Error ? err.message : err);
   }
@@ -374,7 +377,7 @@ export async function completePlaceTheOrderIfCovered(
       .eq("id", stepId)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!step || step.step !== "place_the_order" || step.completed_on) return;
+    if (!step || step.step !== "place_the_order") return;
 
     const [ofcRes, attRes] = await Promise.all([
       admin
@@ -414,7 +417,7 @@ export async function completeEtdIfFilled(
 ): Promise<void> {
   try {
     const step = await readStep(admin, orderId, "etd");
-    if (!step || step.completed_on) return;
+    if (!step) return;
 
     const { data: lines, error } = await admin
       .from("order_factory_category")
@@ -489,66 +492,10 @@ export async function recordPiStatus(
     who
   );
 
-  // Completed on nunca é futuro: status com data adiante conclui com hoje.
-  if (first) {
-    const today = todayIso();
-    await completeByTrigger(admin, step, date > today ? today : date, who.userId);
-  }
-  return null;
-}
-
-// ── Correção manual de Completed on (PO / PI) ───────────────────────────────
-
-/**
- * PO e PI seguem com Completed on editável como saída manual. O 1º preenchimento
- * é livre (vai pelo updateChecklistStep); TROCAR uma data já gravada passa por
- * aqui — motivo obrigatório, vira revisão.
- */
-export async function reviseCompletedOn(
-  admin: Admin,
-  stepId: string,
-  date: string,
-  reason: string,
-  userId: string
-): Promise<string | null> {
-  if (date > todayIso()) return "The completion date can't be in the future.";
-  if (!reason.trim()) return "A reason is required to revise the completion date.";
-
-  const { data: step, error } = await admin
-    .from("order_checklist_steps")
-    .select("id, order_id, step, completed_on")
-    .eq("id", stepId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!step) return "Checklist step not found.";
-  if (step.step !== "po" && step.step !== "pi") return "This step can't be revised here.";
-  if (step.completed_on === date) return null;
-
-  const { error: upError } = await admin
-    .from("order_checklist_steps")
-    .update({ completed_on: date, done: true, signed_by_id: userId })
-    .eq("id", stepId);
-  if (upError) throw new Error(upError.message);
-
-  await insertRevision(
-    admin,
-    {
-      order_id: step.order_id,
-      step_id: stepId,
-      kind: "completed_on",
-      previous_date: step.completed_on,
-      new_date: date,
-      reason: reason.trim(),
-    },
-    { source: "manual", userId }
-  );
-  await writeStepLog(admin, {
-    owner: { checklistStepId: stepId },
-    step: step.step,
-    action: "update",
-    changes: { completed_on: { from: step.completed_on, to: date } },
-    userId,
-  });
+  // Cada status novo regrava o Completed on com a data dele (a última
+  // atualização). Nunca futuro: status com data adiante fica com hoje.
+  const today = todayIso();
+  await completeByTrigger(admin, step, date > today ? today : date, who.userId);
   return null;
 }
 
