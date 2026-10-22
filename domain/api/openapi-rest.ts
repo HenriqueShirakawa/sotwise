@@ -207,6 +207,74 @@ export const restPaths = {
     },
   },
 
+  "/api/orders/{id}/steps/{step}": {
+    parameters: [
+      orderKey,
+      {
+        name: "step",
+        in: "path",
+        required: true,
+        schema: { type: "string", enum: ["order", "pi", "po"] },
+        description: "`order` (Order received date), `pi` (PI status) or `po` (Factory × Category).",
+      },
+    ],
+    get: {
+      tags: ["Orders"],
+      operationId: "getOrderStep",
+      summary: "Get an order checklist step",
+      description: "The step's state (completion date + its current data) and its revisions, oldest first — the first of each kind is the original record.",
+      responses: {
+        200: { description: "The step.", content: json({ type: "object", properties: { data: ref("OrderStep") } }) },
+        401: R401,
+        403: R403,
+        404: err("Order or step not found.", "Unknown step 'xpto'. Steps: order, pi, po."),
+        500: R500,
+      },
+    },
+    patch: {
+      tags: ["Orders"],
+      operationId: "patchOrderStep",
+      summary: "Update an order checklist step",
+      description: [
+        "Sends the data that completes the step — same rules as the SOTWISE screens:",
+        "- `order`: `order_received_date`. `pi`: `pi_status` (+ `pi_status_date`, default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay).",
+        "- The first value completes the step; later changes become revisions (the original is kept). `reason` is the revision reason (default: \"Updated by GSS\").",
+        "- `completed_on` is always the day of the LAST update (for `pi`, the status date) and can't be set directly. A repeated, identical value changes nothing.",
+        "- Fields of another step → 400.",
+        "",
+        "Returns the step (`GET` shape).",
+      ].join("\n"),
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: ref("OrderStepPatch"),
+            examples: {
+              order: { summary: "Order received date", value: { order_received_date: du("2026-10-20") } },
+              orderRevision: {
+                summary: "Revise the order received date",
+                value: { order_received_date: du("2026-10-21"), reason: "Final PO re-sent by the client" },
+              },
+              pi: { summary: "PI status", value: { pi_status: "Issued", pi_status_date: du("2026-10-21") } },
+              po: {
+                summary: "Factory × Category",
+                value: { items: [{ supplier_category_gss_id: "1234", ship_requirement: du("2026-11-30") }] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: "The step after the change.", content: json({ type: "object", properties: { data: ref("OrderStep") } }) },
+        400: R400Body("The order received date can't be in the future."),
+        401: R401,
+        403: R403,
+        404: err("Order or step not found.", "Order not found."),
+        500: R500,
+      },
+    },
+  },
+
   "/api/order-items": {
     get: {
       tags: ["Order items"],
@@ -725,6 +793,67 @@ export const restSchemas = {
       batch_ids: { type: "array", items: { type: "string" }, description: "The full set of batches." },
       status: { type: "string", enum: ["in_transit", "preloading"] },
       confirm: ref("ShipmentConfirm"),
+    },
+  },
+  OrderStep: {
+    type: "object",
+    properties: {
+      step: { type: "string", enum: ["order", "pi", "po"] },
+      enabled: { type: "boolean" },
+      estimated_date: nullableDate,
+      completed_on: { ...nullableDate, description: "Day of the last update of the step's data (null = open)." },
+      done: { type: "boolean" },
+      order_received_date: { ...nullableDate, description: "`order` only — current value." },
+      pi_status: { type: ["string", "null"], description: "`pi` only — current status." },
+      pi_status_date: { ...nullableDate, description: "`pi` only." },
+      items: {
+        type: "array",
+        description: "`po` only — active Factory × Category lines.",
+        items: {
+          type: "object",
+          properties: {
+            id: uuid,
+            factory: { type: "string" },
+            category: { type: "string" },
+            ship_requirement: nullableDate,
+          },
+        },
+      },
+      revisions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["order_received_date", "fxc", "pi_status", "completed_on"] },
+            previous_date: nullableDate,
+            new_date: nullableDate,
+            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status." },
+            reason: { type: ["string", "null"] },
+            source: { type: "string", enum: ["manual", "gss"] },
+            changed_at: { type: "string", format: "date-time" },
+          },
+        },
+      },
+    },
+  },
+  OrderStepPatch: {
+    type: "object",
+    description: "Only the fields of the step in the path (plus `reason`).",
+    properties: {
+      order_received_date: { ...inDay, description: "`order` — required there; never in the future." },
+      pi_status: { type: "string", minLength: 1, maxLength: 200, description: "`pi` — required there." },
+      pi_status_date: { ...inDay, description: "`pi` — default today." },
+      items: {
+        type: "array",
+        minItems: 1,
+        description: "`po` — required there.",
+        items: {
+          type: "object",
+          required: ["supplier_category_gss_id", "ship_requirement"],
+          properties: { supplier_category_gss_id: { type: "string" }, ship_requirement: inDay },
+        },
+      },
+      reason: { type: "string", maxLength: 500, description: "Revision reason (default \"Updated by GSS\")." },
     },
   },
   ShipmentStepPatch: {
