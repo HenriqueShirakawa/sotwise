@@ -199,13 +199,15 @@ export function hasExtraRequirements(step: ChecklistStep): boolean {
 /**
  * Etapas concluídas pelo próprio gatilho (lib/checklist-revisions), 20/10/2026:
  * Order pelo "Order received date", PO pelas Factory × Category do GSS, PI pelo
- * status do GSS, Deposit Payment pelo "Deposit date" que o usuário grava.
+ * status do GSS, Deposit Payment pelo "Deposit date" que o usuário grava e
+ * Balance Payment pelo "Balance date" (22/10/2026, igual ao Deposit).
  */
 export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "order",
   "po",
   "pi",
   "deposit_payment",
+  "balance_payment",
 ]);
 
 /**

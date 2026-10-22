@@ -21,6 +21,7 @@ import type { ChecklistStep } from "@/types/database";
 
 import {
   getStepRevisions,
+  saveBalanceDate,
   saveDepositDate,
   saveOrderReceivedDate,
   type StepRevision,
@@ -40,7 +41,7 @@ import {
  * da etapa —, mas com motivo obrigatório já na 1ª gravação.
  */
 
-export type RevisionStep = "order" | "po" | "pi" | "deposit_payment";
+export type RevisionStep = "order" | "po" | "pi" | "deposit_payment" | "balance_payment";
 
 /**
  * Etapas cujo popup é SÓ o formulário (sem a lista de registros): o que mudou
@@ -50,6 +51,7 @@ export type RevisionStep = "order" | "po" | "pi" | "deposit_payment";
 export const FORM_ONLY_REVISIONS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "order",
   "deposit_payment",
+  "balance_payment",
 ]);
 
 /** Número em destaque com a quantidade de revisões — clicável. */
@@ -73,6 +75,7 @@ const TITLES: Record<RevisionStep, string> = {
   po: "PO — Factory × Category",
   pi: "PI status",
   deposit_payment: "Deposit date",
+  balance_payment: "Balance date",
 };
 
 /** Rótulo do campo de data dentro do formulário. */
@@ -81,6 +84,7 @@ const DATE_LABELS: Record<RevisionStep, string> = {
   po: "Completed on",
   pi: "Completed on",
   deposit_payment: "Deposit date",
+  balance_payment: "Balance date",
 };
 
 const KIND_LABELS: Record<StepRevision["kind"], string> = {
@@ -89,6 +93,7 @@ const KIND_LABELS: Record<StepRevision["kind"], string> = {
   pi_status: "PI status",
   completed_on: "Completed on",
   deposit_date: "Deposit date",
+  balance_date: "Balance date",
 };
 
 type FxcItem = { factory: string; category: string };
@@ -155,11 +160,13 @@ export function StepRevisionsModal({
 
   function save() {
     startTransition(async () => {
-      // Só Order e Deposit Payment gravam por aqui (canAdd).
+      // Só Order, Deposit e Balance Payment gravam por aqui (canAdd).
       const res =
         step === "order"
           ? await saveOrderReceivedDate(orderId, date, reason.trim() || null)
-          : await saveDepositDate(orderId, date, reason.trim());
+          : step === "balance_payment"
+            ? await saveBalanceDate(orderId, date, reason.trim())
+            : await saveDepositDate(orderId, date, reason.trim());
       if (!res.ok) {
         toast.error(res.error);
         return;

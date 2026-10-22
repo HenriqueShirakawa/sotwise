@@ -195,6 +195,8 @@ type OrderDetail = {
   pi_status_date: string | null;
   /** Etapa Deposit Payment: data em que o cliente depositou (a vigente). */
   deposit_date: string | null;
+  /** Etapa Balance Payment: data em que o cliente pagou o saldo (22/10/2026). */
+  balance_date: string | null;
   status: OrderStatus;
   schedule_requested: string | null;
 };
@@ -475,6 +477,7 @@ function ViewBatchModal({
 const TRIGGER_PLACEHOLDER: Partial<Record<ChecklistStep, string>> = {
   order: "Set the received date",
   deposit_payment: "Set the deposit date",
+  balance_payment: "Set the balance date",
 };
 
 /**
@@ -1242,6 +1245,13 @@ export function OrderDetailClient({
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
+                      {s.step === "balance_payment" && (
+                        <TriggerDateField
+                          label="Balance date"
+                          date={order.balance_date}
+                          onOpen={() => setRevisionsFor(s)}
+                        />
+                      )}
                       {s.step === "pi" && (
                         <PiStatusField
                           status={order.pi_status}
@@ -1329,7 +1339,9 @@ export function OrderDetailClient({
               ? order.order_received_date
               : revisionsFor.step === "deposit_payment"
                 ? order.deposit_date
-                : revisionsFor.completed_on
+                : revisionsFor.step === "balance_payment"
+                  ? order.balance_date
+                  : revisionsFor.completed_on
           }
         />
       )}
