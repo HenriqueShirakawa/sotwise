@@ -14,7 +14,7 @@ const optionalGssRef = z.string().trim().min(1).nullish();
  * fábrica e a categoria. `ship_requirement` é obrigatória por linha; a linha
  * nasce SEM lote (batch) — o usuário atribui o lote depois no SOTWISE.
  */
-const gssOrderItemSchema = z.object({
+export const gssOrderItemSchema = z.object({
   supplier_category_gss_id: z
     .string()
     .trim()
