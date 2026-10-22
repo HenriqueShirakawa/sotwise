@@ -1,6 +1,18 @@
 import { EVENT_DATE_STEPS } from "@/lib/checklist";
 import { todayIso } from "@/lib/format";
-import type { ChecklistStep } from "@/types/database";
+import type { BatchStatus, ChecklistStep } from "@/types/database";
+
+/** Fases em que o lote já está num PL (ou passou dele). */
+export const PRELOADING_ONWARD: readonly BatchStatus[] = ["preloading", "in_transit", "delivered"];
+
+/**
+ * Etapa Pre-Loading da Order (22/10/2026): todos os lotes — fora os cancelados —
+ * em Pre-Loading ou adiante. Order sem lote não cumpre.
+ */
+export function allBatchesInPreLoading(statuses: BatchStatus[]): boolean {
+  const live = statuses.filter((s) => s !== "canceled");
+  return live.length > 0 && live.every((s) => PRELOADING_ONWARD.includes(s));
+}
 
 /**
  * Regra de conclusão ("Checked", ícone verde) de cada etapa do checklist.
@@ -34,6 +46,8 @@ export type ChecklistFacts = {
   placeOrderFactoriesWithDoc?: number;
   /** ETD: "Initial date" preenchido em TODAS as entradas Factory × Category. */
   etdInitialFilled?: boolean;
+  /** Pre-Loading: todos os lotes (fora cancelados) em Pre-Loading ou adiante. */
+  batchesInPreLoading?: boolean;
 
   // ── fase Pre-loading ──────────────────────────────────────────────────────
   consolidationPointId?: string | null;
@@ -95,7 +109,9 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if (!f.etdInitialFilled) missing.push("Initial date on every entry");
       break;
     case "pre_loading":
-      if (noDocs) missing.push("a document");
+      // 22/10/2026: todos os lotes da Order em Pre-Loading ou adiante (o
+      // documento virou opcional).
+      if (!f.batchesInPreLoading) missing.push("every batch in a Pre-loading");
       break;
 
     case "consolidation_point":
@@ -208,6 +224,8 @@ export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<Che
   ...TRIGGER_COMPLETED_STEPS,
   "place_the_order",
   "etd",
+  // Pre-Loading da Order: quando todos os lotes entram em PL (22/10/2026).
+  "pre_loading",
   "consolidation_point",
   "city",
   "port_of_loading",

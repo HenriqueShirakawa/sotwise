@@ -1,4 +1,5 @@
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
+import { completeOrderPreLoadingIfReady } from "@/lib/checklist-revisions";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -42,7 +43,9 @@ export async function syncPreLoadingRelations(
   admin: Admin,
   preLoadingId: string,
   clientIds: string[],
-  batchIds: string[]
+  batchIds: string[],
+  /** Quem associou os lotes — assina a etapa Pre-Loading da Order (22/10/2026). */
+  actorId: string | null = null
 ): Promise<string | null> {
   // Clientes: troca o conjunto inteiro (junção sem colunas extras).
   const delClients = await admin
@@ -107,6 +110,17 @@ export async function syncPreLoadingRelations(
   if (touched.length) {
     const statusError = await syncOrderStatusForBatches(admin, touched);
     if (statusError) return statusError;
+  }
+
+  // Lote que entrou no PL pode ser o último da Order fora de Pre-Loading: conclui
+  // (ou atualiza) a etapa Pre-Loading da Order (lib/checklist-revisions).
+  if (added.length) {
+    const { data: addedBatches } = await admin.from("batches").select("order_id").in("id", added);
+    await completeOrderPreLoadingIfReady(
+      admin,
+      (addedBatches ?? []).map((b) => b.order_id),
+      actorId
+    );
   }
 
   return null;
@@ -177,7 +191,13 @@ export async function createPreLoadingRecord(
     );
   if (stepsError) return { ok: false, error: stepsError.message };
 
-  const relError = await syncPreLoadingRelations(admin, preLoadingId, input.client_ids, input.batch_ids);
+  const relError = await syncPreLoadingRelations(
+    admin,
+    preLoadingId,
+    input.client_ids,
+    input.batch_ids,
+    input.created_by
+  );
   if (relError) return { ok: false, error: relError };
 
   return { ok: true, id: preLoadingId, pl_number: created.pl_number };
