@@ -50,3 +50,38 @@ Cada order criada **grava no banco de produção** e dispara o trigger `trg_orde
 > O `GET` é read-only: dá para rodar as requisições 9–12 contra produção à vontade, sem gravar nada.
 
 Referência do endpoint: `app/api/orders/route.ts` · schema do POST: `domain/orders/gss-schema.ts` · leitura do GET: `domain/orders/gss-read.ts`.
+
+---
+
+# Checklist da Order pelo GSS — `SOTWISE-GSS-Checklist-Order.postman_collection.json`
+
+Testa o endpoint por onde o **GSS atualiza as etapas do checklist da Order** (22/10/2026): `GET`/`PATCH /api/orders/{id}/steps/{step}`, com `{step}` = `order` | `pi` | `po`. Mesmo environment **"SOTWISE — GSS (prod)"** (`base_url` + `api_token`).
+
+Rode a collection **inteira, na ordem** (Runner): o passo 0 cria uma order descartável (`GSS-TEST-STEPS-…`) e o passo 12 a apaga — nenhuma order real é tocada.
+
+| # | Cenário | Esperado |
+|---|---|---|
+| 0 | Cria a order de teste (`POST /api/orders`) | `201` |
+| 1 | `GET .../steps/order` — etapa aberta | `200`, `completed_on: null`, sem revisões |
+| 2 | `PATCH order` — 1º `order_received_date` | `200`, etapa concluída, 1 registro (original) |
+| 3 | `PATCH order` — troca com `reason` | `200`, 2 registros, motivo gravado, original preservado |
+| 4 | `PATCH order` — mesmo valor | `200`, nada novo |
+| 5 | `PATCH order` com campo de outra etapa (`pi_status`) | `400` dizendo qual campo |
+| 6 | `PATCH order` — data futura | `400` |
+| 7 | `PATCH pi` — `pi_status` + `pi_status_date` | `200`, `completed_on` = data do status |
+| 8 | `PATCH po` — `items[]` | `200`, 1 linha de F×C, leva registrada |
+| 9 | `PATCH po` — produto inexistente | `400` |
+| 10 | Etapa desconhecida | `404` |
+| 11 | Sem token | `401` |
+| 12 | Apaga a order de teste | `200` |
+
+O passo 8 usa `supplier_category_gss_id_1` do environment (se vazio, o default da collection, `11`). Datas vão em **Unix (segundos)** — geradas nos pre-request scripts.
+
+Rodada em 22/10/2026 pelo Postman CLI (servidor local, mesmo código da produção): **13 requests, 29 asserções, 0 falhas**.
+
+```bash
+postman collection run docs/postman/SOTWISE-GSS-Checklist-Order.postman_collection.json -e docs/postman/SOTWISE-GSS.postman_environment.json --env-var "api_token=<API_TOKEN>"
+```
+
+Referência: `app/api/orders/[id]/steps/[step]/route.ts` · regras: `domain/orders/steps-api.ts` · Swagger: `{{base_url}}/api/docs` → Orders → `getOrderStep` / `patchOrderStep`.
+
