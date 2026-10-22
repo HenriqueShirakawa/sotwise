@@ -824,6 +824,27 @@ export type Database = {
         >;
         Relationships: [];
       };
+      /** Place the Order: data "Placed on" de cada fábrica da Order (22/10/2026). */
+      order_factory_placed_dates: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          factory_id: UUID;
+          placed_on: DateStr;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          order_id: UUID;
+          factory_id: UUID;
+          placed_on: DateStr;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["order_factory_placed_dates"]["Insert"]>;
+        Relationships: [];
+      };
       order_factory_category: {
         Row: {
           id: UUID;

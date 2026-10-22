@@ -728,9 +728,12 @@ export function OrderDetailClient({
   steps,
   viewPrefs,
   currentUserId,
+  placedDates,
 }: {
   orderId: string;
   order: OrderDetail;
+  /** Place the Order: data "Placed on" de cada fábrica (factory_id → YYYY-MM-DD). */
+  placedDates: Record<string, string>;
   batches: BatchRow[];
   ofc: OfcRow[];
   etdByOfc: Record<string, EtdInfoRow>;
@@ -810,8 +813,8 @@ export function OrderDetailClient({
   // está concluída é a regra de lib/checklist-completion, que também consulta
   // anexos, entradas Factory×Category e ETD. Derivado aqui, uma vez.
   const checkedSteps = useMemo(() => {
-    // Place the Order agrupa por fábrica e fecha com doc em pelo menos UMA —
-    // por etapa, quantas fábricas do pedido já têm anexo.
+    // Place the Order agrupa por fábrica e fecha com a data "Placed on" em TODAS
+    // (22/10/2026) — quantas fábricas o pedido tem e quantas já têm data.
     const placeOrderFactoryIds = new Set(ofc.map((o) => o.factory_id));
     return steps.map((s) => {
       const facts: ChecklistFacts = {
@@ -822,15 +825,14 @@ export function OrderDetailClient({
         batchesInPreLoading: allBatchesInPreLoading(batches.map((b) => b.status)),
       };
       if (s.step === "place_the_order") {
-        facts.placeOrderFactoriesWithDoc = new Set(
-          s.attachments
-            .map((a) => a.factory_id)
-            .filter((id): id is string => !!id && placeOrderFactoryIds.has(id))
-        ).size;
+        facts.placeOrderFactoriesTotal = placeOrderFactoryIds.size;
+        facts.placeOrderFactoriesDated = [...placeOrderFactoryIds].filter(
+          (id) => !!placedDates[id]
+        ).length;
       }
       return { ...s, facts, done: isStepChecked(s.step, facts) };
     });
-  }, [steps, ofc, etdInitialFilled, batches]);
+  }, [steps, ofc, etdInitialFilled, batches, placedDates]);
 
   // Só o que é RENDERIZADO passa pelo filtro. `steps` continua inteiro para
   // qualquer regra que dependa do checklist completo — esconder uma etapa é
@@ -1273,6 +1275,7 @@ export function OrderDetailClient({
                           ofc={ofc}
                           batches={batches}
                           attachments={s.attachments}
+                          placedDates={placedDates}
                         />
                       ) : s.step === "etd" ? (
                         <EtdStepTable

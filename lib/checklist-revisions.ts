@@ -1,7 +1,7 @@
 import "server-only";
 
 import { allBatchesInPreLoading } from "@/lib/checklist-completion";
-import { todayIso } from "@/lib/format";
+import { formatDateNumeric, todayIso } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -28,8 +28,8 @@ type Admin = ReturnType<typeof createAdminClient>;
  *    depositou de fato), sempre com motivo. A 1ª gravação conclui a etapa com
  *    Completed on = o dia da gravação.
  *  - **Balance Payment** (22/10/2026): igual ao Deposit, com o "Balance date".
- *  - **Place the Order**: conclui quando a 1ª fábrica do pedido recebe
- *    documento (Completed on = hoje). Sem revisões — só o History.
+ *  - **Place the Order** (22/10/2026): conclui quando TODAS as fábricas do
+ *    pedido têm a data "Placed on"; trocar uma data exige motivo (History).
  *
  * A 1ª linha de cada tipo (`order_received_date`, `fxc`, `pi_status`,
  * `deposit_date`) é o registro ORIGINAL — nunca se perde. Revisões = as linhas
@@ -384,47 +384,93 @@ export async function recordFxcDelivery(
 // ── Place the Order ──────────────────────────────────────────────────────────
 
 /**
- * Place the Order (20/10/2026, card "Ajustes Data e Logs"): cada fábrica do
- * pedido ganha a sua data quando recebe o 1º documento (o upload já vai pro
- * History com a fábrica). Quando a 1ª fábrica recebe documento (21/10/2026;
- * antes era a ÚLTIMA), a etapa conclui sozinha — Completed on = hoje, Signed by
- * = quem anexou.
- * Chamada depois de cada anexo da etapa; nunca derruba o upload.
+ * Place the Order (22/10/2026 — antes era o anexo por fábrica): cada fábrica da
+ * Order ganha a sua data "Placed on", informada pelo usuário
+ * (`order_factory_placed_dates`). A 1ª gravação é livre; trocar depois exige
+ * motivo (vai pro History da etapa, como o Order received date). Nunca futura.
+ *
+ * A etapa conclui quando TODAS as fábricas ativas da Order têm data; daí em
+ * diante, cada data gravada regrava o Completed on com o dia (a última
+ * atualização, imutável). O anexo por fábrica segue opcional e não conta mais.
+ * Retorna a mensagem de erro de validação, ou null.
  */
-export async function completePlaceTheOrderIfCovered(
+export async function setFactoryPlacedDate(
   admin: Admin,
-  stepId: string,
-  userId: string
-): Promise<void> {
-  try {
-    const { data: step, error } = await admin
-      .from("order_checklist_steps")
-      .select("id, order_id, step, completed_on")
-      .eq("id", stepId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!step || step.step !== "place_the_order") return;
+  orderId: string,
+  factoryId: string,
+  date: string,
+  who: Who
+): Promise<string | null> {
+  if (!date) return "Choose the placed-on date.";
+  if (date > todayIso()) return "The placed-on date can't be in the future.";
 
-    const [ofcRes, attRes] = await Promise.all([
+  const [{ data: lines, error: lError }, { data: existing, error: eError }, { data: factory }] =
+    await Promise.all([
       admin
         .from("order_factory_category")
         .select("factory_id")
-        .eq("order_id", step.order_id)
+        .eq("order_id", orderId)
         .eq("is_active", true),
-      admin.from("step_attachments").select("factory_id").eq("checklist_step_id", stepId),
+      admin
+        .from("order_factory_placed_dates")
+        .select("id, placed_on")
+        .eq("order_id", orderId)
+        .eq("factory_id", factoryId)
+        .maybeSingle(),
+      admin.from("factories").select("name").eq("id", factoryId).maybeSingle(),
     ]);
-    if (ofcRes.error) throw new Error(ofcRes.error.message);
-    if (attRes.error) throw new Error(attRes.error.message);
-
-    // Basta UMA fábrica do pedido com documento (21/10/2026; antes eram todas).
-    const factories = new Set((ofcRes.data ?? []).map((o) => o.factory_id));
-    const anyWithDoc = (attRes.data ?? []).some((a) => !!a.factory_id && factories.has(a.factory_id));
-    if (!anyWithDoc) return;
-
-    await completeByTrigger(admin, step, todayIso(), userId);
-  } catch (err) {
-    console.error("[checklist-revisions] place_the_order", err instanceof Error ? err.message : err);
+  if (lError) throw new Error(lError.message);
+  if (eError) throw new Error(eError.message);
+  if (!(lines ?? []).some((l) => l.factory_id === factoryId)) {
+    return "This factory is not in the order.";
   }
+
+  const previous = existing?.placed_on ?? null;
+  if (previous === date) return null;
+  const reason = reasonFor(who);
+  if (previous && !reason) return "A reason is required to revise the placed-on date.";
+
+  const step = await readStep(admin, orderId, "place_the_order");
+  if (!step) return "Checklist step not found.";
+
+  const { error } = await admin.from("order_factory_placed_dates").upsert(
+    {
+      order_id: orderId,
+      factory_id: factoryId,
+      placed_on: date,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "order_id,factory_id" }
+  );
+  if (error) throw new Error(error.message);
+
+  // History da etapa: "Fábrica: dd/mm/yyyy" (a etapa tem uma data por fábrica).
+  const label = factory?.name ?? "Factory";
+  await writeStepLog(admin, {
+    owner: { checklistStepId: step.id },
+    step: step.step,
+    action: "update",
+    changes: {
+      placed_on: {
+        from: previous ? `${label}: ${formatDateNumeric(previous)}` : null,
+        to: `${label}: ${formatDateNumeric(date)}`,
+      },
+      ...(previous && reason ? { reason } : {}),
+    },
+    userId: who.userId,
+  });
+
+  const factoryIds = new Set((lines ?? []).map((l) => l.factory_id));
+  const { data: dated, error: dError } = await admin
+    .from("order_factory_placed_dates")
+    .select("factory_id")
+    .eq("order_id", orderId);
+  if (dError) throw new Error(dError.message);
+  const datedIds = new Set((dated ?? []).map((d) => d.factory_id));
+  if ([...factoryIds].every((f) => datedIds.has(f))) {
+    await completeByTrigger(admin, step, todayIso(), who.userId);
+  }
+  return null;
 }
 
 // ── Pre-Loading (etapa da Order) ─────────────────────────────────────────────
