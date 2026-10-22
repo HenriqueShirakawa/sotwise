@@ -42,8 +42,9 @@ export type ChecklistFacts = {
   // ── fase Order ────────────────────────────────────────────────────────────
   /** PO: entradas Factory × Category cadastradas no pedido. */
   factoryCategoryCount?: number;
-  /** Place the Order: quantas fábricas do pedido já têm ao menos um documento. */
-  placeOrderFactoriesWithDoc?: number;
+  /** Place the Order: fábricas do pedido e quantas já têm a data "Placed on". */
+  placeOrderFactoriesTotal?: number;
+  placeOrderFactoriesDated?: number;
   /** ETD: "Initial date" preenchido em TODAS as entradas Factory × Category. */
   etdInitialFilled?: boolean;
   /** Pre-Loading: todos os lotes (fora cancelados) em Pre-Loading ou adiante. */
@@ -98,9 +99,12 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if ((f.factoryCategoryCount ?? 0) === 0) missing.push("Factory × Category entries");
       break;
     case "place_the_order": {
-      // Basta UMA fábrica do agrupamento com documento (21/10/2026; antes era
-      // cada fábrica). Anexo sem fábrica não conta.
-      if ((f.placeOrderFactoriesWithDoc ?? 0) === 0) missing.push("a document for a factory");
+      // 22/10/2026: a data "Placed on" em TODAS as fábricas (o anexo virou
+      // opcional). Sem Factory × Category não há o que datar.
+      const total = f.placeOrderFactoriesTotal ?? 0;
+      const dated = f.placeOrderFactoriesDated ?? 0;
+      if (total === 0 || dated < total)
+        missing.push(`a placed-on date for every factory (${dated}/${total})`);
       break;
     }
     case "etd":
