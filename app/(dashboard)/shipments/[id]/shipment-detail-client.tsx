@@ -45,7 +45,6 @@ import {
   deleteShipment,
   deleteShipmentStepAttachment,
   getShipmentAttachmentUrl,
-  correctShipmentCompletedOn,
   saveShipmentStep,
   createShipmentAttachmentTicket,
   registerShipmentAttachment,
@@ -709,18 +708,7 @@ export function ShipmentDetailClient({
                             )}
                           </div>
                           {LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
-                            <LockedCompletedOn
-                              value={s.completed_on}
-                              canCorrect={canEditInherited}
-                              onCorrect={(date, reason) =>
-                                correctShipmentCompletedOn(
-                                  shipment.pre_loading_id,
-                                  s.step,
-                                  date,
-                                  reason
-                                )
-                              }
-                            />
+                            <LockedCompletedOn value={s.completed_on} />
                           ) : (
                             <div>
                               <Label className="text-xs text-muted-foreground">

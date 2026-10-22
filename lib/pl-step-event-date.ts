@@ -14,13 +14,12 @@ type Admin = ReturnType<typeof createAdminClient>;
  * lib/checklist-revisions):
  *
  *  - 1ª gravação: conclui a etapa — Completed on = o DIA DA GRAVAÇÃO (não a data
- *    informada), Signed by = quem gravou. O Completed on fica travado
- *    (LOCKED_COMPLETED_ON_STEPS); só admin/owner corrige.
+ *    informada), Signed by = quem gravou.
  *  - Depois: trocar a data exige motivo; o de → para e o motivo vão pro History
- *    da etapa. Não mexe no Completed on.
+ *    da etapa, e o Completed on vira o dia dessa troca (22/10/2026: Completed on
+ *    = a ÚLTIMA atualização, imutável — ninguém edita à mão).
  *
- * Etapa já concluída antes (migrada, ou com o Completed on corrigido à mão) e
- * sem data do fato: a 1ª gravação é livre e não reabre nada.
+ * Etapa já concluída antes (migrada) e sem data do fato: a 1ª gravação é livre.
  *
  * `completed` = a gravação concluiu a etapa agora (quem chama aplica o efeito do
  * Delivered — lotes e embarque entregues). Erro de validação vem em `error`.
@@ -57,10 +56,7 @@ export async function setPlStepEventDate(
 
   const completing = !existing?.completed_on;
   const today = todayIso();
-  const values = {
-    event_date: date,
-    ...(completing ? { completed_on: today, done: true, signed_by_id: who.userId } : {}),
-  };
+  const values = { event_date: date, completed_on: today, done: true, signed_by_id: who.userId };
 
   const { data: saved, error } = existing
     ? await admin
@@ -82,13 +78,11 @@ export async function setPlStepEventDate(
     action: "update",
     changes: {
       event_date: { from: previous, to: date },
-      ...(completing
-        ? {
-            completed_on: { from: null, to: today },
-            ...(existing?.signed_by_id !== who.userId
-              ? { signed_by_id: { from: existing?.signed_by_id ?? null, to: who.userId } }
-              : {}),
-          }
+      ...(existing?.completed_on !== today
+        ? { completed_on: { from: existing?.completed_on ?? null, to: today } }
+        : {}),
+      ...(existing?.signed_by_id !== who.userId
+        ? { signed_by_id: { from: existing?.signed_by_id ?? null, to: who.userId } }
         : {}),
       ...(previous && reason ? { reason } : {}),
     },

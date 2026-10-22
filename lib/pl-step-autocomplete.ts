@@ -16,20 +16,25 @@ type Admin = ReturnType<typeof createAdminClient>;
  * preenchido: grava "Completed on" = hoje e "Signed by" = quem completou.
  *
  * Só age quando:
- *  - a etapa ainda não tem "Completed on" (nunca sobrescreve data já posta);
- *  - ela tem exigência extra — etapa que só pede a data (Loading Date, ETA…)
- *    continua manual, senão fecharia no primeiro clique;
+ *  - ela tem exigência extra — etapa que só pede a data (Loading Date…) não
+ *    passa por aqui;
  *  - existe "Estimated date" — a mesma trava de `validateStepDates`: não se
- *    conclui etapa que nunca foi prevista.
+ *    conclui etapa que nunca foi prevista;
+ *  - a etapa ainda não tem "Completed on" OU `refresh` (22/10/2026: Completed on
+ *    = a ÚLTIMA atualização) — quem chama passa `refresh` quando o usuário acabou
+ *    de mudar um dado da etapa (cadastro, booking, documento novo) e a etapa,
+ *    já concluída, ganha o Completed on de hoje. Só mexer no Estimated date não
+ *    é atualização da etapa.
  *
- * A data continua editável depois (a real pode ser outra). Devolve true se
- * concluiu, pra quem chamou revalidar o que depende disso.
+ * Ninguém edita o Completed on à mão (nem o admin), e ele nunca é limpo por
+ * aqui: a etapa não reabre. Devolve true se gravou, pra quem chamou revalidar.
  */
 export async function autoCompletePlStep(
   admin: Admin,
   preLoadingId: string,
   step: ChecklistStep,
-  userId: string | null
+  userId: string | null,
+  { refresh = false }: { refresh?: boolean } = {}
 ): Promise<boolean> {
   if (!hasExtraRequirements(step)) return false;
 
@@ -41,7 +46,8 @@ export async function autoCompletePlStep(
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
     .maybeSingle();
-  if (!s || s.completed_on || !s.estimated_date) return false;
+  if (!s) return false;
+  if (s.completed_on ? !refresh : !s.estimated_date) return false;
 
   const { count: attachments } = await admin
     .from("step_attachments")
@@ -74,26 +80,26 @@ export async function autoCompletePlStep(
     contactCountByAgent,
     perClient
   );
+  // Incompleta depois da mudança (ex.: agente trocado sem contato): não fecha e,
+  // se já estava concluída, não reabre — fica como está.
   if (!isStepChecked(step, facts)) return false;
+  if (s.completed_on === today && s.signed_by_id === userId) return false;
 
-  // `.is(completed_on, null)`: se alguém concluiu à mão no meio tempo, não pisa.
-  const { data: updated } = await admin
+  const { error } = await admin
     .from("pre_loading_checklist_steps")
     .update({ completed_on: today, done: true, signed_by_id: userId })
-    .eq("id", s.id)
-    .is("completed_on", null)
-    .select("id, signed_by_id");
-  if (!updated?.length) return false;
+    .eq("id", s.id);
+  if (error) return false;
 
-  // Fechou por consequência do que o usuário acabou de preencher — entra no
-  // log como ação dele, marcada como automática.
+  // Fechou (ou foi atualizada) por consequência do que o usuário acabou de
+  // preencher — entra no log como ação dele, marcada como automática.
   await writeStepLog(admin, {
     owner: { preLoadingStepId: s.id },
     step,
     action: "auto_complete",
     changes: {
-      completed_on: { from: null, to: today },
-      signed_by_id: { from: s.signed_by_id ?? null, to: userId },
+      ...(s.completed_on !== today ? { completed_on: { from: s.completed_on, to: today } } : {}),
+      ...(s.signed_by_id !== userId ? { signed_by_id: { from: s.signed_by_id, to: userId } } : {}),
     },
     userId,
   });

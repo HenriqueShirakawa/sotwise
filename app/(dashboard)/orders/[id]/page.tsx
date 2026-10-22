@@ -39,7 +39,7 @@ export default async function OrderDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { profile, userId, isAdmin, isOwner } = await requireFeature("orders");
+  const { profile, userId } = await requireFeature("orders");
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -273,7 +273,6 @@ export default async function OrderDetailPage({
       steps={steps}
       viewPrefs={readViewPrefs(profile.ui_preferences)}
       currentUserId={userId}
-      canCorrectCompletedOn={isAdmin || isOwner}
     />
   );
 }
