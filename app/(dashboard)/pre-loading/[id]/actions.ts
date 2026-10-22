@@ -7,7 +7,6 @@ import {
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
 } from "@/lib/checklist-completion";
-import { correctPlStepCompletedOn } from "@/lib/completed-on-correction";
 import { todayIso } from "@/lib/format";
 import {
   diffStepFields,
@@ -68,6 +67,11 @@ function touchesCompletionFacts(patch: StepPatch): boolean {
   return COMPLETION_FACT_FIELDS.some((k) => k in patch);
 }
 
+/** Mudou o dado da etapa (não só a previsão)? Regrava o Completed on — 22/10/2026. */
+function touchesStepData(patch: StepPatch): boolean {
+  return COMPLETION_FACT_FIELDS.some((k) => k !== "estimated_date" && k in patch);
+}
+
 /**
  * Grava um campo de uma etapa do checklist do PL. As linhas de
  * `pre_loading_checklist_steps` nascem sob demanda — um PL recém-criado não
@@ -103,8 +107,8 @@ export async function savePreLoadingStep(
   );
   if (dateError) return { ok: false, error: dateError };
 
-  // Etapa com gatilho: a data é da auto-conclusão; o admin corrige pela
-  // correctPreLoadingCompletedOn (com motivo).
+  // Etapa com gatilho: a data é da auto-conclusão — imutável, ninguém edita
+  // (22/10/2026).
   if (
     "completed_on" in patch &&
     (patch.completed_on ?? null) !== (existing?.completed_on ?? null) &&
@@ -147,11 +151,13 @@ export async function savePreLoadingStep(
     userId: session.userId,
   });
 
-  // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha.
-  // Não roda quando o próprio patch mexe no "Completed on" — limpar a data à mão
-  // não pode ser desfeito na mesma hora.
+  // Preencheu o que a etapa exige (cadastro/booking/data prevista)? Fecha sozinha
+  // — e, já concluída, a mudança do dado regrava o Completed on (a última
+  // atualização, 22/10/2026).
   if (!("completed_on" in patch) && touchesCompletionFacts(patch)) {
-    await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+    await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
+      refresh: touchesStepData(patch),
+    });
   }
 
   // Pelo padrão da rota, não por valor: a página vive em duas URLs (pl_number
@@ -167,37 +173,6 @@ export async function savePreLoadingStep(
   return { ok: true };
 }
 
-/**
- * Correção do "Completed on" travado (etapas com gatilho) — só admin/owner, com
- * motivo; `date` null reabre a etapa. Ver lib/completed-on-correction.
- */
-export async function correctPreLoadingCompletedOn(
-  preLoadingId: string,
-  step: ChecklistStep,
-  date: string | null,
-  reason: string
-): Promise<ActionResult> {
-  const session = await requireFeature("pre_loading", "edit");
-  if (!session.isAdmin && !session.isOwner) {
-    return { ok: false, error: "Only an admin can correct the completion date." };
-  }
-  const admin = createAdminClient();
-  const error = await correctPlStepCompletedOn(
-    admin,
-    preLoadingId,
-    step,
-    date,
-    reason,
-    session.userId
-  );
-  if (error) return { ok: false, error };
-
-  revalidatePath("/pre-loading/[id]", "page");
-  revalidatePath("/pre-loading");
-  revalidatePath("/todo");
-  await broadcastPreLoadingPing();
-  return { ok: true };
-}
 
 /** Id da etapa, criando a linha se ainda não existir (anexar antes de editar). */
 async function ensureStepId(
@@ -288,7 +263,10 @@ export async function registerPreLoadingAttachment(
   });
 
   // O anexo pode ser o que faltava pra etapa fechar (ver lib/pl-step-autocomplete).
-  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+  // Documento novo é atualização da etapa: fecha ou regrava o Completed on.
+  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
+    refresh: true,
+  });
 
   revalidatePath("/pre-loading/[id]", "page");
   if (completed) {
@@ -377,7 +355,7 @@ export async function savePlClientBooking(
   });
 
   const completed = value
-    ? await autoCompletePlStep(admin, preLoadingId, "booking", session.userId)
+    ? await autoCompletePlStep(admin, preLoadingId, "booking", session.userId, { refresh: true })
     : false;
 
   revalidatePath("/pre-loading/[id]", "page");

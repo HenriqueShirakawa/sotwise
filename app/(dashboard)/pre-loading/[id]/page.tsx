@@ -80,7 +80,7 @@ export default async function PreLoadingChecklistPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { userId, profile, isAdmin, isOwner } = await requireFeature("pre_loading");
+  const { userId, profile } = await requireFeature("pre_loading");
   const { id } = await params;
   const admin = createAdminClient();
 
@@ -386,7 +386,6 @@ export default async function PreLoadingChecklistPage({
         .sort(byName)}
       shipmentLines={shipmentLines}
       currentUserId={userId}
-      canCorrectCompletedOn={isAdmin || isOwner}
       preloadingLeaderId={pl.leader_id}
       alreadyShipped={pl.shipping_confirmed_at != null}
       viewPrefs={readViewPrefs(profile.ui_preferences)}

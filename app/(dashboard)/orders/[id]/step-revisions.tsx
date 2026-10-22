@@ -21,7 +21,6 @@ import type { ChecklistStep } from "@/types/database";
 
 import {
   getStepRevisions,
-  reviseStepCompletedOn,
   saveDepositDate,
   saveOrderReceivedDate,
   type StepRevision,
@@ -45,8 +44,8 @@ export type RevisionStep = "order" | "po" | "pi" | "deposit_payment";
 
 /**
  * Etapas cujo popup é SÓ o formulário (sem a lista de registros): o que mudou
- * aparece no History da etapa. São também as que não têm "Revise" no Completed
- * on — a correção é feita na data que serve de gatilho.
+ * aparece no History da etapa. A troca é feita na data que serve de gatilho — o
+ * Completed on nunca se edita (22/10/2026).
  */
 export const FORM_ONLY_REVISIONS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "order",
@@ -101,7 +100,6 @@ export function StepRevisionsModal({
   stepId,
   step,
   currentDate,
-  canCorrect,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -110,8 +108,6 @@ export function StepRevisionsModal({
   step: RevisionStep;
   /** Order: received date vigente; PO/PI: Completed on. Vazio = 1º registro. */
   currentDate: string | null;
-  /** Admin/owner: só ele corrige o Completed on (travado) de PO/PI. */
-  canCorrect: boolean;
 }) {
   const router = useRouter();
   const formOnly = FORM_ONLY_REVISIONS.has(step);
@@ -150,21 +146,20 @@ export function StepRevisionsModal({
   }, [openFor, step]);
 
   // Order grava a received date e o Deposit Payment a deposit date; o Completed
-  // on de PO/PI é travado (vem do GSS) e só o admin corrige — sempre com motivo,
-  // até quando ainda está vazio. No Deposit o motivo também é sempre obrigatório
-  // (pedido do usuário); só no Order a 1ª gravação é livre.
-  const canAdd = formOnly || canCorrect;
+  // on de PO/PI vem do GSS e é imutável (22/10/2026) — o popup deles é só a lista.
+  // No Deposit o motivo é sempre obrigatório (pedido do usuário); só no Order a
+  // 1ª gravação é livre.
+  const canAdd = formOnly;
   const reasonRequired = step === "order" ? !!currentDate : true;
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
   function save() {
     startTransition(async () => {
+      // Só Order e Deposit Payment gravam por aqui (canAdd).
       const res =
         step === "order"
           ? await saveOrderReceivedDate(orderId, date, reason.trim() || null)
-          : step === "deposit_payment"
-            ? await saveDepositDate(orderId, date, reason.trim())
-            : await reviseStepCompletedOn(orderId, stepId, date, reason);
+          : await saveDepositDate(orderId, date, reason.trim());
       if (!res.ok) {
         toast.error(res.error);
         return;
