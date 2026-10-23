@@ -1,7 +1,9 @@
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
 import { syncOrderPreLoadingStep } from "@/lib/checklist-revisions";
+import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
+import type { ChecklistStep } from "@/types/database";
 
 /**
  * Escrita de PRE-LOADING compartilhada entre as telas
@@ -11,6 +13,9 @@ import type { createAdminClient } from "@/lib/supabase/admin";
  */
 
 type Admin = ReturnType<typeof createAdminClient>;
+
+/** Etapas do PL com exigência por cliente (lib/checklist-completion). */
+const PER_CLIENT_RECHECK_STEPS: ChecklistStep[] = ["shipping_docs", "booking", "bl", "original_docs"];
 
 const PAGE = 1000;
 
@@ -104,24 +109,29 @@ export async function syncPreLoadingRelations(
     if (fwd.error) return fwd.error.message;
   }
 
-  // Entrar ou sair do PL muda a fase dos lotes: as Orders envolvidas passam a
-  // Pre-Loading / Partially Preloading (ou voltam) conforme o rollup (§3.7.1).
   const touched = [...added, ...removed];
   if (touched.length) {
-    const statusError = await syncOrderStatusForBatches(admin, touched);
-    if (statusError) return statusError;
-  }
-
-  // Lote que entrou no PL pode ser o último da Order fora de Pre-Loading: conclui
-  // (ou atualiza) a etapa Pre-Loading da Order; lote que saiu reabre ela
-  // (lib/checklist-revisions).
-  if (touched.length) {
+    // Lote que entrou no PL pode ser o último da Order fora de Pre-Loading:
+    // conclui (ou atualiza) a etapa Pre-Loading da Order; lote que saiu reabre
+    // ela (lib/checklist-revisions). Antes do rollup, que também reabre mas sem
+    // saber quem foi — aqui a reabertura entra no History com o usuário.
     const { data: touchedBatches } = await admin.from("batches").select("order_id").in("id", touched);
     await syncOrderPreLoadingStep(
       admin,
       (touchedBatches ?? []).map((b) => b.order_id),
       actorId
     );
+
+    // Entrar ou sair do PL muda a fase dos lotes: as Orders envolvidas passam a
+    // Pre-Loading / Partially Preloading (ou voltam) conforme o rollup (§3.7.1).
+    const statusError = await syncOrderStatusForBatches(admin, touched);
+    if (statusError) return statusError;
+
+    // Os clientes do PL vêm dos lotes: cliente novo pode tirar a validade das
+    // etapas por cliente já concluídas (lib/pl-step-autocomplete).
+    for (const step of PER_CLIENT_RECHECK_STEPS) {
+      await autoCompletePlStep(admin, preLoadingId, step, actorId, { recheck: true });
+    }
   }
 
   return null;
@@ -227,10 +237,11 @@ export async function deletePreLoadingRecord(
 
   if (batchIds.length) {
     await admin.from("batches").update({ status: "in_production" }).in("id", batchIds);
-    await syncOrderStatusForBatches(admin, batchIds);
-    // Os lotes saíram do PL: a etapa Pre-Loading das Orders deles reabre.
+    // Os lotes saíram do PL: a etapa Pre-Loading das Orders deles reabre (antes
+    // do rollup, pra entrar no History com o usuário).
     const { data: batches } = await admin.from("batches").select("order_id").in("id", batchIds);
     await syncOrderPreLoadingStep(admin, (batches ?? []).map((b) => b.order_id), actorId);
+    await syncOrderStatusForBatches(admin, batchIds);
   }
   return null;
 }

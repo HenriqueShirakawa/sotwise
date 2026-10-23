@@ -357,9 +357,10 @@ export async function savePlClientBooking(
     userId: session.userId,
   });
 
-  const completed = value
-    ? await autoCompletePlStep(admin, preLoadingId, "booking", session.userId, { refresh: true })
-    : false;
+  // Booking apagado reabre a etapa; preenchido fecha ou regrava o Completed on.
+  const completed = await autoCompletePlStep(admin, preLoadingId, "booking", session.userId, {
+    refresh: true,
+  });
 
   revalidatePath("/pre-loading/[id]", "page");
   revalidatePath("/pre-loading");
@@ -393,7 +394,17 @@ export async function deletePreLoadingStepAttachment(
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
+  // Sem o documento a etapa pode deixar de valer: reabre (lib/pl-step-autocomplete).
+  const reopened = removed
+    ? await autoCompletePlStep(admin, preLoadingId, removed.step, session.userId, { refresh: true })
+    : false;
+
   revalidatePath("/pre-loading/[id]", "page");
+  if (reopened) {
+    revalidatePath("/pre-loading");
+    revalidatePath("/todo");
+    await broadcastPreLoadingPing();
+  }
   return { ok: true };
 }
 

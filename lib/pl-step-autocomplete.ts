@@ -33,15 +33,23 @@ const PER_CLIENT_AUTOCOMPLETE: ReadonlySet<ChecklistStep> = new Set<ChecklistSte
  *    já concluída, ganha o Completed on de hoje. Só mexer no Estimated date não
  *    é atualização da etapa.
  *
- * Ninguém edita o Completed on à mão (nem o admin), e ele nunca é limpo por
- * aqui: a etapa não reabre. Devolve true se gravou, pra quem chamou revalidar.
+ * Ninguém edita o Completed on à mão (nem o admin). Reabre (23/10/2026, pedido
+ * do usuário): com `refresh` ou `recheck` (só reavalia, sem regravar o Completed
+ * on — lotes que entram/saem do PL mudam os clientes), etapa concluída cuja
+ * condição deixou de valer (cadastro apagado, documento removido, cliente novo
+ * no PL…) perde o Completed on e o Signed by, com registro no History. A condição é julgada pela data de
+ * conclusão que a etapa tem — etapa concluída antes de uma regra nova
+ * (BOOKING_CUTOFFS_REQUIRED_FROM, SHIPMENT_PER_CLIENT_FROM) segue pela regra
+ * antiga. Delivered não reabre por aqui: reabrir devolveria lotes e embarque a
+ * In Transit (applyDeliveredRule), e a data dela não se apaga.
+ * Devolve true se gravou, pra quem chamou revalidar.
  */
 export async function autoCompletePlStep(
   admin: Admin,
   preLoadingId: string,
   step: ChecklistStep,
   userId: string | null,
-  { refresh = false }: { refresh?: boolean } = {}
+  { refresh = false, recheck = false }: { refresh?: boolean; recheck?: boolean } = {}
 ): Promise<boolean> {
   if (!hasExtraRequirements(step)) return false;
 
@@ -54,7 +62,7 @@ export async function autoCompletePlStep(
     .eq("step", step)
     .maybeSingle();
   if (!s) return false;
-  if (s.completed_on ? !refresh : !s.estimated_date) return false;
+  if (s.completed_on ? !(refresh || recheck) : !s.estimated_date) return false;
 
   const { count: attachments } = await admin
     .from("step_attachments")
@@ -80,6 +88,34 @@ export async function autoCompletePlStep(
     ? perClientOf(await loadPlClientState(admin, preLoadingId))
     : undefined;
 
+  // Concluída e a condição deixou de valer (ex.: agente trocado sem contato,
+  // documento removido): reabre.
+  if (
+    s.completed_on &&
+    step !== "delivered" &&
+    !isStepChecked(step, plStepFacts(s, attachments ?? 0, contactCountByAgent, perClient))
+  ) {
+    const { error } = await admin
+      .from("pre_loading_checklist_steps")
+      .update({ completed_on: null, done: false, signed_by_id: null })
+      .eq("id", s.id);
+    if (error) return false;
+    await writeStepLog(admin, {
+      owner: { preLoadingStepId: s.id },
+      step,
+      action: "update",
+      changes: {
+        completed_on: { from: s.completed_on, to: null },
+        ...(s.signed_by_id ? { signed_by_id: { from: s.signed_by_id, to: null } } : {}),
+      },
+      userId,
+    });
+    return true;
+  }
+
+  // `recheck` só reabre: etapa concluída que segue valendo fica como está.
+  if (s.completed_on && !refresh) return false;
+
   const today = todayIso();
   const facts = plStepFacts(
     { ...s, completed_on: today },
@@ -87,8 +123,8 @@ export async function autoCompletePlStep(
     contactCountByAgent,
     perClient
   );
-  // Incompleta depois da mudança (ex.: agente trocado sem contato): não fecha e,
-  // se já estava concluída, não reabre — fica como está.
+  // Incompleta depois da mudança: não fecha (concluída só reabre acima, pela
+  // regra da data que ela tem).
   if (!isStepChecked(step, facts)) return false;
   if (s.completed_on === today && s.signed_by_id === userId) return false;
 

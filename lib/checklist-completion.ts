@@ -101,7 +101,7 @@ export type PlPerClient = {
 
 /**
  * Desde quando BL, Original Docs e Delivered são por cliente (22/10/2026). Etapa
- * concluída antes segue concluída — a etapa nunca reabre.
+ * concluída antes segue concluída (é julgada pela regra da data dela).
  */
 export const SHIPMENT_PER_CLIENT_FROM = "2026-10-22";
 
@@ -180,7 +180,7 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
           missing.push(`a booking number for every client (${withBooking}/${total})`);
       } else if (!f.bookingNumber?.trim()) missing.push("the booking number");
       // Os cut-offs entraram em 22/10/2026: Booking concluído antes disso segue
-      // concluído (a etapa nunca reabre).
+      // concluído (é julgado pela regra da data dele).
       if (!concludedBefore(f, BOOKING_CUTOFFS_REQUIRED_FROM)) {
         if (!f.containerCutoff) missing.push("the container cut-off");
         if (!f.docCutoff) missing.push("the doc cut-off");
@@ -278,8 +278,9 @@ export const TRIGGER_COMPLETED_STEPS: ReadonlySet<ChecklistStep> = new Set<Check
  * ATA/Delivered pela data do fato (lib/pl-step-event-date) e Loading date pelo
  * popup do Confirm Shipping (CONFIRM_SHIPPING_COMPLETES). Desde 22/10/2026 o
  * Completed on é a ÚLTIMA atualização do dado da etapa (cada mudança regrava) e
- * é IMUTÁVEL: ninguém edita, nem o admin; a etapa nunca reabre. Cada etapa que
- * ganhar gatilho entra aqui.
+ * é IMUTÁVEL: ninguém edita, nem o admin. Condição que deixa de valer reabre a
+ * etapa (23/10/2026 — lib/pl-step-autocomplete, lib/checklist-revisions). Cada
+ * etapa que ganhar gatilho entra aqui.
  */
 export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   ...TRIGGER_COMPLETED_STEPS,
