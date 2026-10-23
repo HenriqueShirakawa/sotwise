@@ -98,6 +98,7 @@ async function reopenByTrigger(admin: Admin, step: StepRow, userId: string | nul
     action: "update",
     changes: { completed_on: { from: step.completed_on, to: null } },
     userId,
+    gssWhenNoUser: true,
   });
 }
 

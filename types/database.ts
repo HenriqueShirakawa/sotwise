@@ -945,7 +945,9 @@ export type Database = {
           step: ChecklistStep;
           action: ChecklistStepLogAction;
           changes: Record<string, unknown>;
-          actor_id: UUID;
+          /** null só quando source = "gss" (migration 20261023120000). */
+          actor_id: UUID | null;
+          source: "user" | "gss";
           created_at: Timestamp;
         };
         Insert: {
@@ -955,7 +957,8 @@ export type Database = {
           step: ChecklistStep;
           action: ChecklistStepLogAction;
           changes?: Record<string, unknown>;
-          actor_id: UUID;
+          actor_id: UUID | null;
+          source?: "user" | "gss";
           created_at?: Timestamp;
         };
         Update: Partial<Database["public"]["Tables"]["checklist_step_log"]["Insert"]>;
