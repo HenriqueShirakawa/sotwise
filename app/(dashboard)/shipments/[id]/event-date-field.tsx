@@ -26,18 +26,25 @@ import { saveShipmentEventDate } from "./actions";
  * do "Order received date" da Order: o campo mostra a data vigente e abre um
  * popup pra gravar. A 1ª gravação é livre e conclui a etapa; trocar depois exige
  * motivo — o de → para fica no History da etapa.
+ *
+ * `label` + `onSave` trocam o destino: a Delivered date de UM cliente (PL com
+ * 2+ clientes, 22/10/2026) usa o mesmo campo.
  */
 export function EventDateField({
   preLoadingId,
   step,
   date,
+  label: labelOverride,
+  onSave,
 }: {
   preLoadingId: string;
   step: ChecklistStep;
   date: string | null;
+  label?: string;
+  onSave?: (date: string, reason: string | null) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const router = useRouter();
-  const label = EVENT_DATE_STEPS[step] ?? "Date";
+  const label = labelOverride ?? EVENT_DATE_STEPS[step] ?? "Date";
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
@@ -54,7 +61,9 @@ export function EventDateField({
 
   function save() {
     startTransition(async () => {
-      const res = await saveShipmentEventDate(preLoadingId, step, value, reason.trim() || null);
+      const res = onSave
+        ? await onSave(value, reason.trim() || null)
+        : await saveShipmentEventDate(preLoadingId, step, value, reason.trim() || null);
       if (!res.ok) {
         toast.error(res.error);
         return;

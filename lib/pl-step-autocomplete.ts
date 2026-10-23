@@ -9,6 +9,13 @@ import type { ChecklistStep } from "@/types/database";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
+const PER_CLIENT_AUTOCOMPLETE: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "shipping_docs",
+  "booking",
+  "bl",
+  "original_docs",
+]);
+
 /**
  * Auto-conclusão das etapas do checklist do PL/Shipment (QA 28/09, PL4): a etapa
  * que exige algo além da data (cadastro escolhido, documento, booking number —
@@ -67,11 +74,11 @@ export async function autoCompletePlStep(
     }
   }
 
-  // Shipping Docs / Booking em PL com 2+ clientes: só fecha com TODOS cobertos.
-  const perClient =
-    step === "shipping_docs" || step === "booking"
-      ? perClientOf(await loadPlClientState(admin, preLoadingId))
-      : undefined;
+  // Etapas por cliente (Shipping Docs, Booking, BL, Original Docs): só fecha com
+  // TODOS os clientes cobertos.
+  const perClient = PER_CLIENT_AUTOCOMPLETE.has(step)
+    ? perClientOf(await loadPlClientState(admin, preLoadingId))
+    : undefined;
 
   const today = todayIso();
   const facts = plStepFacts(
