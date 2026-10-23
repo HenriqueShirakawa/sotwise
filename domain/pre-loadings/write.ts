@@ -1,5 +1,5 @@
 import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
-import { completeOrderPreLoadingIfReady } from "@/lib/checklist-revisions";
+import { syncOrderPreLoadingStep } from "@/lib/checklist-revisions";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
@@ -113,12 +113,13 @@ export async function syncPreLoadingRelations(
   }
 
   // Lote que entrou no PL pode ser o último da Order fora de Pre-Loading: conclui
-  // (ou atualiza) a etapa Pre-Loading da Order (lib/checklist-revisions).
-  if (added.length) {
-    const { data: addedBatches } = await admin.from("batches").select("order_id").in("id", added);
-    await completeOrderPreLoadingIfReady(
+  // (ou atualiza) a etapa Pre-Loading da Order; lote que saiu reabre ela
+  // (lib/checklist-revisions).
+  if (touched.length) {
+    const { data: touchedBatches } = await admin.from("batches").select("order_id").in("id", touched);
+    await syncOrderPreLoadingStep(
       admin,
-      (addedBatches ?? []).map((b) => b.order_id),
+      (touchedBatches ?? []).map((b) => b.order_id),
       actorId
     );
   }
@@ -208,7 +209,11 @@ export async function createPreLoadingRecord(
  * Shipment 1:1. Os lotes não são apagados (pertencem às orders); voltam pra
  * produção e o status da Order é recalculado.
  */
-export async function deletePreLoadingRecord(admin: Admin, id: string): Promise<string | null> {
+export async function deletePreLoadingRecord(
+  admin: Admin,
+  id: string,
+  actorId: string | null = null
+): Promise<string | null> {
   // Captura os lotes ANTES de apagar — o hard delete leva junto os vínculos em
   // pre_loading_batches (ON DELETE CASCADE, migration 20260805130000).
   const { data: links } = await admin
@@ -223,6 +228,9 @@ export async function deletePreLoadingRecord(admin: Admin, id: string): Promise<
   if (batchIds.length) {
     await admin.from("batches").update({ status: "in_production" }).in("id", batchIds);
     await syncOrderStatusForBatches(admin, batchIds);
+    // Os lotes saíram do PL: a etapa Pre-Loading das Orders deles reabre.
+    const { data: batches } = await admin.from("batches").select("order_id").in("id", batchIds);
+    await syncOrderPreLoadingStep(admin, (batches ?? []).map((b) => b.order_id), actorId);
   }
   return null;
 }
