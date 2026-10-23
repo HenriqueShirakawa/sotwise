@@ -443,13 +443,13 @@ export async function confirmShipping(
       userId: session.userId,
     });
   }
-  // Estimated dates do Shipment que o popup gravou (22/10/2026).
+  // Estimated date + Responsible do Shipment que o popup gravou (22-23/10/2026).
   for (const c of result.estimate_changes) {
     await writeStepLog(admin, {
       owner: { preLoadingStepId: c.stepId },
       step: c.step,
       action: "confirm_shipping",
-      changes: { estimated_date: { from: c.from, to: c.to } },
+      changes: c.changes,
       userId: session.userId,
     });
   }

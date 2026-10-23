@@ -544,6 +544,15 @@ export const restPaths = {
                       original_docs: du("2026-07-20"),
                       eta_brazil: du("2026-08-20"),
                       ata_brazil: du("2026-08-22"),
+                      delivered: du("2026-08-25"),
+                    },
+                    shipment_responsibles: {
+                      shipping_date: "leader@example.com",
+                      bl: "leader@example.com",
+                      original_docs: "leader@example.com",
+                      eta_brazil: "leader@example.com",
+                      ata_brazil: "leader@example.com",
+                      delivered: "leader@example.com",
                     },
                   },
                 },
@@ -760,6 +769,7 @@ export const restSchemas = {
       "shipment_leader_email",
       "signer_email",
       "shipment_estimates",
+      "shipment_responsibles",
     ],
     properties: {
       container_number: { type: "string" },
@@ -778,8 +788,15 @@ export const restSchemas = {
       shipment_estimates: {
         type: "object",
         description: "Estimated date of each Shipment step — all required; stored on the steps (they show up filled in the Shipment).",
-        required: ["shipping_date", "bl", "original_docs", "eta_brazil", "ata_brazil"],
-        properties: { shipping_date: inDay, bl: inDay, original_docs: inDay, eta_brazil: inDay, ata_brazil: inDay },
+        required: ["shipping_date", "bl", "original_docs", "eta_brazil", "ata_brazil", "delivered"],
+        properties: { shipping_date: inDay, bl: inDay, original_docs: inDay, eta_brazil: inDay, ata_brazil: inDay, delivered: inDay },
+        additionalProperties: false,
+      },
+      shipment_responsibles: {
+        type: "object",
+        description: "Responsible (user e-mail) of each Shipment step — all required; stored on the steps.",
+        required: ["shipping_date", "bl", "original_docs", "eta_brazil", "ata_brazil", "delivered"],
+        properties: { shipping_date: emailIn, bl: emailIn, original_docs: emailIn, eta_brazil: emailIn, ata_brazil: emailIn, delivered: emailIn },
         additionalProperties: false,
       },
       lines: {

@@ -1,6 +1,7 @@
 import {
   CONFIRM_SHIPPING_ESTIMATE_STEPS,
   STEP_LABELS,
+  type ShipmentEstimate,
   type ShipmentEstimates,
 } from "@/lib/checklist";
 import { isReadyToShip, plStepFacts } from "@/lib/checklist-completion";
@@ -53,13 +54,19 @@ export type ConfirmShippingInput = {
   carrier_id: string;
   shipment_model_id: string;
   signer_id: string;
-  /** Estimated date das etapas do Shipment (yyyy-mm-dd), todas obrigatórias —
-   *  gravadas nas próprias etapas (22/10/2026). */
+  /** Estimated date + Responsible das etapas do Shipment, todos obrigatórios —
+   *  gravados nas próprias etapas (22/10/2026; Responsible desde 23/10). */
   shipment_estimates: ShipmentEstimates;
 };
 
-/** Estimated date que o Confirm Shipping trocou numa etapa — pro History. */
-export type EstimateChange = { stepId: string; step: ChecklistStep; from: string | null; to: string };
+type EstimateField = keyof ShipmentEstimate;
+
+/** Estimated date / Responsible que o Confirm Shipping trocou numa etapa — pro History. */
+export type EstimateChange = {
+  stepId: string;
+  step: ChecklistStep;
+  changes: Partial<Record<EstimateField, { from: string | null; to: string }>>;
+};
 
 export type ConfirmShippingResult =
   | {
@@ -91,13 +98,23 @@ export async function confirmShippingRecord(
     return { ok: false, status: 400, error: "Fill in all required fields." };
   }
   const missingEstimates = CONFIRM_SHIPPING_ESTIMATE_STEPS.filter(
-    (step) => !/^\d{4}-\d{2}-\d{2}$/.test(input.shipment_estimates?.[step] ?? "")
+    (step) => !/^\d{4}-\d{2}-\d{2}$/.test(input.shipment_estimates?.[step]?.estimated_date ?? "")
   );
   if (missingEstimates.length > 0) {
     return {
       ok: false,
       status: 400,
       error: `Fill in the estimated date of: ${missingEstimates.map((s) => STEP_LABELS[s]).join(", ")}.`,
+    };
+  }
+  const missingResponsibles = CONFIRM_SHIPPING_ESTIMATE_STEPS.filter(
+    (step) => !input.shipment_estimates?.[step]?.responsible_id
+  );
+  if (missingResponsibles.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Fill in the responsible of: ${missingResponsibles.map((s) => STEP_LABELS[s]).join(", ")}.`,
     };
   }
 
@@ -247,7 +264,7 @@ export async function confirmShippingRecord(
   };
 }
 
-/** Grava a Estimated date de cada etapa do Shipment (a linha nasce se faltar). */
+/** Grava Estimated date + Responsible de cada etapa do Shipment (a linha nasce se faltar). */
 async function saveShipmentEstimates(
   admin: Admin,
   preLoadingId: string,
@@ -255,7 +272,7 @@ async function saveShipmentEstimates(
 ): Promise<{ ok: true; changes: EstimateChange[] } | { ok: false; error: string }> {
   const { data: rows, error } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, step, estimated_date")
+    .select("id, step, estimated_date, responsible_id")
     .eq("pre_loading_id", preLoadingId)
     .in("step", [...CONFIRM_SHIPPING_ESTIMATE_STEPS]);
   if (error) return { ok: false, error: error.message };
@@ -265,21 +282,26 @@ async function saveShipmentEstimates(
   for (const step of CONFIRM_SHIPPING_ESTIMATE_STEPS) {
     const to = estimates[step];
     const row = byStep.get(step);
-    if (row?.estimated_date === to) continue;
+    const diff: EstimateChange["changes"] = {};
+    for (const field of ["estimated_date", "responsible_id"] as const) {
+      const from = row?.[field] ?? null;
+      if (from !== to[field]) diff[field] = { from, to: to[field] };
+    }
+    if (Object.keys(diff).length === 0) continue;
     const { data: saved, error: saveError } = row
       ? await admin
           .from("pre_loading_checklist_steps")
-          .update({ estimated_date: to })
+          .update(to)
           .eq("id", row.id)
           .select("id")
           .single()
       : await admin
           .from("pre_loading_checklist_steps")
-          .insert({ pre_loading_id: preLoadingId, step, estimated_date: to })
+          .insert({ pre_loading_id: preLoadingId, step, ...to })
           .select("id")
           .single();
     if (saveError || !saved) return { ok: false, error: saveError?.message ?? "Could not save the estimates." };
-    changes.push({ stepId: saved.id, step, from: row?.estimated_date ?? null, to });
+    changes.push({ stepId: saved.id, step, changes: diff });
   }
   return { ok: true, changes };
 }

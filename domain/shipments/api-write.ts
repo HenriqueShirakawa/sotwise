@@ -23,7 +23,12 @@ import {
   deletePreLoadingRecord,
   syncPreLoadingRelations,
 } from "@/domain/pre-loadings/write";
-import { EVENT_DATE_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
+import {
+  CONFIRM_SHIPPING_ESTIMATE_STEPS,
+  EVENT_DATE_STEPS,
+  SHIPMENT_STEPS,
+  type ShipmentEstimates,
+} from "@/lib/checklist";
 import type { ChecklistStep, TablesUpdate } from "@/types/database";
 
 import { getShipment, type ShipmentRead } from "./api-read";
@@ -277,6 +282,12 @@ export async function patchShipment(
       plLeaderId = plLeader.id;
     }
     if (!plLeaderId) return fail(400, "preloading_leader_email is required (the pre-loading has no leader).");
+    const estimates = {} as ShipmentEstimates;
+    for (const step of CONFIRM_SHIPPING_ESTIMATE_STEPS) {
+      const responsible = await resolvePerson(admin, c.shipment_responsibles[step]);
+      if (!responsible.ok) return responsible;
+      estimates[step] = { estimated_date: c.shipment_estimates[step], responsible_id: responsible.id! };
+    }
 
     const result = await confirmShippingRecord(
       admin,
@@ -291,7 +302,7 @@ export async function patchShipment(
         carrier_id: carrier.id,
         shipment_model_id: model.id,
         signer_id: signer.id!,
-        shipment_estimates: c.shipment_estimates,
+        shipment_estimates: estimates,
       },
       actorId
     );
