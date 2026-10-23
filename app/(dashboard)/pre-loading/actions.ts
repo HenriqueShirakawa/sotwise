@@ -120,13 +120,13 @@ export async function updatePreLoading(
 }
 
 export async function deletePreLoading(id: string): Promise<ActionResult> {
-  await requireFeature("pre_loading", "delete");
+  const session = await requireFeature("pre_loading", "delete");
 
   // Hard delete em cascata (vínculos, checklist, Shipment 1:1); os lotes voltam
   // pra produção — ver domain/pre-loadings/write.ts.
   const admin = createAdminClient();
   const { data: links } = await admin.from("pre_loading_batches").select("batch_id").eq("pre_loading_id", id);
-  const deleteError = await deletePreLoadingRecord(admin, id);
+  const deleteError = await deletePreLoadingRecord(admin, id, session.userId);
   if (deleteError) return { ok: false, error: deleteError };
   // Lotes voltaram a In Production → GSS.
   sendBatchStatusToGss({ batchIds: (links ?? []).map((l) => l.batch_id) });
