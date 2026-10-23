@@ -11,6 +11,7 @@ import {
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { setPlStepEventDate } from "@/lib/pl-step-event-date";
+import { fillDeliveredForAllClients } from "@/lib/pl-client-steps";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -548,6 +549,11 @@ export async function patchShipmentStep(
       reason: input.reason,
     });
     if (saved.error) return fail(400, saved.error);
+    // Delivered com data única num PL de 2+ clientes: vale para todos eles.
+    if (checklistStep === "delivered") {
+      const fillError = await fillDeliveredForAllClients(admin, id, input.date);
+      if (fillError) return fail(500, fillError);
+    }
     if (checklistStep === "delivered" && saved.completed && pl.shipment) {
       const ruleError = await applyDeliveredRule(admin, pl.shipment.id, id, true);
       if (ruleError) return fail(500, ruleError);

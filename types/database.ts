@@ -1153,6 +1153,50 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["pre_loading_client_bookings"]["Insert"]>;
         Relationships: [];
       };
+      /** Original Docs por cliente: Tracking number OU Telex release (22/10/2026). */
+      pre_loading_client_original_docs: {
+        Row: {
+          id: UUID;
+          pre_loading_id: UUID;
+          client_id: UUID;
+          tracking_number: string | null;
+          telex_release: boolean;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          pre_loading_id: UUID;
+          client_id: UUID;
+          tracking_number?: string | null;
+          telex_release?: boolean;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["pre_loading_client_original_docs"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Delivered date por cliente (PL com 2+ clientes, 22/10/2026). */
+      pre_loading_client_delivered: {
+        Row: {
+          id: UUID;
+          pre_loading_id: UUID;
+          client_id: UUID;
+          delivered_date: DateStr;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+        };
+        Insert: {
+          id?: UUID;
+          pre_loading_id: UUID;
+          client_id: UUID;
+          delivered_date: DateStr;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["pre_loading_client_delivered"]["Insert"]>;
+        Relationships: [];
+      };
       pre_loading_batches: {
         Row: { pre_loading_id: UUID; batch_id: UUID };
         Insert: { pre_loading_id: UUID; batch_id: UUID };
