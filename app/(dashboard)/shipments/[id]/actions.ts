@@ -416,11 +416,14 @@ export async function deleteShipmentStepAttachment(
   // trava das etapas herdadas do Pre-loading.
   const { data: att, error: attErr } = await admin
     .from("step_attachments")
-    .select("pre_loading_checklist_steps(step)")
+    .select("pre_loading_checklist_steps(step, pre_loading_id)")
     .eq("id", attachmentId)
-    .maybeSingle<{ pre_loading_checklist_steps: { step: ChecklistStep } | null }>();
+    .maybeSingle<{
+      pre_loading_checklist_steps: { step: ChecklistStep; pre_loading_id: string } | null;
+    }>();
   if (attErr) return { ok: false, error: attErr.message };
   const attStep = att?.pre_loading_checklist_steps?.step;
+  const attPreLoadingId = att?.pre_loading_checklist_steps?.pre_loading_id;
   if (attStep && !canEditInheritedStep(attStep, session)) {
     return { ok: false, error: INHERITED_DENIED };
   }
@@ -440,7 +443,17 @@ export async function deleteShipmentStepAttachment(
 
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
+  // Sem o documento a etapa (BL, Original Docs…) pode deixar de valer: reabre.
+  const reopened =
+    attStep && attPreLoadingId
+      ? await autoCompletePlStep(admin, attPreLoadingId, attStep, session.userId, { refresh: true })
+      : false;
+
   revalidateShipmentViews();
+  if (reopened) {
+    revalidatePath("/todo");
+    await broadcastShipmentPing();
+  }
   return { ok: true };
 }
 
