@@ -85,6 +85,22 @@ async function completeByTrigger(
   });
 }
 
+/** Apaga o Completed on (e o Signed by) quando o gatilho deixou de valer. */
+async function reopenByTrigger(admin: Admin, step: StepRow, userId: string | null): Promise<void> {
+  const { error } = await admin
+    .from("order_checklist_steps")
+    .update({ completed_on: null, done: false, signed_by_id: null })
+    .eq("id", step.id);
+  if (error) throw new Error(error.message);
+  await writeStepLog(admin, {
+    owner: { checklistStepId: step.id },
+    step: step.step,
+    action: "update",
+    changes: { completed_on: { from: step.completed_on, to: null } },
+    userId,
+  });
+}
+
 async function insertRevision(
   admin: Admin,
   row: {
@@ -478,12 +494,14 @@ export async function setFactoryPlacedDate(
 /**
  * Pre-Loading da Order (22/10/2026): conclui quando TODOS os lotes da Order
  * (fora os cancelados) estão em Pre-Loading ou adiante. Chamada quando lotes
- * entram num PL (domain/pre-loadings/write `syncPreLoadingRelations`) — cada
- * lote que entra num PL é atualização da etapa, então, com a condição cumprida,
- * o Completed on vira o dia dela (a última atualização). Nunca reabre: lote novo
- * da Order ainda fora de PL só deixa a etapa pendente no ícone.
+ * entram ou saem de um PL (domain/pre-loadings/write `syncPreLoadingRelations`
+ * e a exclusão do PL) — cada lote que entra num PL é atualização da etapa,
+ * então, com a condição cumprida, o Completed on vira o dia dela (a última
+ * atualização). Lote que SAI do PL e deixa a condição sem valer apaga o
+ * Completed on e o Signed by (usuário, 23/10/2026). Lote novo da Order que
+ * ainda não entrou em PL não mexe na etapa.
  */
-export async function completeOrderPreLoadingIfReady(
+export async function syncOrderPreLoadingStep(
   admin: Admin,
   orderIds: string[],
   userId: string | null
@@ -504,9 +522,13 @@ export async function completeOrderPreLoadingIfReady(
     }
     for (const orderId of ids) {
       const statuses = byOrder.get(orderId) ?? [];
-      if (!allBatchesInPreLoading(statuses)) continue;
       const step = await readStep(admin, orderId, "pre_loading");
-      if (step) await completeByTrigger(admin, step, todayIso(), userId);
+      if (!step) continue;
+      if (allBatchesInPreLoading(statuses)) {
+        await completeByTrigger(admin, step, todayIso(), userId);
+      } else if (step.completed_on) {
+        await reopenByTrigger(admin, step, userId);
+      }
     }
   } catch (err) {
     console.error("[checklist-revisions] pre_loading", err instanceof Error ? err.message : err);
