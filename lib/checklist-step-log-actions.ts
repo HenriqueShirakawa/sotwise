@@ -98,7 +98,8 @@ export type StepLogEntry = {
   factory_name: string | null;
   /** Motivo da correção do admin (Completed on travado). */
   reason: string | null;
-  /** "gss" = troca do Order received date vinda da API (selo "GSS"). */
+  /** "gss" = troca do Order received date vinda da API, ou linha do log sem
+   *  autor (reabertura pelo GSS / rollup dos lotes) — selo "GSS". */
   source: "user" | "gss";
 };
 
@@ -258,7 +259,8 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
       id: row.id,
       action: row.action,
       created_at: row.created_at,
-      actor_name: names.get(row.actor_id) ?? "—",
+      // Sem autor = GSS (reabertura vinda da API ou do rollup dos lotes, 23/10/2026).
+      actor_name: row.actor_id ? (names.get(row.actor_id) ?? "—") : "GSS",
       changes,
       file_name: isAttachment ? ((raw.file_name as string | null) ?? null) : null,
       factory_name:
@@ -270,7 +272,7 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
             ? (names.get(raw.client_id) ?? null)
             : null,
       reason: typeof raw.reason === "string" ? raw.reason : null,
-      source: "user" as const,
+      source: row.actor_id ? ("user" as const) : ("gss" as const),
     };
   });
 

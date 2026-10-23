@@ -74,7 +74,7 @@ export async function updateBatchStatus(
   batchId: string,
   status: BatchStatus
 ): Promise<ActionResult> {
-  await requireFeature("orders", "edit");
+  const session = await requireFeature("orders", "edit");
   const admin = createAdminClient();
 
   await assertBatchEditable(batchId);
@@ -105,8 +105,9 @@ export async function updateBatchStatus(
     if (promoteError) return { ok: false, error: promoteError };
   }
 
-  // O status da Order é o rollup dos lotes (docs §3.7.1) — mudou lote, recalcula.
-  const statusError = await syncOrderStatus(admin, [orderId]);
+  // O status da Order é o rollup dos lotes (docs §3.7.1) — mudou lote, recalcula
+  // (e reabre a etapa Pre-Loading em nome de quem mudou, se for o caso).
+  const statusError = await syncOrderStatus(admin, [orderId], session.userId);
   if (statusError) return { ok: false, error: statusError };
 
   // Status do lote (e dos promovidos junto) → GSS.
