@@ -86,7 +86,27 @@ export type ChecklistFacts = {
 export const BOOKING_CUTOFFS_REQUIRED_FROM = "2026-10-22";
 
 /** Quantos clientes o PL tem e quantos já cumpriram cada exigência por cliente. */
-export type PlPerClient = { total: number; withDoc: number; withBooking: number };
+export type PlPerClient = {
+  total: number;
+  /** Shipping Docs: clientes com documento. */
+  withDoc: number;
+  withBooking: number;
+  /** BL: clientes com documento (22/10/2026). */
+  withBlDoc?: number;
+  /** Original Docs: clientes com documento + Tracking number ou Telex release. */
+  withOriginalDocs?: number;
+  /** Delivered: clientes com Delivered date. */
+  withDelivered?: number;
+};
+
+/**
+ * Desde quando BL, Original Docs e Delivered são por cliente (22/10/2026). Etapa
+ * concluída antes segue concluída — a etapa nunca reabre.
+ */
+export const SHIPMENT_PER_CLIENT_FROM = "2026-10-22";
+
+const concludedBefore = (f: ChecklistFacts, from: string) =>
+  !!f.completedOn && f.completedOn < from;
 
 /** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
 export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
@@ -161,22 +181,45 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       } else if (!f.bookingNumber?.trim()) missing.push("the booking number");
       // Os cut-offs entraram em 22/10/2026: Booking concluído antes disso segue
       // concluído (a etapa nunca reabre).
-      if (!(f.completedOn && f.completedOn < BOOKING_CUTOFFS_REQUIRED_FROM)) {
+      if (!concludedBefore(f, BOOKING_CUTOFFS_REQUIRED_FROM)) {
         if (!f.containerCutoff) missing.push("the container cut-off");
         if (!f.docCutoff) missing.push("the doc cut-off");
       }
       break;
 
     case "bl":
+      // 2+ clientes: um documento POR cliente (22/10/2026).
+      if (isPerClient(f.perClient) && !concludedBefore(f, SHIPMENT_PER_CLIENT_FROM)) {
+        const { total, withBlDoc = 0 } = f.perClient;
+        if (withBlDoc < total) missing.push(`a document for every client (${withBlDoc}/${total})`);
+      } else if (noDocs) missing.push("a document");
+      break;
     case "original_docs":
-      if (noDocs) missing.push("a document");
+      // Todo PL com cliente (22/10/2026): por cliente, documento + Tracking
+      // number OU Telex release.
+      if ((f.perClient?.total ?? 0) > 0 && !concludedBefore(f, SHIPMENT_PER_CLIENT_FROM)) {
+        const { total, withOriginalDocs = 0 } = f.perClient!;
+        if (withOriginalDocs < total)
+          missing.push(
+            `a document and a tracking number or telex release for every client (${withOriginalDocs}/${total})`
+          );
+      } else if (noDocs) missing.push("a document");
       break;
 
     // Data do fato (21/10/2026): a etapa fecha quando ela é informada.
+    case "delivered":
+      // 2+ clientes: uma Delivered date POR cliente (22/10/2026).
+      if (isPerClient(f.perClient) && !concludedBefore(f, SHIPMENT_PER_CLIENT_FROM)) {
+        const { total, withDelivered = 0 } = f.perClient;
+        if (withDelivered < total)
+          missing.push(`a delivered date for every client (${withDelivered}/${total})`);
+        break;
+      }
+      if (!f.eventDate) missing.push("the delivered date");
+      break;
     case "shipping_date":
     case "eta_brazil":
     case "ata_brazil":
-    case "delivered":
       if (!f.eventDate) missing.push(`the ${EVENT_DATE_STEPS[step]?.toLowerCase() ?? "date"}`);
       break;
 

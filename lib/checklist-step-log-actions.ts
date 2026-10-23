@@ -138,6 +138,10 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   booking_number: { label: "Booking number", kind: "text" },
   cutoff_date: { label: "Container cut-off", kind: "date" },
   doc_cutoff_date: { label: "Doc cut-off", kind: "date" },
+  // Por cliente (22/10/2026): "Cliente: valor".
+  client_tracking_number: { label: "Tracking number", kind: "text" },
+  client_telex_release: { label: "Telex release", kind: "text" },
+  client_delivered_date: { label: "Delivered date", kind: "text" },
 };
 
 type Diff = Record<string, { from: unknown; to: unknown }>;
