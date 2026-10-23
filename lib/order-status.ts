@@ -1,4 +1,5 @@
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
+import { syncOrderPreLoadingStep } from "@/lib/checklist-revisions";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, OrderStatus } from "@/types/database";
@@ -96,6 +97,10 @@ export async function syncOrderStatus(admin: Admin, orderIds: string[]): Promise
     if (error) return error.message;
     changedIds.push(...list);
   }
+
+  // Lote novo ou que voltou de fase: a etapa Pre-Loading da Order, se concluída,
+  // reabre (23/10/2026). Só reabre — concluir é com o lote entrando num PL.
+  await syncOrderPreLoadingStep(admin, ids, null, { reopenOnly: true });
 
   // Realtime: avisa quem está com a lista Orders aberta que o Status PO mudou,
   // pra refletir na hora (mesmo com a tela parada). Ping só de ids — o valor
