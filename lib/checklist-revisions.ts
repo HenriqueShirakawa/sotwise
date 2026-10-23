@@ -390,8 +390,13 @@ export async function recordFxcDelivery(
       who
     );
 
-    // Cada leva que muda o conjunto regrava o Completed on (a última atualização).
-    await completeByTrigger(admin, step, today, who.userId);
+    // Cada leva que muda o conjunto regrava o Completed on (a última atualização);
+    // leva que zera as F×C reabre o PO (23/10/2026).
+    if (items.length > 0) await completeByTrigger(admin, step, today, who.userId);
+    else if (step.completed_on) await reopenByTrigger(admin, step, who.userId);
+
+    // Fábrica/entrada nova sem data reabre Place the Order e ETD.
+    await recheckFactorySteps(admin, orderId, who.userId);
   } catch (err) {
     console.error("[checklist-revisions] fxc", err instanceof Error ? err.message : err);
   }
@@ -489,6 +494,55 @@ export async function setFactoryPlacedDate(
   return null;
 }
 
+/**
+ * Place the Order e ETD concluídas cuja condição deixou de valer (23/10/2026):
+ * chegou fábrica sem "Placed on" ou entrada Factory × Category sem "Initial
+ * Date" → apaga o Completed on e o Signed by. Chamada depois de cada leva de
+ * F×C (`recordFxcDelivery`). Só reabre — concluir segue com os gatilhos de cada
+ * etapa.
+ */
+async function recheckFactorySteps(admin: Admin, orderId: string, userId: string | null) {
+  const [placeStep, etdStep] = await Promise.all([
+    readStep(admin, orderId, "place_the_order"),
+    readStep(admin, orderId, "etd"),
+  ]);
+  if (!placeStep?.completed_on && !etdStep?.completed_on) return;
+
+  const { data: lines, error } = await admin
+    .from("order_factory_category")
+    .select("id, factory_id")
+    .eq("order_id", orderId)
+    .eq("is_active", true);
+  if (error) throw new Error(error.message);
+  const active = lines ?? [];
+
+  if (placeStep?.completed_on) {
+    const { data: dated, error: dError } = await admin
+      .from("order_factory_placed_dates")
+      .select("factory_id")
+      .eq("order_id", orderId);
+    if (dError) throw new Error(dError.message);
+    const datedIds = new Set((dated ?? []).map((d) => d.factory_id));
+    if (active.length === 0 || active.some((l) => !datedIds.has(l.factory_id))) {
+      await reopenByTrigger(admin, placeStep, userId);
+    }
+  }
+
+  if (etdStep?.completed_on) {
+    const { data: etds, error: eError } = active.length
+      ? await admin
+          .from("etd_info")
+          .select("order_factory_category_id")
+          .in("order_factory_category_id", active.map((l) => l.id))
+          .not("initial_date", "is", null)
+      : { data: [], error: null };
+    if (eError) throw new Error(eError.message);
+    if (active.length === 0 || (etds ?? []).length < active.length) {
+      await reopenByTrigger(admin, etdStep, userId);
+    }
+  }
+}
+
 // ── Pre-Loading (etapa da Order) ─────────────────────────────────────────────
 
 /**
@@ -497,14 +551,17 @@ export async function setFactoryPlacedDate(
  * entram ou saem de um PL (domain/pre-loadings/write `syncPreLoadingRelations`
  * e a exclusão do PL) — cada lote que entra num PL é atualização da etapa,
  * então, com a condição cumprida, o Completed on vira o dia dela (a última
- * atualização). Lote que SAI do PL e deixa a condição sem valer apaga o
- * Completed on e o Signed by (usuário, 23/10/2026). Lote novo da Order que
- * ainda não entrou em PL não mexe na etapa.
+ * atualização). Quando a condição deixa de valer — lote que sai do PL, lote
+ * novo da Order fora de PL, lote que volta de fase — a etapa perde o Completed
+ * on e o Signed by (usuário, 23/10/2026). `reopenOnly` (chamada pelo rollup
+ * do status da Order, lib/order-status, por onde passa toda escrita de status
+ * de lote) só reabre: não conclui nem regrava o Completed on.
  */
 export async function syncOrderPreLoadingStep(
   admin: Admin,
   orderIds: string[],
-  userId: string | null
+  userId: string | null,
+  { reopenOnly = false }: { reopenOnly?: boolean } = {}
 ): Promise<void> {
   const ids = [...new Set(orderIds)].filter(Boolean);
   if (ids.length === 0) return;
@@ -520,15 +577,20 @@ export async function syncOrderPreLoadingStep(
     for (const b of batches ?? []) {
       byOrder.set(b.order_id, [...(byOrder.get(b.order_id) ?? []), b.status]);
     }
-    for (const orderId of ids) {
-      const statuses = byOrder.get(orderId) ?? [];
-      const step = await readStep(admin, orderId, "pre_loading");
-      if (!step) continue;
-      if (allBatchesInPreLoading(statuses)) {
-        await completeByTrigger(admin, step, todayIso(), userId);
-      } else if (step.completed_on) {
-        await reopenByTrigger(admin, step, userId);
-      }
+    const ready = (orderId: string) => allBatchesInPreLoading(byOrder.get(orderId) ?? []);
+    const targets = reopenOnly ? ids.filter((id) => !ready(id)) : ids;
+    if (targets.length === 0) return;
+
+    const { data: steps, error: stepsError } = await admin
+      .from("order_checklist_steps")
+      .select("id, step, completed_on, order_id")
+      .eq("step", "pre_loading")
+      .in("order_id", targets);
+    if (stepsError) throw new Error(stepsError.message);
+
+    for (const { order_id, ...step } of steps ?? []) {
+      if (ready(order_id)) await completeByTrigger(admin, step, todayIso(), userId);
+      else if (step.completed_on) await reopenByTrigger(admin, step, userId);
     }
   } catch (err) {
     console.error("[checklist-revisions] pre_loading", err instanceof Error ? err.message : err);
@@ -626,8 +688,12 @@ export async function recordPiStatus(
     who
   );
 
-  // PI não emitida: fica no histórico, a etapa não conclui (e nunca reabre).
-  if (!clean) return null;
+  // PI não emitida: fica no histórico e a etapa não conclui — já concluída,
+  // reabre (23/10/2026).
+  if (!clean) {
+    if (step.completed_on) await reopenByTrigger(admin, step, who.userId);
+    return null;
+  }
   // Cada `true` novo regrava o Completed on com a data dele (a última
   // atualização). Nunca futuro: status com data adiante fica com hoje.
   const today = todayIso();
