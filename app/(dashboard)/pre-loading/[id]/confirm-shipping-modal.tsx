@@ -92,16 +92,20 @@ function SelectField({
   options,
   onChange,
   placeholder,
+  required = false,
 }: {
   label: string;
   value: string;
   options: Ref[];
   onChange: (v: string) => void;
   placeholder: string;
+  required?: boolean;
 }) {
   return (
     <div>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-xs text-muted-foreground">
+        {label} {required && <span className="text-rose-500">*</span>}
+      </Label>
       <div className="mt-1">
         <SearchSelect value={value} onChange={onChange} options={options} placeholder={placeholder} />
       </div>
@@ -222,7 +226,8 @@ export function ConfirmShippingModal({
       if (res.ok) {
         toast.success(`Shipment created for PL - ${plNumber}.`);
         onClose();
-        router.push("/pre-loading");
+        // Vai direto pro Shipment recém-criado (URL pelo nº do PL, 1:1).
+        router.push(`/shipments/${encodeURIComponent(plNumber)}`);
       } else {
         toast.error(res.error);
       }
@@ -270,14 +275,16 @@ export function ConfirmShippingModal({
           />
 
           <SelectField
-            label="Leader's Shipment *"
+            label="Leader's Shipment"
+            required
             value={shipmentLeaderId}
             options={profiles}
             onChange={setShipmentLeaderId}
             placeholder="Select leader"
           />
           <SelectField
-            label="Leader's Pre-Loading *"
+            label="Leader's Pre-Loading"
+            required
             value={preLoadingLeaderId}
             options={profiles}
             onChange={setPreLoadingLeaderId}
@@ -285,14 +292,16 @@ export function ConfirmShippingModal({
           />
 
           <SelectField
-            label="Carrier *"
+            label="Carrier"
+            required
             value={carrierId}
             options={carriers}
             onChange={setCarrierId}
             placeholder="Who Carrier"
           />
           <SelectField
-            label="Shipment Model *"
+            label="Shipment Model"
+            required
             value={shipmentModelId}
             options={shipmentModels}
             onChange={setShipmentModelId}
@@ -300,7 +309,8 @@ export function ConfirmShippingModal({
           />
 
           <SelectField
-            label="Signer *"
+            label="Signer"
+            required
             value={signerId}
             options={profiles}
             onChange={setSignerId}
