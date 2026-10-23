@@ -88,9 +88,10 @@ export const SHIPMENT_STEPS: ChecklistStep[] = [
 ];
 
 /**
- * Etapas do Shipment cuja Estimated date o popup do Confirm Shipping pede
- * (obrigatórias, 22/10/2026 — card "Ajustes Data e Logs Etapas"): o que o
- * usuário informa ali já aparece preenchido no Shipment.
+ * Etapas do Shipment cuja Estimated date + Responsible o popup do Confirm
+ * Shipping pede (obrigatórias, 22/10/2026 — card "Ajustes Data e Logs Etapas";
+ * Responsible e Delivered entraram em 23/10): o que o usuário informa ali já
+ * aparece preenchido no Shipment. São todas as etapas visíveis do Shipment.
  */
 export const CONFIRM_SHIPPING_ESTIMATE_STEPS = [
   "shipping_date",
@@ -98,9 +99,15 @@ export const CONFIRM_SHIPPING_ESTIMATE_STEPS = [
   "original_docs",
   "eta_brazil",
   "ata_brazil",
+  "delivered",
 ] as const satisfies readonly ChecklistStep[];
 
-export type ShipmentEstimates = Record<(typeof CONFIRM_SHIPPING_ESTIMATE_STEPS)[number], string>;
+export type ShipmentEstimateStep = (typeof CONFIRM_SHIPPING_ESTIMATE_STEPS)[number];
+
+/** Previsão de uma etapa do Shipment: Estimated date (yyyy-mm-dd) + Responsible (profile id). */
+export type ShipmentEstimate = { estimated_date: string; responsible_id: string };
+
+export type ShipmentEstimates = Record<ShipmentEstimateStep, ShipmentEstimate>;
 
 /**
  * Etapas do Shipment com data própria (21/10/2026, planilha de regras do

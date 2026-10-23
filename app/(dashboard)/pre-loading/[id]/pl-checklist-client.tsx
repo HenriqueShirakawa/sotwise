@@ -55,7 +55,11 @@ import {
   registerPreLoadingAttachment,
   type StepPatch,
 } from "./actions";
-import { ConfirmShippingModal, type ShipmentLine } from "./confirm-shipping-modal";
+import {
+  ConfirmShippingModal,
+  type SavedShipmentEstimates,
+  type ShipmentLine,
+} from "./confirm-shipping-modal";
 import { ViewBatchLinesModal } from "./view-batch-lines-modal";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
@@ -432,8 +436,8 @@ export function PlChecklistClient({
   carriers: Ref[];
   shipmentModels: Ref[];
   shipmentLines: ShipmentLine[];
-  /** Estimated date já gravada nas etapas do Shipment — o popup parte delas. */
-  shipmentEstimates: Partial<Record<ChecklistStep, string | null>>;
+  /** Estimated date + Responsible já gravados nas etapas do Shipment — o popup parte deles. */
+  shipmentEstimates: SavedShipmentEstimates;
   currentUserId: string;
   preloadingLeaderId: string | null;
   alreadyShipped: boolean;

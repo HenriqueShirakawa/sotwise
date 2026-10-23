@@ -389,7 +389,13 @@ export default async function PreLoadingChecklistPage({
         .sort(byName)}
       shipmentLines={shipmentLines}
       shipmentEstimates={Object.fromEntries(
-        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [step, byStep.get(step)?.estimated_date ?? null])
+        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [
+          step,
+          {
+            estimated_date: byStep.get(step)?.estimated_date ?? null,
+            responsible_id: byStep.get(step)?.responsible_id ?? null,
+          },
+        ])
       )}
       currentUserId={userId}
       preloadingLeaderId={pl.leader_id}
