@@ -58,7 +58,12 @@ export function rollupOrderStatus(
  * Recalcula e grava o status das Orders informadas a partir dos lotes delas.
  * Devolve a mensagem de erro, ou `null` em caso de sucesso.
  */
-export async function syncOrderStatus(admin: Admin, orderIds: string[]): Promise<string | null> {
+export async function syncOrderStatus(
+  admin: Admin,
+  orderIds: string[],
+  /** Quem mexeu nos lotes — assina a reabertura no History (null = GSS). */
+  actorId: string | null = null
+): Promise<string | null> {
   const ids = [...new Set(orderIds)].filter(Boolean);
   if (ids.length === 0) return null;
 
@@ -100,7 +105,7 @@ export async function syncOrderStatus(admin: Admin, orderIds: string[]): Promise
 
   // Lote novo ou que voltou de fase: a etapa Pre-Loading da Order, se concluída,
   // reabre (23/10/2026). Só reabre — concluir é com o lote entrando num PL.
-  await syncOrderPreLoadingStep(admin, ids, null, { reopenOnly: true });
+  await syncOrderPreLoadingStep(admin, ids, actorId, { reopenOnly: true });
 
   // Realtime: avisa quem está com a lista Orders aberta que o Status PO mudou,
   // pra refletir na hora (mesmo com a tela parada). Ping só de ids — o valor
@@ -128,7 +133,8 @@ export async function syncOrderStatus(admin: Admin, orderIds: string[]): Promise
 /** Mesma coisa, partindo dos lotes: resolve as Orders donas e recalcula. */
 export async function syncOrderStatusForBatches(
   admin: Admin,
-  batchIds: string[]
+  batchIds: string[],
+  actorId: string | null = null
 ): Promise<string | null> {
   const ids = [...new Set(batchIds)].filter(Boolean);
   if (ids.length === 0) return null;
@@ -138,6 +144,7 @@ export async function syncOrderStatusForBatches(
 
   return syncOrderStatus(
     admin,
-    (data ?? []).map((b) => b.order_id)
+    (data ?? []).map((b) => b.order_id),
+    actorId
   );
 }

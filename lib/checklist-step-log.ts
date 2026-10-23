@@ -122,10 +122,13 @@ export async function writeStepLog(
     action: ChecklistStepLogAction;
     changes?: Record<string, unknown>;
     userId: string | null;
+    /** Grava mesmo sem usuário, marcada como GSS (reabertura da etapa vinda do
+     *  GSS ou do rollup dos lotes — 23/10/2026; migration 20261023120000). */
+    gssWhenNoUser?: boolean;
   }
 ): Promise<void> {
-  // Só alteração de usuário entra no log.
-  if (!entry.userId) return;
+  // Só alteração de usuário entra no log — fora a exceção acima.
+  if (!entry.userId && !entry.gssWhenNoUser) return;
   const changes = entry.changes ?? {};
   if (entry.action === "update" && Object.keys(changes).length === 0) return;
 
@@ -136,6 +139,7 @@ export async function writeStepLog(
     action: entry.action,
     changes,
     actor_id: entry.userId,
+    ...(entry.userId ? {} : { source: "gss" }),
   });
   if (error) console.error("[checklist-step-log]", error.message);
 }

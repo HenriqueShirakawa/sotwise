@@ -124,7 +124,7 @@ export async function syncPreLoadingRelations(
 
     // Entrar ou sair do PL muda a fase dos lotes: as Orders envolvidas passam a
     // Pre-Loading / Partially Preloading (ou voltam) conforme o rollup (§3.7.1).
-    const statusError = await syncOrderStatusForBatches(admin, touched);
+    const statusError = await syncOrderStatusForBatches(admin, touched, actorId);
     if (statusError) return statusError;
 
     // Os clientes do PL vêm dos lotes: cliente novo pode tirar a validade das
@@ -241,7 +241,7 @@ export async function deletePreLoadingRecord(
     // do rollup, pra entrar no History com o usuário).
     const { data: batches } = await admin.from("batches").select("order_id").in("id", batchIds);
     await syncOrderPreLoadingStep(admin, (batches ?? []).map((b) => b.order_id), actorId);
-    await syncOrderStatusForBatches(admin, batchIds);
+    await syncOrderStatusForBatches(admin, batchIds, actorId);
   }
   return null;
 }
