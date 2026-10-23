@@ -355,7 +355,7 @@ export default async function ShipmentDetailPage({
     stepIds.length
       ? admin
           .from("step_attachments")
-          .select("id, pre_loading_step_id, file_name, file_path")
+          .select("id, pre_loading_step_id, file_name, file_path, client_id, created_at")
           .in("pre_loading_step_id", stepIds)
           .order("created_at")
       : Promise.resolve({ data: [] }),
@@ -368,7 +368,13 @@ export default async function ShipmentDetailPage({
   for (const a of attachmentsRes.data ?? []) {
     if (!a.pre_loading_step_id) continue;
     const arr = attachmentsByStepId.get(a.pre_loading_step_id) ?? [];
-    arr.push({ id: a.id, file_name: a.file_name, file_path: a.file_path });
+    arr.push({
+      id: a.id,
+      file_name: a.file_name,
+      file_path: a.file_path,
+      client_id: a.client_id,
+      created_at: a.created_at,
+    });
     attachmentsByStepId.set(a.pre_loading_step_id, arr);
   }
 
@@ -506,6 +512,12 @@ export default async function ShipmentDetailPage({
       canEditInherited={isAdmin || isOwner}
       viewPrefs={readViewPrefs(profile.ui_preferences)}
       currentUserId={userId}
+      perClient={{
+        clients: clientState.clients,
+        originalDocs: Object.fromEntries(clientState.originalDocs),
+        delivered: Object.fromEntries(clientState.delivered),
+        counts: perClient,
+      }}
     />
   );
 }

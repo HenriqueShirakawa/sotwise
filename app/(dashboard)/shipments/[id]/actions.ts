@@ -22,6 +22,12 @@ import { applyDeliveredRule } from "@/domain/shipments/delivered";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { setPlStepEventDate } from "@/lib/pl-step-event-date";
+import {
+  fillDeliveredForAllClients,
+  setClientDeliveredDate,
+  setClientOriginalDocs,
+} from "@/lib/pl-client-steps";
+import { isClientDocStep } from "@/lib/pl-clients";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
@@ -104,6 +110,11 @@ export async function saveShipmentEventDate(
     reason,
   });
   if (error) return { ok: false, error };
+  // Delivered com data única num PL de 2+ clientes: vale para todos eles.
+  if (step === "delivered") {
+    const fillError = await fillDeliveredForAllClients(admin, preLoadingId, date);
+    if (fillError) return { ok: false, error: fillError };
+  }
 
   if (step === "delivered" && completed) {
     const ruleError = await applyDeliveredRuleForPl(admin, preLoadingId, true);
@@ -114,6 +125,61 @@ export async function saveShipmentEventDate(
   revalidatePath("/todo");
   await broadcastShipmentPing();
   if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
+  return { ok: true };
+}
+
+/**
+ * Original Docs de um cliente (22/10/2026): Tracking number OU Telex release.
+ * Ver lib/pl-client-steps.
+ */
+export async function saveShipmentClientOriginalDocs(
+  preLoadingId: string,
+  clientId: string,
+  patch: { tracking_number?: string | null; telex_release?: boolean }
+): Promise<ActionResult> {
+  const session = await requireFeature("shipments", "edit");
+  const admin = createAdminClient();
+  const { error, completed } = await setClientOriginalDocs(
+    admin,
+    preLoadingId,
+    clientId,
+    patch,
+    session.userId
+  );
+  if (error) return { ok: false, error };
+  revalidateShipmentViews();
+  if (completed) {
+    revalidatePath("/todo");
+    await broadcastShipmentPing();
+  }
+  return { ok: true };
+}
+
+/**
+ * Delivered date de um cliente (PL com 2+ clientes, 22/10/2026). A última que
+ * faltava conclui a etapa — e entrega lotes e embarque, como a data única.
+ */
+export async function saveShipmentClientDelivered(
+  preLoadingId: string,
+  clientId: string,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("shipments", "edit");
+  const admin = createAdminClient();
+  const { error, completed } = await setClientDeliveredDate(admin, preLoadingId, clientId, date, {
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  if (completed) {
+    const ruleError = await applyDeliveredRuleForPl(admin, preLoadingId, true);
+    if (ruleError) return { ok: false, error: ruleError };
+  }
+  revalidateShipmentViews();
+  revalidatePath("/todo");
+  await broadcastShipmentPing();
+  if (isGssShipmentStep("delivered")) sendPlShipmentToGss(preLoadingId);
   return { ok: true };
 }
 
@@ -270,7 +336,9 @@ export async function registerShipmentAttachment(
   preLoadingId: string,
   step: ChecklistStep,
   filePath: string,
-  fileName: string
+  fileName: string,
+  /** Documento de um cliente (BL / Original Docs por cliente, 22/10/2026). */
+  clientId: string | null = null
 ): Promise<ActionResult> {
   const session = await requireFeature("shipments", "edit");
   if (!canEditInheritedStep(step, session)) return { ok: false, error: INHERITED_DENIED };
@@ -287,6 +355,7 @@ export async function registerShipmentAttachment(
     file_path: filePath,
     file_name: fileName,
     uploaded_by: session.userId,
+    client_id: isClientDocStep(step) ? clientId : null,
   });
   if (insertError) {
     await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
@@ -297,7 +366,10 @@ export async function registerShipmentAttachment(
     owner: { preLoadingStepId: stepRow.id },
     step,
     action: "attachment_added",
-    changes: { file_name: fileName },
+    changes: {
+      file_name: fileName,
+      ...(isClientDocStep(step) && clientId ? { client_id: clientId } : {}),
+    },
     userId: session.userId,
   });
 

@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatDateNumeric, todayIso } from "@/lib/format";
+import { formatDate, formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import { filterSteps, type ViewPrefs } from "@/lib/view-prefs";
@@ -48,8 +48,12 @@ import {
   saveShipmentStep,
   createShipmentAttachmentTicket,
   registerShipmentAttachment,
+  saveShipmentClientDelivered,
+  saveShipmentClientOriginalDocs,
   type ShipmentStepPatch,
 } from "./actions";
+import { Switch } from "@/components/ui/switch";
+import { isPerClient, type PlPerClient } from "@/lib/checklist-completion";
 import { EventDateField } from "./event-date-field";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
@@ -86,7 +90,25 @@ export type ShipmentBatchRow = {
   parts: PartRow[];
 };
 
-export type StepAttachment = { id: string; file_name: string | null; file_path: string };
+export type StepAttachment = {
+  id: string;
+  file_name: string | null;
+  file_path: string;
+  /** Documento de um cliente (Shipping Docs / BL / Original Docs por cliente). */
+  client_id?: string | null;
+  created_at?: string | null;
+};
+
+/**
+ * Etapas por cliente do Shipment (22/10/2026): BL e Delivered com 2+ clientes;
+ * Original Docs em todo PL com cliente.
+ */
+export type ShipmentPerClient = {
+  clients: Ref[];
+  originalDocs: Record<string, { tracking_number: string | null; telex_release: boolean }>;
+  delivered: Record<string, string>;
+  counts: PlPerClient;
+};
 
 export type ShipmentStepRow = {
   step: ChecklistStep;
@@ -241,12 +263,15 @@ function AttachmentsSection({
   step,
   attachments,
   readOnly,
+  clientId = null,
 }: {
   shipmentId: string;
   preLoadingId: string;
   step: ChecklistStep;
   attachments: StepAttachment[];
   readOnly: boolean;
+  /** Documento de um cliente (BL / Original Docs por cliente). */
+  clientId?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -261,7 +286,7 @@ function AttachmentsSection({
       const res = await uploadDirect(
         file,
         (name, size) => createShipmentAttachmentTicket(preLoadingId, step, name, size),
-        (path) => registerShipmentAttachment(preLoadingId, step, path, file.name)
+        (path) => registerShipmentAttachment(preLoadingId, step, path, file.name, clientId)
       );
       if (res.ok) {
         setOpen(true);
@@ -306,6 +331,177 @@ function AttachmentsSection({
   );
 }
 
+/** Bolinha verde = cliente já cumpriu; âmbar = ainda falta. */
+function ClientDot({ done }: { done: boolean }) {
+  return (
+    <span className={`size-2 shrink-0 rounded-full ${done ? "bg-emerald-500" : "bg-amber-400"}`} />
+  );
+}
+
+function firstAttachedAt(docs: StepAttachment[]): string | null {
+  return docs.reduce<string | null>(
+    (min, a) => (a.created_at && (!min || a.created_at < min) ? a.created_at : min),
+    null
+  );
+}
+
+/**
+ * Documentos por cliente (BL com 2+ clientes, Original Docs) — 22/10/2026,
+ * mesmo molde do Shipping Docs no Pre-loading. Documento antigo sem cliente vale
+ * para todos e fica numa linha própria, só leitura. `extra` desenha os campos
+ * próprios de cada cliente (Tracking / Telex do Original Docs).
+ */
+function ClientDocsGroups({
+  shipmentId,
+  preLoadingId,
+  step,
+  clients,
+  attachments,
+  readOnly,
+  isDone,
+  extra,
+}: {
+  shipmentId: string;
+  preLoadingId: string;
+  step: ChecklistStep;
+  clients: Ref[];
+  attachments: StepAttachment[];
+  readOnly: boolean;
+  isDone: (clientId: string, docs: StepAttachment[]) => boolean;
+  extra?: (client: Ref) => React.ReactNode;
+}) {
+  const general = attachments.filter((a) => !a.client_id);
+  return (
+    <div className="overflow-hidden rounded-lg border bg-white">
+      {clients.map((c) => {
+        const docs = attachments.filter((a) => a.client_id === c.id);
+        const firstAt = firstAttachedAt(docs);
+        return (
+          <div key={c.id} className="space-y-2 border-t px-3 py-2.5 first:border-t-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                <ClientDot done={isDone(c.id, docs)} />
+                <span className="truncate font-medium text-slate-800">{c.name}</span>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {firstAt ? `Attached on ${formatDate(firstAt)}` : "No document yet"}
+              </span>
+            </div>
+            {extra?.(c)}
+            <AttachmentsSection
+              shipmentId={shipmentId}
+              preLoadingId={preLoadingId}
+              step={step}
+              attachments={docs}
+              readOnly={readOnly}
+              clientId={c.id}
+            />
+          </div>
+        );
+      })}
+      {general.length > 0 && (
+        <div className="space-y-2 border-t px-3 py-2.5">
+          <p className="text-xs text-muted-foreground">Without client — counts for all clients</p>
+          <AttachmentsSection
+            shipmentId={shipmentId}
+            preLoadingId={preLoadingId}
+            step={step}
+            attachments={general}
+            readOnly
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Original Docs de um cliente (22/10/2026): Telex release ligado dispensa o
+ * Tracking number; desligado, o tracking é obrigatório.
+ */
+function OriginalDocsFields({
+  preLoadingId,
+  client,
+  value,
+  disabled,
+}: {
+  preLoadingId: string;
+  client: Ref;
+  value: { tracking_number: string | null; telex_release: boolean } | undefined;
+  disabled: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const telex = value?.telex_release ?? false;
+
+  function save(patch: { tracking_number?: string | null; telex_release?: boolean }) {
+    startTransition(async () => {
+      const res = await saveShipmentClientOriginalDocs(preLoadingId, client.id, patch);
+      if (res.ok) router.refresh();
+      else toast.error(res.error);
+    });
+  }
+
+  return (
+    <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+      <div className="flex items-center gap-2 pt-1">
+        <Switch
+          id={`telex-${client.id}`}
+          checked={telex}
+          disabled={disabled || pending}
+          onCheckedChange={(v) => save({ telex_release: v })}
+        />
+        <Label htmlFor={`telex-${client.id}`} className="text-sm text-slate-700">
+          Telex release
+        </Label>
+      </div>
+      <div>
+        <Label className="text-xs text-muted-foreground">
+          Tracking number{!telex && <span className="text-rose-500"> *</span>}
+        </Label>
+        <Input
+          // A chave remonta o campo quando o valor salvo muda (refresh).
+          key={value?.tracking_number ?? ""}
+          defaultValue={value?.tracking_number ?? ""}
+          disabled={disabled || pending || telex}
+          placeholder={telex ? "Not needed with telex release" : "Tracking number"}
+          onBlur={(e) => {
+            const v = e.target.value.trim() || null;
+            if (v !== (value?.tracking_number ?? null)) save({ tracking_number: v });
+          }}
+          className="mt-1 bg-white"
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Delivered date por cliente (PL com 2+ clientes, 22/10/2026). */
+function ClientDeliveredDates({
+  preLoadingId,
+  clients,
+  delivered,
+}: {
+  preLoadingId: string;
+  clients: Ref[];
+  delivered: Record<string, string>;
+}) {
+  return (
+    <div className="space-y-2">
+      {clients.map((c) => (
+        <EventDateField
+          key={c.id}
+          preLoadingId={preLoadingId}
+          step="delivered"
+          date={delivered[c.id] ?? null}
+          label={`Delivered date — ${c.name}`}
+          onSave={(date, reason) => saveShipmentClientDelivered(preLoadingId, c.id, date, reason)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function ShipmentDetailClient({
   shipment,
   batches,
@@ -317,6 +513,7 @@ export function ShipmentDetailClient({
   canEditInherited,
   viewPrefs,
   currentUserId,
+  perClient,
 }: {
   shipment: ShipmentDetail;
   batches: ShipmentBatchRow[];
@@ -330,6 +527,8 @@ export function ShipmentDetailClient({
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
   currentUserId: string;
+  /** BL / Original Docs / Delivered por cliente (22/10/2026). */
+  perClient: ShipmentPerClient;
   /** Repassado ao modal de ETD aberto pelo "View parts". */
   factories: Ref[];
   dates: {
@@ -748,12 +947,21 @@ export function ShipmentDetailClient({
                           </div>
                         </div>
 
-                        {EVENT_DATE_STEPS[s.step] && (
-                          <EventDateField
+                        {s.step === "delivered" && isPerClient(perClient.counts) ? (
+                          // 2+ clientes: uma Delivered date por cliente (22/10/2026).
+                          <ClientDeliveredDates
                             preLoadingId={shipment.pre_loading_id}
-                            step={s.step}
-                            date={s.event_date}
+                            clients={perClient.clients}
+                            delivered={perClient.delivered}
                           />
+                        ) : (
+                          EVENT_DATE_STEPS[s.step] && (
+                            <EventDateField
+                              preLoadingId={shipment.pre_loading_id}
+                              step={s.step}
+                              date={s.event_date}
+                            />
+                          )
                         )}
                         {s.step === "original_docs" && (
                           <div>
@@ -779,13 +987,52 @@ export function ShipmentDetailClient({
                       </>
                     )}
 
-                    <AttachmentsSection
-                      shipmentId={shipment.id}
-                      preLoadingId={shipment.pre_loading_id}
-                      step={s.step}
-                      attachments={s.attachments}
-                      readOnly={readOnly}
-                    />
+                    {s.step === "bl" && isPerClient(perClient.counts) ? (
+                      // 2+ clientes: um documento por cliente (22/10/2026).
+                      <ClientDocsGroups
+                        shipmentId={shipment.id}
+                        preLoadingId={shipment.pre_loading_id}
+                        step="bl"
+                        clients={perClient.clients}
+                        attachments={s.attachments}
+                        readOnly={readOnly}
+                        isDone={(_, docs) =>
+                          docs.length > 0 || s.attachments.some((a) => !a.client_id)
+                        }
+                      />
+                    ) : s.step === "original_docs" && perClient.clients.length > 0 ? (
+                      // Por cliente: documento + Tracking number OU Telex release.
+                      <ClientDocsGroups
+                        shipmentId={shipment.id}
+                        preLoadingId={shipment.pre_loading_id}
+                        step="original_docs"
+                        clients={perClient.clients}
+                        attachments={s.attachments}
+                        readOnly={readOnly}
+                        isDone={(clientId, docs) => {
+                          const o = perClient.originalDocs[clientId];
+                          const hasDoc =
+                            docs.length > 0 || s.attachments.some((a) => !a.client_id);
+                          return hasDoc && !!(o?.telex_release || o?.tracking_number?.trim());
+                        }}
+                        extra={(c) => (
+                          <OriginalDocsFields
+                            preLoadingId={shipment.pre_loading_id}
+                            client={c}
+                            value={perClient.originalDocs[c.id]}
+                            disabled={readOnly}
+                          />
+                        )}
+                      />
+                    ) : (
+                      <AttachmentsSection
+                        shipmentId={shipment.id}
+                        preLoadingId={shipment.pre_loading_id}
+                        step={s.step}
+                        attachments={s.attachments}
+                        readOnly={readOnly}
+                      />
+                    )}
                   </div>
                 )}
               </div>
