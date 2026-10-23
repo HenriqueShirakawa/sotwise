@@ -10,6 +10,8 @@ import { formatDateNumeric } from "@/lib/format";
 import {
   CONFIRM_SHIPPING_ESTIMATE_STEPS,
   STEP_LABELS,
+  type ShipmentEstimate,
+  type ShipmentEstimateStep,
   type ShipmentEstimates,
 } from "@/lib/checklist";
 import type { ChecklistStep } from "@/types/database";
@@ -40,6 +42,11 @@ export type ShipmentLine = {
   batch_number: string;
   ship_requirement: string | null;
 };
+
+/** Estimated date + Responsible já gravados nas etapas do Shipment. */
+export type SavedShipmentEstimates = Partial<
+  Record<ChecklistStep, { estimated_date: string | null; responsible_id: string | null }>
+>;
 
 /** Chave de ordenação clicável na tabela do modal: fábrica ou nº do PO. */
 type SortKey = "factory" | "po";
@@ -141,8 +148,8 @@ export function ConfirmShippingModal({
   carriers: Ref[];
   shipmentModels: Ref[];
   lines: ShipmentLine[];
-  /** Estimated date já gravada nas etapas do Shipment (ponto de partida). */
-  shipmentEstimates: Partial<Record<ChecklistStep, string | null>>;
+  /** Estimated date + Responsible já gravados nas etapas do Shipment (ponto de partida). */
+  shipmentEstimates: SavedShipmentEstimates;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -155,13 +162,22 @@ export function ConfirmShippingModal({
   const [carrierId, setCarrierId] = useState("");
   const [shipmentModelId, setShipmentModelId] = useState("");
   const [signerId, setSignerId] = useState(currentUserId);
-  // Estimated date de cada etapa do Shipment — obrigatórias (22/10/2026).
+  // Estimated date + Responsible de cada etapa do Shipment — obrigatórios
+  // (22/10/2026; Responsible desde 23/10).
   const [estimates, setEstimates] = useState<ShipmentEstimates>(
     () =>
       Object.fromEntries(
-        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [step, shipmentEstimates[step] ?? ""])
+        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [
+          step,
+          {
+            estimated_date: shipmentEstimates[step]?.estimated_date ?? "",
+            responsible_id: shipmentEstimates[step]?.responsible_id ?? "",
+          },
+        ])
       ) as ShipmentEstimates
   );
+  const setEstimate = (step: ShipmentEstimateStep, patch: Partial<ShipmentEstimate>) =>
+    setEstimates((e) => ({ ...e, [step]: { ...e[step], ...patch } }));
   // Só uma coluna é prioritária por vez; a outra entra como critério de desempate.
   const [primarySort, setPrimarySort] = useState<SortKey>("factory");
 
@@ -184,7 +200,9 @@ export function ConfirmShippingModal({
     carrierId &&
     shipmentModelId &&
     signerId &&
-    CONFIRM_SHIPPING_ESTIMATE_STEPS.every((step) => estimates[step]);
+    CONFIRM_SHIPPING_ESTIMATE_STEPS.every(
+      (step) => estimates[step].estimated_date && estimates[step].responsible_id
+    );
   const canConfirm = Boolean(headerFilled && lines.length > 0);
 
   function confirm() {
@@ -302,19 +320,48 @@ export function ConfirmShippingModal({
 
         {/* Previsões das etapas do Shipment: já aparecem preenchidas nele. */}
         <div>
-          <p className="text-sm font-medium text-slate-800">Shipment estimated dates</p>
-          <div className="mt-2 grid gap-4 sm:grid-cols-3">
+          <p className="text-sm font-medium text-slate-800">Shipment steps</p>
+          {/* Uma linha por etapa; abaixo de sm cada etapa empilha os campos. */}
+          <div className="mt-2 hidden gap-3 text-xs text-muted-foreground sm:grid sm:grid-cols-[9rem_1fr_1fr]">
+            <span>Step</span>
+            <span>
+              Estimated date <span className="text-rose-500">*</span>
+            </span>
+            <span>
+              Responsible <span className="text-rose-500">*</span>
+            </span>
+          </div>
+          <div className="mt-2 space-y-3">
             {CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => (
-              <div key={step}>
-                <Label className="text-xs text-muted-foreground">
-                  {STEP_LABELS[step]} <span className="text-rose-500">*</span>
-                </Label>
-                <DatePicker
-                  value={estimates[step]}
-                  ariaLabel={`${STEP_LABELS[step]} estimated date`}
-                  onChange={(v) => setEstimates((e) => ({ ...e, [step]: v ?? "" }))}
-                  className="mt-1 bg-white"
-                />
+              <div
+                key={step}
+                className="grid gap-2 sm:grid-cols-[9rem_1fr_1fr] sm:items-center sm:gap-3"
+              >
+                <p className="text-sm text-slate-700">{STEP_LABELS[step]}</p>
+                <div>
+                  <Label className="text-xs text-muted-foreground sm:sr-only">
+                    Estimated date <span className="text-rose-500">*</span>
+                  </Label>
+                  <DatePicker
+                    value={estimates[step].estimated_date}
+                    ariaLabel={`${STEP_LABELS[step]} estimated date`}
+                    onChange={(v) => setEstimate(step, { estimated_date: v ?? "" })}
+                    className="mt-1 bg-white sm:mt-0"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground sm:sr-only">
+                    Responsible <span className="text-rose-500">*</span>
+                  </Label>
+                  <div className="mt-1 sm:mt-0">
+                    <SearchSelect
+                      value={estimates[step].responsible_id}
+                      onChange={(v) => setEstimate(step, { responsible_id: v })}
+                      options={profiles}
+                      placeholder="Select responsible"
+                    />
+                  </div>
+                </div>
               </div>
             ))}
           </div>

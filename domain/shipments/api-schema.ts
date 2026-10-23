@@ -60,13 +60,24 @@ const confirmSchema = z.strictObject({
   signer_email: email("signer"),
   /** Default: o leader do PL. */
   preloading_leader_email: email("pre-loading leader").optional(),
-  /** Estimated date das etapas do Shipment — obrigatórias (22/10/2026). */
+  /** Estimated date das etapas do Shipment — obrigatórias (22/10/2026;
+   *  Delivered desde 23/10). */
   shipment_estimates: z.strictObject({
     shipping_date: apiDay,
     bl: apiDay,
     original_docs: apiDay,
     eta_brazil: apiDay,
     ata_brazil: apiDay,
+    delivered: apiDay,
+  }),
+  /** Responsible (e-mail) das mesmas etapas — obrigatórios (23/10/2026). */
+  shipment_responsibles: z.strictObject({
+    shipping_date: email("shipping date responsible"),
+    bl: email("BL responsible"),
+    original_docs: email("original docs responsible"),
+    eta_brazil: email("ETA responsible"),
+    ata_brazil: email("ATA responsible"),
+    delivered: email("delivered responsible"),
   }),
   /** Ignorado desde 13/10/2026 (sem status por linha no Confirm Shipping);
    *  aceito só pra não quebrar quem ainda manda. */
