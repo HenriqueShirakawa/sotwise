@@ -135,4 +135,4 @@ Environment **"SOTWISE — GSS (prod)"** (`base_url` + `api_token`). Três pasta
 2. **Na tela** (manual) — abra a order (link no Console) e preencha Estimated date + Responsible em Order, PO e PI.
 3. **Depois de preencher** (Runner) — confere que as 3 **concluíram**, testa uma revisão do Order received date (segue concluída) e `pi_status: false` (a PI reabre), e apaga a order de teste.
 
-Rodada local em 26/10/2026 (Postman CLI): pasta 1 com 22 asserções e pasta 3 com 23, 0 falhas. A collection antiga `SOTWISE-GSS-Checklist-Order` ainda espera que o PATCH conclua a etapa — os passos 2, 7 e 8 dela falham desde essa regra.
+Rodada local em 26/10/2026 (Postman CLI): pasta 1 com 22 asserções e pasta 3 com 23, 0 falhas. A collection `SOTWISE-GSS-Checklist-Order` foi ajustada à mesma regra (26/10: os passos 2, 7 e 8 agora esperam a etapa aberta; 14 requests, 35 asserções, 0 falhas no localhost).
