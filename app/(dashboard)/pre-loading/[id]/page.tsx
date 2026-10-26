@@ -361,8 +361,6 @@ export default async function PreLoadingChecklistPage({
       steps={steps}
       perClient={{
         clients: clientState.clients,
-        bookings: Object.fromEntries(clientState.bookings),
-        generalBooking: clientState.generalBooking,
         counts: perClient,
       }}
       profiles={profileRes
