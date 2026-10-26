@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "GSS — Order (status) — escrita",
+    "description": "Troca o status da Order no GSS — o mesmo `PATCH /v1/orders/{id}/` que o SOTWISE manda a cada mudança de status (regras_de_negocio §6.14, 26/10/2026).\n\nUsa o environment **SOTWISE — GSS (prod)**: preencha `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username` e `gss_password` (= `GSS_CF_ACCESS_CLIENT_ID`, `GSS_CF_ACCESS_CLIENT_SECRET`, `GSS_USERNAME`, `GSS_PASSWORD` do `.env.local`). O token (`gss_access`) é renovado sozinho pelo pre-request da collection — não precisa fazer login antes.\n\nPara testar: troque as variáveis da collection `order_id` (id da Order no GSS = nosso PO) e `status_code`, e rode **2. PATCH**. As outras são para ver antes/depois.\n\n`status_code` vai pelo **code** do catálogo (`GET /orders/status/`): `negotiation`, `production`, `pre`, `partially_ship`, `shipped`, `partially_delivered`, `delivered`, `canceled` (também existe `std_by`, sem par no SOT). A resposta devolve o **nome** (\"Partially Delivered\").\n\n⚠️ 26/10/2026: o PATCH devolve **403** — o usuário técnico ainda não tem permissão de alterar Order no GSS. Orders importadas do legado vêm com `is_locked = true` e podem recusar a troca.\n\nSempre com a barra final na URL: sem ela o Django responde 301 e o Postman refaz como GET.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{gss_access}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Garante um access token válido em {{gss_access}} antes de cada chamada do GSS.",
+          "// Tenta o refresh; se não der, faz login com gss_username/gss_password.",
+          "const v = (k) => pm.variables.replaceIn('{{' + k + '}}');",
+          "const expMs = (t) => { try { const p = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'); return JSON.parse(atob(p)).exp * 1000; } catch (e) { return 0; } };",
+          "const access = pm.environment.get('gss_access');",
+          "if (!access || expMs(access) - Date.now() < 30000) {",
+          "  const headers = [",
+          "    { key: 'Content-Type', value: 'application/json' },",
+          "    { key: 'CF-Access-Client-Id', value: v('gss_cf_client_id') },",
+          "    { key: 'CF-Access-Client-Secret', value: v('gss_cf_client_secret') },",
+          "  ];",
+          "  const login = () => pm.sendRequest({",
+          "    url: v('gss_base') + '/authentication/token/', method: 'POST', header: headers,",
+          "    body: { mode: 'raw', raw: JSON.stringify({ username: v('gss_username'), password: v('gss_password') }) },",
+          "  }, (err, res) => {",
+          "    if (err || res.code !== 200) { console.warn('GSS login falhou', err || res.code, res && res.text()); return; }",
+          "    const j = res.json();",
+          "    pm.environment.set('gss_access', j.access);",
+          "    if (j.refresh) pm.environment.set('gss_refresh', j.refresh);",
+          "  });",
+          "  const refresh = pm.environment.get('gss_refresh');",
+          "  if (refresh && expMs(refresh) > Date.now()) {",
+          "    pm.sendRequest({",
+          "      url: v('gss_base') + '/authentication/token/refresh/', method: 'POST', header: headers,",
+          "      body: { mode: 'raw', raw: JSON.stringify({ refresh }) },",
+          "    }, (err, res) => {",
+          "      if (!err && res.code === 200) pm.environment.set('gss_access', res.json().access);",
+          "      else login();",
+          "    });",
+          "  } else login();",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "order_id",
+      "value": "1705"
+    },
+    {
+      "key": "status_code",
+      "value": "partially_delivered"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. GET /orders/{order_id}/ — status atual",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "console.log('Order', j.id, '| status:', j.status, '| is_locked:', j.is_locked);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{gss_cf_client_id}}",
+            "type": "text"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{gss_cf_client_secret}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{gss_base}}/orders/{{order_id}}/",
+          "host": [
+            "{{gss_base}}"
+          ],
+          "path": [
+            "orders",
+            "{{order_id}}",
+            ""
+          ]
+        }
+      }
+    },
+    {
+      "name": "2. PATCH /orders/{order_id}/ — status (o que o SOT manda)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "  const j = pm.response.json();",
+              "  const names = { negotiation: 'in negotiation', production: 'in production', pre: 'pre-loading', partially_ship: 'partially shipped', shipped: 'shipped', partially_delivered: 'partially delivered', delivered: 'delivered', canceled: 'canceled', std_by: 'stand by' };",
+              "  const code = pm.variables.get('status_code');",
+              "  const got = String(j.status || '').toLowerCase();",
+              "  pm.test('GSS gravou o status (não ignorou)', () => pm.expect(got).to.eql(names[code] || code));",
+              "  console.log('status agora:', j.status);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{gss_cf_client_id}}",
+            "type": "text"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{gss_cf_client_secret}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"{{status_code}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{gss_base}}/orders/{{order_id}}/",
+          "host": [
+            "{{gss_base}}"
+          ],
+          "path": [
+            "orders",
+            "{{order_id}}",
+            ""
+          ]
+        },
+        "description": "Vai o code: negotiation, production, pre, partially_ship, shipped, partially_delivered, delivered, canceled. A resposta traz o nome."
+      }
+    },
+    {
+      "name": "3. GET /orders/status/ — catálogo de status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{gss_cf_client_id}}",
+            "type": "text"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{gss_cf_client_secret}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{gss_base}}/orders/status/",
+          "host": [
+            "{{gss_base}}"
+          ],
+          "path": [
+            "orders",
+            "status",
+            ""
+          ]
+        }
+      }
+    }
+  ]
+}
