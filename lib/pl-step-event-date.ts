@@ -1,6 +1,7 @@
 import "server-only";
 
 import { EVENT_DATE_ALLOWS_FUTURE, EVENT_DATE_STEPS } from "@/lib/checklist";
+import { hasStepPlan } from "@/lib/checklist-completion";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { todayIso } from "@/lib/format";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -40,11 +41,15 @@ export async function setPlStepEventDate(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, event_date, completed_on, signed_by_id")
+    .select("id, event_date, completed_on, signed_by_id, estimated_date, responsible_id")
     .eq("pre_loading_id", preLoadingId)
     .eq("step", step)
     .maybeSingle();
   if (readError) return { error: readError.message, completed: false };
+  // Sem Estimated date + Responsible a data é gravada mas a etapa não fecha
+  // (26/10/2026, vale para todas); já concluída, reabre — menos o Delivered,
+  // que entregou lotes e embarque e não volta por aqui.
+  const plan = !!existing && hasStepPlan(existing);
 
   const previous = existing?.event_date ?? null;
   if (previous === date) return { error: null, completed: false };
@@ -54,9 +59,18 @@ export async function setPlStepEventDate(
     return { error: `A reason is required to revise the ${label.toLowerCase()}.`, completed: false };
   }
 
-  const completing = !existing?.completed_on;
   const today = todayIso();
-  const values = { event_date: date, completed_on: today, done: true, signed_by_id: who.userId };
+  const reopen = !plan && !!existing?.completed_on && step !== "delivered";
+  const completing = plan && !existing?.completed_on;
+  const values = plan
+    ? { event_date: date, completed_on: today, done: true, signed_by_id: who.userId }
+    : reopen
+      ? { event_date: date, completed_on: null, done: false, signed_by_id: null }
+      : { event_date: date };
+  const after = {
+    completed_on: "completed_on" in values ? values.completed_on : (existing?.completed_on ?? null),
+    signed_by_id: "signed_by_id" in values ? values.signed_by_id : (existing?.signed_by_id ?? null),
+  };
 
   const { data: saved, error } = existing
     ? await admin
@@ -78,11 +92,11 @@ export async function setPlStepEventDate(
     action: "update",
     changes: {
       event_date: { from: previous, to: date },
-      ...(existing?.completed_on !== today
-        ? { completed_on: { from: existing?.completed_on ?? null, to: today } }
+      ...((existing?.completed_on ?? null) !== after.completed_on
+        ? { completed_on: { from: existing?.completed_on ?? null, to: after.completed_on } }
         : {}),
-      ...(existing?.signed_by_id !== who.userId
-        ? { signed_by_id: { from: existing?.signed_by_id ?? null, to: who.userId } }
+      ...((existing?.signed_by_id ?? null) !== after.signed_by_id
+        ? { signed_by_id: { from: existing?.signed_by_id ?? null, to: after.signed_by_id } }
         : {}),
       ...(previous && reason ? { reason } : {}),
     },
