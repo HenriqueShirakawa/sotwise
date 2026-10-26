@@ -86,3 +86,14 @@ postman collection run docs/postman/SOTWISE-GSS-Checklist-Order.postman_collecti
 
 Referência: `app/api/orders/[id]/steps/[step]/route.ts` · regras: `domain/orders/steps-api.ts` · Swagger: `{{base_url}}/api/docs` → Orders → `getOrderStep` / `patchOrderStep`.
 
+---
+
+# Postman — status da Order no GSS (escrita)
+
+`GSS-order-status-escrita.postman_collection.json` (26/10/2026) — o `PATCH /v1/orders/{id}/` que o SOTWISE manda ao GSS a cada troca de status da Order (regras_de_negocio §6.14).
+
+1. Importe a collection e use o environment **"SOTWISE — GSS (prod)"** com `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` preenchidos. O token renova sozinho (pre-request da collection).
+2. Nas variáveis da **collection**, troque `order_id` (= PO) e `status_code` (`negotiation`, `production`, `pre`, `partially_ship`, `shipped`, `partially_delivered`, `delivered`, `canceled`).
+3. Rode **2. PATCH**. O **1. GET** mostra o status antes/depois e o **3.** lista o catálogo.
+
+⚠️ Em 26/10 o PATCH devolve **403**: falta o GSS dar ao usuário técnico a permissão de alterar Order.
