@@ -126,9 +126,25 @@ export type ShipmentStepRow = {
   notes: string | null;
   /** Shipping Date / ETA / ATA / Delivered: a data do fato (EVENT_DATE_STEPS). */
   event_date: string | null;
-  /** Só nas etapas herdadas do PL — texto já resolvido pro read-only. */
-  detail: string | null;
+  /** Só nas etapas herdadas do PL — campos já resolvidos pro read-only. */
+  detail: StepDetailField[] | null;
 };
+
+/** Um campo próprio da etapa herdada (Carrier, Agent Brazil, Booking number…). */
+export type StepDetailField = { label: string; value: string | null; wide?: boolean };
+
+/** Campos próprios da etapa herdada do PL, na mesma grade de Estimated/Responsible. */
+function StepDetailFields({ fields }: { fields: StepDetailField[] }) {
+  return (
+    <div className="col-span-2 grid grid-cols-2 gap-x-6 gap-y-3 sm:col-span-4 sm:grid-cols-4">
+      {fields.map((f) => (
+        <div key={f.label} className={f.wide ? "col-span-2 sm:col-span-4" : undefined}>
+          <InfoField label={f.label} value={f.value} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * A timeline completa (docs §3.10.4): #11–17 vêm do Pre-loading e aqui são só
@@ -853,11 +869,7 @@ export function ShipmentDetailClient({
                           value={formatDateNumeric(s.completed_on)}
                         />
                         <InfoField label="Signed by" value={s.signed_by} />
-                        {s.detail && (
-                          <div className="col-span-2 sm:col-span-4">
-                            <InfoField label={STEP_LABELS[s.step] ?? ""} value={s.detail} />
-                          </div>
-                        )}
+                        {s.detail && <StepDetailFields fields={s.detail} />}
                       </div>
                     ) : (
                       <>
@@ -982,7 +994,9 @@ export function ShipmentDetailClient({
                             dela (agentes, porto, booking…) seguem só de leitura
                             — quem os edita é a tela de Pre-loading. */}
                         {s.detail && (
-                          <InfoField label={STEP_LABELS[s.step] ?? ""} value={s.detail} />
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                            <StepDetailFields fields={s.detail} />
+                          </div>
                         )}
                       </>
                     )}
