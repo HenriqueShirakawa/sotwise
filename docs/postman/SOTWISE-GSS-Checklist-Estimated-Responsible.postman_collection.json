@@ -1,0 +1,600 @@
+{
+  "info": {
+    "name": "SOTWISE — GSS Checklist: Estimated date + Responsible",
+    "description": "Simula o GSS atualizando as etapas da Order pela API, com a regra de **26/10/2026**: nenhuma etapa conclui sem **Estimated date + Responsible** preenchidos — o dado do GSS é gravado e a etapa fica aberta até a equipe preencher os dois na tela.\n\nEndpoints: `PATCH /api/orders/{id}/steps/{order|pi|po}` e `GET` do mesmo caminho (Swagger: `{{base_url}}/api/docs` → getOrderStep / patchOrderStep).\n\n**Como rodar** (environment **\"SOTWISE — GSS (prod)\"**, com `base_url` + `api_token`):\n1. Rode a pasta **1** no Runner — cria uma order de teste `GSS-TEST-PLAN-…` e manda os 3 dados; as etapas ficam abertas.\n2. Pasta **2**: abra a order na tela (link no Console) e preencha Estimated date + Responsible em Order, PO e PI.\n3. Rode a pasta **3** — confere que concluíram, testa uma revisão e a reabertura da PI e apaga a order de teste.\n\nNenhuma order real é tocada. Se parar no meio, apague a order de teste rodando só o passo 10.\n\n⚠️ A collection antiga `SOTWISE-GSS-Checklist-Order` espera que o PATCH já conclua a etapa — isso deixou de valer em 26/10 (os passos 2, 7 e 8 dela falham agora).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "default_supplier_category_gss_id",
+      "value": "11"
+    },
+    {
+      "key": "test_po_number",
+      "value": ""
+    },
+    {
+      "key": "test_order_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. GSS manda o dado — etapa fica aberta",
+      "description": "O que o GSS faz pela API: manda o Order received date, o status da PI e a leva de Factory × Category. O dado é gravado, mas desde 26/10/2026 nenhuma etapa conclui sem **Estimated date + Responsible** — e a order criada pela API nasce sem os dois. Por isso as 3 etapas ficam abertas.",
+      "item": [
+        {
+          "name": "0. Setup — cria a order de teste (POST /api/orders) — 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "description": "Order descartável (prefixo GSS-TEST-PLAN-). É apagada no passo 10.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gss_id\": \"{{test_gss_id}}\",\n  \"po_number\": \"{{test_po_number}}\",\n  \"client_reference\": \"Postman — regra Estimated + Responsible (descartável)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const n = 'GSS-TEST-PLAN-' + Date.now();",
+                  "pm.collectionVariables.set('test_gss_id', n);",
+                  "pm.collectionVariables.set('test_po_number', n);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 — order criada', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('test_order_id', pm.response.json().data.id);",
+                  "const site = pm.environment.get('sot_base') || pm.variables.get('base_url');",
+                  "console.log('Abra a order na tela: ' + site + '/orders/' + pm.variables.get('test_po_number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1. PATCH order — Order received date gravado, etapa aberta — 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "order"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_received_date\": {{d_received}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('d_received', Math.floor(new Date('2026-10-20T12:00:00Z').getTime() / 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('etapa ABERTA (done = false)', () => pm.expect(d.done).to.eql(false));",
+                  "pm.test('sem completed_on', () => pm.expect(d.completed_on).to.eql(null));",
+                  "pm.test('sem Estimated date (nunca preenchida)', () => pm.expect(d.estimated_date).to.eql(null));",
+                  "pm.test('order_received_date gravado', () => pm.expect(d.order_received_date).to.eql(Number(pm.variables.get('d_received'))));",
+                  "pm.test('registro original (fonte gss)', () => pm.expect(d.revisions.map(r => r.source)).to.include('gss'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. PATCH pi — pi_status true gravado, etapa aberta — 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "pi"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pi_status\": true,\n  \"pi_status_date\": {{d_pi}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('d_pi', Math.floor(new Date('2026-10-21T12:00:00Z').getTime() / 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('etapa ABERTA (done = false)', () => pm.expect(d.done).to.eql(false));",
+                  "pm.test('sem completed_on', () => pm.expect(d.completed_on).to.eql(null));",
+                  "pm.test('sem Estimated date (nunca preenchida)', () => pm.expect(d.estimated_date).to.eql(null));",
+                  "pm.test('pi_status = true gravado', () => pm.expect(d.pi_status).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. PATCH po — leva de Factory × Category gravada, etapa aberta — 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/po",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "po"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"supplier_category_gss_id\": \"{{sc_id}}\",\n      \"ship_requirement\": {{d_ship}}\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const sc = pm.environment.get('supplier_category_gss_id_1') || pm.collectionVariables.get('default_supplier_category_gss_id');",
+                  "pm.collectionVariables.set('sc_id', sc);",
+                  "pm.collectionVariables.set('d_ship', Math.floor(new Date('2026-11-30T12:00:00Z').getTime() / 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('etapa ABERTA (done = false)', () => pm.expect(d.done).to.eql(false));",
+                  "pm.test('sem completed_on', () => pm.expect(d.completed_on).to.eql(null));",
+                  "pm.test('sem Estimated date (nunca preenchida)', () => pm.expect(d.estimated_date).to.eql(null));",
+                  "pm.test('1 linha de F×C', () => pm.expect(d.items).to.have.length(1));",
+                  "pm.test('leva registrada (fxc)', () => pm.expect(d.revisions.map(r => r.kind)).to.include('fxc'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. GET order — segue aberta — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "order"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('etapa ABERTA (done = false)', () => pm.expect(d.done).to.eql(false));",
+                  "pm.test('sem completed_on', () => pm.expect(d.completed_on).to.eql(null));",
+                  "pm.test('sem Estimated date (nunca preenchida)', () => pm.expect(d.estimated_date).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. ✋ Na tela — preencha Estimated date + Responsible",
+      "description": "Passo MANUAL (é o que a equipe faz no SOT, não o GSS). Abra a order de teste — o link sai no Console do passo 0 — e, no Order progress, preencha **Estimated date** e **Responsible** nas etapas **Order**, **PO** e **PI**. Cada etapa conclui sozinha quando o último dos dois é preenchido (Completed on = hoje). Depois rode a pasta 3.",
+      "item": [
+        {
+          "name": "5. GET order — mostra o link da order (só informativo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "order"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const site = pm.environment.get('sot_base') || pm.variables.get('base_url');",
+                  "console.log('Preencha Estimated date + Responsible em Order, PO e PI: ' + site + '/orders/' + pm.variables.get('test_po_number'));",
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Depois de preencher na tela — etapas concluem",
+      "description": "Rode SÓ depois da pasta 2. As 3 etapas devem estar concluídas; o GSS revisa o dado (a etapa segue concluída) e manda `pi_status: false` (a PI reabre). O último passo apaga a order de teste.",
+      "item": [
+        {
+          "name": "6. GET order — concluída — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "order"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Estimated date preenchida na tela', () => pm.expect(d.estimated_date, 'preencha o Estimated date na tela').to.be.a('number'));",
+                  "pm.test('etapa CONCLUÍDA (done = true)', () => pm.expect(d.done, 'preencha Estimated date + Responsible na tela antes de rodar esta pasta').to.eql(true));",
+                  "pm.test('completed_on preenchido', () => pm.expect(d.completed_on).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. GET po — concluída — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/po",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "po"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Estimated date preenchida na tela', () => pm.expect(d.estimated_date, 'preencha o Estimated date na tela').to.be.a('number'));",
+                  "pm.test('etapa CONCLUÍDA (done = true)', () => pm.expect(d.done, 'preencha Estimated date + Responsible na tela antes de rodar esta pasta').to.eql(true));",
+                  "pm.test('completed_on preenchido', () => pm.expect(d.completed_on).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. GET pi — concluída — 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "pi"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Estimated date preenchida na tela', () => pm.expect(d.estimated_date, 'preencha o Estimated date na tela').to.be.a('number'));",
+                  "pm.test('etapa CONCLUÍDA (done = true)', () => pm.expect(d.done, 'preencha Estimated date + Responsible na tela antes de rodar esta pasta').to.eql(true));",
+                  "pm.test('completed_on preenchido', () => pm.expect(d.completed_on).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. PATCH order — revisão do GSS com motivo, segue concluída — 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/order",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "order"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_received_date\": {{d_received_2}},\n  \"reason\": \"Cliente corrigiu a data do pedido (teste Postman)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('d_received_2', Math.floor(new Date('2026-10-22T12:00:00Z').getTime() / 1000));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('Estimated date preenchida na tela', () => pm.expect(d.estimated_date, 'preencha o Estimated date na tela').to.be.a('number'));",
+                  "pm.test('etapa CONCLUÍDA (done = true)', () => pm.expect(d.done, 'preencha Estimated date + Responsible na tela antes de rodar esta pasta').to.eql(true));",
+                  "pm.test('completed_on preenchido', () => pm.expect(d.completed_on).to.be.a('number'));",
+                  "pm.test('data nova gravada', () => pm.expect(d.order_received_date).to.eql(Number(pm.variables.get('d_received_2'))));",
+                  "pm.test('motivo na revisão', () => pm.expect(d.revisions.map(r => r.reason)).to.include('Cliente corrigiu a data do pedido (teste Postman)'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9b. PATCH pi — pi_status false reabre a PI — 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_po_number}}",
+                "steps",
+                "pi"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pi_status\": false,\n  \"reason\": \"PI cancelada pelo GSS (teste Postman)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json().data;",
+                  "pm.test('pi_status = false', () => pm.expect(d.pi_status).to.eql(false));",
+                  "pm.test('PI reaberta (done = false)', () => pm.expect(d.done).to.eql(false));",
+                  "pm.test('sem completed_on', () => pm.expect(d.completed_on).to.eql(null));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Cleanup — apaga a order de teste (DELETE /api/orders/{id}) — 200",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_order_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_order_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 — order de teste apagada', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
