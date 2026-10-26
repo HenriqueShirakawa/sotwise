@@ -290,10 +290,17 @@ export async function saveShipmentStep(
     if (ruleError) return { ok: false, error: ruleError };
   }
 
-  // Data prevista posta numa etapa que já tinha o documento: fecha sozinha
-  // (ver lib/pl-step-autocomplete). Limpar o "Completed on" à mão não reabre-fecha.
-  if (!("completed_on" in patch) && "estimated_date" in patch) {
-    await autoCompletePlStep(admin, preLoadingId, step, session.userId);
+  // Data prevista / responsável postos numa etapa que já tinha o resto: fecha
+  // sozinha; apagados de etapa concluída: reabre (26/10/2026 — toda etapa exige
+  // os dois). Ver lib/pl-step-autocomplete. Limpar o "Completed on" à mão não
+  // reabre-fecha.
+  if (!("completed_on" in patch) && ("estimated_date" in patch || "responsible_id" in patch)) {
+    const closed = await autoCompletePlStep(admin, preLoadingId, step, session.userId, { recheck: true });
+    // Delivered fechando por aqui entrega lotes e embarque, como pela data.
+    if (closed && step === "delivered") {
+      const ruleError = await applyDeliveredRule(admin, shipmentId, preLoadingId, true);
+      if (ruleError) return { ok: false, error: ruleError };
+    }
   }
 
   revalidateShipmentViews();

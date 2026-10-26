@@ -553,9 +553,11 @@ export function PlChecklistClient({
 
   const doneCount = steps.filter((s) => s.done).length;
   // Loading Date conclui no próprio popup do Confirm Shipping: para liberar o
-  // botão basta o Estimated date (mesma regra do servidor, isReadyToShip).
+  // botão bastam o Estimated date e o Responsible (mesma regra do servidor,
+  // isReadyToShip; Responsible desde 26/10/2026).
   const readyToShip = steps.every(
-    (s) => s.done || (CONFIRM_SHIPPING_COMPLETES.has(s.step) && !!s.estimated_date)
+    (s) =>
+      s.done || (CONFIRM_SHIPPING_COMPLETES.has(s.step) && !!s.estimated_date && !!s.responsible_id)
   );
 
   return (

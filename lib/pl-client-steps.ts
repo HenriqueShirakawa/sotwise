@@ -1,5 +1,6 @@
 import "server-only";
 
+import { hasStepPlan } from "@/lib/checklist-completion";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { loadPlClientState } from "@/lib/pl-clients";
@@ -163,7 +164,7 @@ export async function setClientDeliveredDate(
 
   const { data: step, error: stepError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, event_date, completed_on, signed_by_id")
+    .select("id, event_date, completed_on, signed_by_id, estimated_date, responsible_id")
     .eq("pre_loading_id", preLoadingId)
     .eq("step", "delivered")
     .maybeSingle();
@@ -180,23 +181,32 @@ export async function setClientDeliveredDate(
     ...(previous && reason ? { reason } : {}),
   };
 
-  // Todos os clientes com data? A etapa conclui (ou, já concluída, regrava).
+  // Todos os clientes com data? A etapa conclui (ou, já concluída, regrava) —
+  // se tiver Estimated date + Responsible (26/10/2026); sem eles só a data do
+  // Shipment é atualizada e a etapa fecha quando os dois forem preenchidos.
   const state = await loadPlClientState(admin, preLoadingId);
   const dates = state.clients.map((c) => state.delivered.get(c.id));
   let completed = false;
   if (state.clients.length > 0 && dates.every(Boolean)) {
     const latest = (dates as string[]).reduce((max, d) => (d > max ? d : max));
     const today = todayIso();
+    const plan = !!step && hasStepPlan(step);
     const { error: upError } = await admin
       .from("pre_loading_checklist_steps")
-      .update({ event_date: latest, completed_on: today, done: true, signed_by_id: who.userId })
+      .update(
+        plan
+          ? { event_date: latest, completed_on: today, done: true, signed_by_id: who.userId }
+          : { event_date: latest }
+      )
       .eq("id", stepRow.id);
     if (upError) return { error: upError.message, completed: false };
-    completed = !step?.completed_on;
     if (step?.event_date !== latest) changes.event_date = { from: step?.event_date ?? null, to: latest };
-    if (step?.completed_on !== today) changes.completed_on = { from: step?.completed_on ?? null, to: today };
-    if (step?.signed_by_id !== who.userId) {
-      changes.signed_by_id = { from: step?.signed_by_id ?? null, to: who.userId };
+    if (plan) {
+      completed = !step?.completed_on;
+      if (step?.completed_on !== today) changes.completed_on = { from: step?.completed_on ?? null, to: today };
+      if (step?.signed_by_id !== who.userId) {
+        changes.signed_by_id = { from: step?.signed_by_id ?? null, to: who.userId };
+      }
     }
   }
 

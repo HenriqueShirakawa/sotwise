@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import {
+  hasStepPlan,
   LOCKED_COMPLETED_ON_ERROR,
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
@@ -145,6 +146,18 @@ export async function updateChecklistStep(
   const dateError = validateStepDates(current, patch, current.step);
   if (dateError) return { ok: false, error: dateError };
 
+  // Concluir à mão (Condition Confirm) exige Estimated date + Responsible —
+  // vale para toda etapa desde 26/10/2026.
+  if (patch.completed_on && patch.completed_on !== current.completed_on) {
+    const after = {
+      estimated_date: "estimated_date" in patch ? (patch.estimated_date ?? null) : current.estimated_date,
+      responsible_id: "responsible_id" in patch ? (patch.responsible_id ?? null) : current.responsible_id,
+    };
+    if (!hasStepPlan(after)) {
+      return { ok: false, error: "Fill in the estimated date and the responsible before completing this step." };
+    }
+  }
+
   // Order conclui pelo "Order received date", Deposit Payment pelo "Deposit date";
   // PO/PI pelo gatilho do GSS — o campo é imutável, ninguém edita (22/10/2026).
   if ("completed_on" in patch && patch.completed_on !== current.completed_on) {
@@ -182,8 +195,8 @@ export async function updateChecklistStep(
     userId: session.userId,
   });
 
-  // ETD / Balance Payment exigem Estimated date + Responsible (26/10/2026): o
-  // que faltava pode ter chegado agora (fecha) ou ter sido apagado (reabre).
+  // Toda etapa exige Estimated date + Responsible (26/10/2026): o que faltava
+  // pode ter chegado agora (fecha pelo gatilho) ou ter sido apagado (reabre).
   if ("estimated_date" in patch || "responsible_id" in patch) {
     await recheckPlanStep(admin, orderId, current.step, session.userId);
   }
