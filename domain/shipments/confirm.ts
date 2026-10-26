@@ -135,7 +135,7 @@ export async function confirmShippingRecord(
   const { data: steps } = await admin
     .from("pre_loading_checklist_steps")
     .select(
-      "id, step, estimated_date, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date"
+      "id, step, estimated_date, responsible_id, completed_on, consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date"
     )
     .eq("pre_loading_id", preLoadingId);
 

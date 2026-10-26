@@ -51,6 +51,12 @@ export type ChecklistFacts = {
   batchesInPreLoading?: boolean;
 
   // ── fase Pre-loading ──────────────────────────────────────────────────────
+  /**
+   * Responsible da etapa — exigido em RESPONSIBLE_REQUIRED_STEPS (26/10/2026).
+   * Exceção à regra "ausente conta como vazio": `undefined` (a tela não carregou
+   * a coluna) não julga; só `null` (carregado e vazio) falta.
+   */
+  responsibleId?: string | null;
   consolidationPointId?: string | null;
   cityId?: string | null;
   polId?: string | null;
@@ -108,6 +114,21 @@ export const SHIPMENT_PER_CLIENT_FROM = "2026-10-22";
 const concludedBefore = (f: ChecklistFacts, from: string) =>
   !!f.completedOn && f.completedOn < from;
 
+/**
+ * Etapas do PL que só fecham com Responsible (QA do card "Ajustes Data e Logs",
+ * 26/10/2026): a regra é Estimated date + Responsible + o dado da etapa, mas
+ * fechavam sem o Responsible. Concluída antes de RESPONSIBLE_REQUIRED_FROM segue
+ * concluída (é julgada pela regra da data dela).
+ */
+export const RESPONSIBLE_REQUIRED_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "consolidation_point",
+  "city",
+  "port_of_loading",
+  "agents",
+  "booking",
+]);
+export const RESPONSIBLE_REQUIRED_FROM = "2026-10-26";
+
 /** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
 export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
   (p?.total ?? 0) > 1;
@@ -116,6 +137,14 @@ export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
 function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const missing: string[] = [];
   const noDocs = (f.attachments ?? 0) === 0;
+
+  if (
+    RESPONSIBLE_REQUIRED_STEPS.has(step) &&
+    f.responsibleId === null &&
+    !concludedBefore(f, RESPONSIBLE_REQUIRED_FROM)
+  ) {
+    missing.push("a responsible");
+  }
 
   switch (step) {
     // Order, PO e PI fecham pelo próprio gatilho (20/10/2026, lib/checklist-revisions):
@@ -371,6 +400,7 @@ export function validateStepDates(
 /** Linha de `pre_loading_checklist_steps`, no mínimo que a regra consulta. */
 export type PlStepFields = {
   completed_on: string | null;
+  responsible_id?: string | null;
   consolidation_point_id?: string | null;
   city_id?: string | null;
   pol_id?: string | null;
@@ -408,6 +438,7 @@ export function plStepFacts(
   return {
     completedOn: s.completed_on,
     attachments,
+    responsibleId: s.responsible_id,
     consolidationPointId: s.consolidation_point_id,
     cityId: s.city_id,
     polId: s.pol_id,
