@@ -389,13 +389,9 @@ export default async function ShipmentDetailPage({
         return s.city_id ? (cityNameById.get(s.city_id) ?? null) : null;
       case "port_of_loading":
         return s.pol_id ? (polNameById.get(s.pol_id) ?? null) : null;
-      case "booking": {
-        // 2+ clientes: o Booking number de cada um (21/10/2026).
-        const perClientBookings = clientState.clients
-          .filter((c) => clientState.bookings.has(c.id))
-          .map((c) => `${c.name}: ${clientState.bookings.get(c.id)}`);
-        return [s.booking_number, ...perClientBookings].filter(Boolean).join(" · ") || null;
-      }
+      // Um Booking number só por PL (26/10/2026).
+      case "booking":
+        return s.booking_number || null;
       // A data real do carregamento, informada no popup do Confirm Shipping
       // (o Completed on da etapa é o dia da confirmação).
       case "loading_date":

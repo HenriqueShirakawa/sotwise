@@ -50,7 +50,6 @@ import {
   deletePreLoadingStepAttachment,
   getPreLoadingAttachmentUrl,
   savePreLoadingStep,
-  savePlClientBooking,
   createPreLoadingAttachmentTicket,
   registerPreLoadingAttachment,
   type StepPatch,
@@ -101,16 +100,13 @@ export type StepAttachment = {
 };
 
 /**
- * Shipping Docs e Booking por cliente (21/10/2026): com 2+ clientes no PL, cada
- * cliente tem os próprios documentos e o próprio Booking number, e a etapa só
- * fecha com todos cobertos (lib/pl-clients). Com 1 cliente, nada muda.
+ * Shipping Docs por cliente (21/10/2026): com 2+ clientes no PL, cada cliente
+ * tem os próprios documentos, e a etapa só fecha com todos cobertos
+ * (lib/pl-clients). Com 1 cliente, nada muda. O Booking number é ÚNICO por PL
+ * (26/10/2026 — o "um por cliente" de 21/10 foi desfeito).
  */
 export type PlPerClientView = {
   clients: Ref[];
-  /** Booking number de cada cliente (client_id → número). */
-  bookings: Record<string, string>;
-  /** Booking number antigo, da própria etapa — vale para todos os clientes. */
-  generalBooking: string | null;
   counts: PlPerClient;
 };
 
@@ -543,14 +539,6 @@ export function PlChecklistClient({
     });
   }
 
-  function saveClientBooking(clientId: string, bookingNumber: string | null) {
-    startTransition(async () => {
-      const res = await savePlClientBooking(preLoading.id, clientId, bookingNumber);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
-    });
-  }
-
   const doneCount = steps.filter((s) => s.done).length;
   // Loading Date conclui no próprio popup do Confirm Shipping: para liberar o
   // botão bastam o Estimated date e o Responsible (mesma regra do servidor,
@@ -896,51 +884,22 @@ export function PlChecklistClient({
                     )}
                     {s.step === "booking" && (
                       <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-                        {isPerClient(perClient.counts) ? (
-                          // 2+ clientes: um Booking number por cliente (21/10/2026).
-                          <div className="space-y-2 sm:col-span-2">
-                            {perClient.generalBooking && (
-                              <p className="text-xs text-muted-foreground">
-                                Booking number for all clients: {perClient.generalBooking}
-                              </p>
-                            )}
-                            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-                              {perClient.clients.map((c) => (
-                                <div key={c.id}>
-                                  <Label className="text-xs text-muted-foreground">
-                                    Booking number — {c.name}
-                                  </Label>
-                                  <Input
-                                    defaultValue={perClient.bookings[c.id] ?? ""}
-                                    disabled={pending}
-                                    placeholder="Booking number"
-                                    onBlur={(e) => {
-                                      const v = e.target.value.trim() || null;
-                                      if (v !== (perClient.bookings[c.id] ?? null))
-                                        saveClientBooking(c.id, v);
-                                    }}
-                                    className="mt-1 bg-white"
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <Label className="text-xs text-muted-foreground">Booking number</Label>
-                            <Input
-                              defaultValue={s.booking_number ?? ""}
-                              disabled={pending}
-                              placeholder="Booking number"
-                              onBlur={(e) => {
-                                const v = e.target.value.trim() || null;
-                                if (v !== (s.booking_number ?? null))
-                                  save(s.step, { booking_number: v });
-                              }}
-                              className="mt-1 bg-white"
-                            />
-                          </div>
-                        )}
+                        {/* Um Booking number só por PL, qualquer que seja o
+                            nº de clientes (26/10/2026). */}
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Booking number</Label>
+                          <Input
+                            defaultValue={s.booking_number ?? ""}
+                            disabled={pending}
+                            placeholder="Booking number"
+                            onBlur={(e) => {
+                              const v = e.target.value.trim() || null;
+                              if (v !== (s.booking_number ?? null))
+                                save(s.step, { booking_number: v });
+                            }}
+                            className="mt-1 bg-white"
+                          />
+                        </div>
                         {/* Os dois cut-offs são obrigatórios pra fechar a etapa
                             (22/10/2026); sem trava de passado/futuro. */}
                         <div>

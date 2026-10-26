@@ -15,7 +15,7 @@ import type { ChecklistStep } from "@/types/database";
 type Admin = ReturnType<typeof createAdminClient>;
 
 /** Etapas do PL com exigência por cliente (lib/checklist-completion). */
-const PER_CLIENT_RECHECK_STEPS: ChecklistStep[] = ["shipping_docs", "booking", "bl", "original_docs"];
+const PER_CLIENT_RECHECK_STEPS: ChecklistStep[] = ["shipping_docs", "bl", "original_docs"];
 
 const PAGE = 1000;
 

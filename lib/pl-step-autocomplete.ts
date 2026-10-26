@@ -11,7 +11,6 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 const PER_CLIENT_AUTOCOMPLETE: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "shipping_docs",
-  "booking",
   "bl",
   "original_docs",
 ]);
@@ -82,7 +81,7 @@ export async function autoCompletePlStep(
     }
   }
 
-  // Etapas por cliente (Shipping Docs, Booking, BL, Original Docs): só fecha com
+  // Etapas por cliente (Shipping Docs, BL, Original Docs): só fecha com
   // TODOS os clientes cobertos.
   const perClient = PER_CLIENT_AUTOCOMPLETE.has(step)
     ? perClientOf(await loadPlClientState(admin, preLoadingId))
