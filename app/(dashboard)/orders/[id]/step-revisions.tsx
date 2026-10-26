@@ -241,7 +241,9 @@ export function StepRevisionsModal({
                       <Textarea
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
-                        placeholder="Why is this date changing?"
+                        // 1ª data do Deposit/Balance também pede motivo, mas
+                        // ainda não há o que "mudar" (QA 26/10/2026).
+                        placeholder={currentDate ? "Why is this date changing?" : "Add a note about this date"}
                         className="mt-1.5 bg-white"
                         rows={3}
                       />

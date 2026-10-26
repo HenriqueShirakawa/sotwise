@@ -143,6 +143,12 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   client_tracking_number: { label: "Tracking number", kind: "text" },
   client_telex_release: { label: "Telex release", kind: "text" },
   client_delivered_date: { label: "Delivered date", kind: "text" },
+  // ETD por linha Factory × Category (26/10/2026): "Fábrica · Categoria: valor".
+  etd_initial_date: { label: "Initial date", kind: "text" },
+  etd_current_date: { label: "ETD", kind: "text" },
+  etd_ready: { label: "Ready", kind: "text" },
+  etd_inspection: { label: "Inspection", kind: "text" },
+  etd_dispatch_date: { label: "Dispatch date", kind: "text" },
 };
 
 type Diff = Record<string, { from: unknown; to: unknown }>;
