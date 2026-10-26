@@ -106,7 +106,7 @@ export default async function PreLoadingPage() {
       admin
         .from("pre_loading_checklist_steps")
         .select(
-          "pre_loading_id, step, completed_on, estimated_date, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_id, booking_number, cutoff_date, doc_cutoff_date"
+          "pre_loading_id, step, completed_on, estimated_date, responsible_id, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_id, booking_number, cutoff_date, doc_cutoff_date"
         )
         .in("step", LIST_STEPS)
         .range(from, to)

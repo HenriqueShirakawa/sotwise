@@ -53,6 +53,8 @@ export type StepPatch = Partial<{
 /** Campos que entram na regra de conclusão — só eles disparam a auto-conclusão. */
 const COMPLETION_FACT_FIELDS: (keyof StepPatch)[] = [
   "estimated_date",
+  // Exigido em parte das etapas desde 26/10/2026 (RESPONSIBLE_REQUIRED_STEPS).
+  "responsible_id",
   "consolidation_point_id",
   "city_id",
   "pol_id",
@@ -70,9 +72,14 @@ function touchesCompletionFacts(patch: StepPatch): boolean {
   return COMPLETION_FACT_FIELDS.some((k) => k in patch);
 }
 
-/** Mudou o dado da etapa (não só a previsão)? Regrava o Completed on — 22/10/2026. */
+/**
+ * Mudou o dado da etapa (não só a previsão ou o responsável)? Regrava o
+ * Completed on — 22/10/2026.
+ */
 function touchesStepData(patch: StepPatch): boolean {
-  return COMPLETION_FACT_FIELDS.some((k) => k !== "estimated_date" && k in patch);
+  return COMPLETION_FACT_FIELDS.some(
+    (k) => k !== "estimated_date" && k !== "responsible_id" && k in patch
+  );
 }
 
 /**
@@ -160,6 +167,8 @@ export async function savePreLoadingStep(
   if (!("completed_on" in patch) && touchesCompletionFacts(patch)) {
     await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
       refresh: touchesStepData(patch),
+      // Responsible tirado de etapa concluída: reabre (sem regravar a data).
+      recheck: "responsible_id" in patch,
     });
   }
 
