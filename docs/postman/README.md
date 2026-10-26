@@ -122,3 +122,17 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 3. Rode **2. PATCH**. O **1. GET** mostra o status antes/depois e o **3.** lista o catálogo.
 
 ⚠️ Em 26/10 o PATCH devolve **403**: falta o GSS dar ao usuário técnico a permissão de alterar Order.
+
+---
+
+# Postman — simular o GSS com a regra Estimated date + Responsible
+
+`SOTWISE-GSS-Checklist-Estimated-Responsible.postman_collection.json` (26/10/2026) — o GSS atualizando as etapas Order / PI / PO pela API, com a regra nova: **nenhuma etapa conclui sem Estimated date + Responsible**. O dado do GSS é gravado e a etapa fica aberta até a equipe preencher os dois na tela.
+
+Environment **"SOTWISE — GSS (prod)"** (`base_url` + `api_token`). Três pastas, nesta ordem:
+
+1. **GSS manda o dado** (Runner) — cria a order `GSS-TEST-PLAN-…` e manda Order received date, `pi_status: true` e uma leva de F×C. Confere que as 3 etapas ficaram **abertas**.
+2. **Na tela** (manual) — abra a order (link no Console) e preencha Estimated date + Responsible em Order, PO e PI.
+3. **Depois de preencher** (Runner) — confere que as 3 **concluíram**, testa uma revisão do Order received date (segue concluída) e `pi_status: false` (a PI reabre), e apaga a order de teste.
+
+Rodada local em 26/10/2026 (Postman CLI): pasta 1 com 22 asserções e pasta 3 com 23, 0 falhas. A collection antiga `SOTWISE-GSS-Checklist-Order` ainda espera que o PATCH conclua a etapa — os passos 2, 7 e 8 dela falham desde essa regra.
