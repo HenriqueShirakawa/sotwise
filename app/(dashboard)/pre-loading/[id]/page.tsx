@@ -7,6 +7,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
+import { LiveRefresh } from "@/components/live-refresh";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep } from "@/types/database";
 
@@ -342,63 +343,66 @@ export default async function PreLoadingChecklistPage({
     );
 
   return (
-    <PlChecklistClient
-      preLoading={{
-        id: pl.id,
-        pl_number: pl.pl_number,
-        created_date: pl.created_date,
-        client_reference: pl.client_reference,
-        clients,
-        pod: podRes.data?.name ?? null,
-        leader: pl.leader_id ? (profileNameById.get(pl.leader_id) ?? null) : null,
-        responsible_signer: pl.responsible_signer_id
-          ? (profileNameById.get(pl.responsible_signer_id) ?? null)
-          : null,
-        booking_status: pl.booking_status,
-        seal_number: pl.seal_number,
-      }}
-      batches={batches}
-      steps={steps}
-      perClient={{
-        clients: clientState.clients,
-        counts: perClient,
-      }}
-      profiles={profileRes
-        .filter((p) => p.full_name)
-        .map((p) => ({ id: p.id, name: p.full_name as string }))
-        .sort(byName)}
-      factories={factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName)}
-      cities={cityNames.sort(byName)}
-      pols={polRes
-        .map((p) => ({ id: p.id, name: p.name, cityId: cityByPol.get(p.id) ?? null }))
-        .sort(byName)}
-      agentsBrazil={allAgents
-        .filter((a) => a.location === "brazil")
-        .map((a) => ({ id: a.id, name: a.name }))
-        .sort(byName)}
-      agentsChina={allAgents
-        .filter((a) => a.location === "china")
-        .map((a) => ({ id: a.id, name: a.name }))
-        .sort(byName)}
-      contactsByAgent={contactsByAgent}
-      carriers={carrierRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
-      shipmentModels={shipmentModelRes
-        .map((m) => ({ id: m.id, name: m.name }))
-        .sort(byName)}
-      shipmentLines={shipmentLines}
-      shipmentEstimates={Object.fromEntries(
-        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [
-          step,
-          {
-            estimated_date: byStep.get(step)?.estimated_date ?? null,
-            responsible_id: byStep.get(step)?.responsible_id ?? null,
-          },
-        ])
-      )}
-      currentUserId={userId}
-      preloadingLeaderId={pl.leader_id}
-      alreadyShipped={pl.shipping_confirmed_at != null}
-      viewPrefs={readViewPrefs(profile.ui_preferences)}
-    />
+    <>
+      <LiveRefresh />
+      <PlChecklistClient
+        preLoading={{
+          id: pl.id,
+          pl_number: pl.pl_number,
+          created_date: pl.created_date,
+          client_reference: pl.client_reference,
+          clients,
+          pod: podRes.data?.name ?? null,
+          leader: pl.leader_id ? (profileNameById.get(pl.leader_id) ?? null) : null,
+          responsible_signer: pl.responsible_signer_id
+            ? (profileNameById.get(pl.responsible_signer_id) ?? null)
+            : null,
+          booking_status: pl.booking_status,
+          seal_number: pl.seal_number,
+        }}
+        batches={batches}
+        steps={steps}
+        perClient={{
+          clients: clientState.clients,
+          counts: perClient,
+        }}
+        profiles={profileRes
+          .filter((p) => p.full_name)
+          .map((p) => ({ id: p.id, name: p.full_name as string }))
+          .sort(byName)}
+        factories={factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName)}
+        cities={cityNames.sort(byName)}
+        pols={polRes
+          .map((p) => ({ id: p.id, name: p.name, cityId: cityByPol.get(p.id) ?? null }))
+          .sort(byName)}
+        agentsBrazil={allAgents
+          .filter((a) => a.location === "brazil")
+          .map((a) => ({ id: a.id, name: a.name }))
+          .sort(byName)}
+        agentsChina={allAgents
+          .filter((a) => a.location === "china")
+          .map((a) => ({ id: a.id, name: a.name }))
+          .sort(byName)}
+        contactsByAgent={contactsByAgent}
+        carriers={carrierRes.map((c) => ({ id: c.id, name: c.name })).sort(byName)}
+        shipmentModels={shipmentModelRes
+          .map((m) => ({ id: m.id, name: m.name }))
+          .sort(byName)}
+        shipmentLines={shipmentLines}
+        shipmentEstimates={Object.fromEntries(
+          CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [
+            step,
+            {
+              estimated_date: byStep.get(step)?.estimated_date ?? null,
+              responsible_id: byStep.get(step)?.responsible_id ?? null,
+            },
+          ])
+        )}
+        currentUserId={userId}
+        preloadingLeaderId={pl.leader_id}
+        alreadyShipped={pl.shipping_confirmed_at != null}
+        viewPrefs={readViewPrefs(profile.ui_preferences)}
+      />
+    </>
   );
 }
