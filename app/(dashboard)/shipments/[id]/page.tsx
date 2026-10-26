@@ -12,6 +12,7 @@ import { formatDateNumeric } from "@/lib/format";
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
+import { LiveRefresh } from "@/components/live-refresh";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, ChecklistStep, LoadingStatus } from "@/types/database";
 
@@ -482,38 +483,41 @@ export default async function ShipmentDetailPage({
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <ShipmentDetailClient
-      shipment={{
-        id: shipment.id,
-        pre_loading_id: pl.id,
-        pl_number: pl.pl_number,
-        created_date: pl.created_date,
-        client_reference: pl.client_reference,
-        clients,
-        pod: podRes.data?.name ?? null,
-        ship_model: modelRes.data?.name ?? null,
-        carrier: shipment.carrier_id ? (carrierNameById.get(shipment.carrier_id) ?? null) : null,
-        container_number: shipment.container_number,
-        leader: shipment.leader_id ? (profileNameById.get(shipment.leader_id) ?? null) : null,
-        signer: shipment.signer_id ? (profileNameById.get(shipment.signer_id) ?? null) : null,
-        status: STATUS_LABELS[shipment.status] ?? shipment.status,
-      }}
-      batches={batches}
-      steps={steps}
-      profiles={profiles}
-      factories={factories}
-      dates={dates}
-      // Entregue não se desfaz (a action recusa igual): o botão some.
-      canDelete={permissions.shipments.delete && shipment.status !== "delivered"}
-      canEditInherited={isAdmin || isOwner}
-      viewPrefs={readViewPrefs(profile.ui_preferences)}
-      currentUserId={userId}
-      perClient={{
-        clients: clientState.clients,
-        originalDocs: Object.fromEntries(clientState.originalDocs),
-        delivered: Object.fromEntries(clientState.delivered),
-        counts: perClient,
-      }}
-    />
+    <>
+      <LiveRefresh />
+      <ShipmentDetailClient
+        shipment={{
+          id: shipment.id,
+          pre_loading_id: pl.id,
+          pl_number: pl.pl_number,
+          created_date: pl.created_date,
+          client_reference: pl.client_reference,
+          clients,
+          pod: podRes.data?.name ?? null,
+          ship_model: modelRes.data?.name ?? null,
+          carrier: shipment.carrier_id ? (carrierNameById.get(shipment.carrier_id) ?? null) : null,
+          container_number: shipment.container_number,
+          leader: shipment.leader_id ? (profileNameById.get(shipment.leader_id) ?? null) : null,
+          signer: shipment.signer_id ? (profileNameById.get(shipment.signer_id) ?? null) : null,
+          status: STATUS_LABELS[shipment.status] ?? shipment.status,
+        }}
+        batches={batches}
+        steps={steps}
+        profiles={profiles}
+        factories={factories}
+        dates={dates}
+        // Entregue não se desfaz (a action recusa igual): o botão some.
+        canDelete={permissions.shipments.delete && shipment.status !== "delivered"}
+        canEditInherited={isAdmin || isOwner}
+        viewPrefs={readViewPrefs(profile.ui_preferences)}
+        currentUserId={userId}
+        perClient={{
+          clients: clientState.clients,
+          originalDocs: Object.fromEntries(clientState.originalDocs),
+          delivered: Object.fromEntries(clientState.delivered),
+          counts: perClient,
+        }}
+      />
+    </>
   );
 }
