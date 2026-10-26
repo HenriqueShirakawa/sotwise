@@ -110,3 +110,15 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 > ⚠️ As duas bases apontam para **produção**. Rotas do GSS terminam com `/` — sem a barra o Django devolve 301 e o Postman refaz como GET (volta a lista com 200 e parece que deu certo).
 
 **Rotas fora do Swagger do GSS** (`orders` → `⚠️ lote — fora do Swagger (16/10)`): o servidor do GSS aceita `PATCH /orders/{order_id}/batch/{batch_number}/` (achado por `OPTIONS`), mas o `/openapi.json` deles não documenta. O script injeta 3 requests (ler o lote; PATCH do `status` por `code` e por `id`), já apontando para a Order de teste 1705, lote 1. Em 16/10 o usuário técnico recebia **403** — falta o GSS liberar a permissão de alterar lote.
+
+---
+
+# Postman — status da Order no GSS (escrita)
+
+`GSS-order-status-escrita.postman_collection.json` (26/10/2026) — o `PATCH /v1/orders/{id}/` que o SOTWISE manda ao GSS a cada troca de status da Order (regras_de_negocio §6.14).
+
+1. Importe a collection e use o environment **"SOTWISE — GSS (prod)"** com `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` preenchidos. O token renova sozinho (pre-request da collection).
+2. Nas variáveis da **collection**, troque `order_id` (= PO) e `status_code` (`negotiation`, `production`, `pre`, `partially_ship`, `shipped`, `partially_delivered`, `delivered`, `canceled`).
+3. Rode **2. PATCH**. O **1. GET** mostra o status antes/depois e o **3.** lista o catálogo.
+
+⚠️ Em 26/10 o PATCH devolve **403**: falta o GSS dar ao usuário técnico a permissão de alterar Order.
