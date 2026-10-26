@@ -53,7 +53,7 @@ export type StepPatch = Partial<{
 /** Campos que entram na regra de conclusão — só eles disparam a auto-conclusão. */
 const COMPLETION_FACT_FIELDS: (keyof StepPatch)[] = [
   "estimated_date",
-  // Exigido em parte das etapas desde 26/10/2026 (RESPONSIBLE_REQUIRED_STEPS).
+  // Exigido em toda etapa desde 26/10/2026 (PLAN_REQUIRED_FROM).
   "responsible_id",
   "consolidation_point_id",
   "city_id",
