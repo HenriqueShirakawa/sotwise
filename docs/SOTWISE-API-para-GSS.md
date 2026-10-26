@@ -290,7 +290,7 @@ A resposta é **sempre uma lista**, mesmo filtrando por uma order só — assim 
 |---|---|---|---|
 | `gss_id` | id do pedido no GSS | — | Ler **uma** order específica (a chave que o GSS já usa no POST) |
 | `po_number` | número da PO | — | Ler uma order pelo número |
-| `status` | `in_negotiation`, `in_production`, `partially_preloading`, `pre_loading`, `partially_shipped`, `shipped`, `partially_delivered`, `delivered`, `canceled` | — | Filtrar pela fase |
+| `status` | `in_negotiation`, `in_production`, `pre_loading`, `partially_shipped`, `shipped`, `partially_delivered`, `delivered`, `canceled` | — | Filtrar pela fase |
 | `is_active` | `true` \| `false` | — (vêm as duas) | Filtrar pela marca (§0.1) |
 | `updated_since` | ISO 8601 com fuso (`2026-09-01T00:00:00Z`) | — | Só o que mudou desde então (sincronização incremental) |
 | `order` | `asc` \| `desc` (por `updated_at`) | `desc` | `asc` para varrer em ordem cronológica |
