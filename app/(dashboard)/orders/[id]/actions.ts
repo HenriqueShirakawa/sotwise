@@ -11,6 +11,7 @@ import {
 } from "@/lib/checklist-completion";
 import {
   completeEtdIfFilled,
+  recheckPlanStep,
   setBalanceDate,
   setFactoryPlacedDate,
   setDepositDate,
@@ -180,6 +181,12 @@ export async function updateChecklistStep(
     changes: diffStepFields(current, update),
     userId: session.userId,
   });
+
+  // ETD / Balance Payment exigem Estimated date + Responsible (26/10/2026): o
+  // que faltava pode ter chegado agora (fecha) ou ter sido apagado (reabre).
+  if ("estimated_date" in patch || "responsible_id" in patch) {
+    await recheckPlanStep(admin, orderId, current.step, session.userId);
+  }
 
   // Deposit Payment desligado no toggle: vale como resolvido (docs §3.7.2). A
   // conclusão agora vem do "Deposit date" (saveDepositDate), não deste save.

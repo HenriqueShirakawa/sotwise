@@ -1,6 +1,6 @@
 import "server-only";
 
-import { allBatchesInPreLoading } from "@/lib/checklist-completion";
+import { allBatchesInPreLoading, PLAN_REQUIRED_STEPS } from "@/lib/checklist-completion";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -46,12 +46,21 @@ const GSS_REASON = "Updated by GSS";
 
 type Who = { source: ChecklistRevisionSource; userId: string | null; reason?: string | null };
 
-type StepRow = { id: string; step: ChecklistStep; completed_on: string | null };
+type StepRow = {
+  id: string;
+  step: ChecklistStep;
+  completed_on: string | null;
+  estimated_date: string | null;
+  responsible_id: string | null;
+};
+
+/** O mínimo que concluir/reabrir precisa. */
+type TriggerStep = Pick<StepRow, "id" | "step" | "completed_on">;
 
 async function readStep(admin: Admin, orderId: string, step: ChecklistStep): Promise<StepRow | null> {
   const { data, error } = await admin
     .from("order_checklist_steps")
-    .select("id, step, completed_on")
+    .select("id, step, completed_on, estimated_date, responsible_id")
     .eq("order_id", orderId)
     .eq("step", step)
     .maybeSingle();
@@ -66,7 +75,7 @@ async function readStep(admin: Admin, orderId: string, step: ChecklistStep): Pro
  */
 async function completeByTrigger(
   admin: Admin,
-  step: StepRow,
+  step: TriggerStep,
   completedOn: string,
   userId: string | null
 ): Promise<void> {
@@ -85,8 +94,16 @@ async function completeByTrigger(
   });
 }
 
+/**
+ * ETD e Balance Payment só fecham com Estimated date + Responsible (26/10/2026,
+ * PLAN_REQUIRED_STEPS). As outras etapas não dependem disso.
+ */
+function hasPlan(step: StepRow): boolean {
+  return !PLAN_REQUIRED_STEPS.has(step.step) || (!!step.estimated_date && !!step.responsible_id);
+}
+
 /** Apaga o Completed on (e o Signed by) quando o gatilho deixou de valer. */
-async function reopenByTrigger(admin: Admin, step: StepRow, userId: string | null): Promise<void> {
+async function reopenByTrigger(admin: Admin, step: TriggerStep, userId: string | null): Promise<void> {
   const { error } = await admin
     .from("order_checklist_steps")
     .update({ completed_on: null, done: false, signed_by_id: null })
@@ -275,7 +292,10 @@ async function setPaymentDate(
   });
 
   // Completed on = o MOMENTO da última gravação (não a data do pagamento).
-  await completeByTrigger(admin, step, todayIso(), who.userId);
+  // Balance sem Estimated date/Responsible: a data fica gravada, a etapa não
+  // fecha (fecha quando os dois forem preenchidos — recheckPlanStep).
+  if (hasPlan(step)) await completeByTrigger(admin, step, todayIso(), who.userId);
+  else if (step.completed_on) await reopenByTrigger(admin, step, who.userId);
   return null;
 }
 
@@ -633,10 +653,52 @@ export async function completeEtdIfFilled(
     if (etdError) throw new Error(etdError.message);
     if ((etds ?? []).length < ids.length) return;
 
+    // Sem Estimated date/Responsible não fecha (26/10/2026) — fecha quando os
+    // dois forem preenchidos (recheckPlanStep).
+    if (!hasPlan(step)) {
+      if (step.completed_on) await reopenByTrigger(admin, step, userId);
+      return;
+    }
     await completeByTrigger(admin, step, todayIso(), userId);
   } catch (err) {
     console.error("[checklist-revisions] etd", err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * ETD / Balance Payment depois de mexerem no Estimated date ou no Responsible
+ * (26/10/2026): faltou um dos dois → etapa concluída reabre; os dois preenchidos
+ * e o gatilho já cumprido (Initial date em tudo / Balance date gravado) → fecha
+ * com Completed on = hoje. Etapa já concluída que segue valendo fica como está —
+ * trocar previsão ou responsável não é atualização do dado.
+ */
+export async function recheckPlanStep(
+  admin: Admin,
+  orderId: string,
+  stepKey: ChecklistStep,
+  userId: string | null
+): Promise<void> {
+  if (!PLAN_REQUIRED_STEPS.has(stepKey)) return;
+  const step = await readStep(admin, orderId, stepKey);
+  if (!step) return;
+
+  if (!hasPlan(step)) {
+    if (step.completed_on) await reopenByTrigger(admin, step, userId);
+    return;
+  }
+  if (step.completed_on) return;
+
+  if (stepKey === "etd") {
+    await completeEtdIfFilled(admin, orderId, userId);
+    return;
+  }
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("balance_date")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (order?.balance_date) await completeByTrigger(admin, step, todayIso(), userId);
 }
 
 // ── PI ───────────────────────────────────────────────────────────────────────

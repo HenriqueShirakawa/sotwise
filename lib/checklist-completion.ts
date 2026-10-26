@@ -49,6 +49,11 @@ export type ChecklistFacts = {
   etdInitialFilled?: boolean;
   /** Pre-Loading: todos os lotes (fora cancelados) em Pre-Loading ou adiante. */
   batchesInPreLoading?: boolean;
+  /**
+   * Estimated date da etapa — exigida em PLAN_REQUIRED_STEPS (26/10/2026). Como
+   * o `responsibleId`: `undefined` (não carregado) não julga; só `null` falta.
+   */
+  estimatedDate?: string | null;
 
   // ── fase Pre-loading ──────────────────────────────────────────────────────
   /**
@@ -129,6 +134,16 @@ export const RESPONSIBLE_REQUIRED_STEPS: ReadonlySet<ChecklistStep> = new Set<Ch
 ]);
 export const RESPONSIBLE_REQUIRED_FROM = "2026-10-26";
 
+/**
+ * Etapas da Order que só fecham com Estimated date + Responsible, além do
+ * próprio gatilho (decisão do usuário, 26/10/2026): ETD (Initial date em todas
+ * as entradas) e Balance Payment (Balance date). Mesma exceção de data acima.
+ */
+export const PLAN_REQUIRED_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
+  "etd",
+  "balance_payment",
+]);
+
 /** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
 export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
   (p?.total ?? 0) > 1;
@@ -138,12 +153,14 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const missing: string[] = [];
   const noDocs = (f.attachments ?? 0) === 0;
 
-  if (
-    RESPONSIBLE_REQUIRED_STEPS.has(step) &&
-    f.responsibleId === null &&
-    !concludedBefore(f, RESPONSIBLE_REQUIRED_FROM)
-  ) {
-    missing.push("a responsible");
+  if (!concludedBefore(f, RESPONSIBLE_REQUIRED_FROM)) {
+    if (PLAN_REQUIRED_STEPS.has(step) && f.estimatedDate === null) missing.push("an estimated date");
+    if (
+      (RESPONSIBLE_REQUIRED_STEPS.has(step) || PLAN_REQUIRED_STEPS.has(step)) &&
+      f.responsibleId === null
+    ) {
+      missing.push("a responsible");
+    }
   }
 
   switch (step) {
