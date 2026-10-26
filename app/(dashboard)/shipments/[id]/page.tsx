@@ -21,6 +21,7 @@ import {
   type Ref,
   type ShipmentBatchRow,
   type ShipmentStepRow,
+  type StepDetailField,
   type StepAttachment,
 } from "./shipment-detail-client";
 import type { PartRow } from "./view-parts-modal";
@@ -379,35 +380,41 @@ export default async function ShipmentDetailPage({
     attachmentsByStepId.set(a.pre_loading_step_id, arr);
   }
 
-  /** Valor específico da etapa, já resolvido em texto (só as herdadas do PL). */
-  function detailOf(s: StepRow): string | null {
+  /**
+   * Campos específicos da etapa, já resolvidos em texto (só as herdadas do PL).
+   * Um campo por rótulo — a tela mostra em grade, igual Estimated / Responsible
+   * (26/10/2026: o Agents numa linha só "Carrier: … · Brazil: … · (…)" era
+   * ilegível).
+   */
+  function detailOf(s: StepRow): StepDetailField[] | null {
+    const one = (label: string, value: string | null) => (value ? [{ label, value }] : null);
+    const name = (map: Map<string, string>, id: string | null) => (id ? (map.get(id) ?? "—") : null);
     switch (s.step) {
       case "consolidation_point":
-        return s.consolidation_point_id
-          ? (factoryNameById.get(s.consolidation_point_id) ?? null)
-          : null;
+        return one("Consolidation point", name(factoryNameById, s.consolidation_point_id));
       case "city":
-        return s.city_id ? (cityNameById.get(s.city_id) ?? null) : null;
+        return one("City", name(cityNameById, s.city_id));
       case "port_of_loading":
-        return s.pol_id ? (polNameById.get(s.pol_id) ?? null) : null;
+        return one("Port of loading", name(polNameById, s.pol_id));
       // Um Booking number só por PL (26/10/2026).
       case "booking":
-        return s.booking_number || null;
+        return one("Booking number", s.booking_number || null);
       // A data real do carregamento, informada no popup do Confirm Shipping
       // (o Completed on da etapa é o dia da confirmação).
       case "loading_date":
-        return s.event_date ? formatDateNumeric(s.event_date) : null;
+        return one("Loading date", s.event_date ? formatDateNumeric(s.event_date) : null);
       case "agents": {
-        const parts = [
-          s.carrier_id && `Carrier: ${carrierNameById.get(s.carrier_id) ?? "—"}`,
-          s.agent_brazil_id && `Brazil: ${agentNameById.get(s.agent_brazil_id) ?? "—"}`,
-          s.contact_brazil_id && `(${contactNameById.get(s.contact_brazil_id) ?? "—"})`,
-          s.agent_china_id && `China: ${agentNameById.get(s.agent_china_id) ?? "—"}`,
-          s.contact_china_id && `(${contactNameById.get(s.contact_china_id) ?? "—"})`,
+        if (!s.carrier_id && !s.agent_brazil_id && !s.agent_china_id && !s.notes?.trim()) return null;
+        // Os dois pares agente + contato numa linha (grade de 4), Carrier abaixo.
+        return [
+          { label: "Agent Brazil", value: name(agentNameById, s.agent_brazil_id) },
+          { label: "Contact Brazil", value: name(contactNameById, s.contact_brazil_id) },
+          { label: "Agent China", value: name(agentNameById, s.agent_china_id) },
+          { label: "Contact China", value: name(contactNameById, s.contact_china_id) },
+          { label: "Carrier", value: name(carrierNameById, s.carrier_id) },
           // "Additional infos" da etapa (coluna `notes` do checklist do PL).
-          s.notes?.trim() && s.notes.trim(),
-        ].filter(Boolean);
-        return parts.length ? parts.join(" · ") : null;
+          ...(s.notes?.trim() ? [{ label: "Additional infos", value: s.notes.trim(), wide: true }] : []),
+        ];
       }
       default:
         return null;
