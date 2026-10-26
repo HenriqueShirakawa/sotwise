@@ -20,6 +20,7 @@ import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checkl
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
 import { promoteBatchesToProduction } from "@/lib/deposit-production";
 import { fetchAll } from "@/lib/fetch-all";
+import { formatDateNumeric } from "@/lib/format";
 import { syncOrderStatus } from "@/lib/order-status";
 import { broadcastEtdPing } from "@/lib/etd-realtime";
 import { ETD_SAVED_COLUMNS, writeEtdHistory, type EtdHistorySnapshot } from "@/lib/etd-history";
@@ -469,6 +470,66 @@ const ETD_AUDITED_PATCH_FIELDS = [
   "dispatch_date",
 ] as const satisfies readonly EtdHistorySnapshot["field"][];
 
+type EtdLogValues = {
+  initial_date?: string | null;
+  current_date?: string | null;
+  ready?: boolean | null;
+  inspection?: boolean | null;
+  dispatch_date?: string | null;
+};
+
+const ETD_STEP_LOG_FIELDS = ["initial_date", "current_date", "ready", "inspection", "dispatch_date"] as const;
+
+/**
+ * Mudanças numa linha do ETD também entram no History da etapa ETD (QA do card
+ * "Ajustes Data e Logs", 26/10/2026: marcar Ready / preencher Initial date não
+ * apareciam lá — só no histórico próprio do ETD). Uma entrada por save, cada
+ * campo como "Fábrica · Categoria: valor".
+ */
+async function logEtdOnStep(
+  admin: ReturnType<typeof createAdminClient>,
+  orderId: string,
+  ofcId: string,
+  before: EtdLogValues | null,
+  after: EtdLogValues,
+  userId: string,
+  reason?: string
+): Promise<void> {
+  const fields = ETD_STEP_LOG_FIELDS.filter(
+    (f) => after[f] !== undefined && (after[f] ?? null) !== (before?.[f] ?? null)
+  );
+  if (!fields.length) return;
+
+  const [{ data: step }, { data: line }] = await Promise.all([
+    admin.from("order_checklist_steps").select("id").eq("order_id", orderId).eq("step", "etd").maybeSingle(),
+    admin
+      .from("order_factory_category")
+      .select("factories(name), categories(name)")
+      .eq("id", ofcId)
+      .maybeSingle()
+      .returns<{ factories: { name: string } | null; categories: { name: string } | null }>(),
+  ]);
+  if (!step) return;
+
+  const label = [line?.factories?.name, line?.categories?.name].filter(Boolean).join(" · ") || "Entry";
+  const show = (v: string | boolean | null | undefined) =>
+    v === null || v === undefined || v === ""
+      ? null
+      : `${label}: ${typeof v === "boolean" ? (v ? "Yes" : "No") : formatDateNumeric(v)}`;
+
+  const changes: Record<string, unknown> = {};
+  for (const f of fields) changes[`etd_${f}`] = { from: show(before?.[f]), to: show(after[f]) };
+  if (reason) changes.reason = reason;
+
+  await writeStepLog(admin, {
+    owner: { checklistStepId: step.id },
+    step: "etd",
+    action: "update",
+    changes,
+    userId,
+  });
+}
+
 /**
  * Upsert dos dados de ETD de UMA entrada Factory x Category (linha da etapa
  * ETD). `current_date`/`ready_date` são preenchidos automaticamente na
@@ -496,7 +557,7 @@ export async function upsertEtdInfo(
 
   const { data: existing } = await admin
     .from("etd_info")
-    .select("current_date, ready, ready_date, inspection")
+    .select("initial_date, current_date, ready, ready_date, inspection, dispatch_date")
     .eq("order_factory_category_id", ofcId)
     .maybeSingle();
 
@@ -532,6 +593,7 @@ export async function upsertEtdInfo(
   const changed = ETD_AUDITED_PATCH_FIELDS.filter((f) => patch[f] !== undefined);
   const historyError = await writeEtdHistory(admin, saved, changed, "row", session.userId);
   if (historyError) return { ok: false, error: historyError };
+  await logEtdOnStep(admin, orderId, ofcId, existing, { ...patch, current_date: update.current_date }, session.userId);
 
   // A última Initial Date do pedido conclui a etapa ETD.
   if (patch.initial_date) {
@@ -608,7 +670,7 @@ export async function updateEtdInfoWithReason(
   const { data: existing } = await admin
     .from("etd_info")
     .select(
-      "id, inspection, ready, ready_date, current_date, dispatch_location_id, dispatch_date"
+      "id, inspection, ready, ready_date, initial_date, current_date, dispatch_location_id, dispatch_date"
     )
     .eq("order_factory_category_id", ofcId)
     .maybeSingle();
@@ -631,6 +693,7 @@ export async function updateEtdInfoWithReason(
 
   const historyError = await writeEtdHistory(admin, saved, [field], "modal", session.userId);
   if (historyError) return { ok: false, error: historyError };
+  await logEtdOnStep(admin, orderId, ofcId, existing, { [field]: value } as EtdLogValues, session.userId, remarks.trim());
 
   if (field === "initial_date" && value) {
     await completeEtdIfFilled(admin, orderId, session.userId);
