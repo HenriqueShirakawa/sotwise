@@ -7,6 +7,7 @@ import { fetchAll } from "@/lib/fetch-all";
 import { isUuid } from "@/lib/slugs";
 import { readViewPrefs } from "@/lib/view-prefs";
 import { displayBu } from "@/lib/format";
+import { LiveRefresh } from "@/components/live-refresh";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, LoadingStatus } from "@/types/database";
 
@@ -278,43 +279,46 @@ export default async function OrderDetailPage({
   }
 
   return (
-    <OrderDetailClient
-      orderId={order.id}
-      order={{
-        po_number: order.po_number,
-        bu: buRes.data?.name ? displayBu(buRes.data.name) : null,
-        type: typeRes.data?.name ?? null,
-        client: clientRes.data?.name ?? null,
-        client_reference: order.client_reference,
-        requester: requesterName,
-        leader: leaderName,
-        operational_responsible: operationalResponsibleName,
-        exporter: exporterRes.data ? exporterRes.data.acronym || exporterRes.data.name : null,
-        date_po: order.date_po,
-        order_received_date: order.order_received_date,
-        pi_status: order.pi_status,
-        pi_status_date: order.pi_status_date,
-        deposit_date: order.deposit_date,
-        balance_date: order.balance_date,
-        status: order.status,
-        schedule_requested: order.schedule_requested,
-      }}
-      batches={(batchesRes.data ?? []).map((b) => ({
-        id: b.id,
-        batch_number: b.batch_number,
-        status: b.status,
-        split_from_batch_id: b.split_from_batch_id,
-        pl: plByBatch.get(b.id) ?? null,
-      }))}
-      ofc={ofc}
-      etdByOfc={etdByOfc}
-      loadedByBatch={loadedByBatch}
-      factories={factoriesRes.map((f) => ({ id: f.id, name: f.name }))}
-      profiles={profiles}
-      steps={steps}
-      viewPrefs={readViewPrefs(profile.ui_preferences)}
-      currentUserId={userId}
-      placedDates={placedDates}
-    />
+    <>
+      <LiveRefresh />
+      <OrderDetailClient
+        orderId={order.id}
+        order={{
+          po_number: order.po_number,
+          bu: buRes.data?.name ? displayBu(buRes.data.name) : null,
+          type: typeRes.data?.name ?? null,
+          client: clientRes.data?.name ?? null,
+          client_reference: order.client_reference,
+          requester: requesterName,
+          leader: leaderName,
+          operational_responsible: operationalResponsibleName,
+          exporter: exporterRes.data ? exporterRes.data.acronym || exporterRes.data.name : null,
+          date_po: order.date_po,
+          order_received_date: order.order_received_date,
+          pi_status: order.pi_status,
+          pi_status_date: order.pi_status_date,
+          deposit_date: order.deposit_date,
+          balance_date: order.balance_date,
+          status: order.status,
+          schedule_requested: order.schedule_requested,
+        }}
+        batches={(batchesRes.data ?? []).map((b) => ({
+          id: b.id,
+          batch_number: b.batch_number,
+          status: b.status,
+          split_from_batch_id: b.split_from_batch_id,
+          pl: plByBatch.get(b.id) ?? null,
+        }))}
+        ofc={ofc}
+        etdByOfc={etdByOfc}
+        loadedByBatch={loadedByBatch}
+        factories={factoriesRes.map((f) => ({ id: f.id, name: f.name }))}
+        profiles={profiles}
+        steps={steps}
+        viewPrefs={readViewPrefs(profile.ui_preferences)}
+        currentUserId={userId}
+        placedDates={placedDates}
+      />
+    </>
   );
 }

@@ -109,13 +109,16 @@ export async function syncOrderStatus(
   // reabre (23/10/2026). Só reabre — concluir é com o lote entrando num PL.
   await syncOrderPreLoadingStep(admin, ids, actorId, { reopenOnly: true });
 
-  // Realtime: avisa quem está com a lista Orders aberta que o Status PO mudou,
-  // pra refletir na hora (mesmo com a tela parada). Ping só de ids — o valor
-  // novo vem do refetch. Awaited porque em serverless um fetch não-awaited pode
-  // ser descartado antes de sair; o helper engole o erro, então não derruba a
-  // ação. Mesmo padrão do broadcast das mensagens.
+  // Realtime: avisa quem está com a lista Orders (ou a tela de uma Order —
+  // components/live-refresh) aberta, pra refletir na hora mesmo com a tela
+  // parada. Ping só de ids — o valor novo vem do refetch. Vai para TODAS as
+  // Orders recalculadas, não só as que mudaram de status (26/10/2026): a troca
+  // de status de um LOTE (ex.: .02 Pre-Loading → In Transit numa Order que segue
+  // Partially Delivered) também tem que aparecer. Awaited porque em serverless
+  // um fetch não-awaited pode ser descartado antes de sair; o helper engole o
+  // erro, então não derruba a ação. Mesmo padrão do broadcast das mensagens.
+  await broadcastOrderStatusPing({ order_ids: ids });
   if (changedIds.length > 0) {
-    await broadcastOrderStatusPing({ order_ids: changedIds });
     // Webhook ao GSS (26/10/2026): toda troca de status da Order vai pra lá.
     sendOrderStatusToGss(changedIds);
   }
