@@ -167,8 +167,9 @@ export async function savePreLoadingStep(
   if (!("completed_on" in patch) && touchesCompletionFacts(patch)) {
     await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
       refresh: touchesStepData(patch),
-      // Responsible tirado de etapa concluída: reabre (sem regravar a data).
-      recheck: "responsible_id" in patch,
+      // Responsible / Estimated date tirados de etapa concluída: reabre (sem
+      // regravar a data) — 26/10/2026, toda etapa exige os dois.
+      recheck: "responsible_id" in patch || "estimated_date" in patch,
     });
   }
 

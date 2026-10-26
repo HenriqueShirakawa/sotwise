@@ -1,6 +1,6 @@
 import "server-only";
 
-import { allBatchesInPreLoading, PLAN_REQUIRED_STEPS } from "@/lib/checklist-completion";
+import { allBatchesInPreLoading, hasStepPlan } from "@/lib/checklist-completion";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -72,13 +72,21 @@ async function readStep(admin: Admin, orderId: string, step: ChecklistStep): Pro
  * Grava o Completed on pelo gatilho — a cada atualização do dado da etapa, não
  * só na 1ª (22/10/2026: Completed on = a última atualização). Signed by = quem
  * fez (null quando veio do GSS).
+ *
+ * Sem Estimated date + Responsible a etapa não fecha (26/10/2026, vale para
+ * todas): o dado do gatilho fica gravado e ela fecha quando os dois forem
+ * preenchidos (recheckPlanStep); se já estava concluída, reabre.
  */
 async function completeByTrigger(
   admin: Admin,
-  step: TriggerStep,
+  step: StepRow,
   completedOn: string,
   userId: string | null
 ): Promise<void> {
+  if (!hasStepPlan(step)) {
+    if (step.completed_on) await reopenByTrigger(admin, step, userId);
+    return;
+  }
   const { error } = await admin
     .from("order_checklist_steps")
     .update({ completed_on: completedOn, done: true, signed_by_id: userId })
@@ -92,14 +100,6 @@ async function completeByTrigger(
     changes: { completed_on: { from: step.completed_on, to: completedOn } },
     userId,
   });
-}
-
-/**
- * ETD e Balance Payment só fecham com Estimated date + Responsible (26/10/2026,
- * PLAN_REQUIRED_STEPS). As outras etapas não dependem disso.
- */
-function hasPlan(step: StepRow): boolean {
-  return !PLAN_REQUIRED_STEPS.has(step.step) || (!!step.estimated_date && !!step.responsible_id);
 }
 
 /** Apaga o Completed on (e o Signed by) quando o gatilho deixou de valer. */
@@ -292,10 +292,7 @@ async function setPaymentDate(
   });
 
   // Completed on = o MOMENTO da última gravação (não a data do pagamento).
-  // Balance sem Estimated date/Responsible: a data fica gravada, a etapa não
-  // fecha (fecha quando os dois forem preenchidos — recheckPlanStep).
-  if (hasPlan(step)) await completeByTrigger(admin, step, todayIso(), who.userId);
-  else if (step.completed_on) await reopenByTrigger(admin, step, who.userId);
+  await completeByTrigger(admin, step, todayIso(), who.userId);
   return null;
 }
 
@@ -604,7 +601,7 @@ export async function syncOrderPreLoadingStep(
 
     const { data: steps, error: stepsError } = await admin
       .from("order_checklist_steps")
-      .select("id, step, completed_on, order_id")
+      .select("id, step, completed_on, estimated_date, responsible_id, order_id")
       .eq("step", "pre_loading")
       .in("order_id", targets);
     if (stepsError) throw new Error(stepsError.message);
@@ -653,12 +650,6 @@ export async function completeEtdIfFilled(
     if (etdError) throw new Error(etdError.message);
     if ((etds ?? []).length < ids.length) return;
 
-    // Sem Estimated date/Responsible não fecha (26/10/2026) — fecha quando os
-    // dois forem preenchidos (recheckPlanStep).
-    if (!hasPlan(step)) {
-      if (step.completed_on) await reopenByTrigger(admin, step, userId);
-      return;
-    }
     await completeByTrigger(admin, step, todayIso(), userId);
   } catch (err) {
     console.error("[checklist-revisions] etd", err instanceof Error ? err.message : err);
@@ -666,11 +657,12 @@ export async function completeEtdIfFilled(
 }
 
 /**
- * ETD / Balance Payment depois de mexerem no Estimated date ou no Responsible
- * (26/10/2026): faltou um dos dois → etapa concluída reabre; os dois preenchidos
- * e o gatilho já cumprido (Initial date em tudo / Balance date gravado) → fecha
- * com Completed on = hoje. Etapa já concluída que segue valendo fica como está —
- * trocar previsão ou responsável não é atualização do dado.
+ * Etapa da Order depois de mexerem no Estimated date ou no Responsible
+ * (26/10/2026, vale para todas): faltou um dos dois → etapa concluída reabre; os
+ * dois preenchidos e o gatilho já cumprido → fecha com Completed on = hoje.
+ * Etapa já concluída que segue valendo fica como está — trocar previsão ou
+ * responsável não é atualização do dado. Etapa de Completed on manual
+ * (Condition Confirm) só reabre; concluir segue sendo à mão.
  */
 export async function recheckPlanStep(
   admin: Admin,
@@ -678,27 +670,81 @@ export async function recheckPlanStep(
   stepKey: ChecklistStep,
   userId: string | null
 ): Promise<void> {
-  if (!PLAN_REQUIRED_STEPS.has(stepKey)) return;
   const step = await readStep(admin, orderId, stepKey);
   if (!step) return;
 
-  if (!hasPlan(step)) {
+  if (!hasStepPlan(step)) {
     if (step.completed_on) await reopenByTrigger(admin, step, userId);
     return;
   }
   if (step.completed_on) return;
 
-  if (stepKey === "etd") {
-    await completeEtdIfFilled(admin, orderId, userId);
-    return;
+  if (await triggerFulfilled(admin, orderId, stepKey)) {
+    await completeByTrigger(admin, step, todayIso(), userId);
   }
-  const { data: order, error } = await admin
-    .from("orders")
-    .select("balance_date")
-    .eq("id", orderId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (order?.balance_date) await completeByTrigger(admin, step, todayIso(), userId);
+}
+
+/** O gatilho da etapa já foi cumprido (o dado que conclui está lá)? */
+async function triggerFulfilled(admin: Admin, orderId: string, step: ChecklistStep): Promise<boolean> {
+  switch (step) {
+    case "order":
+    case "pi":
+    case "deposit_payment":
+    case "balance_payment": {
+      const { data, error } = await admin
+        .from("orders")
+        .select("order_received_date, pi_status, deposit_date, balance_date")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return false;
+      if (step === "order") return !!data.order_received_date;
+      if (step === "pi") return data.pi_status === true;
+      if (step === "deposit_payment") return !!data.deposit_date;
+      return !!data.balance_date;
+    }
+    case "po":
+    case "place_the_order":
+    case "etd": {
+      const { data: lines, error } = await admin
+        .from("order_factory_category")
+        .select("id, factory_id")
+        .eq("order_id", orderId)
+        .eq("is_active", true);
+      if (error) throw new Error(error.message);
+      const active = lines ?? [];
+      if (active.length === 0) return false;
+      if (step === "po") return true;
+      if (step === "place_the_order") {
+        const { data: dated, error: dError } = await admin
+          .from("order_factory_placed_dates")
+          .select("factory_id")
+          .eq("order_id", orderId);
+        if (dError) throw new Error(dError.message);
+        const datedIds = new Set((dated ?? []).map((d) => d.factory_id));
+        return active.every((l) => datedIds.has(l.factory_id));
+      }
+      const { data: etds, error: eError } = await admin
+        .from("etd_info")
+        .select("order_factory_category_id")
+        .in("order_factory_category_id", active.map((l) => l.id))
+        .not("initial_date", "is", null);
+      if (eError) throw new Error(eError.message);
+      return (etds ?? []).length >= active.length;
+    }
+    case "pre_loading": {
+      const { data: batches, error } = await admin
+        .from("batches")
+        .select("status")
+        .eq("order_id", orderId)
+        .neq("status", "canceled");
+      if (error) throw new Error(error.message);
+      return allBatchesInPreLoading((batches ?? []).map((b) => b.status));
+    }
+    default:
+      // Completed on digitado (Condition Confirm e as ocultas): não fecha sozinha.
+      return false;
+  }
 }
 
 // ── PI ───────────────────────────────────────────────────────────────────────
