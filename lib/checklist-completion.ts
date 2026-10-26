@@ -78,9 +78,10 @@ export type ChecklistFacts = {
   containerCutoff?: string | null;
   docCutoff?: string | null;
   /**
-   * PL com 2+ clientes (21/10/2026): Shipping Docs e Booking passam a ser por
-   * cliente — a etapa só fecha quando TODOS têm documento / Booking number.
-   * Ausente (ou 1 cliente) = regra de sempre, um documento / um booking no PL.
+   * PL com 2+ clientes (21/10/2026): as etapas com documento (e o Delivered)
+   * passam a ser por cliente — a etapa só fecha quando TODOS têm. Ausente (ou 1
+   * cliente) = regra de sempre, um documento no PL. O Booking number é ÚNICO
+   * por PL (26/10/2026).
    */
   perClient?: PlPerClient;
 
@@ -97,7 +98,6 @@ export type PlPerClient = {
   total: number;
   /** Shipping Docs: clientes com documento. */
   withDoc: number;
-  withBooking: number;
   /** BL: clientes com documento (22/10/2026). */
   withBlDoc?: number;
   /** Original Docs: clientes com documento + Tracking number ou Telex release. */
@@ -200,12 +200,9 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
         missing.push("a contact China");
       break;
     case "booking":
-      // Vários clientes: um Booking number POR cliente (21/10/2026).
-      if (isPerClient(f.perClient)) {
-        const { total, withBooking } = f.perClient;
-        if (withBooking < total)
-          missing.push(`a booking number for every client (${withBooking}/${total})`);
-      } else if (!f.bookingNumber?.trim()) missing.push("the booking number");
+      // UM Booking number por PL, qualquer que seja o nº de clientes (26/10/2026 —
+      // o "um por cliente" de 21/10 foi desfeito a pedido do usuário).
+      if (!f.bookingNumber?.trim()) missing.push("the booking number");
       // Os cut-offs entraram em 22/10/2026: Booking concluído antes disso segue
       // concluído (é julgado pela regra da data dele).
       if (!concludedBefore(f, BOOKING_CUTOFFS_REQUIRED_FROM)) {
@@ -430,7 +427,7 @@ export type PlStepFields = {
  * tela que não carregou contatos nunca deixa a etapa laranja por engano.
  *
  * `perClient` (lib/pl-clients, `loadPlPerClient`) liga a regra por cliente de
- * Shipping Docs e Booking no PL com 2+ clientes; sem ele vale a do PL todo.
+ * Shipping Docs, BL, Original Docs e Delivered no PL com 2+ clientes; sem ele vale a do PL todo.
  */
 export function plStepFacts(
   s: PlStepFields,
