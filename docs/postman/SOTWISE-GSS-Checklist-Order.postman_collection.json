@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SOTWISE — GSS Checklist da Order (etapas order / pi / po)",
-    "description": "Testa o endpoint que o GSS usa para atualizar as etapas do checklist da Order no SOTWISE:\n\n- `GET /api/orders/{id}/steps/{step}` — estado da etapa + revisões\n- `PATCH /api/orders/{id}/steps/{step}` — o dado que conclui a etapa\n\n`{id}` = UUID ou `po_number`. `{step}` = `order` (order_received_date) | `pi` (pi_status boolean: true = PI emitida, conclui; false = só grava + pi_status_date) | `po` (items[] de Factory × Category). `reason` opcional (motivo da revisão; sem ele grava \"Updated by GSS\"). Datas em Unix (segundos) — ou, legado, `YYYY-MM-DD`.\n\nRegras (as mesmas da tela): o 1º dado conclui a etapa, os seguintes viram revisão (o original nunca se perde); o `completed_on` é sempre o dia da ÚLTIMA atualização (na PI, a data do status) e não se grava direto; valor idêntico não grava nada; campo de outra etapa → 400.\n\n**Como rodar:** environment **\"SOTWISE — GSS (prod)\"** (`base_url` + `api_token`). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-…`) e o último a apaga — nenhuma order real é tocada. O passo do PO usa `supplier_category_gss_id_1` do environment (se vazio, usa o default da collection).\n\nSwagger: `{{base_url}}/api/docs` → Orders → getOrderStep / patchOrderStep.",
+    "description": "Testa o endpoint que o GSS usa para atualizar as etapas do checklist da Order no SOTWISE:\n\n- `GET /api/orders/{id}/steps/{step}` — estado da etapa + revisões\n- `PATCH /api/orders/{id}/steps/{step}` — o dado que conclui a etapa\n\n`{id}` = UUID ou `po_number`. `{step}` = `order` (order_received_date) | `pi` (pi_status boolean: true = PI emitida, conclui; false = só grava + pi_status_date) | `po` (items[] de Factory × Category). `reason` opcional (motivo da revisão; sem ele grava \"Updated by GSS\"). Datas em Unix (segundos) — ou, legado, `YYYY-MM-DD`.\n\nRegras (as mesmas da tela): o 1º dado é o registro original e os seguintes viram revisão (o original nunca se perde); valor idêntico não grava nada; campo de outra etapa → 400. **Desde 26/10/2026 nenhuma etapa conclui sem Estimated date + Responsible** — a order criada aqui pela API nasce sem os dois, então o PATCH grava o dado e a etapa fica ABERTA (`completed_on` null). A conclusão depois que a equipe preenche os dois na tela está na collection `SOTWISE-GSS-Checklist-Estimated-Responsible`.\n\n**Como rodar:** environment **\"SOTWISE — GSS (prod)\"** (`base_url` + `api_token`). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-…`) e o último a apaga — nenhuma order real é tocada. O passo do PO usa `supplier_category_gss_id_1` do environment (se vazio, usa o default da collection).\n\nSwagger: `{{base_url}}/api/docs` → Orders → getOrderStep / patchOrderStep.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -128,7 +128,7 @@
       ]
     },
     {
-      "name": "2. PATCH order — 1º Order received date conclui a etapa — 200",
+      "name": "2. PATCH order — 1º Order received date gravado (aberta: falta Estimated date + Responsible) — 200",
       "request": {
         "method": "PATCH",
         "header": [
@@ -177,7 +177,8 @@
             "exec": [
               "pm.test('200', () => pm.response.to.have.status(200));",
               "const d = pm.response.json().data;",
-              "pm.test('concluída (completed_on preenchido)', () => pm.expect(d.completed_on).to.be.a('number'));",
+              "pm.test('aberta: done = false', () => pm.expect(d.done).to.eql(false));",
+              "pm.test('aberta: completed_on null (falta Estimated date + Responsible)', () => pm.expect(d.completed_on).to.eql(null));",
               "pm.test('order_received_date gravado', () => pm.expect(d.order_received_date).to.eql(Number(pm.collectionVariables.get('d_received_1'))));",
               "pm.test('1 registro (o original)', () => pm.expect(d.revisions).to.have.length(1));",
               "pm.test('fonte = gss', () => pm.expect(d.revisions[0].source).to.eql('gss'));"
@@ -391,7 +392,7 @@
       ]
     },
     {
-      "name": "7. PATCH pi — pi_status true (PI emitida) conclui a etapa — 200",
+      "name": "7. PATCH pi — pi_status true (PI emitida) gravado (aberta: falta Estimated date + Responsible) — 200",
       "request": {
         "method": "PATCH",
         "header": [
@@ -441,7 +442,9 @@
               "pm.test('200', () => pm.response.to.have.status(200));",
               "const d = pm.response.json().data;",
               "pm.test('pi_status gravado', () => pm.expect(d.pi_status).to.eql(true));",
-              "pm.test('completed_on = data do status', () => pm.expect(d.completed_on).to.eql(Number(pm.collectionVariables.get('d_pi'))));"
+              "pm.test('pi_status_date gravado', () => pm.expect(d.pi_status_date).to.eql(Number(pm.collectionVariables.get('d_pi'))));",
+              "pm.test('aberta: done = false', () => pm.expect(d.done).to.eql(false));",
+              "pm.test('aberta: completed_on null (falta Estimated date + Responsible)', () => pm.expect(d.completed_on).to.eql(null));"
             ]
           }
         }
@@ -494,7 +497,7 @@
       ]
     },
     {
-      "name": "8. PATCH po — leva de Factory × Category conclui a etapa — 200",
+      "name": "8. PATCH po — leva de Factory × Category gravada (aberta: falta Estimated date + Responsible) — 200",
       "request": {
         "method": "PATCH",
         "header": [
@@ -546,7 +549,8 @@
               "pm.test('200', () => pm.response.to.have.status(200));",
               "const d = pm.response.json().data;",
               "pm.test('1 linha de F×C', () => pm.expect(d.items).to.have.length(1));",
-              "pm.test('concluída', () => pm.expect(d.completed_on).to.be.a('number'));",
+              "pm.test('aberta: done = false', () => pm.expect(d.done).to.eql(false));",
+              "pm.test('aberta: completed_on null (falta Estimated date + Responsible)', () => pm.expect(d.completed_on).to.eql(null));",
               "pm.test('leva registrada (fxc)', () => pm.expect(d.revisions.map(r => r.kind)).to.include('fxc'));"
             ]
           }
