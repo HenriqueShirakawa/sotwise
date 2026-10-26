@@ -26,8 +26,8 @@ export type ClientOriginalDocs = { tracking_number: string | null; telex_release
  *  - Shipping Docs / BL / Original Docs: documentos do cliente
  *    (`step_attachments.client_id`). Documento antigo, sem cliente (de antes da
  *    regra, ou de quando o PL tinha 1 cliente só), vale para TODOS;
- *  - Booking: Booking number do cliente (`pre_loading_client_bookings`) — o da
- *    própria etapa, sem cliente, vale para todos;
+ *  - Booking: NÃO é por cliente — um Booking number único por PL (26/10/2026;
+ *    a tabela `pre_loading_client_bookings` de 21/10 ficou sem uso);
  *  - Original Docs: Tracking number / Telex release do cliente;
  *  - Delivered: Delivered date do cliente.
  */
@@ -37,10 +37,6 @@ export type PlClientState = {
   docClientIds: Record<ClientDocStep, Set<string>>;
   /** Por etapa: existe documento sem cliente (vale para todos). */
   hasGeneralDoc: Record<ClientDocStep, boolean>;
-  /** Booking number de cada cliente (`pre_loading_client_bookings`). */
-  bookings: Map<string, string>;
-  /** Booking number da própria etapa (sem cliente — vale para todos). */
-  generalBooking: string | null;
   /** Original Docs de cada cliente (`pre_loading_client_original_docs`). */
   originalDocs: Map<string, ClientOriginalDocs>;
   /** Delivered date de cada cliente (`pre_loading_client_delivered`). */
@@ -48,17 +44,13 @@ export type PlClientState = {
 };
 
 export async function loadPlClientState(admin: Admin, preLoadingId: string): Promise<PlClientState> {
-  const [pbRes, stepsRes, bookingsRes, originalRes, deliveredRes] = await Promise.all([
+  const [pbRes, stepsRes, originalRes, deliveredRes] = await Promise.all([
     admin.from("pre_loading_batches").select("batch_id").eq("pre_loading_id", preLoadingId),
     admin
       .from("pre_loading_checklist_steps")
-      .select("id, step, booking_number")
+      .select("id, step")
       .eq("pre_loading_id", preLoadingId)
-      .in("step", [...CLIENT_DOC_STEPS, "booking"]),
-    admin
-      .from("pre_loading_client_bookings")
-      .select("client_id, booking_number")
-      .eq("pre_loading_id", preLoadingId),
+      .in("step", [...CLIENT_DOC_STEPS]),
     admin
       .from("pre_loading_client_original_docs")
       .select("client_id, tracking_number, telex_release")
@@ -70,7 +62,6 @@ export async function loadPlClientState(admin: Admin, preLoadingId: string): Pro
   ]);
   if (pbRes.error) throw new Error(pbRes.error.message);
   if (stepsRes.error) throw new Error(stepsRes.error.message);
-  if (bookingsRes.error) throw new Error(bookingsRes.error.message);
   if (originalRes.error) throw new Error(originalRes.error.message);
   if (deliveredRes.error) throw new Error(deliveredRes.error.message);
 
@@ -103,7 +94,6 @@ export async function loadPlClientState(admin: Admin, preLoadingId: string): Pro
   }
 
   const stepRows = stepsRes.data ?? [];
-  const bookingStep = stepRows.find((s) => s.step === "booking");
 
   const docClientIds = Object.fromEntries(
     CLIENT_DOC_STEPS.map((s) => [s, new Set<string>()])
@@ -128,10 +118,6 @@ export async function loadPlClientState(admin: Admin, preLoadingId: string): Pro
     }
   }
 
-  const bookings = new Map<string, string>();
-  for (const b of bookingsRes.data ?? []) {
-    if (b.booking_number.trim()) bookings.set(b.client_id, b.booking_number);
-  }
   const originalDocs = new Map<string, ClientOriginalDocs>();
   for (const o of originalRes.data ?? []) {
     originalDocs.set(o.client_id, { tracking_number: o.tracking_number, telex_release: o.telex_release });
@@ -143,8 +129,6 @@ export async function loadPlClientState(admin: Admin, preLoadingId: string): Pro
     clients,
     docClientIds,
     hasGeneralDoc,
-    bookings,
-    generalBooking: bookingStep?.booking_number?.trim() || null,
     originalDocs,
     delivered,
   };
@@ -172,7 +156,6 @@ export function perClientOf(state: PlClientState): PlPerClient {
   return {
     total,
     withDoc: count((id) => clientHasDoc(state, "shipping_docs", id)),
-    withBooking: state.generalBooking ? total : count((id) => state.bookings.has(id)),
     withBlDoc: count((id) => clientHasDoc(state, "bl", id)),
     withOriginalDocs: count((id) => clientOriginalDocsDone(state, id)),
     withDelivered: count((id) => state.delivered.has(id)),
