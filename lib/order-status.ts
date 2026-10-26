@@ -1,5 +1,6 @@
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { syncOrderPreLoadingStep } from "@/lib/checklist-revisions";
+import { sendOrderStatusToGss } from "@/lib/gss/outbound/schedule";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { BatchStatus, OrderStatus } from "@/types/database";
@@ -12,7 +13,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  *
  *   todos in_negotiation                      -> in_negotiation
  *   todos in_production                       -> in_production
- *   algum preloading, nem todos               -> partially_preloading
+ *   algum preloading, nem todos               -> in_production
  *   todos preloading                          -> pre_loading
  *   algum in_transit, nem todos               -> partially_shipped
  *   todos in_transit                          -> shipped
@@ -44,13 +45,14 @@ export function rollupOrderStatus(
   if (all("in_transit")) return "shipped";
   if (some("in_transit")) return "partially_shipped";
   if (all("preloading")) return "pre_loading";
-  if (some("preloading")) return "partially_preloading";
-  // Neste ponto só restam lotes in_negotiation e/ou in_production (as fases
-  // seguintes já retornaram acima). Basta UM lote em produção para a Order não
-  // voltar a in_negotiation — regra do cliente: adicionar um lote novo (que
-  // nasce in_negotiation) não regride um pedido que já tem lote adiante. Só
-  // volta a in_negotiation quando TODOS os lotes ativos estão em in_negotiation.
-  if (some("in_production")) return "in_production";
+  // Sem "Partially Preloading" desde 26/10/2026 (o GSS não tem esse status):
+  // lote em pré-carga com outros ainda atrás conta como produção.
+  // Neste ponto só restam lotes in_negotiation, in_production e/ou preloading.
+  // Basta UM lote adiante da negociação para a Order não voltar a
+  // in_negotiation — regra do cliente: adicionar um lote novo (que nasce
+  // in_negotiation) não regride um pedido que já tem lote adiante. Só volta a
+  // in_negotiation quando TODOS os lotes ativos estão em in_negotiation.
+  if (some("in_production") || some("preloading")) return "in_production";
   return "in_negotiation";
 }
 
@@ -114,6 +116,8 @@ export async function syncOrderStatus(
   // ação. Mesmo padrão do broadcast das mensagens.
   if (changedIds.length > 0) {
     await broadcastOrderStatusPing({ order_ids: changedIds });
+    // Webhook ao GSS (26/10/2026): toda troca de status da Order vai pra lá.
+    sendOrderStatusToGss(changedIds);
   }
 
   /**

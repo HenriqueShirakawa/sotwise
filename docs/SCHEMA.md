@@ -37,7 +37,7 @@ com o banco externo (**GSS**) que passa a ser responsável pelas bibliotecas.
 | `company_type` | `BR`, `China` |
 | `user_status` | `active`, `blocked` |
 | `agent_location` | `brazil`, `china` |
-| `order_status` | `in_negotiation`, `in_production`, `partially_preloading`, `pre_loading`, `partially_shipped`, `shipped`, `partially_delivered`, `delivered`, `canceled` |
+| `order_status` | `in_negotiation`, `in_production`, `pre_loading`, `partially_shipped`, `shipped`, `partially_delivered`, `delivered`, `canceled` |
 | `batch_status` | `in_negotiation`, `in_production`, `preloading`, `in_transit`, `delivered`, `canceled` |
 | `loading_status` | `total`, `partial`, `none` |
 | `checklist_phase` | `order`, `preloading`, `shipment` — declarado, **não usado** por nenhuma coluna |
@@ -385,7 +385,7 @@ lotes e 1.389 pre-loadings. Portanto:
 | `role_permissions`, `role_step_denies` | Modeladas no MD, **nunca criadas** — o RBAC por feature (acima) usa `role_features`/`user_features` no lugar. |
 | `etd_factories_view`, `todo_list_view` | Previstas no MD, **não existem** — as telas montam a consulta na aplicação. |
 | `checklist_phase` | Enum criado, nenhuma coluna usa. |
-| `orders.status` | Prod tem 9 valores (ganhou `partially_preloading` e `pre_loading` na migration `20260805120000`); o `init_schema` tem 7. |
+| `orders.status` | 8 valores: ganhou `partially_preloading` e `pre_loading` na migration `20260805120000` e perdeu `partially_preloading` na `20261026120000` (o GSS não tem esse status); o `init_schema` tem 7. |
 | NOT NULLs relaxados para o import | `clients.country_id`, `order_types.color`/`icon_path`, `business_units.icon_path`, `order_factory_category.ship_requirement`, `pre_loadings.client_reference`/`pod_id`/`leader_id`. Podem voltar a NOT NULL numa limpeza. |
 | `deleted_at` em `orders`/`pre_loadings`/`shipments` | Resíduo do soft delete; exclusão hoje é hard. |
 | `shipments.status` | `text` com default, não enum. |

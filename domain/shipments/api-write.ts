@@ -8,6 +8,7 @@ import {
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
 } from "@/lib/checklist-completion";
+import { sendOrderStatusToGss } from "@/lib/gss/outbound/schedule";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { setPlStepEventDate } from "@/lib/pl-step-event-date";
@@ -249,7 +250,10 @@ async function afterShippingChange(changedOrderIds: string[]) {
   refreshViews();
   await broadcastShipmentPing();
   await broadcastPreLoadingPing();
-  if (changedOrderIds.length > 0) await broadcastOrderStatusPing({ order_ids: changedOrderIds });
+  if (changedOrderIds.length > 0) {
+    await broadcastOrderStatusPing({ order_ids: changedOrderIds });
+    sendOrderStatusToGss(changedOrderIds);
+  }
   await scheduleClientNotificationDispatch();
 }
 
