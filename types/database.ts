@@ -22,7 +22,6 @@ export type AgentLocation = "brazil" | "china";
 export type OrderStatus =
   | "in_negotiation"
   | "in_production"
-  | "partially_preloading"
   | "pre_loading"
   | "partially_shipped"
   | "shipped"

@@ -24,7 +24,7 @@ import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
+import { isGssShipmentStep, sendOrderStatusToGss, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import type { ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -476,6 +476,7 @@ export async function confirmShipping(
   await broadcastPreLoadingPing();
   if (result.changed_order_ids.length > 0) {
     await broadcastOrderStatusPing({ order_ids: result.changed_order_ids });
+    sendOrderStatusToGss(result.changed_order_ids);
   }
   await scheduleClientNotificationDispatch();
   // A RPC grava o Loading date concluído → GSS.

@@ -166,7 +166,6 @@ Listed in the normal lifecycle order:
 |---|---|
 | `in_negotiation` | Order opened and under negotiation. |
 | `in_production` | Confirmed; the factories are producing. |
-| `partially_preloading` | Some of the order's batches are in pre-loading. |
 | `pre_loading` | All batches are in pre-loading (being prepared for shipping). |
 | `partially_shipped` | Some batches have shipped. |
 | `shipped` | All batches have shipped. |

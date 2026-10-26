@@ -123,7 +123,7 @@ export async function syncPreLoadingRelations(
     );
 
     // Entrar ou sair do PL muda a fase dos lotes: as Orders envolvidas passam a
-    // Pre-Loading / Partially Preloading (ou voltam) conforme o rollup (§3.7.1).
+    // Pre-Loading / In Production (ou voltam) conforme o rollup (§3.7.1).
     const statusError = await syncOrderStatusForBatches(admin, touched, actorId);
     if (statusError) return statusError;
 

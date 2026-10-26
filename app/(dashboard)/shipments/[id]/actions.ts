@@ -30,7 +30,7 @@ import {
 import { isClientDocStep } from "@/lib/pl-clients";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isGssShipmentStep, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
+import { isGssShipmentStep, sendOrderStatusToGss, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import type { ChecklistStep } from "@/types/database";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -499,6 +499,7 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
   const changedOrderIds = rpcResult?.changed_order_ids ?? [];
   if (changedOrderIds.length > 0) {
     await broadcastOrderStatusPing({ order_ids: changedOrderIds });
+    sendOrderStatusToGss(changedOrderIds);
   }
   await scheduleClientNotificationDispatch();
   return { ok: true };
