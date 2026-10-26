@@ -826,6 +826,8 @@ export function OrderDetailClient({
         factoryCategoryCount: ofc.length,
         etdInitialFilled,
         batchesInPreLoading: allBatchesInPreLoading(batches.map((b) => b.status)),
+        estimatedDate: s.estimated_date,
+        responsibleId: s.responsible_id,
       };
       if (s.step === "place_the_order") {
         facts.placeOrderFactoriesTotal = placeOrderFactoryIds.size;
