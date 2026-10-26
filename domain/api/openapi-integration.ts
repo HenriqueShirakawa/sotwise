@@ -59,7 +59,6 @@ export const orderParam = (by: string) => ({
 const ORDER_STATUSES = [
   "in_negotiation",
   "in_production",
-  "partially_preloading",
   "pre_loading",
   "partially_shipped",
   "shipped",

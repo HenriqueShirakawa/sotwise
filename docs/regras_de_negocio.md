@@ -733,8 +733,7 @@ Pedido. PO gerado automaticamente e **não editável**. Exclusão: a doc atual d
 -- distinto do enum de status do Batch (não é 1:1 com o lote).
 create type public.order_status as enum (
   'in_negotiation',        -- gatilho: criação da Order
-  'in_production',         -- TODOS os lotes em produção (+ etapas Order/PO/PI/deposit payment completas)
-  'partially_preloading',  -- ao menos 1 lote em pré-carga, os outros ainda não
+  'in_production',         -- ao menos 1 lote em produção ou pré-carga (nem todos em pré-carga)
   'pre_loading',           -- TODOS os lotes em pré-carga
   'partially_shipped',     -- ao menos 1 lote embarcado, os outros ainda não
   'shipped',               -- TODOS os lotes em trânsito
@@ -742,8 +741,9 @@ create type public.order_status as enum (
   'delivered',             -- TODOS os lotes entregues
   'canceled'               -- ver regra de cancelamento em batches
 );
--- `partially_preloading` e `pre_loading` entraram depois do schema inicial:
--- ver supabase/migrations/20260805120000_order_status_preloading.sql.
+-- `pre_loading` entrou depois do schema inicial (20260805120000). O
+-- `partially_preloading` existiu de 05/08 a 26/10/2026 e saiu porque o GSS não
+-- tem esse status (20261026120000_order_status_drop_partially_preloading.sql).
 
 create table public.orders (
   id                 uuid primary key default gen_random_uuid(),
@@ -773,8 +773,7 @@ create trigger trg_orders_updated_at before update on public.orders
 > | Status da Order | Condição sobre os lotes |
 > |---|---|
 > | `in_negotiation` | **Só enquanto TODOS os lotes ativos estiverem em `in_negotiation`** |
-> | `in_production` | Ao menos 1 lote em `in_production` e os demais em `in_negotiation` (nenhum lote além dessas duas fases) |
-> | `partially_preloading` | Ao menos 1 lote em `preloading` e os demais fora dessa fase |
+> | `in_production` | Ao menos 1 lote em `in_production` ou `preloading`, sem todos em `preloading` (nenhum lote embarcado/entregue). Até 26/10/2026 o caso "algum em `preloading`" era `partially_preloading` — removido porque o GSS não tem esse status (§6.14) |
 > | `pre_loading` | **Todos** os lotes em `preloading` |
 > | `partially_shipped` | Ao menos 1 lote em `in_transit` e os demais ainda não |
 > | `shipped` | **Todos** os lotes em `in_transit` |
@@ -2416,6 +2415,30 @@ Pedido do usuário: toda troca de status de lote no SOT vai para o GSS, em `PATC
 - **20/10: funcionando.** Até 19/10 o GSS tratava `status` como somente leitura (200 e ignorava); o time do GSS liberou em 20/10. Só aceita o code — id dá 400 ("Expected a status code string."). Teste real: lotes 1705.01–.03 e 1701.01–.02 iguais nos dois lados.
 
 Código: `lib/gss/outbound/batch-status.ts`, `schedule.ts` (`sendBatchStatusToGss`, e dentro de `sendPlShipmentToGss`); disparo em `updateBatchStatus`, `saveDepositDate` e `updateChecklistStep` (Deposit — data e toggle), `updatePreLoading`, `deletePreLoading`.
+
+### 6.14 Status da Order → GSS (26/10/2026, só na `dev`)
+
+Pedido do usuário: o GSS passou a aceitar o status da Order e **toda troca de status da Order no SOT vai para o GSS** (webhook), em `PATCH /v1/orders/{id}/` com o `code` do catálogo `GET /orders/status/` (`{"status": "production"}`); o GSS devolve o nome ("In Production"). Na mesma decisão, o **`partially_preloading` saiu do SOT** (o GSS não tem esse status): Order com lote em pré-carga e outros ainda atrás fica **In Production** (ver o rollup do status da Order; migration `20261026120000`).
+
+| Status no SOT | `code` no GSS | Nome no GSS |
+|---|---|---|
+| In Negotiation | `negotiation` | In Negotiation |
+| In Production | `production` | In Production |
+| Pre-Loading | `pre` | Pre-Loading |
+| Partially Shipped | `partially_ship` | Partially Shipped |
+| Shipped | `shipped` | Shipped |
+| Partially Delivered | `partially_delivered` | Partially Delivered |
+| Delivered | `delivered` | Delivered |
+| Canceled | `canceled` | Canceled |
+
+- O catálogo do GSS tem também `std_by` (Stand by — sem par no SOT) e os legados `PRE_SHIPMENT` / `PARTIALLY_SHIPPED` (não usados).
+- Disparo: `syncOrderStatus` (o rollup por onde passam dropdown do lote, Deposit, PL, Delivered e a nossa API) e as duas RPCs que mudam o status direto no banco — Confirm Shipping e desfazer embarque (`changed_order_ids`). Vai depois da resposta (`after`), nunca trava o save.
+- Por Order: GET `/orders/{id}/` no GSS (id = `gss_id` ou `po_number`) e PATCH só se o status difere — não ecoa. Order inexistente lá → skipped no log.
+- `GSS_PUSH_DISABLED=true` desliga junto com os outros envios. Log em `/access/gss/calls` (source `order-status`).
+- ⚠️ No Swagger do GSS a rota `/orders/{id}/` só documenta GET (o schema `OrderUpdate` diz que `status` é gravável); em 18/10 o PATCH ali dava 403. **1.538 das 1.618 orders do GSS estão `is_locked`** (importadas do legado) — provável que recusem o PATCH. Permissão ainda não testada com escrita real.
+- CLI: `scripts/sync-gss/push-order-status.ts --only <po>` (dry) / `--commit` (envia) / `--all`.
+
+Código: `lib/gss/outbound/order-status.ts`, `schedule.ts` (`sendOrderStatusToGss`).
 
 ---
 

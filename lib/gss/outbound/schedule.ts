@@ -8,6 +8,7 @@ import type { ChecklistStep } from "@/types/database";
 import { preLoadingBatchIds, pushBatchStatuses, type BatchStatusPush } from "./batch-status";
 import { dispatchGssOutbound, gssOutboundEnabled } from "./dispatch";
 import { pushEtdFactory } from "./etd-factory";
+import { pushOrderStatuses } from "./order-status";
 import { PL_SHIPMENT_STEPS, pushPlShipment } from "./pl-shipment";
 import type { GssWriteResult } from "../client";
 
@@ -110,6 +111,33 @@ export function sendBatchStatusToGss(ref: { orderIds?: string[]; batchIds?: stri
     });
   } catch (err) {
     console.error("[gss-batch] after() indisponível:", err);
+  }
+}
+
+/**
+ * Manda ao GSS o status das Orders (`PATCH /orders/{id}/`) depois da resposta.
+ * Chamado de `syncOrderStatus` (o rollup que quase todo caminho usa) e dos
+ * dois que mudam o status direto no banco: Confirm Shipping e desfazer
+ * embarque (RPCs que devolvem `changed_order_ids`). Só vai o que difere do GSS.
+ */
+export function sendOrderStatusToGss(orderIds: string[]): void {
+  if (!gssPushEnabled() || !orderIds.length) return;
+  try {
+    after(async () => {
+      try {
+        for (const p of await pushOrderStatuses(createAdminClient(), orderIds)) {
+          if (p.outcome === "same") continue;
+          const line = `[gss-order] ${p.label} ${p.call ? `${p.call.method} ${p.call.path} → ${p.result?.status ?? "-"} ` : ""}(${p.outcome})`;
+          if (p.outcome === "sent") console.log(line);
+          else if (p.outcome === "failed") console.error(`${line}: ${p.reason ?? p.result?.error ?? p.result?.text}`);
+          else console.warn(`${line}: ${p.reason}`);
+        }
+      } catch (err) {
+        console.error("[gss-order] envio do status das Orders falhou:", err);
+      }
+    });
+  } catch (err) {
+    console.error("[gss-order] after() indisponível:", err);
   }
 }
 
