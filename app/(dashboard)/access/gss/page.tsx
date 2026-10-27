@@ -4,8 +4,44 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchAll } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/page-header";
 
+import Link from "next/link";
+
 import { GssClient, type GssRow, type LocalRow } from "./gss-client";
 import { RECURSOS, type Recurso, type RecursoKey } from "./recursos";
+import { SyncClient, type SyncTab } from "./sync-client";
+import { loadSyncLog } from "./sync-log";
+
+const TABS: { value: "cadastros" | SyncTab; label: string; href: string }[] = [
+  { value: "cadastros", label: "Cadastros", href: "/access/gss" },
+  { value: "orders", label: "Orders", href: "/access/gss?v=orders" },
+  { value: "batches", label: "Lotes", href: "/access/gss?v=batches" },
+];
+
+/** Abas do topo: os cadastros (snapshot) e o log do cron de Orders e Lotes. */
+function ParityTabs({ current }: { current: "cadastros" | SyncTab }) {
+  return (
+    <div className="mb-4 flex gap-1 border-b">
+      {TABS.map((t) => (
+        <Link
+          key={t.value}
+          href={t.href}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm ${
+            current === t.value
+              ? "border-primary font-medium text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {t.label}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+const HEADER = {
+  title: "GSS parity",
+  description: "Espelho da resposta da API do GSS (snapshot), lado a lado com o que já está pareado no nosso banco.",
+};
 
 /**
  * Painel de leitura do GSS — owner-only, mesma porta do /access
@@ -20,14 +56,32 @@ import { RECURSOS, type Recurso, type RecursoKey } from "./recursos";
  * desafia o IP da Vercel (§9.9). O espelho é gerado de máquina allowlistada por
  * `scripts/sync-gss/snapshot.ts`. Por isso a tela mostra o carimbo de quando a
  * foto foi tirada.
+ *
+ * As abas Orders e Lotes (`?v=`) mostram o log do cron de Orders e Lotes
+ * (`gss_sync_log`, ver ./sync-log.ts).
  */
 export default async function GssPanelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ r?: string }>;
+  searchParams: Promise<{ r?: string; v?: string; f?: string; q?: string }>;
 }) {
   await requireOwner();
-  const { r } = await searchParams;
+  const { r, v, f, q } = await searchParams;
+
+  if (v === "orders" || v === "batches") {
+    const log = await loadSyncLog(createAdminClient(), {
+      tab: v,
+      onlyProblems: f === "problemas",
+      search: (q ?? "").trim(),
+    });
+    return (
+      <div>
+        <PageHeader {...HEADER} />
+        <ParityTabs current={v} />
+        <SyncClient {...log} />
+      </div>
+    );
+  }
 
   const key = (RECURSOS.some((x) => x.key === r) ? r : "city") as RecursoKey;
   // anotado como `Recurso`: o `as const` da lista estreita cada item ao seu
@@ -107,10 +161,8 @@ export default async function GssPanelPage({
 
   return (
     <div>
-      <PageHeader
-        title="GSS parity"
-        description="Espelho da resposta da API do GSS (snapshot), lado a lado com o que já está pareado no nosso banco."
-      />
+      <PageHeader {...HEADER} />
+      <ParityTabs current="cadastros" />
 
       <GssClient
         recursoAtual={key}
