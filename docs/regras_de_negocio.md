@@ -2309,6 +2309,7 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
   - **nunca apaga e nunca mexe em status** (o status de order e lote vai do SOT para o GSS). Campo vazio no GSS não limpa o nosso, e nome que não existe aqui não é gravado (fica como `warning` no log);
   - cada registro mexido vira uma linha em `gss_sync_log` (migration `20261027120000`), com o antes e o depois em nomes legíveis. Order igual nos dois lados não gera linha. A tela é **Access → GSS sync** (`/access/gss/sync`, owner-only), com uma aba para Orders e outra para Lotes. A última execução fica nas linhas `orders` e `batches` de `gss_sync_state`;
   - `?dry=1` no cron devolve o plano (`orders.planned`) sem gravar nada;
+  - **TRAVADO por padrão** (decisão do usuário, 27/10): o GSS ainda é ambiente de teste e está sendo alimentado do zero. Sem `GSS_ORDERS_PULL_ENABLED=true` na Vercel o cron só lê e devolve o plano (`orders.locked: true`), sem gravar order, lote nem log. A tela GSS sync mostra o aviso. Destrava sem deploy de código (env + redeploy);
   - o Vercel Cron só roda no deploy de produção (branch `main`).
 
 ### 6.7 Datas enviadas ao GSS em Unix (2026-10-05)

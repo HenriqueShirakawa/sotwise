@@ -1,5 +1,6 @@
 import { requireOwner } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ordersPullEnabled } from "@/lib/gss/sync-orders";
 import { PageHeader } from "@/components/page-header";
 
 import { SyncClient, type SyncRow, type SyncTab } from "./sync-client";
@@ -92,6 +93,7 @@ export default async function GssSyncPage({
             ? { at: state.last_run_at, ok: state.last_status !== "error", error: state.last_error }
             : null
         }
+        locked={!ordersPullEnabled()}
         filters={{ onlyProblems, search }}
         loadError={
           error
