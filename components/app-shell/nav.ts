@@ -89,13 +89,12 @@ export const NAV: NavItem[] = [
     icon: ShieldCheck,
     feature: "access",
     // Owner-only (feature `access`). Permissões, e as duas ferramentas da
-    // integração com o GSS: paridade dos cadastros, o log de chamadas e o que o
-    // cron trouxe de Orders/Lotes.
+    // integração com o GSS: paridade dos cadastros (com as abas do cron de
+    // Orders/Lotes) e o log de chamadas.
     children: [
       { title: "Permissions", href: "/access", exact: true },
       { title: "GSS parity", href: "/access/gss", exact: true },
       { title: "GSS calls", href: "/access/gss/calls" },
-      { title: "GSS sync", href: "/access/gss/sync" },
     ],
   },
 ];

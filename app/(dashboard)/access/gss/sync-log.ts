@@ -1,11 +1,11 @@
-import { requireOwner } from "@/lib/dal";
-import { createAdminClient } from "@/lib/supabase/admin";
+import "server-only";
+
 import { ordersPullEnabled } from "@/lib/gss/sync-orders";
-import { PageHeader } from "@/components/page-header";
+import type { createAdminClient } from "@/lib/supabase/admin";
 
-import { SyncClient, type SyncRow, type SyncTab } from "./sync-client";
+import type { SyncRow, SyncTab } from "./sync-client";
 
-const LIMIT = 300;
+export const SYNC_LOG_LIMIT = 300;
 
 function hoursAgoIso(h: number): string {
   return new Date(Date.now() - h * 3600 * 1000).toISOString();
@@ -13,22 +13,14 @@ function hoursAgoIso(h: number): string {
 
 /**
  * O que o cron trouxe do GSS para Orders e Lotes (`gss_sync_log`, gravado por
- * lib/gss/sync-orders.ts) — owner-only, mesma porta do /access/gss. Uma aba
- * para Orders e outra para Lotes (pedido do usuário em 27/10/2026).
+ * lib/gss/sync-orders.ts). Mostrado nas abas Orders e Lotes do GSS parity
+ * (pedido do usuário em 27/10/2026: junto do parity, não numa tela à parte).
  */
-export default async function GssSyncPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ t?: string; f?: string; q?: string }>;
-}) {
-  await requireOwner();
-  const { t, f, q } = await searchParams;
-  const tab: SyncTab = t === "batches" ? "batches" : "orders";
+export async function loadSyncLog(
+  admin: ReturnType<typeof createAdminClient>,
+  { tab, onlyProblems, search }: { tab: SyncTab; onlyProblems: boolean; search: string }
+) {
   const entity = tab === "batches" ? "batch" : "order";
-  const onlyProblems = f === "problemas";
-  const search = (q ?? "").trim();
-
-  const admin = createAdminClient();
 
   let query = admin
     .from("gss_sync_log")
@@ -36,7 +28,7 @@ export default async function GssSyncPage({
     .eq("entity", entity)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(LIMIT);
+    .limit(SYNC_LOG_LIMIT);
   if (onlyProblems) query = query.in("action", ["warning", "error"]);
   if (search) {
     // vírgula e parênteses quebram o filtro `or` do PostgREST
@@ -75,32 +67,19 @@ export default async function GssSyncPage({
     origin: r.origin,
   }));
 
-  return (
-    <div>
-      <PageHeader
-        title="GSS sync"
-        description="O que o cron diário trouxe do GSS para Orders e Lotes: o que foi criado, atualizado ou não pôde ser gravado."
-      />
-
-      <SyncClient
-        tab={tab}
-        rows={rows}
-        limit={LIMIT}
-        changes24={changes24 ?? 0}
-        problems24={problems24 ?? 0}
-        lastRun={
-          state?.last_run_at
-            ? { at: state.last_run_at, ok: state.last_status !== "error", error: state.last_error }
-            : null
-        }
-        locked={!ordersPullEnabled()}
-        filters={{ onlyProblems, search }}
-        loadError={
-          error
-            ? `Não deu para ler o log (${error.message}). A tabela vem da migration 20261027120000_gss_sync_log.sql — aplique no Supabase.`
-            : null
-        }
-      />
-    </div>
-  );
+  return {
+    tab,
+    rows,
+    limit: SYNC_LOG_LIMIT,
+    changes24: changes24 ?? 0,
+    problems24: problems24 ?? 0,
+    lastRun: state?.last_run_at
+      ? { at: state.last_run_at, ok: state.last_status !== "error", error: state.last_error }
+      : null,
+    locked: !ordersPullEnabled(),
+    filters: { onlyProblems, search },
+    loadError: error
+      ? `Não deu para ler o log (${error.message}). A tabela vem da migration 20261027120000_gss_sync_log.sql — aplique no Supabase.`
+      : null,
+  };
 }

@@ -18,7 +18,7 @@ import type { Database } from "@/types/database";
  * O GSS é o dono dos dois (o SOT não cria order nem lote). O push deles
  * (POST /api/orders, POST /api/batches) continua sendo a via principal; este
  * pull é a rede de segurança: o que não chegou ou ficou diferente é corrigido
- * aqui, e cada correção vira uma linha em `gss_sync_log` (tela /access/gss/sync).
+ * aqui, e cada correção vira uma linha em `gss_sync_log` (abas Orders e Lotes do GSS parity, /access/gss?v=orders).
  *
  * Política (decisão do usuário, 27/10):
  *  - pareamento: `orders.gss_id` e, sem ele, `po_number` = id do GSS (a mesma
