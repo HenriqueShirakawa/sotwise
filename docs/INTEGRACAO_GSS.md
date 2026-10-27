@@ -928,7 +928,7 @@ idempotente e o dia seguinte continua de onde parou.
 Com o GSS dono de Orders e Lotes, o cron passou a ler `GET /orders/` e
 `GET /orders/batch-totals/` depois das bibliotecas e a criar/atualizar o que
 estiver diferente aqui (`lib/gss/sync-orders.ts`). Cada registro mexido vai para
-`gss_sync_log`, listado em `/access/gss/sync`. Regras completas em
+`gss_sync_log`, listado nas abas Orders e Lotes do GSS parity (`/access/gss?v=orders`). Regras completas em
 `regras_de_negocio.md` §6.6.
 
 ---

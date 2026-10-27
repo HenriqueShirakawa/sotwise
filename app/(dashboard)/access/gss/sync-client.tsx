@@ -19,11 +19,6 @@ export type SyncRow = {
   origin: string;
 };
 
-const TABS: { value: SyncTab; label: string }[] = [
-  { value: "orders", label: "Orders" },
-  { value: "batches", label: "Lotes" },
-];
-
 const ACTIONS: Record<SyncRow["action"], { label: string; cls: string }> = {
   created: {
     label: "Criado",
@@ -90,38 +85,17 @@ export function SyncClient({
   const pathname = usePathname();
   const [search, setSearch] = useState(filters.search);
 
-  function go(next: Partial<{ tab: SyncTab; onlyProblems: boolean; search: string }>) {
-    const f = { tab, ...filters, ...next };
-    const params = new URLSearchParams();
-    if (f.tab !== "orders") params.set("t", f.tab);
+  // A aba (`v`) vem do GSS parity; aqui só os filtros dela.
+  function go(next: Partial<{ onlyProblems: boolean; search: string }>) {
+    const f = { ...filters, ...next };
+    const params = new URLSearchParams({ v: tab });
     if (f.onlyProblems) params.set("f", "problemas");
     if (f.search) params.set("q", f.search);
-    const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
+    router.push(`${pathname}?${params.toString()}`);
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 border-b">
-        {TABS.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            onClick={() => {
-              setSearch("");
-              go({ tab: t.value, search: "", onlyProblems: false });
-            }}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm ${
-              tab === t.value
-                ? "border-primary font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {locked && (
         <div className="flex items-start gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           <Lock className="mt-0.5 size-4 shrink-0" />
