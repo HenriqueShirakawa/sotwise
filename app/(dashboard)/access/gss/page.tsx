@@ -114,7 +114,9 @@ export default async function GssPanelPage({
 
       <GssClient
         recursoAtual={key}
-        recursos={RECURSOS.map((x) => ({ key: x.key, label: x.label }))}
+        recursos={RECURSOS.map((x) => ({ key: x.key, label: x.label })).sort((a, b) =>
+          a.label.localeCompare(b.label, "pt-BR", { sensitivity: "base" })
+        )}
         rows={linhas}
         localRows={localRows}
         detalheLabel={recurso.detalheLabel}
