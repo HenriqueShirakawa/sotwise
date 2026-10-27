@@ -923,6 +923,14 @@ idempotente e o dia seguinte continua de onde parou.
 > sincronizar fábrica exige cruzar `supplier.company` com `/core/company/` — e o
 > `company` precisa voltar ao payload. É decisão para a origem, não ajuste nosso.
 
+### 9.11 Orders e Lotes também no cron (2026-10-27)
+
+Com o GSS dono de Orders e Lotes, o cron passou a ler `GET /orders/` e
+`GET /orders/batch-totals/` depois das bibliotecas e a criar/atualizar o que
+estiver diferente aqui (`lib/gss/sync-orders.ts`). Cada registro mexido vai para
+`gss_sync_log`, listado em `/access/gss/sync`. Regras completas em
+`regras_de_negocio.md` §6.6.
+
 ---
 
 ## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01; PL/Shipment construído em 2026-10-02)

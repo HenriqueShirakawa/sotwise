@@ -1415,6 +1415,39 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_call_log"]["Insert"]>;
         Relationships: [];
       };
+      /** O que o cron trouxe do GSS para Orders e Lotes (lib/gss/sync-orders.ts).
+       * Tela: /access/gss/sync. Migration 20261027120000_gss_sync_log.sql. */
+      gss_sync_log: {
+        Row: {
+          id: number;
+          created_at: Timestamp;
+          run_id: UUID;
+          entity: "order" | "batch";
+          action: "created" | "updated" | "linked" | "warning" | "error";
+          gss_id: string;
+          ref: string | null;
+          order_id: UUID | null;
+          record_id: UUID | null;
+          changes: { field: string; before: string | null; after: string | null }[] | null;
+          message: string | null;
+          origin: string;
+        };
+        Insert: {
+          created_at?: Timestamp;
+          run_id: UUID;
+          entity: "order" | "batch";
+          action: "created" | "updated" | "linked" | "warning" | "error";
+          gss_id: string;
+          ref?: string | null;
+          order_id?: UUID | null;
+          record_id?: UUID | null;
+          changes?: { field: string; before: string | null; after: string | null }[] | null;
+          message?: string | null;
+          origin?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_sync_log"]["Insert"]>;
+        Relationships: [];
+      };
       /** Fila de envio SOTWISE → GSS (via de saída). Escrita por trigger,
        * drenada por lib/gss/outbound/dispatch.ts. Ver
        * supabase/migrations/20261002120000_gss_outbound.sql e INTEGRACAO_GSS §10. */
