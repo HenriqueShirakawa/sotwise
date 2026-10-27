@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_OPTIONS, runSync, willInsert, type JunctionPlan, type ResourcePlan, type SyncOptions } from "@/lib/gss/sync";
+import { ordersPullEnabled, runOrdersSync } from "@/lib/gss/sync-orders";
 
 /**
  * Sync agendado GSS → SOTWISE (docs/INTEGRACAO_GSS.md §9).
@@ -53,6 +54,28 @@ function summarize(p: ResourcePlan, opts: SyncOptions) {
   };
 }
 
+/** Resultado da última execução de Orders/Lotes, nas linhas `orders` e `batches` de `gss_sync_state`. */
+async function recordRun(
+  sb: ReturnType<typeof createAdminClient>,
+  resource: "orders" | "batches",
+  error?: string,
+  rows = 0
+): Promise<void> {
+  const now = new Date().toISOString();
+  const { error: e } = await sb.from("gss_sync_state").upsert(
+    {
+      resource,
+      last_run_at: now,
+      last_status: error ? "error" : "ok",
+      last_error: error ?? null,
+      rows_upserted: rows,
+      updated_at: now,
+    },
+    { onConflict: "resource" }
+  );
+  if (e) console.warn(`gss_sync_state ${resource}: ${e.message}`);
+}
+
 export async function GET(request: Request) {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
@@ -68,9 +91,31 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   const opts: SyncOptions = { ...DEFAULT_OPTIONS, ...CRON_POLICY, commit: !dry };
+  const sb = createAdminClient();
 
   try {
-    const { resources: plans, junctions } = await runSync(createAdminClient(), opts);
+    const { resources: plans, junctions } = await runSync(sb, opts);
+    // Orders e lotes (lib/gss/sync-orders.ts) depois das bibliotecas, para os
+    // nomes de cliente/exporter já estarem atualizados. Falha aqui não derruba
+    // o resto: fica na linha `orders` de gss_sync_state e na resposta.
+    // Travado (GSS_ORDERS_PULL_ENABLED ausente), só lê e devolve o plano.
+    const locked = !ordersPullEnabled();
+    const writeOrders = !dry && !locked;
+    const orders = await runOrdersSync(sb, { commit: writeOrders })
+      .then(async (r) => {
+        if (writeOrders) {
+          const { orders: o, batches: b } = r;
+          await recordRun(sb, "orders", r.logError, o.created + o.updated + o.linked);
+          await recordRun(sb, "batches", undefined, b.created + b.updated + b.linked);
+        }
+        return { ...r, locked };
+      })
+      .catch(async (e: unknown) => {
+        const message = e instanceof Error ? e.message : String(e);
+        console.error("[cron/sync-gss] orders", message);
+        if (writeOrders) await recordRun(sb, "orders", message);
+        return { error: message, locked };
+      });
     const total = (f: (p: ResourcePlan) => number) => plans.reduce((s, p) => s + f(p), 0);
     const jTotal = (f: (j: JunctionPlan) => number) => junctions.reduce((s, j) => s + f(j), 0);
     return Response.json({
@@ -96,6 +141,7 @@ export async function GET(request: Request) {
         removable: j.deletes.length,
         unresolved: j.unresolved,
       })),
+      orders,
     });
   } catch (error) {
     // `gss_sync_state` já registrou o erro no recurso que falhou (o motor grava

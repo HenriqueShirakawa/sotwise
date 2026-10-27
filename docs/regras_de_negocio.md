@@ -2211,6 +2211,15 @@ Nenhuma tabela ou coluna nova — os dois endpoints só compõem leitura sobre o
 - **O GSS não expõe as linhas do lote** (só `/orders/batch-totals/`: id, batch_code, order_id) → lote do GSS chega **vazio**; as linhas Factory × Category seguem atribuídas aqui (ou vêm no `items`/`item_ids` do webhook).
 - **id do Shipment do GSS** é gravado em `pre_loadings.gss_id` a cada envio de datas que dá certo (o `id` da resposta do PATCH/POST — `rememberGssId` em `lib/gss/outbound/pl-shipment.ts`).
 - **Carga inicial (uma vez):** `scripts/sync-gss/seed-batches-shipments.ts` (dry-run por padrão; `--commit --api <base>`): lotes via o próprio `POST /api/batches` (mesmo caminho do webhook), shipments → `pre_loadings.gss_id` pelo `pl_number`.
+- **Cron de Orders e Lotes (2026-10-27, decisão do usuário).** O cron diário (`/api/cron/sync-gss`, 9h UTC), depois das bibliotecas, lê `GET /orders/` e `GET /orders/batch-totals/` do GSS e corrige o que estiver diferente aqui (`lib/gss/sync-orders.ts`). É a rede de segurança do push, que continua sendo a via principal. Regras:
+  - pareamento igual ao push: `orders.gss_id` e, sem ele, `po_number` = id do GSS. O par achado pelo po_number ganha o gss_id. Se o po_number já pertence a outro id do GSS, nada é gravado e a linha vira `error` no log;
+  - **cria** a order que falta (`po_number` = id do GSS, `date_po` = data de criação no GSS; o trigger semeia o checklist) e o lote que falta (pelo mesmo `createBatch` do `POST /api/batches`, que liga, adota ou cria vazio);
+  - **atualiza** o cabeçalho da order: Client, Exporter, Business unit e Order type (o GSS manda o NOME, casado com a biblioteca daqui sem diferenciar acento ou caixa; nome repetido vale o cadastro com gss_id) e Client reference;
+  - **nunca apaga e nunca mexe em status** (o status de order e lote vai do SOT para o GSS). Campo vazio no GSS não limpa o nosso, e nome que não existe aqui não é gravado (fica como `warning` no log);
+  - cada registro mexido vira uma linha em `gss_sync_log` (migration `20261027120000`), com o antes e o depois em nomes legíveis. Order igual nos dois lados não gera linha. A tela é **Access → GSS sync** (`/access/gss/sync`, owner-only), com uma aba para Orders e outra para Lotes. A última execução fica nas linhas `orders` e `batches` de `gss_sync_state`;
+  - `?dry=1` no cron devolve o plano (`orders.planned`) sem gravar nada;
+  - **TRAVADO por padrão** (decisão do usuário, 27/10): o GSS ainda é ambiente de teste e está sendo alimentado do zero. Sem `GSS_ORDERS_PULL_ENABLED=true` na Vercel o cron só lê e devolve o plano (`orders.locked: true`), sem gravar order, lote nem log. A tela GSS sync mostra o aviso. Destrava sem deploy de código (env + redeploy);
+  - o Vercel Cron só roda no deploy de produção (branch `main`).
 
 ### 6.7 Datas enviadas ao GSS em Unix (2026-10-05)
 
