@@ -31,7 +31,14 @@ import type { Database } from "@/types/database";
  *
  * Lote vai pelo MESMO `createBatch` do POST /api/batches: liga, adota (mesmo
  * número sem gss_id) ou cria vazio, com as travas e a regra do Gustavo de lá.
+ *
+ * TRAVADO por padrão (27/10): o GSS ainda é ambiente de teste e está sendo
+ * alimentado do zero. Só grava com `GSS_ORDERS_PULL_ENABLED=true` na Vercel
+ * (destrava sem deploy); travado, o cron só lê e devolve o plano.
  */
+export function ordersPullEnabled(): boolean {
+  return process.env.GSS_ORDERS_PULL_ENABLED === "true";
+}
 
 type Admin = ReturnType<typeof createAdminClient>;
 type LogInsert = Database["public"]["Tables"]["gss_sync_log"]["Insert"];

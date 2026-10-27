@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_OPTIONS, runSync, willInsert, type JunctionPlan, type ResourcePlan, type SyncOptions } from "@/lib/gss/sync";
 import { dispatchGssOutbound } from "@/lib/gss/outbound/dispatch";
-import { runOrdersSync } from "@/lib/gss/sync-orders";
+import { ordersPullEnabled, runOrdersSync } from "@/lib/gss/sync-orders";
 
 /**
  * Sync agendado GSS → SOTWISE (docs/INTEGRACAO_GSS.md §9).
@@ -106,20 +106,23 @@ export async function GET(request: Request) {
     // Orders e lotes (lib/gss/sync-orders.ts) depois das bibliotecas, para os
     // nomes de cliente/exporter já estarem atualizados. Falha aqui não derruba
     // o resto: fica na linha `orders` de gss_sync_state e na resposta.
-    const orders = await runOrdersSync(sb, { commit: !dry })
+    // Travado (GSS_ORDERS_PULL_ENABLED ausente), só lê e devolve o plano.
+    const locked = !ordersPullEnabled();
+    const writeOrders = !dry && !locked;
+    const orders = await runOrdersSync(sb, { commit: writeOrders })
       .then(async (r) => {
-        if (!dry) {
+        if (writeOrders) {
           const { orders: o, batches: b } = r;
           await recordCronRun(sb, r.logError, "orders", o.created + o.updated + o.linked);
           await recordCronRun(sb, undefined, "batches", b.created + b.updated + b.linked);
         }
-        return r;
+        return { ...r, locked };
       })
       .catch(async (e: unknown) => {
         const message = e instanceof Error ? e.message : String(e);
         console.error("[cron/sync-gss] orders", message);
-        if (!dry) await recordCronRun(sb, message, "orders");
-        return { error: message };
+        if (writeOrders) await recordCronRun(sb, message, "orders");
+        return { error: message, locked };
       });
     // Rede de segurança da via de saída (§10): o que nenhuma action despachou
     // sai aqui. Falha do envio não derruba o pull — fica registrada na fila.

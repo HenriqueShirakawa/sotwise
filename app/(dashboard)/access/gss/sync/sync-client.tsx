@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight, RefreshCw, Search, TriangleAlert } from "lucide-react";
+import { ArrowRight, Lock, RefreshCw, Search, TriangleAlert } from "lucide-react";
 
 export type SyncTab = "orders" | "batches";
 
@@ -72,6 +72,7 @@ export function SyncClient({
   changes24,
   problems24,
   lastRun,
+  locked,
   filters,
   loadError,
 }: {
@@ -81,6 +82,7 @@ export function SyncClient({
   changes24: number;
   problems24: number;
   lastRun: { at: string; ok: boolean; error: string | null } | null;
+  locked: boolean;
   filters: { onlyProblems: boolean; search: string };
   loadError: string | null;
 }) {
@@ -119,6 +121,17 @@ export function SyncClient({
           </button>
         ))}
       </div>
+
+      {locked && (
+        <div className="flex items-start gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+          <Lock className="mt-0.5 size-4 shrink-0" />
+          <span>
+            Travado: o cron só lê Orders e Lotes do GSS e não grava nada, enquanto o GSS é alimentado. Para
+            destravar, crie <code className="font-mono text-xs">GSS_ORDERS_PULL_ENABLED=true</code> na Vercel
+            (Production) e faça redeploy.
+          </span>
+        </div>
+      )}
 
       {loadError && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
