@@ -155,8 +155,27 @@ async function ensureAccessToken(
 }
 
 /**
+ * Espera antes de cada nova tentativa de leitura. O GSS cai em rajadas (502/530
+ * "Cloudflare Tunnel error") que duram segundos, não milissegundos — com 0,5–2 s
+ * as 4 tentativas acabavam dentro da mesma rajada. Só o sync usa `gssGet`, sem
+ * usuário esperando, e cada cron tem 300 s.
+ */
+const READ_RETRY_MS = [2_000, 5_000, 10_000];
+
+/**
+ * Espera pedida por um login 429 do GSS ("Expected available in 24 seconds"),
+ * em ms, com folga de 1 s e teto de 65 s. `null` = não é estrangulamento.
+ */
+function loginThrottleWait(error: string): number | null {
+  if (!error.startsWith("Login GSS 429")) return null;
+  const s = Number(/available in (\d+) second/.exec(error)?.[1] ?? 30);
+  return Math.min(s + 1, 65) * 1000;
+}
+
+/**
  * GET autenticado num recurso do GSS. `path` é relativo à base, ex.:
- * "/core/country/". Retenta em 429/5xx; em 401 renova o token e repete 1x.
+ * "/core/country/". Retenta em 429/5xx/rede com espera crescente (`READ_RETRY_MS`);
+ * em 401 renova o token e repete 1x.
  */
 export async function gssGet<T = unknown>(path: string): Promise<GssResult<T>> {
   const cfg = readConfig();
@@ -166,7 +185,16 @@ export async function gssGet<T = unknown>(path: string): Promise<GssResult<T>> {
 
   for (let attempt = 0; attempt < 4; attempt++) {
     const tok = await ensureAccessToken(cfg);
-    if (!tok.ok) return tok;
+    if (!tok.ok) {
+      // Login estrangulado (429) diz quanto esperar; espera e tenta de novo, em
+      // vez de perder a leitura — com um cron por biblioteca, cada um faz login.
+      const wait = loginThrottleWait(tok.error);
+      if (wait !== null && attempt < 3) {
+        await sleep(wait);
+        continue;
+      }
+      return tok;
+    }
 
     let res: Response;
     try {
@@ -175,7 +203,7 @@ export async function gssGet<T = unknown>(path: string): Promise<GssResult<T>> {
       });
     } catch (cause) {
       if (attempt < 3) {
-        await sleep(400 * (attempt + 1));
+        await sleep(READ_RETRY_MS[attempt]);
         continue;
       }
       return { ok: false, error: `Falha de rede no GET ${path}: ${String(cause)}` };
@@ -189,7 +217,7 @@ export async function gssGet<T = unknown>(path: string): Promise<GssResult<T>> {
       continue;
     }
     if (res.status === 429 || res.status >= 500) {
-      await sleep(500 * (attempt + 1));
+      if (attempt < 3) await sleep(READ_RETRY_MS[attempt]);
       continue;
     }
     if (!res.ok) {
