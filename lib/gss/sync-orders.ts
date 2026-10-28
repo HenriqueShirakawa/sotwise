@@ -129,10 +129,10 @@ async function libIndex(admin: Admin, table: LibTable) {
 
 export async function runOrdersSync(admin: Admin, opts: { commit: boolean }): Promise<OrdersSyncResult> {
   const runId = randomUUID();
-  const [gssOrders, gssBatches] = await Promise.all([
-    fetchList<GssOrder>("/orders/"),
-    fetchList<GssBatch>("/orders/batch-totals/"),
-  ]);
+  // Uma leitura por vez: as duas listas são pesadas (~13–17 s cada) e, pedidas
+  // juntas, o GSS devolve 5xx até esgotar as tentativas (28/10/2026).
+  const gssOrders = await fetchList<GssOrder>("/orders/");
+  const gssBatches = await fetchList<GssBatch>("/orders/batch-totals/");
 
   const libs = Object.fromEntries(
     await Promise.all(LIB_FIELDS.map(async (f) => [f.table, await libIndex(admin, f.table)] as const))
