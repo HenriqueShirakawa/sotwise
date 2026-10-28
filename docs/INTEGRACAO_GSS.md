@@ -953,7 +953,7 @@ algumas linhas por dia):
 | 12:20 | 09:20 | `…/agents` | `agents` |
 | 12:30 | 09:30 | `…/carriers` | `carriers` |
 | 12:40 | 09:40 | `…/categories` | `categories` + `category_factories` |
-| 13:00 | 10:00 | `…/orders` | Orders + Lotes (§9.11) + via de saída (§10) |
+| 13:00 | 10:00 | `…/orders` | Orders + Lotes (§9.11) |
 
 - **10 min entre um e outro; Orders numa hora só dela.** A ordem é a de FK do
   §4.3 (countries antes de clients/agents, categories por último). ⚠️ No plano
@@ -967,8 +967,7 @@ algumas linhas por dia):
   `GET /api/cron/sync-gss` (sem passo) segue rodando tudo em sequência, para o
   Run manual; `?dry=1` vale nos dois.
 - **Batimento:** cada passo grava a própria linha de `gss_sync_state` — "ok", ou
-  o erro da leitura quando o GSS cai antes de existir plano (`runSyncStep`). A
-  linha `cron` passou a marcar só a execução completa.
+  o erro da leitura quando o GSS cai antes de existir plano (`runSyncStep`).
 - **Política de escrita** igual à de antes (`CRON_POLICY`): insert só de
   geografia, sem soft-delete.
 - **Leitura mais paciente:** `gssGet` espera 2 s, 5 s e 10 s entre tentativas
