@@ -3,9 +3,17 @@
   "framework": "nextjs",
   "regions": ["gru1"],
   "crons": [
-    {
-      "path": "/api/cron/sync-gss",
-      "schedule": "0 9 * * *"
-    }
+    { "path": "/api/cron/sync-gss/countries", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/sync-gss/cities", "schedule": "0 1 * * *" },
+    { "path": "/api/cron/sync-gss/ports", "schedule": "0 2 * * *" },
+    { "path": "/api/cron/sync-gss/exporters", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/sync-gss/order_types", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/sync-gss/business_units", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/sync-gss/clients", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/sync-gss/factories", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/sync-gss/agents", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/sync-gss/carriers", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/sync-gss/categories", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/sync-gss/orders", "schedule": "0 11 * * *" }
   ]
 }
