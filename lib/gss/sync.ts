@@ -1,6 +1,7 @@
 /**
  * Motor de sync GSS → SOTWISE (bibliotecas). Um único núcleo, dois pontos de
- * entrada: `scripts/sync-gss/sync.ts` (CLI) e `app/api/cron/sync-gss` (agendado).
+ * entrada: `scripts/sync-gss/sync.ts` (CLI) e `app/api/cron/sync-gss` (agendado,
+ * um cron por biblioteca — `SYNC_STEPS`, §9.12).
  *
  * Recebe o client do Supabase por parâmetro de propósito — `lib/supabase/admin`
  * tem `import "server-only"`, que lança em script tsx. Mesmo motivo pelo qual
@@ -671,19 +672,219 @@ async function recordJunctionState(sb: DB, plan: JunctionPlan, opts: SyncOptions
   if (e) console.warn(`gss_sync_state ${plan.table}: ${e.message}`);
 }
 
+/** Mapa id-do-GSS → uuid local dos países vivos, para traduzir `country_id`. */
+async function loadCountryMap(sb: DB): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  for (const r of await loadLocal(sb, "countries")) if (r.gss_id && r.deleted_at === null) m.set(r.gss_id, r.id);
+  return m;
+}
+
+/** Falha de um passo antes de existir plano (leitura do GSS caiu, por exemplo). */
+async function recordStepError(sb: DB, resource: string, message: string): Promise<void> {
+  const now = new Date().toISOString();
+  const { error: e } = await sb.from("gss_sync_state").upsert(
+    { resource, last_run_at: now, last_status: "error", last_error: message, rows_upserted: 0, updated_at: now },
+    { onConflict: "resource" }
+  );
+  if (e) console.warn(`gss_sync_state ${resource}: ${e.message}`);
+}
+
+type StepContext = {
+  sb: DB;
+  opts: SyncOptions;
+  /** Aplica um plano de recurso e grava o estado dele em gss_sync_state. */
+  run: (p: ResourcePlan) => Promise<void>;
+  /** Idem, para uma junção. */
+  runJunction: (j: JunctionPlan) => Promise<void>;
+};
+
+type SyncStep = {
+  label: string;
+  /** Linhas de gss_sync_state que o passo grava. */
+  tables: readonly string[];
+  run: (ctx: StepContext) => Promise<void>;
+};
+
 /**
- * Executa o sync inteiro, na ordem de FK do §4.3 (countries primeiro, porque
- * `clients.country_id` depende do mapa dele). Recursos primeiro, junções depois —
- * a junção precisa dos `gss_id` de fábricas e categorias já gravados.
+ * Um passo por biblioteca (§9.12). Cada passo lê o próprio endpoint do GSS e o
+ * estado ATUAL do banco — nada passa de um passo para o outro em memória — e por
+ * isso roda sozinho, num cron só dele, ou em sequência pelo `runSync`. A ordem
+ * das chaves é a ordem de FK do §4.3: countries antes de clients/agents (o
+ * `country_id` sai do mapa deles), categories por último (a junção precisa dos
+ * `gss_id` de fábricas e categorias já gravados).
  */
-export async function runSync(
+export const SYNC_STEPS = {
+  // Os placeholders do GSS não entram (COUNTRY_SKIP). Espelho completo do
+  // registro deles: nome, ISO e a marca `is_active` (§9.9).
+  countries: {
+    label: "Countries",
+    tables: ["countries"],
+    run: async ({ sb, opts, run }) => {
+      const countries = (await fetchGss<GssCountry>(GSS_ENDPOINTS.country)).filter((c) => !COUNTRY_SKIP.has(norm(c.name)));
+      await run(planResource("countries", await loadLocal(sb, "countries"), countries,
+        (c) => c.name, (c) => c.id,
+        (c) => ({ name: c.name, iso_code: c.iso_code, is_active: c.is_active }), opts));
+    },
+  },
+  // Espelho completo, com província e país como TEXTO (sem tabela `provinces`,
+  // sem `country_id` — decisão de 14/10/2026, §9.9). A identidade de uma cidade
+  // é `nome|província`, não o nome: 411 nomes se repetem entre províncias e com
+  // a chave no nome as homônimas nunca entravam.
+  cities: {
+    label: "Cities",
+    tables: ["cities"],
+    run: async ({ sb, opts, run }) => {
+      await run(planResource("cities", await loadLocal(sb, "cities"), await fetchGss<GssCity>(GSS_ENDPOINTS.city),
+        (c) => c.name, (c) => c.id,
+        (c) => ({ name: c.name, province: c.province_name, country: c.country_name, is_active: c.is_active }),
+        opts, undefined, undefined, (c) => `${norm(c.name)}|${norm(c.province_name)}`));
+    },
+  },
+  // `port` roteado por país: China → pols (embarque), resto → pods (destino).
+  ports: {
+    label: "Ports (POL + POD)",
+    tables: ["pols", "pods"],
+    run: async ({ sb, opts, run }) => {
+      const ports = await fetchGss<GssPort>(GSS_ENDPOINTS.port);
+      const isChina = (p: GssPort) => norm(p.country_name) === "china";
+      await run(planResource("pols", await loadLocal(sb, "pols"), ports.filter(isChina),
+        (p) => p.name, (p) => p.id, (p) => ({ name: p.name }), opts));
+      await run(planResource("pods", await loadLocal(sb, "pods"), ports.filter((p) => !isChina(p)),
+        (p) => p.name, (p) => p.id, (p) => ({ name: p.name }), opts));
+    },
+  },
+  exporters: {
+    label: "Exporters",
+    tables: ["exporters"],
+    run: async ({ sb, opts, run }) => {
+      await run(planResource("exporters", await loadLocal(sb, "exporters"), await fetchGss<GssExporter>(GSS_ENDPOINTS.exporter),
+        (e) => e.name, (e) => e.id, (e) => ({ name: e.name, acronym: e.code ?? e.name.slice(0, 8) }), opts));
+    },
+  },
+  order_types: {
+    label: "Order types",
+    tables: ["order_types"],
+    run: async ({ sb, opts, run }) => {
+      await run(planResource("order_types", await loadLocal(sb, "order_types"), await fetchGss<GssOrderType>(GSS_ENDPOINTS.orderType),
+        (o) => o.name, (o) => o.id, (o) => ({ name: o.name }), opts));
+    },
+  },
+  business_units: {
+    label: "Business units",
+    tables: ["business_units"],
+    run: async ({ sb, opts, run }) => {
+      await run(planResource("business_units", await loadLocal(sb, "business_units"), await fetchGss<GssBusinessUnit>(GSS_ENDPOINTS.businessUnit),
+        (b) => b.name, (b) => b.id, (b) => ({ name: b.name }), opts));
+    },
+  },
+  // country_id traduzido de id do GSS para uuid local.
+  clients: {
+    label: "Clients",
+    tables: ["clients"],
+    run: async ({ sb, opts, run }) => {
+      const countryMap = await loadCountryMap(sb);
+      await run(planResource("clients", await loadLocal(sb, "clients"), await fetchGss<GssCustomer>(GSS_ENDPOINTS.customer),
+        (c) => c.name, (c) => c.id,
+        (c) => ({ name: c.name, country_id: c.country != null ? countryMap.get(String(c.country)) ?? null : null }), opts));
+    },
+  },
+  // ← supplier. ⚠️ Desde 14/10 o payload veio sem `company_name` (§9.10, geografia): sem
+  // nome o recurso inteiro é ignorado e o passo não grava nada. Fica agendado
+  // para voltar sozinho quando o campo voltar.
+  factories: {
+    label: "Factories",
+    tables: ["factories"],
+    run: async ({ sb, opts, run }) => {
+      await run(planResource("factories", await loadLocal(sb, "factories"), await fetchGss<GssSupplier>(GSS_ENDPOINTS.supplier),
+        (s) => s.company_name, (s) => s.id, (s) => ({ name: s.company_name }), opts));
+    },
+  },
+  // Pareiam por nome, com o e-mail como confirmação. O cadastro deles é semente
+  // (1 registro cada), então os campos só preenchem o que está vazio aqui.
+  agents: {
+    label: "Agents",
+    tables: ["agents"],
+    run: async ({ sb, opts, run }) => {
+      const countryMap = await loadCountryMap(sb);
+      await run(planResource("agents", await loadLocal(sb, "agents"), await fetchGss<GssAgent>(GSS_ENDPOINTS.agent),
+        (a) => a.name, (a) => a.id,
+        (a) => ({
+          name: a.name,
+          email: a.email,
+          country_id: a.country != null ? countryMap.get(String(a.country)) ?? null : null,
+          location: norm(a.country_name) === "china" ? "china" : norm(a.country_name) === "brazil" ? "brazil" : null,
+        }),
+        opts,
+        { gss: (a) => a.email, local: "email" },
+        new Set(["email", "country_id", "location"])));
+    },
+  },
+  carriers: {
+    label: "Carriers",
+    tables: ["carriers"],
+    run: async ({ sb, opts, run }) => {
+      await run(planResource("carriers", await loadLocal(sb, "carriers"), await fetchGss<GssCarrier>(GSS_ENDPOINTS.carrier),
+        (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
+    },
+  },
+  // ← supplier-category: a category distinta e, do mesmo pull, a JUNÇÃO
+  // Factory × Category (cada linha carrega `supplier`+`category`).
+  categories: {
+    label: "Categories + Factory × Category",
+    tables: ["categories", "category_factories"],
+    run: async ({ sb, opts, run, runJunction }) => {
+      const sc = await fetchGss<GssSupplierCategory>(GSS_ENDPOINTS.supplierCategory);
+      const catById = new Map<number, string>();
+      for (const row of sc) if (!catById.has(row.category)) catById.set(row.category, row.category_name);
+      const cats = [...catById.entries()].map(([id, name]) => ({ id, name }));
+      await run(planResource("categories", await loadLocal(sb, "categories"), cats,
+        (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
+
+      // Relê os mapas depois do apply acima, para enxergar categorias recém-pareadas.
+      const catRows = await loadLocal(sb, "categories");
+      const facRows = await loadLocal(sb, "factories");
+      const catByGss = new Map<string, string>();
+      const catHasGss = new Set<string>();
+      for (const r of catRows) if (r.deleted_at === null && r.gss_id) { catByGss.set(r.gss_id, r.id); catHasGss.add(r.id); }
+      const facByGss = new Map<string, string>();
+      const facHasGss = new Set<string>();
+      for (const r of facRows) if (r.deleted_at === null && r.gss_id) { facByGss.set(r.gss_id, r.id); facHasGss.add(r.id); }
+
+      const gssPairs = sc.map((row) => ({ parentGss: String(row.category), childGss: String(row.supplier) }));
+      const current = await loadJunction(sb, "category_factories", "category_id", "factory_id");
+      await runJunction(planJunction(
+        "category_factories", "category_id", "factory_id",
+        gssPairs, current, catByGss, facByGss, catHasGss, facHasGss, opts
+      ));
+    },
+  },
+} satisfies Record<string, SyncStep>;
+
+export type SyncStepKey = keyof typeof SYNC_STEPS;
+export const SYNC_STEP_KEYS = Object.keys(SYNC_STEPS) as SyncStepKey[];
+
+export function isSyncStepKey(key: string): key is SyncStepKey {
+  return Object.hasOwn(SYNC_STEPS, key);
+}
+
+/**
+ * Roda UM passo. Se ele cair antes de gravar o estado de alguma das tabelas
+ * dele (o GSS devolveu 502 na leitura, por exemplo), a falha fica registrada
+ * nessas linhas de gss_sync_state — senão o painel seguiria mostrando o último
+ * "ok" — e o erro sobe.
+ */
+export async function runSyncStep(
   sb: DB,
+  key: SyncStepKey,
   options: Partial<SyncOptions> = {}
 ): Promise<{ resources: ResourcePlan[]; junctions: JunctionPlan[] }> {
   const opts: SyncOptions = { ...DEFAULT_OPTIONS, ...options };
-  const plans: ResourcePlan[] = [];
+  const resources: ResourcePlan[] = [];
+  const junctions: JunctionPlan[] = [];
+  const recorded = new Set<string>();
 
   const run = async (p: ResourcePlan) => {
+    recorded.add(p.table);
     try {
       await applyPlan(sb, p, opts);
       await recordState(sb, p, opts);
@@ -691,111 +892,49 @@ export async function runSync(
       await recordState(sb, p, opts, err instanceof Error ? err.message : String(err));
       throw err;
     }
-    plans.push(p);
-    return p;
+    resources.push(p);
   };
-
-  // 1) countries — os placeholders do GSS não entram (COUNTRY_SKIP).
-  // Espelho completo do registro deles: nome, ISO e a marca `is_active` (§9.9).
-  const countries = (await fetchGss<GssCountry>(GSS_ENDPOINTS.country)).filter((c) => !COUNTRY_SKIP.has(norm(c.name)));
-  await run(planResource("countries", await loadLocal(sb, "countries"), countries,
-    (c) => c.name, (c) => c.id,
-    (c) => ({ name: c.name, iso_code: c.iso_code, is_active: c.is_active }), opts));
-
-  // mapa id-do-GSS → uuid local, para traduzir clients.country_id. Relido depois
-  // do apply para enxergar os países recém-inseridos.
-  const countryMap = new Map<string, string>();
-  for (const r of await loadLocal(sb, "countries")) if (r.gss_id && r.deleted_at === null) countryMap.set(r.gss_id, r.id);
-
-  // 2) independentes
-  // cities: espelho completo, com província e país como TEXTO (sem tabela
-  // `provinces`, sem `country_id` — decisão de 14/10/2026, §9.9). A identidade
-  // de uma cidade é `nome|província`, não o nome: 411 nomes se repetem entre
-  // províncias e com a chave no nome as homônimas nunca entravam.
-  await run(planResource("cities", await loadLocal(sb, "cities"), await fetchGss<GssCity>(GSS_ENDPOINTS.city),
-    (c) => c.name, (c) => c.id,
-    (c) => ({ name: c.name, province: c.province_name, country: c.country_name, is_active: c.is_active }),
-    opts, undefined, undefined, (c) => `${norm(c.name)}|${norm(c.province_name)}`));
-
-  // `port` roteado por país: China → pols (embarque), resto → pods (destino).
-  const ports = await fetchGss<GssPort>(GSS_ENDPOINTS.port);
-  const isChina = (p: GssPort) => norm(p.country_name) === "china";
-  await run(planResource("pols", await loadLocal(sb, "pols"), ports.filter(isChina),
-    (p) => p.name, (p) => p.id, (p) => ({ name: p.name }), opts));
-  await run(planResource("pods", await loadLocal(sb, "pods"), ports.filter((p) => !isChina(p)),
-    (p) => p.name, (p) => p.id, (p) => ({ name: p.name }), opts));
-
-  await run(planResource("exporters", await loadLocal(sb, "exporters"), await fetchGss<GssExporter>(GSS_ENDPOINTS.exporter),
-    (e) => e.name, (e) => e.id, (e) => ({ name: e.name, acronym: e.code ?? e.name.slice(0, 8) }), opts));
-  await run(planResource("order_types", await loadLocal(sb, "order_types"), await fetchGss<GssOrderType>(GSS_ENDPOINTS.orderType),
-    (o) => o.name, (o) => o.id, (o) => ({ name: o.name }), opts));
-  await run(planResource("business_units", await loadLocal(sb, "business_units"), await fetchGss<GssBusinessUnit>(GSS_ENDPOINTS.businessUnit),
-    (b) => b.name, (b) => b.id, (b) => ({ name: b.name }), opts));
-
-  // 3) clients — country_id traduzido de id do GSS para uuid local
-  await run(planResource("clients", await loadLocal(sb, "clients"), await fetchGss<GssCustomer>(GSS_ENDPOINTS.customer),
-    (c) => c.name, (c) => c.id,
-    (c) => ({ name: c.name, country_id: c.country != null ? countryMap.get(String(c.country)) ?? null : null }), opts));
-
-  // 4) factories ← supplier
-  await run(planResource("factories", await loadLocal(sb, "factories"), await fetchGss<GssSupplier>(GSS_ENDPOINTS.supplier),
-    (s) => s.company_name, (s) => s.id, (s) => ({ name: s.company_name }), opts));
-
-  // 5) agents e carriers — pareiam por nome, com o e-mail como confirmação.
-  // O cadastro deles é semente (1 registro cada), então os campos só preenchem
-  // o que está vazio aqui: `fillOnly`.
-  await run(planResource("agents", await loadLocal(sb, "agents"), await fetchGss<GssAgent>(GSS_ENDPOINTS.agent),
-    (a) => a.name, (a) => a.id,
-    (a) => ({
-      name: a.name,
-      email: a.email,
-      country_id: a.country != null ? countryMap.get(String(a.country)) ?? null : null,
-      location: norm(a.country_name) === "china" ? "china" : norm(a.country_name) === "brazil" ? "brazil" : null,
-    }),
-    opts,
-    { gss: (a) => a.email, local: "email" },
-    new Set(["email", "country_id", "location"])));
-
-  await run(planResource("carriers", await loadLocal(sb, "carriers"), await fetchGss<GssCarrier>(GSS_ENDPOINTS.carrier),
-    (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
-
-  // 6) categories ← supplier-category (a category distinta, não a junção)
-  const sc = await fetchGss<GssSupplierCategory>(GSS_ENDPOINTS.supplierCategory);
-  const catById = new Map<number, string>();
-  for (const row of sc) if (!catById.has(row.category)) catById.set(row.category, row.category_name);
-  const cats = [...catById.entries()].map(([id, name]) => ({ id, name }));
-  await run(planResource("categories", await loadLocal(sb, "categories"), cats,
-    (c) => c.name, (c) => c.id, (c) => ({ name: c.name }), opts));
-
-  // 7) category_factories ← supplier-category (a JUNÇÃO Factory × Category).
-  // Reusa `sc`: cada linha carrega `supplier`+`category` (o par). Relê os mapas
-  // depois dos applies acima, para enxergar fábricas/categorias recém-pareadas.
-  const junctions: JunctionPlan[] = [];
-  {
-    const catRows = await loadLocal(sb, "categories");
-    const facRows = await loadLocal(sb, "factories");
-    const catByGss = new Map<string, string>();
-    const catHasGss = new Set<string>();
-    for (const r of catRows) if (r.deleted_at === null && r.gss_id) { catByGss.set(r.gss_id, r.id); catHasGss.add(r.id); }
-    const facByGss = new Map<string, string>();
-    const facHasGss = new Set<string>();
-    for (const r of facRows) if (r.deleted_at === null && r.gss_id) { facByGss.set(r.gss_id, r.id); facHasGss.add(r.id); }
-
-    const gssPairs = sc.map((row) => ({ parentGss: String(row.category), childGss: String(row.supplier) }));
-    const current = await loadJunction(sb, "category_factories", "category_id", "factory_id");
-    const jp = planJunction(
-      "category_factories", "category_id", "factory_id",
-      gssPairs, current, catByGss, facByGss, catHasGss, facHasGss, opts
-    );
+  const runJunction = async (j: JunctionPlan) => {
+    recorded.add(j.table);
     try {
-      await applyJunction(sb, jp, opts);
-      await recordJunctionState(sb, jp, opts);
+      await applyJunction(sb, j, opts);
+      await recordJunctionState(sb, j, opts);
     } catch (err) {
-      await recordJunctionState(sb, jp, opts, err instanceof Error ? err.message : String(err));
+      await recordJunctionState(sb, j, opts, err instanceof Error ? err.message : String(err));
       throw err;
     }
-    junctions.push(jp);
-  }
+    junctions.push(j);
+  };
 
-  return { resources: plans, junctions };
+  try {
+    await SYNC_STEPS[key].run({ sb, opts, run, runJunction });
+  } catch (err) {
+    if (opts.commit) {
+      const message = err instanceof Error ? err.message : String(err);
+      for (const t of SYNC_STEPS[key].tables) if (!recorded.has(t)) await recordStepError(sb, t, message);
+    }
+    throw err;
+  }
+  return { resources, junctions };
+}
+
+/**
+ * Executa os passos em sequência, na ordem de FK do §4.3 — `keys` restringe a
+ * alguns (o CLI usa com `--lib=`). Para no primeiro que falhar: no CLI quem
+ * roda vê o erro e repete; o agendado roda um passo por cron (§9.12).
+ */
+export async function runSync(
+  sb: DB,
+  options: Partial<SyncOptions> = {},
+  keys: readonly SyncStepKey[] = SYNC_STEP_KEYS
+): Promise<{ resources: ResourcePlan[]; junctions: JunctionPlan[] }> {
+  const resources: ResourcePlan[] = [];
+  const junctions: JunctionPlan[] = [];
+  // Na ordem de SYNC_STEP_KEYS, qualquer que seja a ordem pedida.
+  for (const key of SYNC_STEP_KEYS.filter((k) => keys.includes(k))) {
+    const r = await runSyncStep(sb, key, options);
+    resources.push(...r.resources);
+    junctions.push(...r.junctions);
+  }
+  return { resources, junctions };
 }
