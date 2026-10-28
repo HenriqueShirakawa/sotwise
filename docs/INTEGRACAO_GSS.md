@@ -931,6 +931,51 @@ estiver diferente aqui (`lib/gss/sync-orders.ts`). Cada registro mexido vai para
 `gss_sync_log`, listado nas abas Orders e Lotes do GSS parity (`/access/gss?v=orders`). Regras completas em
 `regras_de_negocio.md` §6.6.
 
+### 9.12 Um cron por biblioteca (2026-10-28)
+
+O cron único de 9h UTC lia tudo numa função só: o primeiro 502 do GSS derrubava
+as bibliotecas seguintes **e** Orders/Lotes, e a execução inteira chegava perto
+dos 300 s. Agora o motor tem um passo por biblioteca (`SYNC_STEPS` em
+`lib/gss/sync.ts`) — cada um lê o próprio endpoint e o estado atual do banco, sem
+nada em memória vindo do passo anterior — e cada passo tem um cron:
+
+| UTC | Caminho | Grava |
+|---|---|---|
+| 00h | `/api/cron/sync-gss/countries` | `countries` |
+| 01h | `…/cities` | `cities` |
+| 02h | `…/ports` | `pols` + `pods` |
+| 03h | `…/exporters` | `exporters` |
+| 04h | `…/order_types` | `order_types` |
+| 05h | `…/business_units` | `business_units` |
+| 06h | `…/clients` | `clients` |
+| 07h | `…/factories` | `factories` (hoje nada: §9.10, geografia — supplier sem `company_name`) |
+| 08h | `…/agents` | `agents` |
+| 09h | `…/carriers` | `carriers` |
+| 10h | `…/categories` | `categories` + `category_factories` |
+| 11h | `…/orders` | Orders + Lotes (§9.11) + via de saída (§10) |
+
+- **Uma hora por cron, de propósito.** No plano Hobby a Vercel dispara em
+  qualquer minuto da hora marcada (±59 min); com dois crons na mesma hora eles
+  podiam cair juntos, e o GSS devolve 5xx quando recebe duas listas grandes ao
+  mesmo tempo. A ordem das horas é a ordem de FK do §4.3 (countries antes de
+  clients/agents, categories por último, Orders depois de todas as bibliotecas).
+- **Caminho, não query string:** é o `path` do `vercel.json` que a Vercel agenda.
+  `GET /api/cron/sync-gss` (sem passo) segue rodando tudo em sequência, para o
+  Run manual; `?dry=1` vale nos dois.
+- **Batimento:** cada passo grava a própria linha de `gss_sync_state` — "ok", ou
+  o erro da leitura quando o GSS cai antes de existir plano (`runSyncStep`). A
+  linha `cron` passou a marcar só a execução completa.
+- **Política de escrita** igual à de antes (`CRON_POLICY`): insert só de
+  geografia, sem soft-delete.
+- **Leitura mais paciente:** `gssGet` espera 2 s, 5 s e 10 s entre tentativas
+  (era 0,5–2 s, que caía dentro da mesma rajada de 502) e, num login 429, espera
+  o tempo que o GSS pede.
+- **Fora, porque não dá para puxar:** `contacts` (← `/core/company/` dá **403**
+  ao usuário técnico) e o nome das fábricas (supplier sem `company_name`).
+  `country-languages` e `shipment-models` não existem no GSS.
+- CLI: `npx tsx scripts/sync-gss/sync.ts --lib=clients,carriers` roda só esses
+  passos.
+
 ---
 
 ## 10. Via de saída SOTWISE → GSS (desenho de 2026-10-01; PL/Shipment construído em 2026-10-02)

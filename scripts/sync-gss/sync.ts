@@ -9,13 +9,22 @@
  *   npx tsx scripts/sync-gss/sync.ts --commit --insert=countries,cities
  *   npx tsx scripts/sync-gss/sync.ts --commit               # tudo (pols segue bloqueado)
  *   npx tsx scripts/sync-gss/sync.ts --commit --soft-delete # + apaga o que sumiu do GSS
+ *   npx tsx scripts/sync-gss/sync.ts --lib=clients,carriers # só essas bibliotecas (SYNC_STEPS)
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../../types/database";
-import { runSync, willInsert, type JunctionPlan, type ResourcePlan, type SyncOptions } from "../../lib/gss/sync";
+import {
+  isSyncStepKey,
+  runSync,
+  SYNC_STEP_KEYS,
+  willInsert,
+  type JunctionPlan,
+  type ResourcePlan,
+  type SyncOptions,
+} from "../../lib/gss/sync";
 
 const argv = process.argv.slice(2);
 const has = (f: string) => argv.includes(f);
@@ -32,6 +41,16 @@ const opts: SyncOptions = {
   forceCasing: has("--force-casing"),
 };
 const SHOW_DUPES = has("--dupes");
+
+// --lib=a,b: só esses passos (um por biblioteca, como os crons do §9.12).
+const libArg = argv.find((a) => a.startsWith("--lib="));
+const libs = libArg ? libArg.slice("--lib=".length).split(",").map((s) => s.trim()).filter(Boolean) : null;
+const unknownLibs = (libs ?? []).filter((l) => !isSyncStepKey(l));
+if (unknownLibs.length) {
+  console.error(`--lib desconhecido: ${unknownLibs.join(", ")}. Opções: ${SYNC_STEP_KEYS.join(", ")}`);
+  process.exit(2);
+}
+const steps = libs ? SYNC_STEP_KEYS.filter((k) => libs.includes(k)) : SYNC_STEP_KEYS;
 
 const supabase = createClient<Database>(
   process.env.SUPABASE_URL!,
@@ -74,9 +93,10 @@ function logJunction(j: JunctionPlan): void {
 
 async function main() {
   const scope = opts.pairOnly ? "pair-only" : opts.insertOnly ? `insert=${[...opts.insertOnly].join(",")}` : "full";
-  console.log(`\n== Sync GSS → SOTWISE  [${opts.commit ? "COMMIT" : "DRY-RUN"}, ${scope}${opts.softDelete ? ", soft-delete" : ""}] ==\n`);
+  const only = libs ? `, lib=${steps.join(",")}` : "";
+  console.log(`\n== Sync GSS → SOTWISE  [${opts.commit ? "COMMIT" : "DRY-RUN"}, ${scope}${only}${opts.softDelete ? ", soft-delete" : ""}] ==\n`);
 
-  const { resources: plans, junctions } = await runSync(supabase, opts);
+  const { resources: plans, junctions } = await runSync(supabase, opts, steps);
 
   for (const p of plans) logPlan(p);
   if (junctions.length) {
