@@ -937,23 +937,23 @@ O cron único de 9h UTC lia tudo numa função só: o primeiro 502 do GSS derrub
 as bibliotecas seguintes **e** Orders/Lotes, e a execução inteira chegava perto
 dos 300 s. Agora o motor tem um passo por biblioteca (`SYNC_STEPS` em
 `lib/gss/sync.ts`) — cada um lê o próprio endpoint e o estado atual do banco, sem
-nada em memória vindo do passo anterior — e cada passo tem um cron, 10 min um do outro (nenhum passo cria mais que
+nada em memória vindo do passo anterior — e cada passo tem um cron, começando às 8h de Brasília, 10 min um do outro (nenhum passo cria mais que
 algumas linhas por dia):
 
-| UTC | Caminho | Grava |
-|---|---|---|
-| 00:00 | `/api/cron/sync-gss/countries` | `countries` |
-| 00:10 | `…/cities` | `cities` |
-| 00:20 | `…/ports` | `pols` + `pods` |
-| 00:30 | `…/exporters` | `exporters` |
-| 00:40 | `…/order_types` | `order_types` |
-| 00:50 | `…/business_units` | `business_units` |
-| 01:00 | `…/clients` | `clients` |
-| 01:10 | `…/factories` | `factories` (hoje nada: §9.10, geografia — supplier sem `company_name`) |
-| 01:20 | `…/agents` | `agents` |
-| 01:30 | `…/carriers` | `carriers` |
-| 01:40 | `…/categories` | `categories` + `category_factories` |
-| 02:00 | `…/orders` | Orders + Lotes (§9.11) + via de saída (§10) |
+| UTC | Brasília | Caminho | Grava |
+|---|---|---|---|
+| 11:00 | 08:00 | `/api/cron/sync-gss/countries` | `countries` |
+| 11:10 | 08:10 | `…/cities` | `cities` |
+| 11:20 | 08:20 | `…/ports` | `pols` + `pods` |
+| 11:30 | 08:30 | `…/exporters` | `exporters` |
+| 11:40 | 08:40 | `…/order_types` | `order_types` |
+| 11:50 | 08:50 | `…/business_units` | `business_units` |
+| 12:00 | 09:00 | `…/clients` | `clients` |
+| 12:10 | 09:10 | `…/factories` | `factories` (hoje nada: §9.10, geografia — supplier sem `company_name`) |
+| 12:20 | 09:20 | `…/agents` | `agents` |
+| 12:30 | 09:30 | `…/carriers` | `carriers` |
+| 12:40 | 09:40 | `…/categories` | `categories` + `category_factories` |
+| 13:00 | 10:00 | `…/orders` | Orders + Lotes (§9.11) + via de saída (§10) |
 
 - **10 min entre um e outro; Orders numa hora só dela.** A ordem é a de FK do
   §4.3 (countries antes de clients/agents, categories por último). ⚠️ No plano
@@ -961,7 +961,7 @@ algumas linhas por dia):
   minutos dentro da mesma hora não garantem espaçamento nem ordem — dois passos
   podem cair juntos. As listas das bibliotecas são pequenas e o `gssGet` retenta;
   o par que o GSS não aguenta junto é `/orders/` + `/orders/batch-totals/`, que
-  ficam num passo só, às 02h, na hora seguinte à do último bloco de bibliotecas —
+  ficam num passo só, às 13h UTC (10h de Brasília), na hora seguinte à do último bloco de bibliotecas —
   isso garante Orders/Lotes por último. No Pro os minutos valem.
 - **Caminho, não query string:** é o `path` do `vercel.json` que a Vercel agenda.
   `GET /api/cron/sync-gss` (sem passo) segue rodando tudo em sequência, para o
