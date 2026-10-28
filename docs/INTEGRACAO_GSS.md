@@ -937,28 +937,32 @@ O cron único de 9h UTC lia tudo numa função só: o primeiro 502 do GSS derrub
 as bibliotecas seguintes **e** Orders/Lotes, e a execução inteira chegava perto
 dos 300 s. Agora o motor tem um passo por biblioteca (`SYNC_STEPS` em
 `lib/gss/sync.ts`) — cada um lê o próprio endpoint e o estado atual do banco, sem
-nada em memória vindo do passo anterior — e cada passo tem um cron:
+nada em memória vindo do passo anterior — e cada passo tem um cron, 10 min um do outro (nenhum passo cria mais que
+algumas linhas por dia):
 
 | UTC | Caminho | Grava |
 |---|---|---|
-| 00h | `/api/cron/sync-gss/countries` | `countries` |
-| 01h | `…/cities` | `cities` |
-| 02h | `…/ports` | `pols` + `pods` |
-| 03h | `…/exporters` | `exporters` |
-| 04h | `…/order_types` | `order_types` |
-| 05h | `…/business_units` | `business_units` |
-| 06h | `…/clients` | `clients` |
-| 07h | `…/factories` | `factories` (hoje nada: §9.10, geografia — supplier sem `company_name`) |
-| 08h | `…/agents` | `agents` |
-| 09h | `…/carriers` | `carriers` |
-| 10h | `…/categories` | `categories` + `category_factories` |
-| 11h | `…/orders` | Orders + Lotes (§9.11) + via de saída (§10) |
+| 00:00 | `/api/cron/sync-gss/countries` | `countries` |
+| 00:10 | `…/cities` | `cities` |
+| 00:20 | `…/ports` | `pols` + `pods` |
+| 00:30 | `…/exporters` | `exporters` |
+| 00:40 | `…/order_types` | `order_types` |
+| 00:50 | `…/business_units` | `business_units` |
+| 01:00 | `…/clients` | `clients` |
+| 01:10 | `…/factories` | `factories` (hoje nada: §9.10, geografia — supplier sem `company_name`) |
+| 01:20 | `…/agents` | `agents` |
+| 01:30 | `…/carriers` | `carriers` |
+| 01:40 | `…/categories` | `categories` + `category_factories` |
+| 02:00 | `…/orders` | Orders + Lotes (§9.11) + via de saída (§10) |
 
-- **Uma hora por cron, de propósito.** No plano Hobby a Vercel dispara em
-  qualquer minuto da hora marcada (±59 min); com dois crons na mesma hora eles
-  podiam cair juntos, e o GSS devolve 5xx quando recebe duas listas grandes ao
-  mesmo tempo. A ordem das horas é a ordem de FK do §4.3 (countries antes de
-  clients/agents, categories por último, Orders depois de todas as bibliotecas).
+- **10 min entre um e outro; Orders numa hora só dela.** A ordem é a de FK do
+  §4.3 (countries antes de clients/agents, categories por último). ⚠️ No plano
+  Hobby a Vercel dispara em qualquer minuto da hora marcada (±59 min), então os
+  minutos dentro da mesma hora não garantem espaçamento nem ordem — dois passos
+  podem cair juntos. As listas das bibliotecas são pequenas e o `gssGet` retenta;
+  o par que o GSS não aguenta junto é `/orders/` + `/orders/batch-totals/`, que
+  ficam num passo só, às 02h, na hora seguinte à do último bloco de bibliotecas —
+  isso garante Orders/Lotes por último. No Pro os minutos valem.
 - **Caminho, não query string:** é o `path` do `vercel.json` que a Vercel agenda.
   `GET /api/cron/sync-gss` (sem passo) segue rodando tudo em sequência, para o
   Run manual; `?dry=1` vale nos dois.
