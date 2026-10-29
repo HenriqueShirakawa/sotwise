@@ -56,6 +56,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CardsSkeleton, TableRowsSkeleton } from "@/components/app-shell/table-page-skeleton";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
@@ -638,7 +639,10 @@ export function OrdersClient({
       {/* Cards só no mobile real (<720px); de 720 pra cima assume a tabela.
           O breakpoint casa com o `min-[720px]:block` da <Table> abaixo e com o
           corte da <ListToolbar>. Decisão do Henrique em 12/08/2026. */}
-      <div className={navigating ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+      <div aria-busy={navigating} className={navigating ? "pointer-events-none" : undefined}>
+      {navigating ? (
+        <CardsSkeleton rows={table.getRowModel().rows.length || 10} />
+      ) : (
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -648,6 +652,7 @@ export function OrdersClient({
         breakpoint="720"
         onRowClick={(row) => router.push(`/orders/${row.original.po_number}`)}
       />
+      )}
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
@@ -668,7 +673,12 @@ export function OrdersClient({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
+            {navigating ? (
+              <TableRowsSkeleton
+                columns={table.getVisibleLeafColumns().length}
+                rows={table.getRowModel().rows.length || 10}
+              />
+            ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
