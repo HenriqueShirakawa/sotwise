@@ -1186,8 +1186,8 @@ export function OrderDetailClient({
                         {TRIGGER_COMPLETED_STEPS.has(s.step) ? (
                           <TriggerCompletedOn step={s} onRevise={() => setRevisionsFor(s)} />
                         ) : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
-                          // Place the Order fecha sozinha quando a 1ª fábrica
-                          // recebe documento; ETD quando a última Initial Date é
+                          // Place the Order fecha sozinha quando toda fábrica
+                          // tem "Placed on"; ETD quando a última Initial Date é
                           // preenchida (lib/checklist-revisions).
                           <LockedCompletedOn value={s.completed_on} />
                         ) : (
@@ -1266,16 +1266,16 @@ export function OrderDetailClient({
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
-                      {s.step === "po" || s.step === "pi" ? (
-                        // Sem anexo: o GSS gera PO e PI (20/10/2026). Documento
-                        // antigo continua visível, só leitura.
+                      {s.step === "order" || s.step === "po" || s.step === "pi" ? (
+                        // Sem anexo: o GSS gera PO e PI (20/10/2026); Order fecha
+                        // pela "Order received date" (sem anexo desde 29/10/2026).
+                        // Documento antigo continua visível, só leitura.
                         s.attachments.length > 0 && (
                           <ReadOnlyAttachments attachments={s.attachments} />
                         )
                       ) : s.step === "place_the_order" ? (
                         <PlaceOrderFactoryGroups
                           orderId={orderId}
-                          stepId={s.id}
                           ofc={ofc}
                           batches={batches}
                           attachments={s.attachments}
