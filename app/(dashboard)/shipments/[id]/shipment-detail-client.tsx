@@ -1038,6 +1038,9 @@ export function ShipmentDetailClient({
                           />
                         )}
                       />
+                    ) : s.step === "agents" ? (
+                      // Agents sem documento nenhum desde 29/10/2026.
+                      null
                     ) : (
                       <AttachmentsSection
                         shipmentId={shipment.id}

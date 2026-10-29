@@ -937,16 +937,9 @@ export function PlChecklistClient({
                         attachments={s.attachments}
                       />
                     ) : s.step === "agents" ? (
-                      // Sem documento desde 29/10/2026: fecha pelos agentes. O
-                      // anexo antigo continua visível, sem "+ Attach".
-                      s.attachments.length > 0 && (
-                        <AttachmentsSection
-                          preLoadingId={preLoading.id}
-                          step={s.step}
-                          attachments={s.attachments}
-                          canAttach={false}
-                        />
-                      )
+                      // Sem documento nenhum desde 29/10/2026 (fecha pelos
+                      // agentes) — nem o antigo aparece.
+                      null
                     ) : (
                       !CONFIRM_SHIPPING_COMPLETES.has(s.step) && (
                         <AttachmentsSection
