@@ -100,7 +100,7 @@ export function EventDateField({
               <DatePicker
                 value={value || null}
                 onChange={(v) => setValue(v ?? "")}
-                // ETA e ATA podem ser futuras (22/10/2026); as demais são fato consumado.
+                // Só a ETA pode ser futura (ATA não, desde 29/10/2026); as demais são fato consumado.
                 max={EVENT_DATE_ALLOWS_FUTURE.has(step) ? undefined : todayIso()}
                 className="mt-1.5 bg-white"
               />
