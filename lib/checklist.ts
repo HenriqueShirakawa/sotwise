@@ -133,9 +133,8 @@ export const EVENT_DATE_LABELS: Partial<Record<ChecklistStep, string>> = {
   ...EVENT_DATE_STEPS,
 };
 
-/** Datas que podem ser futuras: ETA e, desde 22/10/2026 (card "Ajustes Data e
- *  Logs Etapas", decisão do usuário), também o ATA. */
+/** Datas que podem ser futuras: só a ETA. O ATA chegou a aceitar futura em
+ *  22/10/2026 e voltou a ser fato consumado em 29/10/2026 (decisão do usuário). */
 export const EVENT_DATE_ALLOWS_FUTURE: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "eta_brazil",
-  "ata_brazil",
 ]);
