@@ -642,19 +642,6 @@ function PiStatusField({
   );
 }
 
-/** Documentos antigos de PO/PI — só leitura (a etapa não aceita mais anexo). */
-function ReadOnlyAttachments({ attachments }: { attachments: ChecklistStepRow["attachments"] }) {
-  const [pending, startTransition] = useTransition();
-  function download(a: { file_path: string; file_name?: string | null }) {
-    startTransition(async () => {
-      const res = await getAttachmentDownloadUrl(a.file_path, a.file_name);
-      if (res.ok) triggerDownload(res.url, a.file_name);
-      else toast.error(res.error);
-    });
-  }
-  return <AttachedDocuments attachments={attachments} pending={pending} onDownload={download} />;
-}
-
 function AttachmentsSection({
   orderId,
   step,
@@ -1266,16 +1253,13 @@ export function OrderDetailClient({
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
-                      {s.step === "order" || s.step === "condition_confirm" ? (
-                        // Sem documento nenhum desde 29/10/2026 — nem o antigo
-                        // aparece (Order fecha pela "Order received date").
+                      {s.step === "order" ||
+                      s.step === "po" ||
+                      s.step === "pi" ||
+                      s.step === "condition_confirm" ? (
+                        // Sem documento nenhum, nem o antigo (29/10/2026): o GSS
+                        // gera PO e PI e a Order fecha pela "Order received date".
                         null
-                      ) : s.step === "po" || s.step === "pi" ? (
-                        // Sem anexo: o GSS gera PO e PI (20/10/2026). Documento
-                        // antigo continua visível, só leitura.
-                        s.attachments.length > 0 && (
-                          <ReadOnlyAttachments attachments={s.attachments} />
-                        )
                       ) : s.step === "place_the_order" ? (
                         <PlaceOrderFactoryGroups
                           orderId={orderId}

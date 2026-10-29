@@ -1151,8 +1151,8 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | # | Etapa | + além da data |
 |---|---|---|
 | 1 | Order | — (a data vem do "Order received date", ver abaixo; **sem documento** desde 29/10/2026 — nem o botão de anexo nem documento antigo aparecem) |
-| 2 | PO | entradas Factory × Category (**sem documento** desde 20/10/2026) |
-| 3 | PI | — (**sem documento** desde 20/10/2026; a data vem do status da PI no GSS) |
+| 2 | PO | entradas Factory × Category (**sem documento** desde 20/10/2026; desde 29/10/2026 nem o documento antigo aparece) |
+| 3 | PI | — (**sem documento** desde 20/10/2026 — desde 29/10/2026 nem o antigo aparece; a data vem do status da PI no GSS) |
 | 4 | Deposit Payment | — (desde 20/10/2026 a data vem do "Deposit date", ver abaixo) |
 | 5 | Packing Confirm. | — |
 | 6 | Condition Confirm. | — (**sem documento** desde 29/10/2026 — nem o botão de anexo nem documento antigo aparecem) |
