@@ -1150,7 +1150,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 
 | # | Etapa | + além da data |
 |---|---|---|
-| 1 | Order | — (a data vem do "Order received date", ver abaixo) |
+| 1 | Order | — (a data vem do "Order received date", ver abaixo; **sem documento** desde 29/10/2026 — o botão de anexo some, documento antigo fica só leitura) |
 | 2 | PO | entradas Factory × Category (**sem documento** desde 20/10/2026) |
 | 3 | PI | — (**sem documento** desde 20/10/2026; a data vem do status da PI no GSS) |
 | 4 | Deposit Payment | — (desde 20/10/2026 a data vem do "Deposit date", ver abaixo) |
@@ -1328,7 +1328,7 @@ create table public.step_attachments (
 ```
 
 > ✅ **Etapa "Place the Order" — visão agrupada por Factory (print da tela):** os campos padrão da etapa (Estimated date/Responsible/Completed on/Signed by) aparecem normalmente, e abaixo deles a **mesma entidade `order_factory_category`** da etapa PO é reexibida **agrupada por Factory**: uma linha por Factory com **"N° of categories"** = quantidade de **categorias distintas** daquela Factory neste pedido — a mesma Category em lotes diferentes conta **1** (decisão 20/10/2026; antes contava as entradas). As linhas por lote continuam na sub-tabela. Cada linha expande (chevron) pra uma sub-tabela **Categories | Batch Number**. Paginado (10 Factories por página).
-> - **Anexo por grupo:** o botão **"+ Attach"** de cada linha faz upload de documento vinculado a **essa combinação (Factory + etapa "Place the Order" + pedido)**, não à etapa inteira — por isso `step_attachments` ganhou a coluna `factory_id` (nullable; demais etapas continuam com anexo por etapa só, `factory_id = null`). A lista "Attached documents" some da UI genérica de etapa só pra "Place the Order" (substituída pelo anexo por Factory).
+> - **Anexo por grupo — REMOVIDO em 29/10/2026 (decisão do usuário):** a linha da fábrica não tem mais "+ Attach"; documentos antigos seguem visíveis (só leitura, sem excluir) ao expandir a linha. Histórico: o botão **"+ Attach"** de cada linha faz upload de documento vinculado a **essa combinação (Factory + etapa "Place the Order" + pedido)**, não à etapa inteira — por isso `step_attachments` ganhou a coluna `factory_id` (nullable; demais etapas continuam com anexo por etapa só, `factory_id = null`). A lista "Attached documents" some da UI genérica de etapa só pra "Place the Order" (substituída pelo anexo por Factory).
 > - **Data por fábrica + Completed on automático (decisão 2026-10-20, card "Ajustes Data e Logs"):** cada linha de Factory mostra **"Placed on"** = data do **1º documento** anexado àquela fábrica (`step_attachments.created_at`); cada upload já vai pro History da etapa com o nome da fábrica. Quando a **1ª** fábrica recebe documento, a etapa **conclui sozinha** (decisão 21/10/2026 — antes esperava a **última** fábrica; agora basta uma): Completed on = hoje, Signed by = quem anexou (`completePlaceTheOrderIfCovered` em `lib/checklist-revisions.ts`). O Completed on fica **travado** (`LOCKED_COMPLETED_ON_STEPS`); só admin/owner corrige — ou reabre, deixando a data vazia — pelo "Correct", com motivo que vai pro History. O anexo por fábrica **continua obrigatório** (o card pedia "remover obrigatoriedade", o usuário mandou ignorar). Como as demais etapas de gatilho, o gatilho nunca reabre: apagar um documento ou chegar fábrica nova do GSS depois de concluída não limpa o Completed on (a etapa só volta a ficar laranja se nenhuma fábrica tiver documento). Etapa antiga que já tinha documento em alguma fábrica sem Completed on só conclui no próximo anexo.
 
 ##### Log de alterações por etapa — "History" (decisão 2026-10-20)
@@ -2127,9 +2127,9 @@ Limitações do Bubble que **deixam de existir** em Postgres/Supabase e podem se
 
 _Pendente. Já observado: envio de e-mail (convite de novo usuário, reset de senha) e exportação XLS (Shipments). Detalhar no bloco correspondente._
 
-### 6.1 Copilot "Lapha" (API da Anthropic) — escopo confirmado 13/08/2026
+### 6.1 Copilot "SIA" (ex-"Lapha") (API da Anthropic) — escopo confirmado 13/08/2026
 
-Assistente dentro do SOT que responde perguntas sobre os dados do sistema. **Nome na interface: "Lapha"** (decidido em 13/08/2026), com ícone de robô na sidebar e no cabeçalho do painel. No código a coisa continua se chamando copilot — rota `/api/copilot`, `lib/copilot/`, `domain/copilot/` — porque renomear caminho não muda comportamento e quebraria links.
+Assistente dentro do SOT que responde perguntas sobre os dados do sistema. **Nome na interface: "SIA" — SOT Intelligent Assistant** (renomeado em 29/10/2026; antes "Lapha", decidido em 13/08/2026), com ícone de robô na sidebar e no cabeçalho do painel. No código a coisa continua se chamando copilot — rota `/api/copilot`, `lib/copilot/`, `domain/copilot/` — porque renomear caminho não muda comportamento e quebraria links.
 
 **Decisões do cliente:**
 
