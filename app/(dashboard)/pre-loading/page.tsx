@@ -11,19 +11,17 @@ import { PreLoadingClient, type PreLoadingRow } from "./pre-loading-client";
 import type { BatchOption } from "./pre-loading-form-modal";
 import type { Ref } from "./filters-modal";
 
-const LIST_STEPS = [
-  "consolidation_point",
-  "port_of_loading",
-  "loading_date",
-  "booking",
-  "agents",
-] as const;
+// Etapas que a lista usa (a view pre_loadings_list traz só essas).
+type ListStep = "consolidation_point" | "port_of_loading" | "loading_date" | "booking" | "agents";
 
 // Lotes que o modal de criação oferece: em produção (regra confirmada — o PL
 // agrupa lotes "In production") mais os que já estão num PL, necessários pra
 // reabrir a seleção na edição.
 const SELECTABLE_BATCH_STATUSES: BatchStatus[] = ["in_production", "preloading"];
 
+/** Linha da view `pre_loadings_list`: só os PLs abertos, com o que a lista usa
+ *  já agregado (20261029140000) — antes a página baixava etapas, lotes, orders
+ *  e shipments de TODOS os PLs para descartar quase tudo. */
 type PreLoadingBase = {
   id: string;
   pl_number: string;
@@ -32,6 +30,10 @@ type PreLoadingBase = {
   pod_id: string | null;
   leader_id: string | null;
   responsible_signer_id: string | null;
+  steps: Partial<Record<ListStep, StepRow>>;
+  clients: { id: string; name: string }[];
+  batch_ids: string[];
+  order_ids: string[];
 };
 
 type SelectableBatchRow = {
@@ -50,7 +52,7 @@ type OfcBatchRow = {
 
 type StepRow = {
   pre_loading_id: string;
-  step: (typeof LIST_STEPS)[number];
+  step: ListStep;
   completed_on: string | null;
   estimated_date: string | null;
   consolidation_point_id: string | null;
@@ -71,11 +73,7 @@ export default async function PreLoadingPage() {
 
   const [
     preLoadings,
-    shipmentRows,
-    stepRows,
-    plClients,
-    plBatches,
-    batchRes,
+    reservedLinks,
     orderRes,
     podRes,
     factoryRes,
@@ -89,38 +87,20 @@ export default async function PreLoadingPage() {
     ofcByBatch,
     categoryRes,
   ] = await Promise.all([
+    // Só os PLs abertos — a regra de saída da lista (Loading Date concluída E
+    // embarque criado) está na view.
     fetchAll<PreLoadingBase>((from, to) =>
-      admin
-        .from("pre_loadings")
-        .select(
-          "id, pl_number, created_date, client_reference, pod_id, leader_id, responsible_signer_id"
-        )
-        .is("deleted_at", null)
-        .range(from, to)
+      admin.from("pre_loadings_list").select("*").range(from, to).returns<PreLoadingBase[]>()
     ),
-    // Quem já virou embarque: junto com a Loading Date concluída, é o que tira
-    // o PL desta lista (o filtro em si está no laço lá embaixo).
-    fetchAll<{ pre_loading_id: string }>((from, to) =>
-      admin.from("shipments").select("pre_loading_id").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<StepRow>((from, to) =>
-      admin
-        .from("pre_loading_checklist_steps")
-        .select(
-          "pre_loading_id, step, completed_on, estimated_date, responsible_id, consolidation_point_id, pol_id, agent_brazil_id, agent_china_id, carrier_id, booking_number, cutoff_date, doc_cutoff_date"
-        )
-        .in("step", LIST_STEPS)
-        .range(from, to)
-        .returns<StepRow[]>()
-    ),
-    fetchAll<{ pre_loading_id: string; client_id: string }>((from, to) =>
-      admin.from("pre_loading_clients").select("pre_loading_id, client_id").range(from, to)
-    ),
+    // Lote selecionável -> PL vivo que o reservou (reabre a seleção na edição).
+    // Os vínculos de um PL apagado (soft delete) liberam o lote de volta.
     fetchAll<{ pre_loading_id: string; batch_id: string }>((from, to) =>
-      admin.from("pre_loading_batches").select("pre_loading_id, batch_id").range(from, to)
-    ),
-    fetchAll<{ id: string; order_id: string }>((from, to) =>
-      admin.from("batches").select("id, order_id").range(from, to)
+      admin
+        .from("pre_loading_batches")
+        .select("pre_loading_id, batch_id, batches!inner(status), pre_loadings!inner(deleted_at)")
+        .in("batches.status", SELECTABLE_BATCH_STATUSES)
+        .is("pre_loadings.deleted_at", null)
+        .range(from, to)
     ),
     fetchAll<{ id: string; po_number: string }>((from, to) =>
       admin.from("orders").select("id, po_number").is("deleted_at", null).range(from, to)
@@ -180,54 +160,17 @@ export default async function PreLoadingPage() {
   const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
   const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
   const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
-  const orderIdByBatchId = new Map(batchRes.map((b) => [b.id, b.order_id]));
-
-  const stepsByPreLoading = new Map<string, Partial<Record<(typeof LIST_STEPS)[number], StepRow>>>();
-  for (const s of stepRows) {
-    const entry = stepsByPreLoading.get(s.pre_loading_id) ?? {};
-    entry[s.step] = s;
-    stepsByPreLoading.set(s.pre_loading_id, entry);
-  }
-
-  const clientsByPreLoading = new Map<string, { id: string; name: string }[]>();
-  for (const pc of plClients) {
-    const arr = clientsByPreLoading.get(pc.pre_loading_id) ?? [];
-    const name = clientNameById.get(pc.client_id);
-    if (name) arr.push({ id: pc.client_id, name });
-    clientsByPreLoading.set(pc.pre_loading_id, arr);
-  }
-
-  const orderIdsByPreLoading = new Map<string, Set<string>>();
-  const batchIdsByPreLoading = new Map<string, string[]>();
-  // Lote -> PL que o reservou. Só vínculos de PLs vivos: os de um PL apagado
-  // (soft delete) liberam o lote de volta pra seleção.
-  const livePlIds = new Set(preLoadings.map((p) => p.id));
-  const plIdByBatchId = new Map<string, string>();
-  for (const pb of plBatches) {
-    if (!livePlIds.has(pb.pre_loading_id)) continue;
-    plIdByBatchId.set(pb.batch_id, pb.pre_loading_id);
-    const batches = batchIdsByPreLoading.get(pb.pre_loading_id) ?? [];
-    batches.push(pb.batch_id);
-    batchIdsByPreLoading.set(pb.pre_loading_id, batches);
-
-    const orderId = orderIdByBatchId.get(pb.batch_id);
-    if (!orderId) continue;
-    const set = orderIdsByPreLoading.get(pb.pre_loading_id) ?? new Set<string>();
-    set.add(orderId);
-    orderIdsByPreLoading.set(pb.pre_loading_id, set);
-  }
-
-  const shippedPlIds = new Set(shipmentRows.map((s) => s.pre_loading_id));
+  const plIdByBatchId = new Map(reservedLinks.map((pb) => [pb.batch_id, pb.pre_loading_id]));
 
   const rows: PreLoadingRow[] = [];
   for (const pl of preLoadings) {
-    const steps = stepsByPreLoading.get(pl.id) ?? {};
+    const steps = pl.steps;
     const loadingDateStep = steps.loading_date;
-    // Regra da lista: o PL só sai daqui quando as DUAS coisas acontecem — a
-    // etapa "Loading Date" concluída E um embarque criado (Confirm Shipping,
-    // com o status de cada linha Factory × Category). Só a data preenchida
-    // sumia com o PL antes de ele virar Shipment, e o trabalho ficava sem tela.
-    if (loadingDateStep?.completed_on && shippedPlIds.has(pl.id)) continue;
+    // Regra da lista (aplicada na view pre_loadings_list): o PL só sai daqui
+    // quando as DUAS coisas acontecem — a etapa "Loading Date" concluída E um
+    // embarque criado (Confirm Shipping, com o status de cada linha Factory ×
+    // Category). Só a data preenchida sumia com o PL antes de ele virar
+    // Shipment, e o trabalho ficava sem tela.
 
     const consPointId = steps.consolidation_point?.consolidation_point_id ?? null;
     const polId = steps.port_of_loading?.pol_id ?? null;
@@ -235,8 +178,8 @@ export default async function PreLoadingPage() {
     // O Carrier agora é escolha direta na etapa Agents (antes era derivado do
     // agente via carrier_agents). Mantido como array de 1 p/ o filtro da lista.
     const carrierIds = agentsStep?.carrier_id ? [agentsStep.carrier_id] : [];
-    const plClientsList = clientsByPreLoading.get(pl.id) ?? [];
-    const plOrderIds = [...(orderIdsByPreLoading.get(pl.id) ?? [])];
+    const plClientsList = pl.clients;
+    const plOrderIds = pl.order_ids;
 
     rows.push({
       id: pl.id,
@@ -267,9 +210,9 @@ export default async function PreLoadingPage() {
       booking_confirmed: steps.booking
         ? isStepChecked("booking", plStepFacts(steps.booking, 0))
         : false,
-      total_pos: orderIdsByPreLoading.get(pl.id)?.size ?? 0,
+      total_pos: plOrderIds.length,
       order_ids: plOrderIds,
-      batch_ids: batchIdsByPreLoading.get(pl.id) ?? [],
+      batch_ids: pl.batch_ids,
       agent_brazil_id: agentsStep?.agent_brazil_id ?? null,
       agent_china_id: agentsStep?.agent_china_id ?? null,
       carrier_ids: carrierIds,
