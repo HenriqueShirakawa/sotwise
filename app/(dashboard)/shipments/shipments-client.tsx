@@ -19,6 +19,7 @@ import { formatDateNumeric } from "@/lib/format";
 import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
+import { CardsSkeleton, TableRowsSkeleton } from "@/components/app-shell/table-page-skeleton";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -443,7 +444,10 @@ export function ShipmentsClient({
         shipmentModels={shipmentModels}
       />
 
-      <div className={isPending ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+      <div aria-busy={isPending} className={isPending ? "pointer-events-none" : undefined}>
+        {isPending ? (
+          <CardsSkeleton rows={table.getRowModel().rows.length || 10} />
+        ) : (
         <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -453,6 +457,7 @@ export function ShipmentsClient({
         breakpoint="720"
         onRowClick={(row) => router.push(`/shipments/${row.original.pl_number}`)}
       />
+      )}
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
@@ -473,7 +478,12 @@ export function ShipmentsClient({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
+            {isPending ? (
+              <TableRowsSkeleton
+                columns={table.getVisibleLeafColumns().length}
+                rows={table.getRowModel().rows.length || 10}
+              />
+            ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
