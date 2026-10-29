@@ -13,13 +13,12 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter, Loader2 } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
 import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
-import { CardsSkeleton, TableRowsSkeleton } from "@/components/app-shell/table-page-skeleton";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -459,9 +458,6 @@ export function ShipmentsClient({
       />
 
       <div aria-busy={isPending} className={isPending ? "pointer-events-none" : undefined}>
-        {isPending ? (
-          <CardsSkeleton rows={table.getRowModel().rows.length || 10} />
-        ) : (
         <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -471,7 +467,6 @@ export function ShipmentsClient({
         breakpoint="720"
         onRowClick={(row) => router.push(`/shipments/${row.original.pl_number}`)}
       />
-      )}
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
@@ -492,12 +487,7 @@ export function ShipmentsClient({
             ))}
           </TableHeader>
           <TableBody>
-            {isPending ? (
-              <TableRowsSkeleton
-                columns={table.getVisibleLeafColumns().length}
-                rows={table.getRowModel().rows.length || 10}
-              />
-            ) : table.getRowModel().rows.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -530,6 +520,12 @@ export function ShipmentsClient({
         <p className="text-sm text-muted-foreground">
           Page {state.page} of {pageCount}
           <span className="ml-2 text-slate-400">· {total} shipments</span>
+          {isPending && (
+            <Loader2
+              className="ml-2 inline size-3.5 animate-spin text-primary"
+              aria-label="Loading"
+            />
+          )}
         </p>
         <div className="flex items-center gap-2">
           <Button
