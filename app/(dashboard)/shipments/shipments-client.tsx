@@ -43,6 +43,7 @@ import {
   listStateToSearch,
   type ListState,
   type SortId,
+  type ShipmentFilterOptions,
 } from "./list-params";
 
 /** Uma linha da página atual — filtros, busca e ordenação já rodaram no banco
@@ -155,38 +156,58 @@ const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
  * Paginada no servidor (29/10/2026): página, busca, ordenação e filtros moram na
  * URL; mudar qualquer um navega e o servidor devolve só a página nova.
  */
+const NO_OPTIONS: ShipmentFilterOptions = {
+  clients: [],
+  profiles: [],
+  orders: [],
+  orderTypes: [],
+  agents: [],
+  carriers: [],
+  pols: [],
+  pods: [],
+  factories: [],
+  shipmentModels: [],
+};
+// Guardadas no módulo: voltar à lista na mesma sessão não busca de novo.
+let cachedOptions: ShipmentFilterOptions | null = null;
+
+/** Opções do modal de Filters, buscadas em segundo plano depois que a lista aparece. */
+function useFilterOptions(): ShipmentFilterOptions {
+  const [options, setOptions] = useState(cachedOptions ?? NO_OPTIONS);
+  useEffect(() => {
+    if (cachedOptions) return;
+    let alive = true;
+    fetch("/shipments/filter-options")
+      .then((res) => {
+        if (!res.ok) throw new Error(`filter-options ${res.status}`);
+        return res.json() as Promise<ShipmentFilterOptions>;
+      })
+      .then((loaded) => {
+        cachedOptions = loaded;
+        if (alive) setOptions(loaded);
+      })
+      .catch(() => {
+        // Sem opções o modal só fica com os selects vazios; a lista segue.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return options;
+}
+
 export function ShipmentsClient({
   rows,
   total,
   pageCount,
   state,
   initialColumns,
-  clients,
-  profiles,
-  orders,
-  orderTypes,
-  agents,
-  carriers,
-  pols,
-  pods,
-  factories,
-  shipmentModels,
 }: {
   rows: ShipmentRow[];
   total: number;
   pageCount: number;
   state: ListState;
   initialColumns: VisibilityState;
-  clients: Ref[];
-  profiles: Ref[];
-  orders: Ref[];
-  orderTypes: Ref[];
-  agents: Ref[];
-  carriers: Ref[];
-  pols: Ref[];
-  pods: Ref[];
-  factories: Ref[];
-  shipmentModels: Ref[];
 }) {
   const router = useRouter();
 
@@ -239,14 +260,15 @@ export function ShipmentsClient({
   // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
   // 12×, INTEGRACAO_GSS §9.3). No filtro basta o nome do porto — deduplicamos a
   // lista e casamos por nome, senão escolher "Ningbo" pegaria só 1 dos 12 ids.
+  const options = useFilterOptions();
   const uniquePols = useMemo(() => {
     const byName = new Map<string, Ref>();
-    for (const p of pols) {
+    for (const p of options.pols) {
       const key = p.name.trim().toLowerCase();
       if (!byName.has(key)) byName.set(key, p);
     }
     return [...byName.values()];
-  }, [pols]);
+  }, [options.pols]);
 
   const columns = useMemo<ColumnDef<ShipmentRow>[]>(
     () => [
@@ -381,16 +403,8 @@ export function ShipmentsClient({
         filters={filters}
         onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
         onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
-        clients={clients}
-        profiles={profiles}
-        orders={orders}
-        orderTypes={orderTypes}
-        agents={agents}
-        carriers={carriers}
+        {...options}
         pols={uniquePols}
-        pods={pods}
-        factories={factories}
-        shipmentModels={shipmentModels}
       />
 
       <div aria-busy={isPending} className={isPending ? "pointer-events-none" : undefined}>
