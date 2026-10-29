@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
+import { CardsSkeleton, TableRowsSkeleton } from "@/components/app-shell/table-page-skeleton";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
@@ -477,7 +478,10 @@ export function EtdFactoriesClient({
         onOpenChange={(o) => !o && setModalTarget(null)}
       />
 
-      <div className={navigating ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+      <div aria-busy={navigating} className={navigating ? "pointer-events-none" : undefined}>
+      {navigating ? (
+        <CardsSkeleton rows={table.getRowModel().rows.length || 10} />
+      ) : (
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -487,6 +491,7 @@ export function EtdFactoriesClient({
         breakpoint="720"
         onRowClick={(row) => openRow(row.original)}
       />
+      )}
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
@@ -507,7 +512,12 @@ export function EtdFactoriesClient({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
+            {navigating ? (
+              <TableRowsSkeleton
+                columns={table.getVisibleLeafColumns().length}
+                rows={table.getRowModel().rows.length || 10}
+              />
+            ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
