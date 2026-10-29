@@ -4,11 +4,9 @@ import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { readListState } from "@/lib/list-state";
-import { fetchAll } from "@/lib/fetch-all";
 import { PageHeader } from "@/components/page-header";
 
 import { ShipmentsClient, type ShipmentRow } from "./shipments-client";
-import type { Ref } from "./filters-modal";
 import { PAGE_SIZE, SORT_COLUMNS, listStateToSearch, parseListState } from "./list-params";
 
 /** shipments.status ('in_transit'|'delivered'|'canceled') → label exibido. */
@@ -58,8 +56,9 @@ export default async function ShipmentsPage({
   const state = parseListState(await searchParams);
   const f = state.filters;
 
-  // Só a página pedida, com o total para "Page X of Y". Roda JUNTO com os
-  // cadastros (cada ida ao banco é uma viagem até o Supabase).
+  // Só a página pedida, com o total para "Page X of Y". As opções dos filtros
+  // NÃO vêm aqui: o cliente as carrega uma vez, à parte (./filter-options.ts) —
+  // antes iam em toda troca de página (~50 kB: 1,6 mil orders, 800 fábricas…).
   const fetchPage = async () => {
     let query = admin.from("shipments_list").select("*", { count: "exact" });
     if (f.client_id) query = query.contains("client_ids", [f.client_id]);
@@ -88,54 +87,7 @@ export default async function ShipmentsPage({
     return query.range(from, from + PAGE_SIZE - 1);
   };
 
-  // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de 1000
-  // do PostgREST (ver lib/fetch-all).
-  const [
-    polRes,
-    modelRes,
-    clientRes,
-    typeRes,
-    podRes,
-    agentRes,
-    carrierRes,
-    factoryRes,
-    profileRes,
-    orderNumbers,
-    { data, count, error },
-  ] = await Promise.all([
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("shipment_models").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("order_types").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("pods").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("agents").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("carriers").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("factories").select("id, name").is("deleted_at", null).range(from, to)
-    ),
-    // profiles não tem deleted_at — mesma query das outras telas.
-    fetchAll<{ id: string; full_name: string | null }>((from, to) =>
-      admin.from("profiles").select("id, full_name").range(from, to)
-    ),
-    fetchAll<{ id: string; po_number: string }>((from, to) =>
-      admin.from("orders").select("id, po_number").is("deleted_at", null).range(from, to)
-    ),
-    fetchPage(),
-  ]);
+  const { data, count, error } = await fetchPage();
   if (error) throw new Error(`shipments_list: ${error.message}`);
 
   const total = count ?? 0;
@@ -161,10 +113,6 @@ export default async function ShipmentsPage({
     status: STATUS_LABELS[s.status] ?? s.status,
   }));
 
-  const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
-  const toRefs = (list: { id: string; name: string }[]) =>
-    list.map((r) => ({ id: r.id, name: r.name })).sort(byName);
-
   return (
     <div>
       <PageHeader title="Shipments" />
@@ -175,21 +123,6 @@ export default async function ShipmentsPage({
         state={state}
         initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
         initialListState={readListState(profile, "shipments")}
-        clients={toRefs(clientRes)}
-        profiles={profileRes
-          .filter((p) => p.full_name)
-          .map((p) => ({ id: p.id, name: p.full_name as string }))
-          .sort(byName)}
-        orders={orderNumbers
-          .map((o) => ({ id: o.id, name: o.po_number }))
-          .sort((a, b) => (Number(b.name) || 0) - (Number(a.name) || 0))}
-        orderTypes={toRefs(typeRes)}
-        agents={toRefs(agentRes)}
-        carriers={toRefs(carrierRes)}
-        pols={toRefs(polRes)}
-        pods={toRefs(podRes)}
-        factories={toRefs(factoryRes)}
-        shipmentModels={toRefs(modelRes)}
       />
     </div>
   );
