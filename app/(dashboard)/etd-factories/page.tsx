@@ -1,117 +1,103 @@
+import { redirect } from "next/navigation";
+
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { fetchAll } from "@/lib/fetch-all";
 import { daysDelay, gapOfReady } from "@/lib/etd";
-import type { BatchStatus } from "@/types/database";
+import type { Database } from "@/types/database";
 
 import { EtdFactoriesClient, type EtdFactoryRow } from "./etd-factories-client";
+import { PAGE_SIZE, SORT_COLUMNS, listStateToSearch, parseListState } from "./list-params";
 
-// Filtro padrão da tela ETD Factories: só lotes em produção ou pre-loading
-// (ver docs/regras_de_negocio.md §3.7.4, mesmo com o enum tendo 6 valores).
-const ACTIVE_BATCH_STATUSES: BatchStatus[] = ["in_production", "preloading"];
+type EtdListRow = Database["public"]["Views"]["etd_list"]["Row"];
 
-type EtdEmbed = {
-  initial_date: string | null;
-  current_date: string | null;
-  ready: boolean;
-  ready_date: string | null;
-  updated_at: string;
-  inspection: boolean;
-  dispatch_location_id: string | null;
-  dispatch_date: string | null;
-};
-
-/**
- * Uma entrada Factory×Category de um lote ATIVO, já com o lote, o pedido e o
- * ETD embutidos (inner join no PostgREST). Trazer só os lotes ativos aqui, em
- * vez de baixar order_factory_category/batches/etd_info inteiros e filtrar no
- * app, corta ~88% do volume (9.485 → ~1.069 linhas).
- */
-type OfcActiveRow = {
-  id: string;
-  order_id: string;
-  category_id: string;
-  factory_id: string;
-  ship_requirement: string | null;
-  batches: { batch_number: string; status: BatchStatus } | null;
-  orders: { po_number: string; client_id: string | null; date_po: string | null } | null;
-  etd_info: EtdEmbed | EtdEmbed[] | null;
-};
+/** Filtros de range de data → coluna da view `etd_list`. */
+const DATE_RANGES = [
+  ["shipment_req", "shipment_from", "shipment_to"],
+  ["initial_date", "initial_from", "initial_to"],
+  ["current_date", "current_from", "current_to"],
+  ["last_updated_day", "updated_from", "updated_to"],
+] as const;
 
 /** Monta as linhas exibidas — separado do componente pra manter o `Date.now()`
  * (impuro) fora do corpo de uma função que o React Compiler trata como componente. */
-function buildRows(
-  ofcRows: OfcActiveRow[],
-  factoryNameById: Map<string, string>,
-  categoryNameById: Map<string, string>,
-  clientNameById: Map<string, string>
-): EtdFactoryRow[] {
+function buildRows(list: EtdListRow[]): EtdFactoryRow[] {
   const todayMs = Date.now();
-  const rows: EtdFactoryRow[] = [];
-  for (const ofc of ofcRows) {
-    const batch = ofc.batches;
-    const order = ofc.orders;
-    // Os inner joins garantem lote ativo + pedido não-deletado; guarda defensiva.
-    if (!batch || !order) continue;
-    const etd = Array.isArray(ofc.etd_info) ? ofc.etd_info[0] : ofc.etd_info;
-
-    rows.push({
-      id: ofc.id,
-      order_id: ofc.order_id,
-      client: order.client_id ? (clientNameById.get(order.client_id) ?? null) : null,
-      client_id: order.client_id,
-      po_number: order.po_number,
-      batch_number: batch.batch_number,
-      factory: factoryNameById.get(ofc.factory_id) ?? "—",
-      factory_id: ofc.factory_id,
-      category: categoryNameById.get(ofc.category_id) ?? "—",
-      category_id: ofc.category_id,
-      order_date: order.date_po,
-      shipment_req: ofc.ship_requirement,
-      initial_date: etd?.initial_date ?? null,
-      current_date: etd?.current_date ?? null,
-      days_delay: daysDelay(etd?.initial_date ?? null, etd?.current_date ?? null),
-      last_updated: etd?.updated_at ?? null,
-      batch_status: batch.status,
-      ready_parts: etd?.ready ?? false,
-      gap_of_ready: gapOfReady(etd?.ready, etd?.ready_date, todayMs),
-      inspection: etd?.inspection ?? false,
-      dispatch_location: etd?.dispatch_location_id
-        ? (factoryNameById.get(etd.dispatch_location_id) ?? null)
-        : null,
-      dispatch_date: etd?.dispatch_date ?? null,
-    });
-  }
-  return rows;
+  return list.map((r) => ({
+    id: r.id,
+    order_id: r.order_id,
+    client: r.client,
+    client_id: r.client_id,
+    po_number: r.po_number,
+    batch_number: r.batch_number,
+    factory: r.factory,
+    factory_id: r.factory_id,
+    category: r.category,
+    category_id: r.category_id,
+    order_date: r.order_date,
+    shipment_req: r.shipment_req,
+    initial_date: r.initial_date,
+    current_date: r.current_date,
+    days_delay: daysDelay(r.initial_date, r.current_date),
+    last_updated: r.last_updated,
+    batch_status: r.batch_status,
+    ready_parts: r.ready_parts,
+    gap_of_ready: gapOfReady(r.ready_parts, r.ready_date, todayMs),
+    inspection: r.inspection,
+    dispatch_location: r.dispatch_location,
+    dispatch_date: r.dispatch_date,
+  }));
 }
 
 export const metadata = { title: "ETD factories" };
 
-export default async function EtdFactoriesPage() {
+/**
+ * ETD Factories — paginada no SERVIDOR desde 29/10/2026: a view `etd_list` tem
+ * uma linha por Factory×Category ativa de lote em produção/pre-loading (docs
+ * §3.7.4) e aqui só se lê a página pedida, com busca/filtros/ordenação vindos
+ * da URL (./list-params). Antes baixava todas essas linhas e filtrava no app.
+ */
+export default async function EtdFactoriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { profile } = await requireFeature("etd_factories");
   const admin = createAdminClient();
+  const state = parseListState(await searchParams);
+  const f = state.filters;
 
-  // Uma query com inner join nos lotes ativos + pedido não-deletado, embutindo
-  // batch/order/etd. As listas de factory/category/client vêm à parte porque os
-  // filtros precisam de TODAS as opções (não só as dos lotes ativos).
-  const [ofcRows, factoryRes, categoryRes, clientRes] = await Promise.all([
-    fetchAll<OfcActiveRow>((from, to) =>
-      admin
-        .from("order_factory_category")
-        .select(
-          "id, order_id, category_id, factory_id, ship_requirement, " +
-            "batches!inner(batch_number, status), " +
-            "orders!inner(po_number, client_id, date_po), " +
-            "etd_info(initial_date, current_date, ready, ready_date, updated_at, " +
-            "inspection, dispatch_location_id, dispatch_date)"
-        )
-        .eq("is_active", true)
-        .in("batches.status", ACTIVE_BATCH_STATUSES)
-        .is("orders.deleted_at", null)
-        .range(from, to)
-        .returns<OfcActiveRow[]>()
-    ),
+  let query = admin.from("etd_list").select("*", { count: "exact" });
+  if (f.client_id) query = query.eq("client_id", f.client_id);
+  if (f.status) query = query.eq("batch_status", f.status);
+  if (f.factory_id) query = query.eq("factory_id", f.factory_id);
+  if (f.category_id) query = query.eq("category_id", f.category_id);
+  for (const [column, from, to] of DATE_RANGES) {
+    if (f[from]) query = query.gte(column, f[from]);
+    if (f[to]) query = query.lte(column, f[to]);
+  }
+  if (f.empty_dates === "yes") query = query.is("initial_date", null);
+  if (f.empty_dates === "no") query = query.not("initial_date", "is", null);
+  if (f.ready_parts) query = query.eq("ready_parts", f.ready_parts === "yes");
+  if (state.q) query = query.ilike("po_number", `%${state.q}%`);
+  // Vazio no começo na ordem crescente e no fim na decrescente, como a lista
+  // antiga (que tratava vazio como o menor valor).
+  const asc = !state.sort.desc;
+  for (const column of SORT_COLUMNS[state.sort.id]) {
+    query = query.order(column, { ascending: asc, nullsFirst: asc });
+  }
+  if (state.sort.id !== "po_batch") {
+    query = query
+      .order("po_number_int", { ascending: false })
+      .order("batch_seq", { ascending: false });
+  }
+  const from = (state.page - 1) * PAGE_SIZE;
+
+  // As listas de factory/category/client vêm à parte porque os filtros precisam
+  // de TODAS as opções (não só as dos lotes ativos).
+  const [page, factoryRes, categoryRes, clientRes] = await Promise.all([
+    query.range(from, from + PAGE_SIZE - 1),
     // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de
     // 1000 do PostgREST (ver lib/fetch-all).
     fetchAll<{ id: string; name: string }>((from, to) =>
@@ -124,20 +110,16 @@ export default async function EtdFactoriesPage() {
       admin.from("clients").select("id, name").is("deleted_at", null).range(from, to)
     ),
   ]);
+  if (page.error) throw new Error(`etd_list: ${page.error.message}`);
 
-  const factoryNameById = new Map(factoryRes.map((f) => [f.id, f.name]));
-  const categoryNameById = new Map(categoryRes.map((c) => [c.id, c.name]));
-  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
+  const total = page.count ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Página além do fim (filtro estreitou, link antigo): vai para a última.
+  if (state.page > pageCount) {
+    redirect(`/etd-factories${listStateToSearch({ ...state, page: pageCount })}`);
+  }
 
-  const rows = buildRows(ofcRows, factoryNameById, categoryNameById, clientNameById);
-
-  // Ordenação padrão: Client, depois PO — igual ao Bubble.
-  rows.sort(
-    (a, b) =>
-      (a.client ?? "").localeCompare(b.client ?? "") ||
-      (Number(a.po_number) || 0) - (Number(b.po_number) || 0) ||
-      a.batch_number.localeCompare(b.batch_number, undefined, { numeric: true })
-  );
+  const rows = buildRows(page.data ?? []);
 
   const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
   const clients = clientRes
@@ -153,6 +135,9 @@ export default async function EtdFactoriesPage() {
   return (
     <EtdFactoriesClient
       rows={rows}
+      total={total}
+      pageCount={pageCount}
+      state={state}
       clients={clients}
       factories={factories}
       categories={categories}

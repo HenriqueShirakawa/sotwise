@@ -1651,6 +1651,92 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Lista de Orders paginada no servidor (20261029150000): só PO numérico,
+      // com nomes, lotes e ETD. Só service role.
+      orders_list: {
+        Row: {
+          id: UUID;
+          po_number: string;
+          po_number_int: number;
+          bu: string | null;
+          type: string | null;
+          type_color: string | null;
+          client: string | null;
+          client_reference: string | null;
+          batches: { batch_number: string; status: BatchStatus }[];
+          leader: string | null;
+          operational_responsible: string | null;
+          requester: string | null;
+          exporter: string | null;
+          date_create: Timestamp;
+          date_create_day: DateStr;
+          status: OrderStatus;
+          status_text: string;
+          schedule_requested: DateStr | null;
+          etd: DateStr | null;
+          order_type_id: UUID | null;
+          client_id: UUID | null;
+          business_unit_id: UUID | null;
+          requester_id: UUID | null;
+          exporter_id: UUID | null;
+          leader_id: UUID | null;
+          operational_responsible_id: UUID | null;
+        };
+        Relationships: [];
+      };
+      // ETD Factories paginada no servidor (20261029160000): Factory×Category
+      // ativa de lote em produção/pre-loading. Só service role.
+      etd_list: {
+        Row: {
+          id: UUID;
+          order_id: UUID;
+          client: string | null;
+          client_id: UUID | null;
+          po_number: string;
+          po_number_int: number;
+          batch_number: string;
+          batch_seq: number;
+          factory: string;
+          factory_id: UUID;
+          category: string;
+          category_id: UUID;
+          order_date: DateStr | null;
+          shipment_req: DateStr | null;
+          initial_date: DateStr | null;
+          current_date: DateStr | null;
+          days_delay: number | null;
+          last_updated: Timestamp | null;
+          last_updated_day: DateStr | null;
+          batch_status: BatchStatus;
+          batch_status_label: string;
+          ready_parts: boolean;
+          ready_date: DateStr | null;
+          gap_of_ready: number | null;
+          inspection: boolean;
+          dispatch_location: string | null;
+          dispatch_date: DateStr | null;
+        };
+        Relationships: [];
+      };
+      // Só os PLs abertos da lista /pre-loading (20261029140000), com etapas,
+      // clientes, lotes e orders agregados. Só service role.
+      pre_loadings_list: {
+        Row: {
+          id: UUID;
+          pl_number: string;
+          created_date: DateStr;
+          client_reference: string | null;
+          pod_id: UUID | null;
+          leader_id: UUID | null;
+          responsible_signer_id: UUID | null;
+          /** etapa → linha de pre_loading_checklist_steps */
+          steps: Record<string, Record<string, unknown>>;
+          clients: { id: UUID; name: string }[];
+          batch_ids: UUID[];
+          order_ids: UUID[];
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       profile_id_by_email: {
