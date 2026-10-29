@@ -1,12 +1,11 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Paperclip, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { Label } from "@/components/ui/label";
@@ -14,13 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/date-picker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-import {
-  deleteStepAttachment,
-  getAttachmentDownloadUrl,
-  createStepAttachmentTicket,
-  registerStepAttachment,
-  saveFactoryPlacedDate,
-} from "./actions";
+import { getAttachmentDownloadUrl, saveFactoryPlacedDate } from "./actions";
 import type { BatchRow, ChecklistStepRow, OfcRow } from "./order-detail-client";
 
 const GROUPS_PAGE_SIZE = 10;
@@ -56,28 +49,15 @@ function buildFactoryGroups(ofc: OfcRow[], batches: BatchRow[]): FactoryGroup[] 
   );
 }
 
-function FactoryAttachments({
-  orderId,
-  attachments,
-}: {
-  orderId: string;
-  attachments: ChecklistStepRow["attachments"];
-}) {
-  const router = useRouter();
+/** Documentos antigos da fábrica — só leitura: a etapa deixou de receber
+ * anexo por fábrica em 29/10/2026 (fecha só pela data "Placed on"). */
+function FactoryAttachments({ attachments }: { attachments: ChecklistStepRow["attachments"] }) {
   const [pending, startTransition] = useTransition();
 
   function download(a: { file_path: string; file_name?: string | null }) {
     startTransition(async () => {
       const res = await getAttachmentDownloadUrl(a.file_path, a.file_name);
       if (res.ok) triggerDownload(res.url, a.file_name);
-      else toast.error(res.error);
-    });
-  }
-
-  function remove(a: { id: string; file_path: string }) {
-    startTransition(async () => {
-      const res = await deleteStepAttachment(orderId, a.id, a.file_path);
-      if (res.ok) router.refresh();
       else toast.error(res.error);
     });
   }
@@ -89,7 +69,7 @@ function FactoryAttachments({
       {attachments.map((a) => (
         <div
           key={a.id}
-          className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-1.5 text-sm"
+          className="flex items-center rounded-md bg-slate-50 px-3 py-1.5 text-sm"
         >
           <button
             type="button"
@@ -99,16 +79,6 @@ function FactoryAttachments({
           >
             {a.file_name ?? "File"}
           </button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-rose-500 hover:text-rose-600"
-            aria-label="Delete attachment"
-            disabled={pending}
-            onClick={() => remove(a)}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
         </div>
       ))}
     </div>
@@ -200,26 +170,20 @@ function PlacedOnDialog({
 
 export function PlaceOrderFactoryGroups({
   orderId,
-  stepId,
   ofc,
   batches,
   attachments,
   placedDates,
 }: {
   orderId: string;
-  stepId: string;
   ofc: OfcRow[];
   batches: BatchRow[];
   attachments: ChecklistStepRow["attachments"];
   /** factory_id → data "Placed on" (YYYY-MM-DD). */
   placedDates: Record<string, string>;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [uploadFactoryId, setUploadFactoryId] = useState<string | null>(null);
   const [dateFor, setDateFor] = useState<{ id: string; name: string } | null>(null);
 
   const groups = buildFactoryGroups(ofc, batches);
@@ -239,34 +203,8 @@ export function PlaceOrderFactoryGroups({
     });
   }
 
-  function attachTo(factoryId: string) {
-    setUploadFactoryId(factoryId);
-    inputRef.current?.click();
-  }
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    const factoryId = uploadFactoryId;
-    if (!file || !factoryId) return;
-    startTransition(async () => {
-      const res = await uploadDirect(
-        file,
-        (name, size) => createStepAttachmentTicket(orderId, stepId, name, size),
-        (path) => registerStepAttachment(orderId, stepId, path, file.name, factoryId)
-      );
-      if (res.ok) {
-        setExpanded((prev) => new Set(prev).add(factoryId));
-        router.refresh();
-      } else {
-        toast.error(res.error);
-      }
-    });
-  }
-
   return (
     <div className="overflow-hidden rounded-lg border bg-white">
-      <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
       {dateFor && (
         <PlacedOnDialog
           orderId={orderId}
@@ -275,11 +213,10 @@ export function PlaceOrderFactoryGroups({
           onClose={() => setDateFor(null)}
         />
       )}
-      <div className="hidden grid-cols-[1fr_120px_170px_128px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
+      <div className="hidden grid-cols-[1fr_120px_170px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">
         <span>Factory</span>
         <span>N° of categories</span>
         <span>Placed on</span>
-        <span />
         <span />
       </div>
       {pageGroups.length === 0 ? (
@@ -292,11 +229,11 @@ export function PlaceOrderFactoryGroups({
           const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
           const categoryCount = new Set(g.entries.map((e) => e.category_name)).size;
           // Data da fábrica = a "Placed on" informada pelo usuário (22/10/2026;
-          // antes era a do 1º documento). O anexo segue opcional.
+          // antes era a do 1º documento). Sem anexo por fábrica desde 29/10/2026.
           const placedOn = placedDates[g.factory_id] ?? null;
           return (
             <div key={g.factory_id} className="border-t">
-              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_120px_170px_128px_40px]">
+              <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 text-sm sm:grid-cols-[1fr_120px_170px_40px]">
                 <span className="flex min-w-0 items-center gap-2">
                   {/* Verde = fábrica já tem a data; âmbar = ainda falta. A
                       etapa só conclui quando todas estão verdes. */}
@@ -328,22 +265,6 @@ export function PlaceOrderFactoryGroups({
                     {placedOn ? "Revise" : "Set date"}
                   </button>
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="justify-self-start max-sm:col-start-1 max-sm:row-start-4"
-                  disabled={pending}
-                  onClick={() => attachTo(g.factory_id)}
-                >
-                  <Plus className="size-3.5" />
-                  Attach
-                  {groupAttachments.length > 0 && (
-                    <span className="ml-1 inline-flex size-4 items-center justify-center rounded-full bg-primary/10 text-[10px] text-primary">
-                      {groupAttachments.length}
-                    </span>
-                  )}
-                </Button>
                 <button
                   type="button"
                   aria-label={open ? "Collapse" : "Expand"}
@@ -375,7 +296,7 @@ export function PlaceOrderFactoryGroups({
                         <Paperclip className="size-3.5" />
                         Attached documents
                       </p>
-                      <FactoryAttachments orderId={orderId} attachments={groupAttachments} />
+                      <FactoryAttachments attachments={groupAttachments} />
                     </div>
                   )}
                 </div>

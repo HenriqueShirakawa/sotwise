@@ -112,7 +112,7 @@ export function useCopilot() {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           applyEvent({
             type: "error",
-            message: body?.error ?? `Failed to reach Lapha (HTTP ${res.status}).`,
+            message: body?.error ?? `Failed to reach SIA (HTTP ${res.status}).`,
           });
           return;
         }

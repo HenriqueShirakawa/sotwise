@@ -54,7 +54,8 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
     <div className="flex h-full flex-col bg-white">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <Bot className="size-5 text-primary" />
-        <span className="font-semibold text-primary">Lapha</span>
+        <span className="font-semibold text-primary">SIA</span>
+        <span className="text-xs text-muted-foreground">SOT Intelligent Assistant</span>
         <div className="ml-auto flex items-center gap-1">
           {turns.length > 0 ? (
             <Button
@@ -66,7 +67,7 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
               Clear
             </Button>
           ) : null}
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close Lapha">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close SIA">
             <X className="size-4" />
           </Button>
         </div>
@@ -109,7 +110,7 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
                 submit();
               }
             }}
-            placeholder="Ask Lapha…"
+            placeholder="Ask SIA…"
             rows={2}
             className="resize-none border-0 p-0 shadow-none focus-visible:ring-0"
           />
