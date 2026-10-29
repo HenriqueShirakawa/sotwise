@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
@@ -6,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 
 import { ShipmentsClient, type ShipmentRow } from "./shipments-client";
 import type { Ref } from "./filters-modal";
+import { PAGE_SIZE, SORT_COLUMNS, listStateToSearch, parseListState } from "./list-params";
 
 /** shipments.status ('in_transit'|'delivered'|'canceled') → label exibido. */
 const STATUS_LABELS: Record<string, string> = {
@@ -14,58 +17,49 @@ const STATUS_LABELS: Record<string, string> = {
   canceled: "Canceled",
 };
 
-// Etapas de shipment/PL que alimentam colunas da lista OU campos de filtro.
-// `agents`/`consolidation_point` e as datas de BL/ATA/Delivered não aparecem em
-// nenhuma coluna — entram só pelos filtros (docs §3.10.2).
-const LIST_STEPS = [
-  "consolidation_point",
-  "port_of_loading",
-  "agents",
-  "loading_date",
-  "shipping_date",
-  "bl",
-  "eta_brazil",
-  "ata_brazil",
-  "delivered",
+/** Filtros de range de data → coluna da view `shipments_list`. */
+const DATE_RANGES = [
+  ["loading_date", "loading_from", "loading_to"],
+  ["ship_date", "ship_from", "ship_to"],
+  ["bl_date", "bl_from", "bl_to"],
+  ["eta", "eta_from", "eta_to"],
+  ["ata_date", "ata_from", "ata_to"],
+  ["delivered_date", "delivered_from", "delivered_to"],
 ] as const;
 
-type StepRow = {
-  pre_loading_id: string;
-  step: (typeof LIST_STEPS)[number];
-  pol_id: string | null;
-  consolidation_point_id: string | null;
-  agent_brazil_id: string | null;
-  agent_china_id: string | null;
-  estimated_date: string | null;
-  completed_on: string | null;
-  event_date: string | null;
-};
-
-/**
- * Data que a lista e os filtros usam pra uma etapa já cumprida. Loading/Shipping/
- * ETA/ATA/Delivered têm a data do fato (`event_date`, 21/10/2026) — o Completed
- * on delas é o dia em que ela foi informada.
- */
-const stepDate = (s: StepRow | undefined) =>
-  s?.event_date ?? s?.completed_on ?? s?.estimated_date ?? null;
+/** Filtros de igualdade simples → coluna da view. */
+const EQUALS = [
+  "status",
+  "leader_id",
+  "agent_brazil_id",
+  "agent_china_id",
+  "carrier_id",
+  "consolidation_point_id",
+  "pod_id",
+  "shipment_model_id",
+] as const;
 
 export const metadata = { title: "Shipments" };
 
-export default async function ShipmentsPage() {
+/**
+ * Lista de Shipments (docs §3.10) — paginada no SERVIDOR desde 29/10/2026: a
+ * view `shipments_list` monta cada linha no banco e aqui só se lê a página
+ * pedida, com busca/filtros/ordenação vindos da URL (./list-params). Antes a
+ * página baixava as tabelas inteiras (~44 mil linhas com o histórico do Bubble).
+ */
+export default async function ShipmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { profile } = await requireFeature("shipments");
   const admin = createAdminClient();
+  const state = parseListState(await searchParams);
+  const f = state.filters;
 
-  // Tabelas inteiras via fetchAll (há ~1.3k shipments) + os cadastros pequenos.
-  // Evita cláusulas .in() com milhares de ids (estouram a URL) e o corte em 1000.
+  // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de 1000
+  // do PostgREST (ver lib/fetch-all).
   const [
-    shipments,
-    preLoadings,
-    plClients,
-    plBatches,
-    batches,
-    orders,
-    ofc,
-    steps,
     polRes,
     modelRes,
     clientRes,
@@ -77,63 +71,6 @@ export default async function ShipmentsPage() {
     profileRes,
     orderNumbers,
   ] = await Promise.all([
-    fetchAll<{
-      id: string;
-      pre_loading_id: string;
-      shipment_model_id: string | null;
-      carrier_id: string | null;
-      container_number: string | null;
-      status: string;
-    }>((from, to) =>
-      admin
-        .from("shipments")
-        .select("id, pre_loading_id, shipment_model_id, carrier_id, container_number, status")
-        .is("deleted_at", null)
-        .range(from, to)
-    ),
-    fetchAll<{
-      id: string;
-      pl_number: string;
-      pod_id: string | null;
-      leader_id: string | null;
-      client_reference: string | null;
-    }>((from, to) =>
-      admin
-        .from("pre_loadings")
-        .select("id, pl_number, pod_id, leader_id, client_reference")
-        .range(from, to)
-    ),
-    fetchAll<{ pre_loading_id: string; client_id: string }>((from, to) =>
-      admin.from("pre_loading_clients").select("pre_loading_id, client_id").range(from, to)
-    ),
-    fetchAll<{ pre_loading_id: string; batch_id: string }>((from, to) =>
-      admin.from("pre_loading_batches").select("pre_loading_id, batch_id").range(from, to)
-    ),
-    fetchAll<{ id: string; order_id: string }>((from, to) =>
-      admin.from("batches").select("id, order_id").range(from, to)
-    ),
-    fetchAll<{ id: string; order_type_id: string | null }>((from, to) =>
-      admin.from("orders").select("id, order_type_id").range(from, to)
-    ),
-    fetchAll<{ id: string; batch_id: string | null }>((from, to) =>
-      admin
-        .from("order_factory_category")
-        .select("id, batch_id")
-        .eq("is_active", true)
-        .range(from, to)
-    ),
-    fetchAll<StepRow>((from, to) =>
-      admin
-        .from("pre_loading_checklist_steps")
-        .select(
-          "pre_loading_id, step, pol_id, consolidation_point_id, agent_brazil_id, agent_china_id, estimated_date, completed_on, event_date"
-        )
-        .in("step", LIST_STEPS)
-        .range(from, to)
-        .returns<StepRow[]>()
-    ),
-    // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de
-    // 1000 do PostgREST (ver lib/fetch-all).
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
     ),
@@ -167,124 +104,55 @@ export default async function ShipmentsPage() {
     ),
   ]);
 
-  const plById = new Map(preLoadings.map((p) => [p.id, p]));
-  const plNumberById = new Map(preLoadings.map((p) => [p.id, p.pl_number]));
-  const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
-  const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
-  const modelNameById = new Map(modelRes.map((m) => [m.id, m.name]));
-  const typeNameById = new Map(typeRes.map((t) => [t.id, t.name]));
-  const orderTypeIdByOrder = new Map(orders.map((o) => [o.id, o.order_type_id]));
-  const orderIdByBatch = new Map(batches.map((b) => [b.id, b.order_id]));
-  const poNumberByOrderId = new Map(orderNumbers.map((o) => [o.id, o.po_number]));
-  const ofcCountByBatch = new Map<string, number>();
-  for (const o of ofc) {
-    if (!o.batch_id) continue;
-    ofcCountByBatch.set(o.batch_id, (ofcCountByBatch.get(o.batch_id) ?? 0) + 1);
+  // Só a página pedida, com o total para "Page X of Y".
+  let query = admin.from("shipments_list").select("*", { count: "exact" });
+  if (f.client_id) query = query.contains("client_ids", [f.client_id]);
+  if (f.order_id) query = query.contains("order_ids", [f.order_id]);
+  if (f.order_type_id) query = query.contains("order_type_ids", [f.order_type_id]);
+  for (const key of EQUALS) if (f[key]) query = query.eq(key, f[key]);
+  if (f.container_number) query = query.ilike("container_number", `%${f.container_number}%`);
+  // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
+  // 12×, INTEGRACAO_GSS §9.3) — o filtro casa pelo NOME do porto.
+  if (f.pol_id) {
+    const polName = polRes.find((p) => p.id === f.pol_id)?.name.trim();
+    query = polName ? query.ilike("pol", polName) : query.eq("pol_id", f.pol_id);
+  }
+  for (const [column, from, to] of DATE_RANGES) {
+    if (f[from]) query = query.gte(column, f[from]);
+    if (f[to]) query = query.lte(column, f[to]);
+  }
+  if (state.q) query = query.ilike("pl_number", `%${state.q}%`);
+  // Vazio no fim na ordem decrescente e no começo na crescente — como a lista
+  // antiga, que ordenava "" junto dos textos.
+  const asc = !state.sort.desc;
+  query = query.order(SORT_COLUMNS[state.sort.id], { ascending: asc, nullsFirst: asc });
+  if (state.sort.id !== "pl_number") query = query.order("pl_number_int", { ascending: false });
+  const from = (state.page - 1) * PAGE_SIZE;
+  const { data, count, error } = await query.range(from, from + PAGE_SIZE - 1);
+  if (error) throw new Error(`shipments_list: ${error.message}`);
+
+  const total = count ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Página além do fim (filtro estreitou, link antigo): vai para a última.
+  if (state.page > pageCount) {
+    redirect(`/shipments${listStateToSearch({ ...state, page: pageCount })}`);
   }
 
-  const clientNamesByPl = new Map<string, Set<string>>();
-  const clientIdsByPl = new Map<string, Set<string>>();
-  for (const pc of plClients) {
-    const ids = clientIdsByPl.get(pc.pre_loading_id) ?? new Set<string>();
-    ids.add(pc.client_id);
-    clientIdsByPl.set(pc.pre_loading_id, ids);
-
-    const name = clientNameById.get(pc.client_id);
-    if (!name) continue;
-    const set = clientNamesByPl.get(pc.pre_loading_id) ?? new Set<string>();
-    set.add(name);
-    clientNamesByPl.set(pc.pre_loading_id, set);
-  }
-
-  const typeNamesByPl = new Map<string, Set<string>>();
-  const typeIdsByPl = new Map<string, Set<string>>();
-  const orderIdsByPl = new Map<string, Set<string>>();
-  // Factory x Category das Order(s) do PL — só as linhas que pertencem a lotes
-  // DESTE PL (não o total da Order em outros PLs/shipments), pra bater com o
-  // "View parts" e a tabela de lotes do PL (mesmo critério de escopo).
-  const ofcCountByOrderInPl = new Map<string, Map<string, number>>();
-  for (const pb of plBatches) {
-    const orderId = orderIdByBatch.get(pb.batch_id);
-    if (orderId) {
-      const orderSet = orderIdsByPl.get(pb.pre_loading_id) ?? new Set<string>();
-      orderSet.add(orderId);
-      orderIdsByPl.set(pb.pre_loading_id, orderSet);
-
-      const byOrder = ofcCountByOrderInPl.get(pb.pre_loading_id) ?? new Map<string, number>();
-      const ofcCount = ofcCountByBatch.get(pb.batch_id) ?? 0;
-      byOrder.set(orderId, (byOrder.get(orderId) ?? 0) + ofcCount);
-      ofcCountByOrderInPl.set(pb.pre_loading_id, byOrder);
-    }
-    const typeId = orderId ? orderTypeIdByOrder.get(orderId) : null;
-    if (typeId) {
-      const idSet = typeIdsByPl.get(pb.pre_loading_id) ?? new Set<string>();
-      idSet.add(typeId);
-      typeIdsByPl.set(pb.pre_loading_id, idSet);
-    }
-    const typeName = typeId ? typeNameById.get(typeId) : null;
-    if (typeName) {
-      const set = typeNamesByPl.get(pb.pre_loading_id) ?? new Set<string>();
-      set.add(typeName);
-      typeNamesByPl.set(pb.pre_loading_id, set);
-    }
-  }
-
-  const stepsByPl = new Map<string, Partial<Record<string, StepRow>>>();
-  for (const s of steps) {
-    const entry = stepsByPl.get(s.pre_loading_id) ?? {};
-    entry[s.step] = s;
-    stepsByPl.set(s.pre_loading_id, entry);
-  }
-
-  const rows: ShipmentRow[] = shipments.map((s) => {
-    const st = stepsByPl.get(s.pre_loading_id) ?? {};
-    const pl = plById.get(s.pre_loading_id);
-    const polId = st.port_of_loading?.pol_id ?? null;
-    const agentsStep = st.agents;
-    const ordersSummary = [...(ofcCountByOrderInPl.get(s.pre_loading_id) ?? [])]
-      .map(([orderId, ofcCount]) => ({
-        po_number: poNumberByOrderId.get(orderId) ?? "—",
-        ofc_count: ofcCount,
-      }))
-      .sort((a, b) => (Number(a.po_number) || 0) - (Number(b.po_number) || 0));
-    return {
-      id: s.id,
-      pl_number: plNumberById.get(s.pre_loading_id) ?? "—",
-      client: [...(clientNamesByPl.get(s.pre_loading_id) ?? [])].sort().join(", ") || null,
-      client_ids: [...(clientIdsByPl.get(s.pre_loading_id) ?? [])],
-      client_reference: pl?.client_reference ?? null,
-      order_type: [...(typeNamesByPl.get(s.pre_loading_id) ?? [])].sort().join(", ") || null,
-      order_type_ids: [...(typeIdsByPl.get(s.pre_loading_id) ?? [])],
-      order_ids: [...(orderIdsByPl.get(s.pre_loading_id) ?? [])],
-      leader_id: pl?.leader_id ?? null,
-      pol: polId ? (polNameById.get(polId) ?? null) : null,
-      pol_id: polId,
-      pod_id: pl?.pod_id ?? null,
-      consolidation_point_id: st.consolidation_point?.consolidation_point_id ?? null,
-      agent_brazil_id: agentsStep?.agent_brazil_id ?? null,
-      agent_china_id: agentsStep?.agent_china_id ?? null,
-      carrier_id: s.carrier_id,
-      container_number: s.container_number,
-      ship_model: s.shipment_model_id ? (modelNameById.get(s.shipment_model_id) ?? null) : null,
-      shipment_model_id: s.shipment_model_id,
-      // A Loading date do popup do Confirm Shipping (21/10/2026) — também é a
-      // que o filtro de range usa.
-      loading_date: stepDate(st.loading_date),
-      ship_date: stepDate(st.shipping_date),
-      eta: stepDate(st.eta_brazil),
-      // Só filtráveis — não têm coluna na lista (docs §3.10.2).
-      bl_date: stepDate(st.bl),
-      ata_date: stepDate(st.ata_brazil),
-      delivered_date: stepDate(st.delivered),
-      sum_of_orders: ordersSummary.length,
-      orders_summary: ordersSummary,
-      status: STATUS_LABELS[s.status] ?? s.status,
-      status_value: s.status,
-    };
-  });
-
-  // PL number decrescente (igual às outras listas).
-  rows.sort((a, b) => (Number(b.pl_number) || 0) - (Number(a.pl_number) || 0));
+  const rows: ShipmentRow[] = (data ?? []).map((s) => ({
+    id: s.id,
+    pl_number: s.pl_number,
+    client: s.client,
+    client_reference: s.client_reference,
+    order_type: s.order_type,
+    pol: s.pol,
+    ship_model: s.ship_model,
+    loading_date: s.loading_date,
+    ship_date: s.ship_date,
+    eta: s.eta,
+    sum_of_orders: s.sum_of_orders,
+    orders_summary: s.orders_summary,
+    status: STATUS_LABELS[s.status] ?? s.status,
+  }));
 
   const byName = (a: Ref, b: Ref) => a.name.localeCompare(b.name);
   const toRefs = (list: { id: string; name: string }[]) =>
@@ -295,6 +163,9 @@ export default async function ShipmentsPage() {
       <PageHeader title="Shipments" />
       <ShipmentsClient
         rows={rows}
+        total={total}
+        pageCount={pageCount}
+        state={state}
         initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
         clients={toRefs(clientRes)}
         profiles={profileRes
