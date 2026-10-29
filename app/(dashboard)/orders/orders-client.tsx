@@ -33,6 +33,7 @@ import {
   Shapes,
   ArrowUpDown,
   type LucideIcon,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,7 +57,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { CardsSkeleton, TableRowsSkeleton } from "@/components/app-shell/table-page-skeleton";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
@@ -640,9 +640,6 @@ export function OrdersClient({
           O breakpoint casa com o `min-[720px]:block` da <Table> abaixo e com o
           corte da <ListToolbar>. Decisão do Henrique em 12/08/2026. */}
       <div aria-busy={navigating} className={navigating ? "pointer-events-none" : undefined}>
-      {navigating ? (
-        <CardsSkeleton rows={table.getRowModel().rows.length || 10} />
-      ) : (
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -652,7 +649,6 @@ export function OrdersClient({
         breakpoint="720"
         onRowClick={(row) => router.push(`/orders/${row.original.po_number}`)}
       />
-      )}
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
@@ -673,12 +669,7 @@ export function OrdersClient({
             ))}
           </TableHeader>
           <TableBody>
-            {navigating ? (
-              <TableRowsSkeleton
-                columns={table.getVisibleLeafColumns().length}
-                rows={table.getRowModel().rows.length || 10}
-              />
-            ) : table.getRowModel().rows.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -711,6 +702,12 @@ export function OrdersClient({
         <p className="text-sm text-muted-foreground">
           Page {state.page} of {pageCount}
           <span className="ml-2 text-slate-400">· {total} orders</span>
+          {navigating && (
+            <Loader2
+              className="ml-2 inline size-3.5 animate-spin text-primary"
+              aria-label="Loading"
+            />
+          )}
         </p>
         <div className="flex items-center gap-2">
           <Button

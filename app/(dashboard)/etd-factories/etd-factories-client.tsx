@@ -11,7 +11,7 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
@@ -31,7 +31,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
-import { CardsSkeleton, TableRowsSkeleton } from "@/components/app-shell/table-page-skeleton";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
@@ -432,9 +431,6 @@ export function EtdFactoriesClient({
       />
 
       <div aria-busy={navigating} className={navigating ? "pointer-events-none" : undefined}>
-      {navigating ? (
-        <CardsSkeleton rows={table.getRowModel().rows.length || 10} />
-      ) : (
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -444,7 +440,6 @@ export function EtdFactoriesClient({
         breakpoint="720"
         onRowClick={(row) => openRow(row.original)}
       />
-      )}
 
       <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
         <Table className="[&_td]:py-3.5 [&_th]:py-3.5">
@@ -465,12 +460,7 @@ export function EtdFactoriesClient({
             ))}
           </TableHeader>
           <TableBody>
-            {navigating ? (
-              <TableRowsSkeleton
-                columns={table.getVisibleLeafColumns().length}
-                rows={table.getRowModel().rows.length || 10}
-              />
-            ) : table.getRowModel().rows.length ? (
+            {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
@@ -503,6 +493,12 @@ export function EtdFactoriesClient({
         <p className="text-sm text-muted-foreground">
           Page {state.page} of {pageCount}
           <span className="ml-2 text-slate-400">· {total} entries</span>
+          {navigating && (
+            <Loader2
+              className="ml-2 inline size-3.5 animate-spin text-primary"
+              aria-label="Loading"
+            />
+          )}
         </p>
         <div className="flex items-center gap-2">
           <Button
