@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
   type Column,
   type ColumnDef,
@@ -39,60 +37,37 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import { activeFilterCount, EMPTY_FILTERS, FiltersModal, type Ref } from "./filters-modal";
 import {
-  activeFilterCount,
-  EMPTY_FILTERS,
-  FiltersModal,
-  type Ref,
-  type ShipmentFilters,
-} from "./filters-modal";
+  DEFAULT_SORT,
+  SORT_COLUMNS,
+  listStateToSearch,
+  type ListState,
+  type SortId,
+} from "./list-params";
 
+/** Uma linha da página atual — filtros, busca e ordenação já rodaram no banco
+ *  (view `shipments_list`, ver ./page.tsx). */
 export type ShipmentRow = {
   id: string;
   pl_number: string;
   client: string | null;
-  client_ids: string[];
   client_reference: string | null;
   order_type: string | null;
-  order_type_ids: string[];
-  order_ids: string[];
-  leader_id: string | null;
   pol: string | null;
-  pol_id: string | null;
-  pod_id: string | null;
-  consolidation_point_id: string | null;
-  agent_brazil_id: string | null;
-  agent_china_id: string | null;
-  carrier_id: string | null;
-  container_number: string | null;
   ship_model: string | null;
-  shipment_model_id: string | null;
   loading_date: string | null;
   ship_date: string | null;
   eta: string | null;
-  /** Sem coluna na lista — existem só pra alimentar os filtros (docs §3.10.2). */
-  bl_date: string | null;
-  ata_date: string | null;
-  delivered_date: string | null;
   sum_of_orders: number;
   /** Uma entrada por LOTE deste PL (não por Order — docs §3.10.2: o rótulo diz
    *  "Orders" mas a contagem é de lotes) — PO number + Batch number + quantas
    *  linhas Factory x Category esse lote tem neste PL. Alimenta o popover da
    *  coluna "Sum of Orders". */
   orders_summary: { po_number: string; batch_number: string; ofc_count: number }[];
-  /** Label exibido; `status_value` é o valor cru, que o filtro compara. */
+  /** Label exibido. */
   status: string;
-  status_value: string;
 };
-
-function inDateRange(value: string | null, from: string, to: string): boolean {
-  if (!from && !to) return true;
-  if (!value) return false;
-  const d = value.length >= 10 ? value.slice(0, 10) : value;
-  if (from && d < from) return false;
-  if (to && d > to) return false;
-  return true;
-}
 
 function SortableHeader({
   label,
@@ -180,9 +155,15 @@ const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 /**
  * Lista de Shipments (docs §3.10). Sem "Create" — o Shipment nasce do Confirm
  * Shipping do PL. Clicar na linha abre o checklist completo do embarque.
+ *
+ * Paginada no servidor (29/10/2026): página, busca, ordenação e filtros moram na
+ * URL; mudar qualquer um navega e o servidor devolve só a página nova.
  */
 export function ShipmentsClient({
   rows,
+  total,
+  pageCount,
+  state,
   initialColumns,
   initialListState,
   clients,
@@ -197,6 +178,9 @@ export function ShipmentsClient({
   shipmentModels,
 }: {
   rows: ShipmentRow[];
+  total: number;
+  pageCount: number;
+  state: ListState;
   initialColumns: VisibilityState;
   initialListState: ListStateSeed;
   clients: Ref[];
@@ -226,17 +210,75 @@ export function ShipmentsClient({
     []
   );
 
-  // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
-  // "Keep filters" está ligado (ver components/keep-filters).
+  const [isPending, startTransition] = useTransition();
+  const navigate = (next: ListState) =>
+    startTransition(() => router.push(`/shipments${listStateToSearch(next)}`, { scroll: false }));
+
+  // Busca: digita livre, vai pra URL depois de uma pausa (volta pra página 1).
+  const [search, setSearch] = useState(state.q);
+  const lastQ = useRef(state.q);
+  useEffect(() => {
+    // URL mudou por fora (voltar do navegador, limpar): o campo acompanha.
+    if (state.q !== lastQ.current) {
+      lastQ.current = state.q;
+      setSearch(state.q);
+    }
+  }, [state.q]);
+  useEffect(() => {
+    const q = search.trim();
+    if (q === lastQ.current) return;
+    const t = setTimeout(() => {
+      lastQ.current = q;
+      navigate({ ...state, q, page: 1 });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const sorting: SortingState = [state.sort];
+  const filters = state.filters;
+
+  // "Keep filters" (components/keep-filters): o estado da URL é gravado no
+  // usuário a cada mudança; abrir a lista sem nada na URL volta ao que ficou
+  // salvo. Formato salvo = o de antes (search/filters/sorting/pageIndex).
   const list = useListState("shipments", initialListState, {
     search: "",
     filters: EMPTY_FILTERS,
-    sorting: [{ id: "pl_number", desc: true }] as SortingState,
+    sorting: [DEFAULT_SORT] as SortingState,
     pageIndex: 0,
   });
-  const { search, filters, sorting } = list.state;
-  const setSearch = (value: string) => list.update({ search: value });
-  const setFilters = (value: ShipmentFilters) => list.update({ filters: value });
+  // `state` só muda de referência quando o servidor devolve uma página nova.
+  useEffect(() => {
+    list.update({
+      search: state.q,
+      filters: state.filters,
+      sorting: [state.sort],
+      pageIndex: state.page - 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const saved = list.state;
+    const savedSort = saved.sorting[0];
+    const fromSaved: ListState = {
+      q: saved.search,
+      filters: { ...EMPTY_FILTERS, ...saved.filters },
+      sort:
+        savedSort && savedSort.id in SORT_COLUMNS
+          ? { id: savedSort.id as SortId, desc: savedSort.desc }
+          : DEFAULT_SORT,
+      page: saved.pageIndex + 1,
+    };
+    const target = listStateToSearch(fromSaved);
+    if (list.keep && listStateToSearch(state) === "" && target !== "") {
+      startTransition(() => router.replace(`/shipments${target}`, { scroll: false }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { visibility, save: saveVisibility } = useColumnVisibility("shipments", initialColumns);
 
@@ -245,7 +287,6 @@ export function ShipmentsClient({
   // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
   // 12×, INTEGRACAO_GSS §9.3). No filtro basta o nome do porto — deduplicamos a
   // lista e casamos por nome, senão escolher "Ningbo" pegaria só 1 dos 12 ids.
-  const polNameById = useMemo(() => new Map(pols.map((p) => [p.id, p.name])), [pols]);
   const uniquePols = useMemo(() => {
     const byName = new Map<string, Ref>();
     for (const p of pols) {
@@ -254,46 +295,6 @@ export function ShipmentsClient({
     }
     return [...byName.values()];
   }, [pols]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (filters.client_id && !r.client_ids.includes(filters.client_id)) return false;
-      if (filters.status && r.status_value !== filters.status) return false;
-      if (filters.leader_id && r.leader_id !== filters.leader_id) return false;
-      if (filters.order_id && !r.order_ids.includes(filters.order_id)) return false;
-      if (filters.order_type_id && !r.order_type_ids.includes(filters.order_type_id)) return false;
-      if (filters.agent_brazil_id && r.agent_brazil_id !== filters.agent_brazil_id) return false;
-      if (filters.agent_china_id && r.agent_china_id !== filters.agent_china_id) return false;
-      if (filters.carrier_id && r.carrier_id !== filters.carrier_id) return false;
-      if (
-        filters.container_number &&
-        !(r.container_number ?? "")
-          .toLowerCase()
-          .includes(filters.container_number.trim().toLowerCase())
-      )
-        return false;
-      if (
-        filters.consolidation_point_id &&
-        r.consolidation_point_id !== filters.consolidation_point_id
-      )
-        return false;
-      if (filters.pol_id && (r.pol ?? null) !== (polNameById.get(filters.pol_id) ?? null))
-        return false;
-      if (filters.pod_id && r.pod_id !== filters.pod_id) return false;
-      if (filters.shipment_model_id && r.shipment_model_id !== filters.shipment_model_id)
-        return false;
-      if (!inDateRange(r.loading_date, filters.loading_from, filters.loading_to)) return false;
-      if (!inDateRange(r.ship_date, filters.ship_from, filters.ship_to)) return false;
-      if (!inDateRange(r.bl_date, filters.bl_from, filters.bl_to)) return false;
-      if (!inDateRange(r.eta, filters.eta_from, filters.eta_to)) return false;
-      if (!inDateRange(r.ata_date, filters.ata_from, filters.ata_to)) return false;
-      if (!inDateRange(r.delivered_date, filters.delivered_from, filters.delivered_to))
-        return false;
-      if (!q) return true;
-      return r.pl_number.toLowerCase().includes(q);
-    });
-  }, [rows, search, filters, polNameById]);
 
   const columns = useMemo<ColumnDef<ShipmentRow>[]>(
     () => [
@@ -368,23 +369,25 @@ export function ShipmentsClient({
   );
 
   const table = useReactTable({
-    data: filtered,
+    data: rows,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onSortingChange: list.onSortingChange,
-    onPaginationChange: list.onPaginationChange,
+    manualSorting: true,
+    manualPagination: true,
+    pageCount,
+    onSortingChange: (updater) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const s = next[0];
+      navigate({
+        ...state,
+        sort: s && s.id in SORT_COLUMNS ? { id: s.id as SortId, desc: s.desc } : DEFAULT_SORT,
+        page: 1,
+      });
+    },
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: {
-      sorting,
-      columnVisibility: visibility,
-      pagination: list.pagination(filtered.length),
-    },
+    state: { sorting, columnVisibility: visibility },
   });
-
-  const pageIndex = table.getState().pagination.pageIndex;
 
   return (
     <div>
@@ -424,8 +427,8 @@ export function ShipmentsClient({
         open={filtersOpen}
         onOpenChange={setFiltersOpen}
         filters={filters}
-        onApply={setFilters}
-        onClear={() => setFilters(EMPTY_FILTERS)}
+        onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
+        onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
         keep={list.keep}
         onKeepChange={list.setKeep}
         clients={clients}
@@ -440,7 +443,8 @@ export function ShipmentsClient({
         shipmentModels={shipmentModels}
       />
 
-      <DataCards
+      <div className={isPending ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+        <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
         titleColumnId="pl_number"
@@ -496,18 +500,20 @@ export function ShipmentsClient({
           </TableBody>
         </Table>
       </div>
+      </div>
 
       <div className="mt-4 flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          Page {pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
+          Page {state.page} of {pageCount}
+          <span className="ml-2 text-slate-400">· {total} shipments</span>
         </p>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="icon"
             className="rounded-lg"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => navigate({ ...state, page: state.page - 1 })}
+            disabled={state.page <= 1 || isPending}
             aria-label="Previous page"
           >
             <ChevronLeft />
@@ -516,8 +522,8 @@ export function ShipmentsClient({
             variant="outline"
             size="icon"
             className="rounded-lg"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => navigate({ ...state, page: state.page + 1 })}
+            disabled={state.page >= pageCount || isPending}
             aria-label="Next page"
           >
             <ChevronRight />

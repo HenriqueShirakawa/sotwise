@@ -26,61 +26,10 @@ export const STATUS_OPTIONS: Ref[] = [
   { id: "canceled", name: "Canceled" },
 ];
 
-export type ShipmentFilters = {
-  client_id: string;
-  status: string;
-  leader_id: string;
-  order_id: string;
-  order_type_id: string;
-  agent_brazil_id: string;
-  agent_china_id: string;
-  carrier_id: string;
-  container_number: string;
-  consolidation_point_id: string;
-  pol_id: string;
-  pod_id: string;
-  shipment_model_id: string;
-  loading_from: string;
-  loading_to: string;
-  ship_from: string;
-  ship_to: string;
-  bl_from: string;
-  bl_to: string;
-  eta_from: string;
-  eta_to: string;
-  ata_from: string;
-  ata_to: string;
-  delivered_from: string;
-  delivered_to: string;
-};
-
-export const EMPTY_FILTERS: ShipmentFilters = {
-  client_id: "",
-  status: "",
-  leader_id: "",
-  order_id: "",
-  order_type_id: "",
-  agent_brazil_id: "",
-  agent_china_id: "",
-  carrier_id: "",
-  container_number: "",
-  consolidation_point_id: "",
-  pol_id: "",
-  pod_id: "",
-  shipment_model_id: "",
-  loading_from: "",
-  loading_to: "",
-  ship_from: "",
-  ship_to: "",
-  bl_from: "",
-  bl_to: "",
-  eta_from: "",
-  eta_to: "",
-  ata_from: "",
-  ata_to: "",
-  delivered_from: "",
-  delivered_to: "",
-};
+// Filtros vivem em ./list-params (sem "use client"): a página do servidor também
+// os lê da URL.
+import { EMPTY_FILTERS, type ShipmentFilters } from "./list-params";
+export { EMPTY_FILTERS, type ShipmentFilters };
 
 export function activeFilterCount(filters: ShipmentFilters): number {
   return countActiveFilters(filters);
