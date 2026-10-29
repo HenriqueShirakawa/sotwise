@@ -1,5 +1,4 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { TableCell, TableRow } from "@/components/ui/table";
 
 /**
  * Fallback de `loading.tsx` para as telas de listagem pesadas (Orders, ETD
@@ -47,38 +46,6 @@ export function TablePageSkeleton({
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/**
- * Linhas fantasma no lugar das linhas da tabela enquanto a lista paginada no
- * servidor busca outra página/filtro/ordem — o usuário prefere ver o esqueleto
- * na hora a ficar olhando a página velha esperando (29/10/2026).
- */
-export function TableRowsSkeleton({ columns, rows }: { columns: number; rows: number }) {
-  return Array.from({ length: rows }).map((_, r) => (
-    <TableRow key={r} className="hover:bg-transparent">
-      {Array.from({ length: columns }).map((_, c) => (
-        <TableCell key={c} className="px-4">
-          <Skeleton className="h-4 w-full min-w-12" />
-        </TableCell>
-      ))}
-    </TableRow>
-  ));
-}
-
-/** O mesmo para os cards da tela estreita (abaixo de 720px, ver DataCards). */
-export function CardsSkeleton({ rows }: { rows: number }) {
-  return (
-    <div className="space-y-3 min-[720px]:hidden">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="space-y-2 rounded-2xl border bg-white p-4">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3" />
-        </div>
-      ))}
     </div>
   );
 }
