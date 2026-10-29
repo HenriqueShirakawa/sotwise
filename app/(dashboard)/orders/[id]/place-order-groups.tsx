@@ -2,19 +2,18 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Paperclip } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { triggerDownload } from "@/lib/download";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePicker } from "@/components/date-picker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-import { getAttachmentDownloadUrl, saveFactoryPlacedDate } from "./actions";
-import type { BatchRow, ChecklistStepRow, OfcRow } from "./order-detail-client";
+import { saveFactoryPlacedDate } from "./actions";
+import type { BatchRow, OfcRow } from "./order-detail-client";
 
 const GROUPS_PAGE_SIZE = 10;
 
@@ -46,42 +45,6 @@ function buildFactoryGroups(ofc: OfcRow[], batches: BatchRow[]): FactoryGroup[] 
   }
   return Array.from(byFactory.values()).sort((a, b) =>
     a.factory_name.localeCompare(b.factory_name)
-  );
-}
-
-/** Documentos antigos da fábrica — só leitura: a etapa deixou de receber
- * anexo por fábrica em 29/10/2026 (fecha só pela data "Placed on"). */
-function FactoryAttachments({ attachments }: { attachments: ChecklistStepRow["attachments"] }) {
-  const [pending, startTransition] = useTransition();
-
-  function download(a: { file_path: string; file_name?: string | null }) {
-    startTransition(async () => {
-      const res = await getAttachmentDownloadUrl(a.file_path, a.file_name);
-      if (res.ok) triggerDownload(res.url, a.file_name);
-      else toast.error(res.error);
-    });
-  }
-
-  if (attachments.length === 0) return null;
-
-  return (
-    <div className="space-y-1 px-3 py-2">
-      {attachments.map((a) => (
-        <div
-          key={a.id}
-          className="flex items-center rounded-md bg-slate-50 px-3 py-1.5 text-sm"
-        >
-          <button
-            type="button"
-            className="truncate text-primary hover:underline"
-            disabled={pending}
-            onClick={() => download(a)}
-          >
-            {a.file_name ?? "File"}
-          </button>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -172,13 +135,11 @@ export function PlaceOrderFactoryGroups({
   orderId,
   ofc,
   batches,
-  attachments,
   placedDates,
 }: {
   orderId: string;
   ofc: OfcRow[];
   batches: BatchRow[];
-  attachments: ChecklistStepRow["attachments"];
   /** factory_id → data "Placed on" (YYYY-MM-DD). */
   placedDates: Record<string, string>;
 }) {
@@ -226,10 +187,9 @@ export function PlaceOrderFactoryGroups({
       ) : (
         pageGroups.map((g) => {
           const open = expanded.has(g.factory_id);
-          const groupAttachments = attachments.filter((a) => a.factory_id === g.factory_id);
           const categoryCount = new Set(g.entries.map((e) => e.category_name)).size;
           // Data da fábrica = a "Placed on" informada pelo usuário (22/10/2026;
-          // antes era a do 1º documento). Sem anexo por fábrica desde 29/10/2026.
+          // antes era a do 1º documento). Sem documento nenhum desde 29/10/2026.
           const placedOn = placedDates[g.factory_id] ?? null;
           return (
             <div key={g.factory_id} className="border-t">
@@ -290,15 +250,6 @@ export function PlaceOrderFactoryGroups({
                       <span className="text-slate-700">{e.batch_number}</span>
                     </div>
                   ))}
-                  {groupAttachments.length > 0 && (
-                    <div className="border-t">
-                      <p className="flex items-center gap-1.5 px-3 pt-2 text-xs text-muted-foreground">
-                        <Paperclip className="size-3.5" />
-                        Attached documents
-                      </p>
-                      <FactoryAttachments attachments={groupAttachments} />
-                    </div>
-                  )}
                 </div>
               )}
             </div>
