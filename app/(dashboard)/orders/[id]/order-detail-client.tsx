@@ -1267,10 +1267,14 @@ export function OrderDetailClient({
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
-                      {s.step === "order" || s.step === "po" || s.step === "pi" ? (
+                      {s.step === "order" ||
+                      s.step === "po" ||
+                      s.step === "pi" ||
+                      s.step === "condition_confirm" ? (
                         // Sem anexo: o GSS gera PO e PI (20/10/2026); Order fecha
-                        // pela "Order received date" (sem anexo desde 29/10/2026).
-                        // Documento antigo continua visível, só leitura.
+                        // pela "Order received date" e Condition Confirm. não tem
+                        // documento (ambos desde 29/10/2026). Documento antigo
+                        // continua visível, só leitura.
                         s.attachments.length > 0 && (
                           <ReadOnlyAttachments attachments={s.attachments} />
                         )
