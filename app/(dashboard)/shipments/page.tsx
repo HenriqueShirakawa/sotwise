@@ -57,6 +57,36 @@ export default async function ShipmentsPage({
   const state = parseListState(await searchParams);
   const f = state.filters;
 
+  // Só a página pedida, com o total para "Page X of Y". Roda JUNTO com os
+  // cadastros (cada ida ao banco é uma viagem até o Supabase).
+  const fetchPage = async () => {
+    let query = admin.from("shipments_list").select("*", { count: "exact" });
+    if (f.client_id) query = query.contains("client_ids", [f.client_id]);
+    if (f.order_id) query = query.contains("order_ids", [f.order_id]);
+    if (f.order_type_id) query = query.contains("order_type_ids", [f.order_type_id]);
+    for (const key of EQUALS) if (f[key]) query = query.eq(key, f[key]);
+    if (f.container_number) query = query.ilike("container_number", `%${f.container_number}%`);
+    // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
+    // 12×, INTEGRACAO_GSS §9.3) — o filtro casa pelo NOME do porto.
+    if (f.pol_id) {
+      const { data: pol } = await admin.from("pols").select("name").eq("id", f.pol_id).maybeSingle();
+      const polName = pol?.name.trim();
+      query = polName ? query.ilike("pol", polName) : query.eq("pol_id", f.pol_id);
+    }
+    for (const [column, from, to] of DATE_RANGES) {
+      if (f[from]) query = query.gte(column, f[from]);
+      if (f[to]) query = query.lte(column, f[to]);
+    }
+    if (state.q) query = query.ilike("pl_number", `%${state.q}%`);
+    // Vazio no fim na ordem decrescente e no começo na crescente — como a lista
+    // antiga, que ordenava "" junto dos textos.
+    const asc = !state.sort.desc;
+    query = query.order(SORT_COLUMNS[state.sort.id], { ascending: asc, nullsFirst: asc });
+    if (state.sort.id !== "pl_number") query = query.order("pl_number_int", { ascending: false });
+    const from = (state.page - 1) * PAGE_SIZE;
+    return query.range(from, from + PAGE_SIZE - 1);
+  };
+
   // Cadastros dos filtros: paginados para nenhum ficar cortado no teto de 1000
   // do PostgREST (ver lib/fetch-all).
   const [
@@ -70,6 +100,7 @@ export default async function ShipmentsPage({
     factoryRes,
     profileRes,
     orderNumbers,
+    { data, count, error },
   ] = await Promise.all([
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("pols").select("id, name").is("deleted_at", null).range(from, to)
@@ -102,33 +133,8 @@ export default async function ShipmentsPage({
     fetchAll<{ id: string; po_number: string }>((from, to) =>
       admin.from("orders").select("id, po_number").is("deleted_at", null).range(from, to)
     ),
+    fetchPage(),
   ]);
-
-  // Só a página pedida, com o total para "Page X of Y".
-  let query = admin.from("shipments_list").select("*", { count: "exact" });
-  if (f.client_id) query = query.contains("client_ids", [f.client_id]);
-  if (f.order_id) query = query.contains("order_ids", [f.order_id]);
-  if (f.order_type_id) query = query.contains("order_type_ids", [f.order_type_id]);
-  for (const key of EQUALS) if (f[key]) query = query.eq(key, f[key]);
-  if (f.container_number) query = query.ilike("container_number", `%${f.container_number}%`);
-  // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
-  // 12×, INTEGRACAO_GSS §9.3) — o filtro casa pelo NOME do porto.
-  if (f.pol_id) {
-    const polName = polRes.find((p) => p.id === f.pol_id)?.name.trim();
-    query = polName ? query.ilike("pol", polName) : query.eq("pol_id", f.pol_id);
-  }
-  for (const [column, from, to] of DATE_RANGES) {
-    if (f[from]) query = query.gte(column, f[from]);
-    if (f[to]) query = query.lte(column, f[to]);
-  }
-  if (state.q) query = query.ilike("pl_number", `%${state.q}%`);
-  // Vazio no fim na ordem decrescente e no começo na crescente — como a lista
-  // antiga, que ordenava "" junto dos textos.
-  const asc = !state.sort.desc;
-  query = query.order(SORT_COLUMNS[state.sort.id], { ascending: asc, nullsFirst: asc });
-  if (state.sort.id !== "pl_number") query = query.order("pl_number_int", { ascending: false });
-  const from = (state.page - 1) * PAGE_SIZE;
-  const { data, count, error } = await query.range(from, from + PAGE_SIZE - 1);
   if (error) throw new Error(`shipments_list: ${error.message}`);
 
   const total = count ?? 0;
