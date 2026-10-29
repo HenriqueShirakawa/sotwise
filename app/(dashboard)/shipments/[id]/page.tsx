@@ -127,7 +127,7 @@ export default async function ShipmentDetailPage({
     modelRes,
     carrierRes,
     factoryRes,
-    cityRes,
+    categoryRes,
     polRes,
     agentRes,
     contactRes,
@@ -175,7 +175,7 @@ export default async function ShipmentDetailPage({
       admin.from("factories").select("id, name, deleted_at").range(from, to)
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
-      admin.from("cities").select("id, name").range(from, to)
+      admin.from("categories").select("id, name").range(from, to)
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("pols").select("id, name").range(from, to)
@@ -199,7 +199,6 @@ export default async function ShipmentDetailPage({
   const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
   const clientNameById = new Map(clientRes.map((c) => [c.id, c.name]));
   const factoryNameById = new Map(factoryRes.map((f) => [f.id, f.name]));
-  const cityNameById = new Map(cityRes.map((c) => [c.id, c.name]));
   const polNameById = new Map(polRes.map((p) => [p.id, p.name]));
   const agentNameById = new Map(agentRes.map((a) => [a.id, a.name]));
   const carrierNameById = new Map(carrierRes.map((c) => [c.id, c.name]));
@@ -298,13 +297,7 @@ export default async function ShipmentDetailPage({
     loadedByBatch.set(l.batch_id, m);
   }
 
-  const categoryNameById = new Map(
-    (
-      await fetchAll<{ id: string; name: string }>((from, to) =>
-        admin.from("categories").select("id, name").range(from, to)
-      )
-    ).map((c) => [c.id, c.name])
-  );
+  const categoryNameById = new Map(categoryRes.map((c) => [c.id, c.name]));
 
   const partsByBatch = new Map<string, PartRow[]>();
   for (const o of ofcRes.data ?? []) {
@@ -353,7 +346,10 @@ export default async function ShipmentDetailPage({
 
   const stepRows = stepsRes.data ?? [];
   const stepIds = stepRows.map((s) => s.id);
-  const [attachmentsRes, clientState] = await Promise.all([
+  // Só as cidades citadas nas etapas: o cadastro tem ~8 mil (espelho do GSS) e
+  // baixá-lo inteiro custava 9 idas ao banco em série a cada abertura.
+  const cityIds = [...new Set(stepRows.map((s) => s.city_id).filter((c): c is string => !!c))];
+  const [attachmentsRes, clientState, cityRes] = await Promise.all([
     stepIds.length
       ? admin
           .from("step_attachments")
@@ -363,7 +359,11 @@ export default async function ShipmentDetailPage({
       : Promise.resolve({ data: [] }),
     // Shipping Docs / Booking por cliente no PL com 2+ clientes (21/10/2026).
     loadPlClientState(admin, pl.id),
+    cityIds.length
+      ? admin.from("cities").select("id, name").in("id", cityIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
   ]);
+  const cityNameById = new Map((cityRes.data ?? []).map((c) => [c.id, c.name]));
   const perClient = perClientOf(clientState);
 
   const attachmentsByStepId = new Map<string, StepAttachment[]>();
