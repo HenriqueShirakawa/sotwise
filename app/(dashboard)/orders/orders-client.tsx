@@ -7,8 +7,6 @@ import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
   type Column,
   type ColumnDef,
@@ -80,7 +78,14 @@ import {
 
 import { deleteOrder } from "./actions";
 import { OrderFormModal } from "./order-form-modal";
-import { activeFilterCount, EMPTY_FILTERS, FiltersModal, type OrdersFilters } from "./filters-modal";
+import { activeFilterCount, EMPTY_FILTERS, FiltersModal } from "./filters-modal";
+import {
+  DEFAULT_SORT,
+  SORT_COLUMNS,
+  listStateToSearch,
+  type ListState,
+  type SortId,
+} from "./list-params";
 
 export type Ref = { id: string; name: string };
 
@@ -263,20 +268,6 @@ function DeleteOrderButton({
   );
 }
 
-function toDateOnly(v: string): string {
-  return v.length >= 10 ? v.slice(0, 10) : v;
-}
-
-/** Compara datas como string (funciona pra "YYYY-MM-DD" e ISO timestamp). */
-function inDateRange(value: string | null, from: string, to: string): boolean {
-  if (!from && !to) return true;
-  if (!value) return false;
-  const d = toDateOnly(value);
-  if (from && d < from) return false;
-  if (to && d > to) return false;
-  return true;
-}
-
 /** Colunas que o usuário pode esconder — "actions" fica sempre visível. */
 const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "bu", label: "BU" },
@@ -298,6 +289,9 @@ const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 export function OrdersClient({
   rows,
+  total,
+  pageCount,
+  state,
   clients,
   orderTypes,
   businessUnits,
@@ -307,6 +301,9 @@ export function OrdersClient({
   initialColumns,
 }: {
   rows: OrderRow[];
+  total: number;
+  pageCount: number;
+  state: ListState;
   clients: Ref[];
   orderTypes: Ref[];
   businessUnits: Ref[];
@@ -333,11 +330,37 @@ export function OrdersClient({
     []
   );
 
-  const [search, setSearch] = useState("");
-  const [client, setClient] = useState("all");
-  const [filters, setFilters] = useState<OrdersFilters>(EMPTY_FILTERS);
+  // Paginada no servidor (29/10/2026): página, busca, cliente, ordenação e
+  // filtros moram na URL; mudar qualquer um navega e o servidor devolve só a
+  // página nova (view `orders_list`, ver ./page.tsx).
+  const [navigating, startNavigation] = useTransition();
+  const navigate = (next: ListState) =>
+    startNavigation(() => router.push(`/orders${listStateToSearch(next)}`, { scroll: false }));
+
+  // Busca: digita livre, vai pra URL depois de uma pausa (volta pra página 1).
+  const [search, setSearch] = useState(state.q);
+  const lastQ = useRef(state.q);
+  useEffect(() => {
+    // URL mudou por fora (voltar do navegador, limpar): o campo acompanha.
+    if (state.q !== lastQ.current) {
+      lastQ.current = state.q;
+      setSearch(state.q);
+    }
+  }, [state.q]);
+  useEffect(() => {
+    const q = search.trim();
+    if (q === lastQ.current) return;
+    const t = setTimeout(() => {
+      lastQ.current = q;
+      navigate({ ...state, q, page: 1 });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const filters = state.filters;
+  const sorting: SortingState = [state.sort];
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([]);
   const { visibility, save: saveVisibility } = useColumnVisibility("orders", initialColumns);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -361,48 +384,6 @@ export function OrdersClient({
   }
 
   const filterCount = activeFilterCount(filters);
-
-  const data = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (client !== "all" && r.client !== client) return false;
-      if (
-        filters.client_reference &&
-        !(r.client_reference ?? "")
-          .toLowerCase()
-          .includes(filters.client_reference.toLowerCase())
-      )
-        return false;
-      if (filters.business_unit_id && r.business_unit_id !== filters.business_unit_id)
-        return false;
-      if (filters.order_type_id && r.order_type_id !== filters.order_type_id) return false;
-      if (filters.leader_id && r.leader_id !== filters.leader_id) return false;
-      if (
-        filters.operational_responsible_id &&
-        r.operational_responsible_id !== filters.operational_responsible_id
-      )
-        return false;
-      if (filters.exporter_id && r.exporter_id !== filters.exporter_id) return false;
-      if (filters.status && r.status !== filters.status) return false;
-      if (!inDateRange(r.date_create, filters.create_date_from, filters.create_date_to))
-        return false;
-      if (!inDateRange(r.etd, filters.etd_from, filters.etd_to)) return false;
-      if (
-        !inDateRange(
-          r.schedule_requested,
-          filters.schedule_from,
-          filters.schedule_to
-        )
-      )
-        return false;
-      if (!q) return true;
-      return (
-        r.po_number.toLowerCase().includes(q) ||
-        (r.client_reference ?? "").toLowerCase().includes(q) ||
-        (r.client ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [rows, search, client, filters]);
 
   const columns = useMemo<ColumnDef<OrderRow>[]>(
     () => [
@@ -557,19 +538,25 @@ export function OrdersClient({
   );
 
   const table = useReactTable({
-    data,
+    data: rows,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    manualSorting: true,
+    manualPagination: true,
+    pageCount,
+    onSortingChange: (updater) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const s = next[0];
+      navigate({
+        ...state,
+        sort: s && s.id in SORT_COLUMNS ? { id: s.id as SortId, desc: s.desc } : DEFAULT_SORT,
+        page: 1,
+      });
+    },
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
     state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
   });
-
-  const pageIndex = table.getState().pagination.pageIndex;
 
   return (
     <div>
@@ -592,7 +579,10 @@ export function OrdersClient({
         activeCount={filterCount}
         controls={(close) => (
           <>
-            <Select value={client} onValueChange={setClient}>
+            <Select
+              value={state.client || "all"}
+              onValueChange={(v) => navigate({ ...state, client: v === "all" ? "" : v, page: 1 })}
+            >
               <SelectTrigger className="!h-11 rounded-xl bg-white min-[720px]:w-60">
                 <SelectValue placeholder="Choose a client" />
               </SelectTrigger>
@@ -636,8 +626,8 @@ export function OrdersClient({
         open={filtersOpen}
         onOpenChange={setFiltersOpen}
         filters={filters}
-        onApply={setFilters}
-        onClear={() => setFilters(EMPTY_FILTERS)}
+        onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
+        onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
         orderTypes={orderTypes}
         businessUnits={businessUnits}
         exporters={exporters}
@@ -648,6 +638,7 @@ export function OrdersClient({
       {/* Cards só no mobile real (<720px); de 720 pra cima assume a tabela.
           O breakpoint casa com o `min-[720px]:block` da <Table> abaixo e com o
           corte da <ListToolbar>. Decisão do Henrique em 12/08/2026. */}
+      <div className={navigating ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -704,18 +695,20 @@ export function OrdersClient({
           </TableBody>
         </Table>
       </div>
+      </div>
 
       <div className="mt-4 flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          Page {pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
+          Page {state.page} of {pageCount}
+          <span className="ml-2 text-slate-400">· {total} orders</span>
         </p>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="icon"
             className="rounded-lg"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => navigate({ ...state, page: state.page - 1 })}
+            disabled={state.page <= 1 || navigating}
             aria-label="Previous page"
           >
             <ChevronLeft />
@@ -724,8 +717,8 @@ export function OrdersClient({
             variant="outline"
             size="icon"
             className="rounded-lg"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => navigate({ ...state, page: state.page + 1 })}
+            disabled={state.page >= pageCount || navigating}
             aria-label="Next page"
           >
             <ChevronRight />

@@ -26,37 +26,10 @@ import {
 
 import type { Ref } from "./orders-client";
 
-export type OrdersFilters = {
-  client_reference: string;
-  business_unit_id: string;
-  order_type_id: string;
-  leader_id: string;
-  operational_responsible_id: string;
-  exporter_id: string;
-  status: OrderStatus | "";
-  create_date_from: string;
-  create_date_to: string;
-  etd_from: string;
-  etd_to: string;
-  schedule_from: string;
-  schedule_to: string;
-};
-
-export const EMPTY_FILTERS: OrdersFilters = {
-  client_reference: "",
-  business_unit_id: "",
-  order_type_id: "",
-  leader_id: "",
-  operational_responsible_id: "",
-  exporter_id: "",
-  status: "",
-  create_date_from: "",
-  create_date_to: "",
-  etd_from: "",
-  etd_to: "",
-  schedule_from: "",
-  schedule_to: "",
-};
+// Filtros vivem em ./list-params (sem "use client"): a página do servidor também
+// os lê da URL.
+import { EMPTY_FILTERS, type OrdersFilters } from "./list-params";
+export { EMPTY_FILTERS, type OrdersFilters };
 
 export function activeFilterCount(filters: OrdersFilters): number {
   return Object.values(filters).filter((v) => v !== "").length;

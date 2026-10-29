@@ -29,39 +29,10 @@ import type { Ref } from "./etd-factories-client";
  * aqui (filtro padrão da listagem — ver docs/regras_de_negocio.md §3.7.4). */
 const STATUS_OPTIONS: BatchStatus[] = ["in_production", "preloading"];
 
-export type EtdFactoriesFilters = {
-  client_id: string;
-  status: BatchStatus | "";
-  factory_id: string;
-  category_id: string;
-  shipment_from: string;
-  shipment_to: string;
-  initial_from: string;
-  initial_to: string;
-  current_from: string;
-  current_to: string;
-  updated_from: string;
-  updated_to: string;
-  empty_dates: "" | "yes" | "no";
-  ready_parts: "" | "yes" | "no";
-};
-
-export const EMPTY_FILTERS: EtdFactoriesFilters = {
-  client_id: "",
-  status: "",
-  factory_id: "",
-  category_id: "",
-  shipment_from: "",
-  shipment_to: "",
-  initial_from: "",
-  initial_to: "",
-  current_from: "",
-  current_to: "",
-  updated_from: "",
-  updated_to: "",
-  empty_dates: "",
-  ready_parts: "",
-};
+// Filtros vivem em ./list-params (sem "use client"): a página do servidor também
+// os lê da URL.
+import { EMPTY_FILTERS, type EtdFactoriesFilters } from "./list-params";
+export { EMPTY_FILTERS, type EtdFactoriesFilters };
 
 export function activeFilterCount(filters: EtdFactoriesFilters): number {
   return Object.values(filters).filter((v) => v !== "").length;

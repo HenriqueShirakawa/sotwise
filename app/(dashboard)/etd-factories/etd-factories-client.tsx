@@ -1,12 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
   type Column,
   type ColumnDef,
@@ -41,12 +39,14 @@ import {
   type ColumnOption,
 } from "@/components/columns-menu";
 
+import { activeFilterCount, EMPTY_FILTERS, FiltersModal } from "./filters-modal";
 import {
-  activeFilterCount,
-  EMPTY_FILTERS,
-  FiltersModal,
-  type EtdFactoriesFilters,
-} from "./filters-modal";
+  DEFAULT_SORT,
+  SORT_COLUMNS,
+  listStateToSearch,
+  type ListState,
+  type SortId,
+} from "./list-params";
 import { EtdOrderModal } from "./etd-modal";
 
 export type Ref = { id: string; name: string };
@@ -99,20 +99,6 @@ function SortableHeader({
 const dash = <span className="text-slate-300">—</span>;
 const numOrMin = (v: number | null) => v ?? Number.NEGATIVE_INFINITY;
 
-function toDateOnly(v: string): string {
-  return v.length >= 10 ? v.slice(0, 10) : v;
-}
-
-/** Compara datas como string (funciona pra "YYYY-MM-DD" e ISO timestamp). */
-function inDateRange(value: string | null, from: string, to: string): boolean {
-  if (!from && !to) return true;
-  if (!value) return false;
-  const d = toDateOnly(value);
-  if (from && d < from) return false;
-  if (to && d > to) return false;
-  return true;
-}
-
 const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "client", label: "Client" },
   { id: "po_batch", label: "PO . Batches" },
@@ -136,21 +122,58 @@ const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 export function EtdFactoriesClient({
   rows,
+  total,
+  pageCount,
+  state,
   clients,
   factories,
   categories,
   initialColumns,
 }: {
   rows: EtdFactoryRow[];
+  total: number;
+  pageCount: number;
+  state: ListState;
   clients: Ref[];
   factories: Ref[];
   categories: Ref[];
   initialColumns: VisibilityState;
 }) {
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<EtdFactoriesFilters>(EMPTY_FILTERS);
+  const router = useRouter();
+
+  // Paginada no servidor (29/10/2026): página, busca, ordenação e filtros moram
+  // na URL; mudar qualquer um navega e o servidor devolve só a página nova
+  // (view `etd_list`, ver ./page.tsx).
+  const [navigating, startNavigation] = useTransition();
+  const navigate = (next: ListState) =>
+    startNavigation(() =>
+      router.push(`/etd-factories${listStateToSearch(next)}`, { scroll: false })
+    );
+
+  // Busca: digita livre, vai pra URL depois de uma pausa (volta pra página 1).
+  const [search, setSearch] = useState(state.q);
+  const lastQ = useRef(state.q);
+  useEffect(() => {
+    // URL mudou por fora (voltar do navegador, limpar): o campo acompanha.
+    if (state.q !== lastQ.current) {
+      lastQ.current = state.q;
+      setSearch(state.q);
+    }
+  }, [state.q]);
+  useEffect(() => {
+    const q = search.trim();
+    if (q === lastQ.current) return;
+    const t = setTimeout(() => {
+      lastQ.current = q;
+      navigate({ ...state, q, page: 1 });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const filters = state.filters;
+  const sorting: SortingState = [state.sort];
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "po_batch", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("etd-factories", initialColumns);
   const [modalTarget, setModalTarget] = useState<{
     orderId: string;
@@ -161,7 +184,6 @@ export function EtdFactoriesClient({
   // Realtime (mesmo modelo do TO-DO): ETD salvo, entrada Factory×Category
   // criada/movida, lote mudando de status, PL criado ou embarque confirmado —
   // a lista reflete sem F5. Debounce curto coalesce rajadas num só refresh.
-  const router = useRouter();
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleRefresh = () => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
@@ -183,30 +205,6 @@ export function EtdFactoriesClient({
         r.factory
       } - ${r.category}`,
     });
-
-  const data = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (filters.client_id && r.client_id !== filters.client_id) return false;
-      if (filters.status && r.batch_status !== filters.status) return false;
-      if (filters.factory_id && r.factory_id !== filters.factory_id) return false;
-      if (filters.category_id && r.category_id !== filters.category_id) return false;
-      if (!inDateRange(r.shipment_req, filters.shipment_from, filters.shipment_to))
-        return false;
-      if (!inDateRange(r.initial_date, filters.initial_from, filters.initial_to))
-        return false;
-      if (!inDateRange(r.current_date, filters.current_from, filters.current_to))
-        return false;
-      if (!inDateRange(r.last_updated, filters.updated_from, filters.updated_to))
-        return false;
-      if (filters.empty_dates === "yes" && r.initial_date) return false;
-      if (filters.empty_dates === "no" && !r.initial_date) return false;
-      if (filters.ready_parts === "yes" && !r.ready_parts) return false;
-      if (filters.ready_parts === "no" && r.ready_parts) return false;
-      if (!q) return true;
-      return r.po_number.toLowerCase().includes(q);
-    });
-  }, [rows, search, filters]);
 
   const columns = useMemo<ColumnDef<EtdFactoryRow>[]>(
     () => [
@@ -336,19 +334,25 @@ export function EtdFactoriesClient({
   );
 
   const table = useReactTable({
-    data,
+    data: rows,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    manualSorting: true,
+    manualPagination: true,
+    pageCount,
+    onSortingChange: (updater) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const s = next[0];
+      navigate({
+        ...state,
+        sort: s && s.id in SORT_COLUMNS ? { id: s.id as SortId, desc: s.desc } : DEFAULT_SORT,
+        page: 1,
+      });
+    },
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
     state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
   });
-
-  const pageIndex = table.getState().pagination.pageIndex;
 
   return (
     <div>
@@ -410,8 +414,8 @@ export function EtdFactoriesClient({
         open={filtersOpen}
         onOpenChange={setFiltersOpen}
         filters={filters}
-        onApply={setFilters}
-        onClear={() => setFilters(EMPTY_FILTERS)}
+        onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
+        onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
         clients={clients}
         factories={factories}
         categories={categories}
@@ -426,6 +430,7 @@ export function EtdFactoriesClient({
         onOpenChange={(o) => !o && setModalTarget(null)}
       />
 
+      <div className={navigating ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
       <DataCards
         rows={table.getRowModel().rows}
         labels={CARD_LABELS}
@@ -482,18 +487,20 @@ export function EtdFactoriesClient({
           </TableBody>
         </Table>
       </div>
+      </div>
 
       <div className="mt-4 flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          Page {pageIndex + 1} of {Math.max(table.getPageCount(), 1)}
+          Page {state.page} of {pageCount}
+          <span className="ml-2 text-slate-400">· {total} entries</span>
         </p>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="icon"
             className="rounded-lg"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => navigate({ ...state, page: state.page - 1 })}
+            disabled={state.page <= 1 || navigating}
             aria-label="Previous page"
           >
             <ChevronLeft />
@@ -502,8 +509,8 @@ export function EtdFactoriesClient({
             variant="outline"
             size="icon"
             className="rounded-lg"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => navigate({ ...state, page: state.page + 1 })}
+            disabled={state.page >= pageCount || navigating}
             aria-label="Next page"
           >
             <ChevronRight />
