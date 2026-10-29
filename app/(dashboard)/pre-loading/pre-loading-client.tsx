@@ -46,7 +46,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
 
-import { deletePreLoading, getSelectableBatchOptions } from "./actions";
+import { deletePreLoading, getNextPlNumber, getSelectableBatchOptions } from "./actions";
 import { PreLoadingFormModal, type BatchOption } from "./pre-loading-form-modal";
 import {
   activeFilterCount,
@@ -140,22 +140,8 @@ function inDateRange(value: string | null, from: string, to: string): boolean {
   return true;
 }
 
-export function PreLoadingClient({
-  rows,
-  clients,
-  profiles,
-  agents,
-  carriers,
-  pols,
-  pods,
-  factories,
-  orders,
-  batchOptions,
-  nextPlNumber,
-  today,
-  initialColumns,
-}: {
-  rows: PreLoadingRow[];
+/** Opções dos filtros e do modal (GET ./options), por nome. */
+export type PreLoadingOptions = {
   clients: Ref[];
   profiles: Ref[];
   agents: Ref[];
@@ -164,8 +150,54 @@ export function PreLoadingClient({
   pods: Ref[];
   factories: Ref[];
   orders: Ref[];
-  batchOptions: BatchOption[];
-  nextPlNumber: string;
+};
+const NO_OPTIONS: PreLoadingOptions = {
+  clients: [],
+  profiles: [],
+  agents: [],
+  carriers: [],
+  pols: [],
+  pods: [],
+  factories: [],
+  orders: [],
+};
+// Guardadas no módulo: voltar à lista na mesma sessão não busca de novo.
+let cachedOptions: PreLoadingOptions | null = null;
+
+/**
+ * Opções dos filtros e do modal de criação, buscadas em segundo plano DEPOIS que
+ * a lista aparece (29/10/2026: no render elas eram a maior parte dos ~50 kB).
+ */
+function useFilterOptions(): PreLoadingOptions {
+  const [options, setOptions] = useState(cachedOptions ?? NO_OPTIONS);
+  useEffect(() => {
+    if (cachedOptions) return;
+    let alive = true;
+    fetch("/pre-loading/options")
+      .then((res) => {
+        if (!res.ok) throw new Error(`pre-loading options ${res.status}`);
+        return res.json() as Promise<PreLoadingOptions>;
+      })
+      .then((loaded) => {
+        cachedOptions = loaded;
+        if (alive) setOptions(loaded);
+      })
+      .catch(() => {
+        // Sem opções os selects ficam vazios; a lista segue.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return options;
+}
+
+export function PreLoadingClient({
+  rows,
+  today,
+  initialColumns,
+}: {
+  rows: PreLoadingRow[];
   today: string;
   initialColumns: VisibilityState;
 }) {
@@ -197,21 +229,24 @@ export function PreLoadingClient({
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PreLoadingRow | null>(null);
 
-  // A lista de lotes selecionáveis vem como prop do render inicial da página; se
-  // um lote foi criado/movido pra Production com esta página já aberta, a prop
-  // estaria velha. Ao abrir o modal, rebuscamos a lista atual do banco (server
-  // action) e usamos ela por cima da prop — não depende de refresh do route.
+  // Lotes selecionáveis e próximo nº de PL: buscados ao abrir o modal (server
+  // actions), não no render da lista — a lista abre sem esperar por eles e um
+  // lote criado/movido pra Production com a página aberta já aparece.
   const [freshBatches, setFreshBatches] = useState<BatchOption[] | null>(null);
+  const [nextPlNumber, setNextPlNumber] = useState("");
   const refreshBatchOptions = () => {
     getSelectableBatchOptions()
       .then(setFreshBatches)
-      .catch(() => {}); // falha silenciosa: cai na prop do render
+      .catch(() => toast.error("Could not load the batches."));
   };
 
   const openCreate = () => {
     setEditing(null);
     setFormOpen(true);
     refreshBatchOptions();
+    getNextPlNumber()
+      .then(setNextPlNumber)
+      .catch(() => {});
   };
   const openEdit = (row: PreLoadingRow) => {
     setEditing(row);
@@ -224,15 +259,19 @@ export function PreLoadingClient({
   // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
   // 12×, INTEGRACAO_GSS §9.3). No filtro basta o nome do porto — deduplicamos a
   // lista e casamos por nome, senão escolher "Ningbo" pegaria só 1 dos 12 ids.
-  const polNameById = useMemo(() => new Map(pols.map((p) => [p.id, p.name])), [pols]);
+  const options = useFilterOptions();
+  const polNameById = useMemo(
+    () => new Map(options.pols.map((p) => [p.id, p.name])),
+    [options.pols]
+  );
   const uniquePols = useMemo(() => {
     const byName = new Map<string, Ref>();
-    for (const p of pols) {
+    for (const p of options.pols) {
       const key = p.name.trim().toLowerCase();
       if (!byName.has(key)) byName.set(key, p);
     }
     return [...byName.values()];
-  }, [pols]);
+  }, [options.pols]);
 
   const data = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -248,7 +287,11 @@ export function PreLoadingClient({
       if (filters.agent_brazil_id && r.agent_brazil_id !== filters.agent_brazil_id) return false;
       if (filters.agent_china_id && r.agent_china_id !== filters.agent_china_id) return false;
       if (filters.carrier_id && !r.carrier_ids.includes(filters.carrier_id)) return false;
-      if (filters.pol_id && (r.pol ?? null) !== (polNameById.get(filters.pol_id) ?? null))
+      if (
+        filters.pol_id &&
+        polNameById.size > 0 &&
+        (r.pol ?? null) !== (polNameById.get(filters.pol_id) ?? null)
+      )
         return false;
       if (filters.pod_id && r.pod_id !== filters.pod_id) return false;
       if (filters.consolidation_point_id && r.consolidation_point_id !== filters.consolidation_point_id)
@@ -483,10 +526,10 @@ export function PreLoadingClient({
         editing={editing}
         nextPlNumber={nextPlNumber}
         today={today}
-        clients={clients}
-        profiles={profiles}
-        pods={pods}
-        batchOptions={freshBatches ?? batchOptions}
+        clients={options.clients}
+        profiles={options.profiles}
+        pods={options.pods}
+        batchOptions={freshBatches ?? []}
       />
 
       <FiltersModal
@@ -495,14 +538,8 @@ export function PreLoadingClient({
         filters={filters}
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
-        clients={clients}
-        profiles={profiles}
-        agents={agents}
-        carriers={carriers}
+        {...options}
         pols={uniquePols}
-        pods={pods}
-        factories={factories}
-        orders={orders}
       />
 
       <DataCards
