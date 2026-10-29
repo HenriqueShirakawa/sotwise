@@ -347,7 +347,26 @@ export async function gssRequest(
   return result;
 }
 
+/**
+ * SÓ NA DEV (29/10/2026, regra do usuário: "na dev não devemos mandar NADA para
+ * a GSS"). A dev tem cópia dos dados da produção — mesmos PLs, lotes e números
+ * —, então qualquer escrita daqui alteraria o GSS real e voltaria para a
+ * produção pelo sync. Toda escrita (POST/PATCH/PUT/DELETE) para aqui, antes da
+ * rede, sem depender de env var; leitura (GET, sync GSS → dev) continua.
+ * NÃO levar este bloqueio para a main.
+ */
+const DEV_BLOCKS_GSS_WRITES = true;
+
 async function gssRequestRaw(method: HttpMethod, path: string, body?: unknown): Promise<GssWriteResult> {
+  if (DEV_BLOCKS_GSS_WRITES && method !== "GET") {
+    return {
+      kind: "permanent",
+      status: 0,
+      data: null,
+      text: "",
+      error: `Bloqueado na dev: ${method} ${path} não vai ao GSS.`,
+    };
+  }
   const cfg = readConfig();
   if (!cfg.ok) return { kind: "blocked", status: 0, data: null, text: "", error: cfg.error };
 
