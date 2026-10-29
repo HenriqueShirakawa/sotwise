@@ -113,3 +113,19 @@ export function listStateToSearch(state: ListState): string {
   const s = sp.toString();
   return s ? `?${s}` : "";
 }
+
+type Ref = { id: string; name: string };
+
+/** Opções dos selects do modal de Filters — carregadas à parte (filter-options.ts). */
+export type ShipmentFilterOptions = {
+  clients: Ref[];
+  profiles: Ref[];
+  orders: Ref[];
+  orderTypes: Ref[];
+  agents: Ref[];
+  carriers: Ref[];
+  pols: Ref[];
+  pods: Ref[];
+  factories: Ref[];
+  shipmentModels: Ref[];
+};
