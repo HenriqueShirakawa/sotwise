@@ -1613,7 +1613,45 @@ export type Database = {
         Relationships: [];
       };
     };
-    Views: Record<never, never>;
+    Views: {
+      // Lista de Shipments paginada no servidor (20261029120000): uma linha por
+      // shipment vivo, já com colunas e campos de filtro. Só service role.
+      shipments_list: {
+        Row: {
+          id: UUID;
+          pre_loading_id: UUID;
+          pl_number: string;
+          pl_number_int: number;
+          client: string | null;
+          client_ids: UUID[];
+          client_reference: string | null;
+          order_type: string | null;
+          order_type_ids: UUID[];
+          order_ids: UUID[];
+          leader_id: UUID | null;
+          pol: string | null;
+          pol_id: UUID | null;
+          pod_id: UUID | null;
+          consolidation_point_id: UUID | null;
+          agent_brazil_id: UUID | null;
+          agent_china_id: UUID | null;
+          carrier_id: UUID | null;
+          container_number: string | null;
+          ship_model: string | null;
+          shipment_model_id: UUID | null;
+          loading_date: DateStr | null;
+          ship_date: DateStr | null;
+          eta: DateStr | null;
+          bl_date: DateStr | null;
+          ata_date: DateStr | null;
+          delivered_date: DateStr | null;
+          sum_of_orders: number;
+          orders_summary: { po_number: string; ofc_count: number }[];
+          status: string;
+        };
+        Relationships: [];
+      };
+    };
     Functions: {
       profile_id_by_email: {
         Args: { p_email: string };
