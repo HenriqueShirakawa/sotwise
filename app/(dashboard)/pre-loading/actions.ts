@@ -10,6 +10,7 @@ import { loadSelectableBatchOptions } from "@/domain/pre-loadings/selectable-bat
 import {
   createPreLoadingRecord,
   deletePreLoadingRecord,
+  nextPlNumber,
   syncPreLoadingRelations,
 } from "@/domain/pre-loadings/write";
 import {
@@ -33,6 +34,12 @@ export async function getSelectableBatchOptions(): Promise<BatchOption[]> {
   await requireFeature("pre_loading");
   const admin = createAdminClient();
   return loadSelectableBatchOptions(admin);
+}
+
+/** Próximo nº de PL (só exibição no modal; o número real sai no insert). */
+export async function getNextPlNumber(): Promise<string> {
+  await requireFeature("pre_loading");
+  return nextPlNumber(createAdminClient());
 }
 
 export async function createPreLoading(input: PreLoadingInput): Promise<CreateResult> {
