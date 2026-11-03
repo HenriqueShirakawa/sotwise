@@ -512,7 +512,8 @@ export const restPaths = {
         "1. **Header / batches** (`clients`, `client_reference`, `pod`, people, `batch_ids` = the full set, `gss_id`) — only while not shipped (409 after).",
         "   `is_active` (flag only, stored on the PL and mirrored to its shipment) changes at any time, even after shipping — e.g. `{ \"is_active\": false }` alone.",
         "2. **`status: \"in_transit\"` + `confirm`** = Confirm Shipping, same rules as the screen: the 7 Pre-loading steps complete " +
-          "(incl. the Shipping Docs attachment, uploaded in SOTWISE) and at least one Factory × Category line in the PL's batches. " +
+          "(incl. the Shipping Docs attachment, uploaded in SOTWISE), at least one Factory × Category line in the PL's batches, " +
+          "and **every batch of the PL validated by GSS** (`loaded_quantity: true`, set with `PATCH /api/batches/{id}`) — otherwise 409 listing the batches still waiting. " +
           "No per-line loading status any more (the GSS knows what shipped, at product level): every batch of the PL goes to `in_transit` with all its lines — SOTWISE does not split or create batches; a follow-up batch for the remainder comes from the GSS (`POST /api/batches`).",
         "3. **`status: \"preloading\"`** = undo the shipment (also reverts a legacy split). Refused for a delivered shipment or when the split batches already moved on.",
         "",

@@ -475,7 +475,9 @@ export const openApiSpec = {
           loaded_quantity: {
             type: "boolean",
             description:
-              "Batch flag (default `false`). Set to `true` automatically when the batch status changes to `in_transit` or `delivered`; a PATCH can still change it.",
+              "GSS validation of the loaded quantity. Confirm Shipping requires `true` on every batch of the PL. " +
+              "Set automatically when the status changes: `false` on `in_negotiation`/`in_production`/`preloading`, `true` on `in_transit`/`delivered`; " +
+              "a PATCH with only this field is always respected.",
           },
           created_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
           updated_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
