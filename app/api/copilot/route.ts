@@ -5,6 +5,7 @@ import { resolveSession } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   COPILOT_MAX_STEPS,
+  COPILOT_EFFORT,
   COPILOT_MAX_TOKENS,
   COPILOT_MODEL,
   COPILOT_SYSTEM_PROMPT,
@@ -135,9 +136,11 @@ export async function POST(request: Request) {
           const modelStream = client.messages.stream({
             model: COPILOT_MODEL,
             max_tokens: COPILOT_MAX_TOKENS,
-            system: COPILOT_SYSTEM_PROMPT,
+            // Ferramentas + system prompt são fixos (~6k tokens): com o cache, as
+            // voltas seguintes e as próximas perguntas (5 min) pagam 10% deles.
+            system: [{ type: "text", text: COPILOT_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
             tools,
-            output_config: { effort: "medium" },
+            output_config: { effort: COPILOT_EFFORT },
             messages,
           });
 
@@ -157,6 +160,11 @@ export async function POST(request: Request) {
           if (message.stop_reason !== "tool_use") {
             if (message.stop_reason === "max_tokens") {
               send({ type: "error", message: "The response was too long and got truncated." });
+            }
+            // O Haiku 5.5 tem classificador de segurança e não tem fallback no
+            // servidor: sem este aviso a recusa vira uma resposta em branco.
+            if (message.stop_reason === "refusal") {
+              send({ type: "error", message: "SIA couldn't answer this request. Try rephrasing it." });
             }
             break;
           }
