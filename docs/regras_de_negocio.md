@@ -2169,6 +2169,16 @@ As ferramentas nasceram espelhando **uma tela cada**, e por isso o copilot enxer
 - 🔑 **`ANTHROPIC_API_KEY` é obrigatória no ambiente** (server-side, nunca com prefixo `NEXT_PUBLIC_`). Fica **fora** do `lib/env.ts` de propósito: aquele módulo valida no import e é carregado por todo acesso a dados, então chave ausente derrubaria o app inteiro em vez de só o copilot. Sem a chave, a rota responde **503** e o resto do sistema segue normal. **Precisa estar cadastrada nas variáveis de ambiente da Vercel** — não basta o `.env.local`.
 - ⚠️ **Pegadinha de dev (13/08/2026):** um `next dev` já rodando pode ficar com o manifesto de rotas velho e devolver **404 (página HTML de not-found) para todo `/api/*`** — inclusive rotas antigas como `/api/[resource]`. No copilot isso aparece como "Failed to reach the copilot", porque o cliente tenta ler JSON de uma página HTML. Não é bug de código: `rm -rf .next` e subir o dev de novo. Antes de investigar o copilot, confirmar com `curl -X POST /api/copilot` — a rota sã responde `401 {"error":"Not authenticated."}` sem cookie de sessão.
 
+##### Limite de tokens por usuário (2026-11-03, só na `dev`)
+
+Pedido do usuário: um painel central onde **só o owner** define quantos tokens cada usuário pode gastar na SIA **por dia e por mês**. Tela **Access → SIA tokens** (`/access/sia`, `requireOwner`, mesma porta de Permissions/GSS calls). Migration `20261103160000_copilot_token_limits.sql`.
+
+- **O que conta:** entrada + saída + cache de **todas as voltas** do modelo numa pergunta (inclusive as consultas que a SIA faz) — o que a Anthropic cobra, para bater com a fatura. Uma linha por pergunta em `copilot_usage`.
+- **Dia e mês no fuso de São Paulo** (função `copilot_usage_totals`): o dia zera à meia-noite, o mês no dia 1.
+- **Limite padrão + exceção por usuário** (`copilot_limits`): a linha com `profile_id` nulo é o padrão de todos (começa em **200.000/dia e 2.000.000/mês**, editável na tela; vazio = sem limite). Na linha do usuário, cada coluna vazia herda do padrão; **0 = sem acesso à SIA**.
+- **Trava** (`app/api/copilot/route.ts` + `lib/copilot/limits.ts`): antes de chamar o modelo, se o gasto do dia ou do mês já chegou no limite → 429 com a mensagem para o usuário ("You've reached your SIA limit for today…"). Entre uma volta e outra da mesma pergunta confere de novo e para se estourou. Uma pergunta pode passar um pouco do limite (o tamanho só se sabe depois); a seguinte já é barrada. Sem conseguir ler o limite (ex.: migration não aplicada) a SIA **não roda** (503) — o controle de gasto é o motivo da tabela.
+- **Tela:** cartões com o total de hoje/mês e quantos usaram; formulário do padrão; tabela de usuários internos (cliente externo fica fora; bloqueados escondidos por padrão) com consumo de hoje e do mês contra o limite (barra amarela a 80%, vermelha a 100%) e os campos de limite próprio por linha.
+
 ### 6.2 Leitura de PL e ETD pelo GSS (2026-09-22)
 
 > ⚠️ **Superado em 06/10/2026 (§6.8):** PL/Shipment e ETD passaram a aceitar escrita pela API. As duas views abaixo continuam valendo como leitura.
