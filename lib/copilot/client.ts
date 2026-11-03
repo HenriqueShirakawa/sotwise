@@ -28,10 +28,12 @@ export function createCopilotClient(): Anthropic {
   return cached;
 }
 
-export const COPILOT_MODEL = "claude-opus-5";
+// Haiku 5.5 desde 03/11/2026 (pedido do usuário, custo): ~50x mais barato que o
+// Opus 5 por token. Antes: "claude-opus-5".
+export const COPILOT_MODEL = "claude-haiku-5-5";
 
 /**
- * Teto por resposta. Cobre thinking + texto: no Claude Opus 5 o thinking é
+ * Teto por resposta. Cobre thinking + texto: no Claude Haiku 5.5 o thinking é
  * adaptativo e vem ligado por padrão, então um teto apertado trunca a resposta
  * no meio de uma frase em vez de economizar.
  */
@@ -42,7 +44,13 @@ export const COPILOT_MAX_TOKENS = 16_000;
  * gasta 3–4 (resolver nome → consultar → cruzar); o teto existe só para o caso
  * patológico de o modelo entrar em laço.
  */
-export const COPILOT_MAX_STEPS = 8;
+export const COPILOT_MAX_STEPS = 5;
+
+/**
+ * Esforço do modelo. `low` desde 03/11/2026 (pedido do usuário: o mínimo de
+ * tokens): menos thinking e menos chamadas de ferramenta por pergunta.
+ */
+export const COPILOT_EFFORT = "low" as const;
 
 export const COPILOT_SYSTEM_PROMPT = `You are SIA (SOT Intelligent Assistant), the SOT copilot. SOT is AGK's import operations system. You're talking to someone on the operations team checking the progress of orders, batches, pre-loadings and shipments while they work.
 

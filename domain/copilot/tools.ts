@@ -49,16 +49,18 @@ function defineTool<I>(tool: CopilotTool<I>): CopilotTool {
   return tool as CopilotTool;
 }
 
-/** Teto de linhas por resposta — o modelo lê o resultado, não a tela. */
+/** Teto de linhas por resposta — o modelo lê o resultado, não a tela. Cada linha
+ * vira token de entrada: 25 no máximo desde 03/11/2026 (pedido do usuário:
+ * consumir o mínimo de tokens); o total continua vindo na contagem. */
 const limitSchema = z
   .number()
   .int()
   .min(1)
-  .max(100)
+  .max(25)
   .optional()
-  .describe("Max rows (default 20, cap 100).");
+  .describe("Max rows (default 10, cap 25). Totals come back in the count — never raise the limit just to count.");
 
-const DEFAULT_LIMIT = 20;
+const DEFAULT_LIMIT = 10;
 
 const ORDER_STATUSES: OrderStatus[] = [
   "in_negotiation",

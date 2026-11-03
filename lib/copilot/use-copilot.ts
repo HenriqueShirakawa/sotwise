@@ -34,8 +34,9 @@ type StreamEvent =
   | { type: "done" }
   | { type: "error"; message: string };
 
-/** A rota aceita até 40 mensagens; mandamos com folga. */
-const MAX_HISTORY = 38;
+/** Só as últimas trocas voltam ao modelo: cada mensagem antiga é token de
+ * entrada repetido a cada pergunta (03/11/2026, mínimo de tokens). */
+const MAX_HISTORY = 6;
 const MAX_CHARS = 4000;
 
 export function useCopilot() {
