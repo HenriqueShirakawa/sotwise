@@ -1356,6 +1356,53 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_snapshot_runs"]["Insert"]>;
         Relationships: [];
       };
+      /** Tokens gastos na SIA, uma linha por pergunta. Migration
+       * 20261103160000_copilot_token_limits.sql; tela /access/sia. */
+      copilot_usage: {
+        Row: {
+          id: number;
+          profile_id: UUID;
+          created_at: Timestamp;
+          input_tokens: number;
+          output_tokens: number;
+          cache_read_tokens: number;
+          cache_creation_tokens: number;
+          total_tokens: number;
+          model: string | null;
+        };
+        Insert: {
+          profile_id: UUID;
+          created_at?: Timestamp;
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_read_tokens?: number;
+          cache_creation_tokens?: number;
+          model?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["copilot_usage"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Limite de tokens da SIA: profile_id null = padrão de todos; por
+       * usuário sobrescreve (null na coluna = herda do padrão). */
+      copilot_limits: {
+        Row: {
+          id: number;
+          profile_id: UUID | null;
+          daily_tokens: number | null;
+          monthly_tokens: number | null;
+          updated_at: Timestamp;
+          updated_by: UUID | null;
+        };
+        Insert: {
+          profile_id?: UUID | null;
+          daily_tokens?: number | null;
+          monthly_tokens?: number | null;
+          updated_at?: Timestamp;
+          updated_by?: UUID | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["copilot_limits"]["Insert"]>;
+        Relationships: [];
+      };
       /** Toda chamada do SOTWISE à API do GSS (`gssRequest`). Tela:
        * /access/gss/calls. Migration 20261019120000_gss_call_log.sql. */
       gss_call_log: {
@@ -1739,6 +1786,11 @@ export type Database = {
       };
     };
     Functions: {
+      /** Consumo da SIA no dia e no mês (fuso de São Paulo); sem argumento = todos. */
+      copilot_usage_totals: {
+        Args: { p_profile_id?: string | null };
+        Returns: { profile_id: string; day_tokens: number; month_tokens: number }[];
+      };
       profile_id_by_email: {
         Args: { p_email: string };
         Returns: string | null;

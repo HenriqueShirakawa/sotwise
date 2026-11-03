@@ -12,6 +12,14 @@ import {
   createCopilotClient,
   runTool,
 } from "@/lib/copilot/client";
+import {
+  EMPTY_SPEND,
+  getCopilotQuota,
+  quotaBlockMessage,
+  recordCopilotUsage,
+  spendTotal,
+  type CopilotQuota,
+} from "@/lib/copilot/limits";
 
 /**
  * Copilot — conversa com streaming (docs/regras_de_negocio.md §6.1).
@@ -77,9 +85,23 @@ export async function POST(request: Request) {
     );
   }
 
+  const admin = createAdminClient();
+
+  // Limite de tokens por dia/mês (tela /access/sia, 03/11/2026). Sem conseguir
+  // ler o limite a SIA não roda: o controle de gasto é o motivo da tabela.
+  let quota: CopilotQuota;
+  try {
+    quota = await getCopilotQuota(admin, session.userId);
+  } catch (error) {
+    console.error("[copilot] quota unavailable:", error);
+    return Response.json({ error: "SIA usage limits are unavailable right now." }, { status: 503 });
+  }
+  const blocked = quotaBlockMessage(quota);
+  if (blocked) return Response.json({ error: blocked }, { status: 429 });
+
   const tools = buildToolDefinitions(session) as unknown as Anthropic.Tool[];
   const ctx = {
-    admin: createAdminClient(),
+    admin,
     session,
     // "Hoje" fixado no início: duas ferramentas na mesma resposta não podem
     // discordar sobre a data de referência.
@@ -98,8 +120,18 @@ export async function POST(request: Request) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
 
+      // Gasto desta pergunta, somado volta a volta e gravado no fim (finally).
+      const spend = { ...EMPTY_SPEND };
+
       try {
         for (let step = 0; step < COPILOT_MAX_STEPS; step++) {
+          // Entre uma volta e outra: se a pergunta já estourou o limite, para aqui.
+          const midBlock = step > 0 ? quotaBlockMessage(quota, spendTotal(spend)) : null;
+          if (midBlock) {
+            send({ type: "error", message: midBlock });
+            break;
+          }
+
           const modelStream = client.messages.stream({
             model: COPILOT_MODEL,
             max_tokens: COPILOT_MAX_TOKENS,
@@ -116,6 +148,10 @@ export async function POST(request: Request) {
           }
 
           const message = await modelStream.finalMessage();
+          spend.input += message.usage.input_tokens;
+          spend.output += message.usage.output_tokens;
+          spend.cacheRead += message.usage.cache_read_input_tokens ?? 0;
+          spend.cacheCreation += message.usage.cache_creation_input_tokens ?? 0;
           messages.push({ role: "assistant", content: message.content });
 
           if (message.stop_reason !== "tool_use") {
@@ -161,6 +197,7 @@ export async function POST(request: Request) {
           message: error instanceof Error ? error.message : "Failed to reach SIA.",
         });
       } finally {
+        await recordCopilotUsage(admin, session.userId, spend, COPILOT_MODEL);
         controller.close();
       }
     },
