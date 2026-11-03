@@ -63,8 +63,8 @@ const batchIdParam = {
   schema: { type: "string" },
 };
 
-/** `loaded_quantity` (03/11): marca booleana do lote, como o `is_active`. */
-const loadedQuantityIn = {
+/** `quantities_confirmed` (03/11): marca booleana do lote, como o `is_active`. */
+const quantitiesConfirmedIn = {
   type: "boolean",
   description: "Batch flag. Omitted → unchanged (on create: `false`). Accepted in any batch status.",
 };
@@ -90,7 +90,7 @@ const exampleBatch = {
   ],
   pre_loadings: [],
   is_active: true,
-  loaded_quantity: false,
+  quantities_confirmed: false,
   created_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
   updated_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
 };
@@ -161,10 +161,10 @@ export const openApiSpec = {
           { name: "status", in: "query", schema: { type: "string", enum: [...BATCH_STATUSES] } },
           isActiveParam,
           {
-            name: "loaded_quantity",
+            name: "quantities_confirmed",
             in: "query",
             schema: { type: "string", enum: ["true", "false"] },
-            description: "Filter by the `loaded_quantity` flag (omitted → both).",
+            description: "Filter by the `quantities_confirmed` flag (omitted → both).",
           },
           {
             name: "updated_since",
@@ -290,7 +290,7 @@ export const openApiSpec = {
         description:
           "Partial update — only the fields sent are applied. Everything is validated before anything is written. " +
           "`remove_item_ids` takes lines out of the batch (they stay in the order, without batch). " +
-          "A PATCH with only `is_active` and/or `loaded_quantity` is accepted in any status — they are only flags and skip the editable-batch lock.",
+          "A PATCH with only `is_active` and/or `quantities_confirmed` is accepted in any status — they are only flags and skip the editable-batch lock.",
         requestBody: {
           required: true,
           content: {
@@ -300,7 +300,7 @@ export const openApiSpec = {
                 status: { summary: "Move to production", value: { status: "in_production" } },
                 rename: { summary: "Change the number", value: { batch_number: ".03" } },
                 inactive: { summary: "Mark inactive (flag only)", value: { is_active: false } },
-                loaded: { summary: "Set loaded_quantity (flag only)", value: { loaded_quantity: true } },
+                confirmed: { summary: "Set quantities_confirmed (flag only)", value: { quantities_confirmed: true } },
                 items: {
                   summary: "Add, move and remove items",
                   value: {
@@ -437,7 +437,7 @@ export const openApiSpec = {
           "items",
           "pre_loadings",
           "is_active",
-          "loaded_quantity",
+          "quantities_confirmed",
           "created_at",
           "updated_at",
         ],
@@ -472,10 +472,10 @@ export const openApiSpec = {
             },
           },
           is_active: isActiveOut,
-          loaded_quantity: {
+          quantities_confirmed: {
             type: "boolean",
             description:
-              "GSS validation of the loaded quantity. Confirm Shipping requires `true` on every batch of the PL. " +
+              "GSS confirmation of the batch quantities. Confirm Shipping requires `true` on every batch of the PL. " +
               "Set automatically when the status changes: `false` on `in_negotiation`/`in_production`/`preloading`, `true` on `in_transit`/`delivered`; " +
               "a PATCH with only this field is always respected.",
           },
@@ -530,14 +530,14 @@ export const openApiSpec = {
           },
           items: { type: "array", maxItems: 500, items: ref("NewItem"), description: "New lines, created inside the batch." },
           is_active: isActiveIn,
-          loaded_quantity: loadedQuantityIn,
+          quantities_confirmed: quantitiesConfirmedIn,
         },
       },
       BatchUpdate: {
         type: "object",
         additionalProperties: false,
         minProperties: 1,
-        description: "Partial. Unknown fields → 400. `{ \"is_active\": false }` or `{ \"loaded_quantity\": true }` alone is valid.",
+        description: "Partial. Unknown fields → 400. `{ \"is_active\": false }` or `{ \"quantities_confirmed\": true }` alone is valid.",
         properties: {
           batch_number: { type: "string", maxLength: 20 },
           status: { type: "string", enum: [...EDITABLE_BATCH_STATUSES] },
@@ -555,7 +555,7 @@ export const openApiSpec = {
             description: "Lines of this batch to take out (they stay in the order without batch).",
           },
           is_active: isActiveIn,
-          loaded_quantity: loadedQuantityIn,
+          quantities_confirmed: quantitiesConfirmedIn,
         },
       },
     },

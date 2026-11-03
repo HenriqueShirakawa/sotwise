@@ -313,14 +313,14 @@ export async function createBatch(
         item_ids: input.item_ids,
         items: input.items,
         is_active: input.is_active,
-        loaded_quantity: input.loaded_quantity,
+        quantities_confirmed: input.quantities_confirmed,
       };
       const nothingToApply =
         changes.batch_number === undefined &&
         !changes.item_ids?.length &&
         !changes.items?.length &&
         changes.is_active === undefined &&
-        changes.loaded_quantity === undefined;
+        changes.quantities_confirmed === undefined;
       if (nothingToApply) {
         // Reenvio do mesmo lote sem nada novo: devolve como está, sem exigir
         // lote editável (o webhook pode repetir depois do embarque).
@@ -352,9 +352,9 @@ export async function createBatch(
       order_id: order.id,
       batch_number: batchNumber,
       gss_id: input.gss_id ?? null,
-      // Ausente → default da coluna (is_active true, loaded_quantity false).
+      // Ausente → default da coluna (is_active true, quantities_confirmed false).
       ...(input.is_active !== undefined ? { is_active: input.is_active } : {}),
-      ...(input.loaded_quantity !== undefined ? { loaded_quantity: input.loaded_quantity } : {}),
+      ...(input.quantities_confirmed !== undefined ? { quantities_confirmed: input.quantities_confirmed } : {}),
     })
     .select("id")
     .single();
@@ -403,12 +403,12 @@ export async function updateBatch(
   if (error) return fail(500, error.message);
   if (!batch) return fail(404, "Batch not found.");
 
-  // Só marcas (`is_active` 13/10, `loaded_quantity` 03/11): não mexem em
+  // Só marcas (`is_active` 13/10, `quantities_confirmed` 03/11): não mexem em
   // número/status/linhas — não passam pela trava de lote editável nem pelas
   // regras de conteúdo.
-  const flags: { is_active?: boolean; loaded_quantity?: boolean } = {};
+  const flags: { is_active?: boolean; quantities_confirmed?: boolean } = {};
   if (input.is_active !== undefined) flags.is_active = input.is_active;
-  if (input.loaded_quantity !== undefined) flags.loaded_quantity = input.loaded_quantity;
+  if (input.quantities_confirmed !== undefined) flags.quantities_confirmed = input.quantities_confirmed;
   const onlyFlags = Object.entries(input).every(([k, v]) => k in flags || v === undefined);
   if (onlyFlags && Object.keys(flags).length > 0) {
     const { error: flagError } = await admin.from("batches").update(flags).eq("id", batchId);
@@ -456,7 +456,7 @@ export async function updateBatch(
   }
 
   // 1º as colunas do lote: um batch_number repetido (409) falha antes de mexer nas linhas.
-  const patch: { batch_number?: string; status?: BatchStatus; is_active?: boolean; loaded_quantity?: boolean } =
+  const patch: { batch_number?: string; status?: BatchStatus; is_active?: boolean; quantities_confirmed?: boolean } =
     { ...flags };
   if (input.batch_number !== undefined) patch.batch_number = input.batch_number;
   if (input.status !== undefined) patch.status = input.status;

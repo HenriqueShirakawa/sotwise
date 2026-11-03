@@ -49,7 +49,7 @@ export type BatchRead = {
   /** SÓ uma marca (13/10): lote inativo continua listado; exclusão é o DELETE. */
   is_active: boolean;
   /** Marca booleana (03/11) gravada pelo POST/PATCH; default false. */
-  loaded_quantity: boolean;
+  quantities_confirmed: boolean;
   split_from_batch_id: UUID | null;
   order: { id: UUID; gss_id: string | null; po_number: string };
   items: BatchReadItem[];
@@ -66,14 +66,14 @@ type BatchRow = {
   batch_number: string;
   status: BatchStatus;
   is_active: boolean;
-  loaded_quantity: boolean;
+  quantities_confirmed: boolean;
   split_from_batch_id: UUID | null;
   created_at: string;
   updated_at: string;
 };
 
 const BATCH_COLUMNS =
-  "id, gss_id, order_id, batch_number, status, is_active, loaded_quantity, split_from_batch_id, created_at, updated_at";
+  "id, gss_id, order_id, batch_number, status, is_active, quantities_confirmed, split_from_batch_id, created_at, updated_at";
 
 /** O `.in()` vai na URL — pedaços pequenos evitam URL gigante com muitos lotes. */
 const IN_CHUNK = 150;
@@ -226,7 +226,7 @@ async function hydrate(admin: AdminClient, rows: BatchRow[]): Promise<BatchRead[
         : r.batch_number,
       status: r.status,
       is_active: r.is_active,
-      loaded_quantity: r.loaded_quantity,
+      quantities_confirmed: r.quantities_confirmed,
       split_from_batch_id: r.split_from_batch_id,
       order,
       items: itemsByBatch.get(r.id) ?? [],
@@ -294,7 +294,7 @@ export async function listBatches(
   if (query.gss_id) q = q.eq("gss_id", query.gss_id);
   if (query.status) q = q.eq("status", query.status);
   if (query.is_active !== undefined) q = q.eq("is_active", query.is_active);
-  if (query.loaded_quantity !== undefined) q = q.eq("loaded_quantity", query.loaded_quantity);
+  if (query.quantities_confirmed !== undefined) q = q.eq("quantities_confirmed", query.quantities_confirmed);
   if (query.updated_since) q = q.gte("updated_at", query.updated_since);
 
   const { data, count, error } = await q
