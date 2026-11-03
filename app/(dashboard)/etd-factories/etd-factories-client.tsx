@@ -241,6 +241,33 @@ export function EtdFactoriesClient({
 
   const filterCount = activeFilterCount(filters);
 
+  // Download XLS (./export/route.ts): todas as linhas da busca/filtros/ordenação
+  // atuais, não só a página aberta.
+  const [downloading, setDownloading] = useState(false);
+  const downloadXls = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(`/etd-factories/export${listStateToSearch({ ...state, page: 1 })}`);
+      // Sessão caída vira redirect pro login (HTML, 200) — não é planilha.
+      if (!res.ok || !res.headers.get("Content-Type")?.includes("spreadsheetml")) {
+        throw new Error(`export: ${res.status}`);
+      }
+      const name =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ??
+        "etd-factories.xlsx";
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Could not generate the XLS file. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   /** Abre o modal de ETD da linha — usado pela tabela e pelos cards. */
   const openRow = (r: EtdFactoryRow) =>
     setModalTarget({
@@ -436,12 +463,13 @@ export function EtdFactoriesClient({
             <Button
               variant="outline"
               className="h-11 rounded-xl bg-white"
+              disabled={downloading}
               onClick={() => {
                 close();
-                toast.info("Download XLS — coming soon.");
+                void downloadXls();
               }}
             >
-              <Download />
+              {downloading ? <Loader2 className="animate-spin" /> : <Download />}
               Download XLS
             </Button>
           </>
