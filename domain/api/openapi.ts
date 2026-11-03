@@ -472,7 +472,11 @@ export const openApiSpec = {
             },
           },
           is_active: isActiveOut,
-          loaded_quantity: { type: "boolean", description: "Batch flag (default `false`)." },
+          loaded_quantity: {
+            type: "boolean",
+            description:
+              "Batch flag (default `false`). Set to `true` automatically when the batch status changes to `in_transit` or `delivered`; a PATCH can still change it.",
+          },
           created_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
           updated_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
         },
