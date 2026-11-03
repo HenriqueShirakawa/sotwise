@@ -58,7 +58,7 @@ const limitSchema = z
   .min(1)
   .max(25)
   .optional()
-  .describe("Max rows (default 10, cap 25). Totals come back in the count — never raise the limit just to count.");
+  .describe("Default 10, max 25. The total comes in the count.");
 
 const DEFAULT_LIMIT = 10;
 
@@ -320,16 +320,12 @@ type ResolveKind = keyof typeof RESOLVE_KINDS;
 const resolveEntities = defineTool({
   feature: null,
   description:
-    "Translates a name the user typed into the id the other tools require. " +
-    "Call this BEFORE filtering by client, factory, category, person, POD, POL, " +
-    "carrier or business unit — never invent an id. Returns the candidates that " +
-    "match the text; if more than one comes back, ask the user which one before " +
-    "proceeding.",
+    "Name → id for client, factory, category, person, POD, POL, carrier or business unit. Call before filtering by any of them. Several matches → ask the user which one.",
   schema: z.object({
     kind: z
       .enum(["person", ...(Object.keys(RESOLVE_KINDS) as ResolveKind[])] as [string, ...string[]])
-      .describe("Entity type to resolve. 'person' covers leader, requester and responsible."),
-    query: z.string().min(1).describe("Part of the name, as the user typed it."),
+      .describe("'person' covers leader, requester and responsible."),
+    query: z.string().min(1).describe("Part of the name, as typed."),
     limit: limitSchema,
   }),
   run: async (input, { admin }) => {
@@ -380,22 +376,19 @@ type OrderRow = {
 const searchOrders = defineTool({
   feature: "orders",
   description:
-    "Lists orders with combinable filters. Call this for questions like " +
-    "'which orders from client X are in production', 'what opened this month', " +
-    "'partially shipped orders'. For the detail of ONE specific order " +
-    "(batches, steps, ETD), use get_order_detail.",
+    "Lists orders with combinable filters. For ONE specific order use get_order_detail.",
   schema: z.object({
-    po_number: z.string().optional().describe("Part of the order number (partial match)."),
+    po_number: z.string().optional().describe("Part of the order number."),
     client_id: z.string().uuid().optional(),
     business_unit_id: z.string().uuid().optional(),
     order_type_id: z.string().uuid().optional(),
-    leader_id: z.string().uuid().optional().describe("Leader responsible for the order."),
+    leader_id: z.string().uuid().optional(),
     status: z
       .array(z.enum(ORDER_STATUSES as [OrderStatus, ...OrderStatus[]]))
       .optional()
-      .describe("One or more statuses. The enum order is the pipeline order."),
-    date_po_from: z.string().optional().describe("Order date from (YYYY-MM-DD)."),
-    date_po_to: z.string().optional().describe("Order date to (YYYY-MM-DD)."),
+      .describe("Enum order = pipeline order."),
+    date_po_from: z.string().optional().describe("YYYY-MM-DD"),
+    date_po_to: z.string().optional().describe("YYYY-MM-DD"),
     limit: limitSchema,
   }),
   run: async (input, { admin }) => {
@@ -460,11 +453,7 @@ const searchOrders = defineTool({
 const getOrderDetail = defineTool({
   feature: "orders",
   description:
-    "Full portrait of ONE order: header data, batches with status and where each " +
-    "one is (PL and shipment), Factory×Category entries with ETD and the checklist " +
-    "(what's missing and what's already done). Call this for 'summarize PO 4312', " +
-    "'what's left for PO X to move forward' or 'which PLs is PO X in'. Accepts the " +
-    "order number as the user typed it.",
+    "Everything about ONE order: header, batches (status, PL, shipment), Factory×Category entries with ETD, and checklist steps. Accepts the order number as typed.",
   schema: z.object({
     po_number: z.string().min(1).describe("Order number, e.g. '4312' or 'PO - 4312'."),
   }),
@@ -644,11 +633,7 @@ type EtdQueryRow = {
 const listEtdEntries = defineTool({
   feature: "etd_factories",
   description:
-    "Factory×Category entries with the ETD and the computed delay (Days Delay = " +
-    "|current_date - initial_date|; late = greater than zero). Call this for " +
-    "'which batches are late', 'delay for factory X', 'what's ready and hasn't " +
-    "shipped'. By default it looks only at active batches (in_production and " +
-    "preloading), like the ETD Factories screen.",
+    "Factory×Category entries with ETD and Days Delay. Default: active batches (in_production, preloading), like the ETD Factories screen.",
   schema: z.object({
     factory_id: z.string().uuid().optional(),
     category_id: z.string().uuid().optional(),
@@ -657,18 +642,18 @@ const listEtdEntries = defineTool({
     batch_status: z
       .array(z.enum(BATCH_STATUSES as [BatchStatus, ...BatchStatus[]]))
       .optional()
-      .describe("Default: in_production and preloading (the active batches)."),
+      .describe("Default: in_production, preloading."),
     only_late: z
       .boolean()
       .optional()
-      .describe("true = only entries with Days Delay > 0."),
+      .describe("Only Days Delay > 0."),
     min_days_delay: z
       .number()
       .int()
       .min(0)
       .optional()
-      .describe("Minimum delay in days, e.g. 10 for 'more than 10 days'."),
-    ready: z.boolean().optional().describe("Filters by the Ready parts checkbox."),
+      .describe("Minimum Days Delay."),
+    ready: z.boolean().optional().describe("Ready parts checkbox."),
     limit: limitSchema,
   }),
   run: async (input, { admin, todayMs }) => {
@@ -750,11 +735,7 @@ const listEtdEntries = defineTool({
 const listPreLoadings = defineTool({
   feature: "pre_loading",
   description:
-    "Lists pre-load plans (PLs), exactly like the Pre-loading screen, and says " +
-    "which orders each one carries. Call this for 'which PLs are open', 'who's the " +
-    "leader of PL - 0231', 'which PLs carry PO 1437'. By default it shows the ones " +
-    "still on that screen — a PL only drops off once its Loading Date step is " +
-    "completed AND a shipment has been created for it.",
+    "Lists PLs like the Pre-loading screen, with the orders each carries. Default: PLs still on that screen (they drop off once Loading Date is completed and a shipment exists).",
   schema: z.object({
     pl_number: z.string().optional().describe("Part of the PL number."),
     po_number: z
@@ -766,7 +747,7 @@ const listPreLoadings = defineTool({
     include_confirmed: z
       .boolean()
       .optional()
-      .describe("true = also include PLs that already left the screen (loading date completed + shipment created)."),
+      .describe("Also PLs that already left the screen."),
     limit: limitSchema,
   }),
   run: async (input, { admin, session }) => {
@@ -885,9 +866,7 @@ type ShipmentRow = {
 const searchShipments = defineTool({
   feature: "shipments",
   description:
-    "Lists shipments and which orders travel in each one. Call this for 'where is " +
-    "container ABCD1234567', 'shipments in transit', 'what arrives by such date', " +
-    "'which shipment carries PO 1437'. The container number accepts a partial match.",
+    "Lists shipments with the orders each carries. Container number matches partially.",
   schema: z.object({
     container_number: z.string().optional().describe("Part of the container number."),
     pl_number: z.string().optional().describe("Part of the origin PL number."),
@@ -901,8 +880,8 @@ const searchShipments = defineTool({
       .describe("Shipment status."),
     carrier_id: z.string().uuid().optional(),
     leader_id: z.string().uuid().optional(),
-    estimated_from: z.string().optional().describe("Estimated date from (YYYY-MM-DD)."),
-    estimated_to: z.string().optional().describe("Estimated date to (YYYY-MM-DD)."),
+    estimated_from: z.string().optional().describe("YYYY-MM-DD"),
+    estimated_to: z.string().optional().describe("YYYY-MM-DD"),
     limit: limitSchema,
   }),
   run: async (input, { admin, session }) => {
@@ -1007,13 +986,7 @@ type ChainOfcRow = {
 const traceChain = defineTool({
   feature: "orders",
   description:
-    "Follows the chain Shipment ↔ PL ↔ batch ↔ Order ↔ Factory×Category starting " +
-    "from ANY point of it. Call this whenever the question crosses levels: 'which " +
-    "PLs is PO 1437 in', 'where are the batches of this order', 'what's inside PL " +
-    "1394', 'which orders are in container ABCD1234567', 'factory status of batch " +
-    "1437.02'. Give the point you know — order number, batch, PL number or " +
-    "container — and it returns one row per batch with its PL, its shipment and " +
-    "its Factory×Category entries.",
+    "Follows Shipment ↔ PL ↔ batch ↔ Order ↔ Factory×Category from any point (order number, batch, PL number or container). One row per batch with its PL, shipment and entries.",
   schema: z
     .object({
       po_number: z.string().optional().describe("Order number, e.g. '1437'."),
@@ -1228,21 +1201,17 @@ const traceChain = defineTool({
 const listPendingSteps = defineTool({
   feature: "todo",
   description:
-    "Checklist steps not yet completed, from Orders and from Pre-loading/Shipment. " +
-    "Call this for 'what's pending for me', 'what's overdue', 'how many tasks does " +
-    "so-and-so have'. Without responsible_id, it answers about the logged-in user. " +
-    "A step is OVERDUE when its estimated date has passed and there's no completion.",
+    "Uncompleted checklist steps (Order, Pre-loading, Shipment). Without responsible_id: the logged-in user. Overdue = estimated date passed with no completion.",
   schema: z.object({
     responsible_id: z
       .string()
       .uuid()
       .optional()
-      .describe("Responsible person. Omit to use the logged-in user."),
-    only_overdue: z.boolean().optional().describe("true = only steps whose estimated date is overdue."),
+      .describe("Omit = logged-in user."),
+    only_overdue: z.boolean().optional().describe("Only overdue steps."),
     phase: z
       .enum(["order", "preloading", "shipment"])
-      .optional()
-      .describe("Restricts to the checklist phase."),
+      .optional(),
     limit: limitSchema,
   }),
   run: async (input, { admin, session, todayMs }) => {
