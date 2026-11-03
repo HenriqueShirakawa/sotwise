@@ -63,6 +63,12 @@ const batchIdParam = {
   schema: { type: "string" },
 };
 
+/** `loaded_quantity` (03/11): marca booleana do lote, como o `is_active`. */
+const loadedQuantityIn = {
+  type: "boolean",
+  description: "Batch flag. Omitted → unchanged (on create: `false`). Accepted in any batch status.",
+};
+
 const exampleBatch = {
   id: "7b0f7f43-3c0a-4a43-9a0e-0d3f4f6f2b11",
   gss_id: "37",
@@ -84,6 +90,7 @@ const exampleBatch = {
   ],
   pre_loadings: [],
   is_active: true,
+  loaded_quantity: false,
   created_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
   updated_at: timestampToUnix("2026-10-05T14:02:11.120Z"),
 };
@@ -153,6 +160,12 @@ export const openApiSpec = {
           { name: "po_number", in: "query", schema: { type: "string" } },
           { name: "status", in: "query", schema: { type: "string", enum: [...BATCH_STATUSES] } },
           isActiveParam,
+          {
+            name: "loaded_quantity",
+            in: "query",
+            schema: { type: "string", enum: ["true", "false"] },
+            description: "Filter by the `loaded_quantity` flag (omitted → both).",
+          },
           {
             name: "updated_since",
             in: "query",
@@ -277,7 +290,7 @@ export const openApiSpec = {
         description:
           "Partial update — only the fields sent are applied. Everything is validated before anything is written. " +
           "`remove_item_ids` takes lines out of the batch (they stay in the order, without batch). " +
-          "A PATCH with only `is_active` is accepted in any status — it is only a flag and skips the editable-batch lock.",
+          "A PATCH with only `is_active` and/or `loaded_quantity` is accepted in any status — they are only flags and skip the editable-batch lock.",
         requestBody: {
           required: true,
           content: {
@@ -287,6 +300,7 @@ export const openApiSpec = {
                 status: { summary: "Move to production", value: { status: "in_production" } },
                 rename: { summary: "Change the number", value: { batch_number: ".03" } },
                 inactive: { summary: "Mark inactive (flag only)", value: { is_active: false } },
+                loaded: { summary: "Set loaded_quantity (flag only)", value: { loaded_quantity: true } },
                 items: {
                   summary: "Add, move and remove items",
                   value: {
@@ -423,6 +437,7 @@ export const openApiSpec = {
           "items",
           "pre_loadings",
           "is_active",
+          "loaded_quantity",
           "created_at",
           "updated_at",
         ],
@@ -457,6 +472,7 @@ export const openApiSpec = {
             },
           },
           is_active: isActiveOut,
+          loaded_quantity: { type: "boolean", description: "Batch flag (default `false`)." },
           created_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
           updated_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
         },
@@ -508,13 +524,14 @@ export const openApiSpec = {
           },
           items: { type: "array", maxItems: 500, items: ref("NewItem"), description: "New lines, created inside the batch." },
           is_active: isActiveIn,
+          loaded_quantity: loadedQuantityIn,
         },
       },
       BatchUpdate: {
         type: "object",
         additionalProperties: false,
         minProperties: 1,
-        description: "Partial. Unknown fields → 400. `{ \"is_active\": false }` alone is valid.",
+        description: "Partial. Unknown fields → 400. `{ \"is_active\": false }` or `{ \"loaded_quantity\": true }` alone is valid.",
         properties: {
           batch_number: { type: "string", maxLength: 20 },
           status: { type: "string", enum: [...EDITABLE_BATCH_STATUSES] },
@@ -532,6 +549,7 @@ export const openApiSpec = {
             description: "Lines of this batch to take out (they stay in the order without batch).",
           },
           is_active: isActiveIn,
+          loaded_quantity: loadedQuantityIn,
         },
       },
     },

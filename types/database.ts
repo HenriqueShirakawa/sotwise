@@ -749,6 +749,8 @@ export type Database = {
           /** id do OrderBatch no GSS (o lote nasce lá — 20261005120000). */
           gss_id: string | null;
           is_active: boolean;
+          /** Marca booleana mandada pela API de lotes (20261103120000). */
+          loaded_quantity: boolean;
         };
         Insert: {
           id?: UUID;
@@ -761,6 +763,7 @@ export type Database = {
           bubble_id?: string | null;
           gss_id?: string | null;
           is_active?: boolean;
+          loaded_quantity?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["batches"]["Insert"]>;
         Relationships: [];
