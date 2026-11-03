@@ -2169,7 +2169,7 @@ As ferramentas nasceram espelhando **uma tela cada**, e por isso o copilot enxer
 - 🔑 **`ANTHROPIC_API_KEY` é obrigatória no ambiente** (server-side, nunca com prefixo `NEXT_PUBLIC_`). Fica **fora** do `lib/env.ts` de propósito: aquele módulo valida no import e é carregado por todo acesso a dados, então chave ausente derrubaria o app inteiro em vez de só o copilot. Sem a chave, a rota responde **503** e o resto do sistema segue normal. **Precisa estar cadastrada nas variáveis de ambiente da Vercel** — não basta o `.env.local`.
 - ⚠️ **Pegadinha de dev (13/08/2026):** um `next dev` já rodando pode ficar com o manifesto de rotas velho e devolver **404 (página HTML de not-found) para todo `/api/*`** — inclusive rotas antigas como `/api/[resource]`. No copilot isso aparece como "Failed to reach the copilot", porque o cliente tenta ler JSON de uma página HTML. Não é bug de código: `rm -rf .next` e subir o dev de novo. Antes de investigar o copilot, confirmar com `curl -X POST /api/copilot` — a rota sã responde `401 {"error":"Not authenticated."}` sem cookie de sessão.
 
-##### Limite de tokens por usuário (2026-11-03, só na `dev`)
+##### Limite de tokens por usuário (2026-11-03, dev 9344d22 + main e9decac)
 
 Pedido do usuário: um painel central onde **só o owner** define quantos tokens cada usuário pode gastar na SIA **por dia e por mês**. Tela **Access → SIA tokens** (`/access/sia`, `requireOwner`, mesma porta de Permissions/GSS calls). Migration `20261103160000_copilot_token_limits.sql`.
 
