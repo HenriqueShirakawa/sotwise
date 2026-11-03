@@ -125,7 +125,7 @@ export default async function PreLoadingChecklistPage({
     admin.from("pre_loading_clients").select("client_id, clients(name)").eq("pre_loading_id", pl.id),
     admin
       .from("pre_loading_batches")
-      .select("batch_id, batches(id, batch_number, status, orders(po_number, client_id))")
+      .select("batch_id, batches(id, batch_number, status, loaded_quantity, orders(po_number, client_id))")
       .eq("pre_loading_id", pl.id),
     admin
       .from("pre_loading_checklist_steps")
@@ -187,6 +187,7 @@ export default async function PreLoadingChecklistPage({
       id: string;
       batch_number: string;
       status: BatchStatus;
+      loaded_quantity: boolean;
       orders: { po_number: string; client_id: string | null } | null;
     } | null;
   };
@@ -201,6 +202,7 @@ export default async function PreLoadingChecklistPage({
       po_number: b.orders?.po_number ?? "—",
       batch_number: b.batch_number,
       status: b.status,
+      loaded_quantity: b.loaded_quantity,
     }))
     .sort(
       (a, b) =>
