@@ -87,6 +87,8 @@ export type PlBatchRow = {
   po_number: string;
   batch_number: string;
   status: BatchStatus;
+  /** Validação do GSS (03/11/2026): sem true, o lote segura o Confirm Shipping. */
+  loaded_quantity: boolean;
 };
 
 export type StepAttachment = {
@@ -546,6 +548,9 @@ export function PlChecklistClient({
     (s) =>
       s.done || (CONFIRM_SHIPPING_COMPLETES.has(s.step) && !!s.estimated_date && !!s.responsible_id)
   );
+  // Lotes que o GSS ainda não validou (`loaded_quantity`) — mesma trava do
+  // servidor (domain/shipments/confirm.ts).
+  const notLoaded = batches.filter((b) => !b.loaded_quantity);
 
   return (
     <div>
@@ -615,10 +620,11 @@ export function PlChecklistClient({
       </div>
 
       <div className="mb-6 overflow-hidden rounded-2xl border bg-white">
-        <div className="hidden grid-cols-[1fr_1fr_1fr_auto] gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
+        <div className="hidden grid-cols-[1fr_1fr_1fr_1fr_auto] gap-3 border-b bg-slate-50/80 px-6 py-3 text-xs font-semibold text-slate-500 lg:grid">
           <span>Client</span>
           <span>Order Number . Batches</span>
           <span>Status</span>
+          <span>Loaded quantity (GSS)</span>
           {/* Reserva o botão do olho das linhas (size-4). */}
           <span className="size-4" />
         </div>
@@ -630,7 +636,7 @@ export function PlChecklistClient({
           batches.map((b) => (
             <div
               key={b.id}
-              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center"
+              className="grid grid-cols-2 gap-3 border-b px-4 py-3.5 text-sm last:border-b-0 sm:px-6 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-center"
             >
               <RowField label="Client">
                 <span className="text-slate-700">{b.client ?? "—"}</span>
@@ -642,6 +648,13 @@ export function PlChecklistClient({
               </RowField>
               <RowField label="Status">
                 <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
+              </RowField>
+              <RowField label="Loaded quantity (GSS)">
+                {b.loaded_quantity ? (
+                  <span className="font-medium text-emerald-700">Validated</span>
+                ) : (
+                  <span className="text-amber-700">Waiting for GSS</span>
+                )}
               </RowField>
               {/* Olho: abre o popup com as linhas (Factory × Category) do lote. */}
               <button
@@ -957,9 +970,18 @@ export function PlChecklistClient({
         </div>
       </div>
 
-      {/* "Confirm Shipping" só libera com as 7 etapas concluídas (docs §3.9.6);
+      {/* "Confirm Shipping" só libera com as 7 etapas concluídas (docs §3.9.6)
+          e todos os lotes validados pelo GSS (`loaded_quantity`, 03/11/2026);
           abre o modal que cria o Shipment. Um PL já confirmado fica travado. */}
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+      {!alreadyShipped && notLoaded.length > 0 && (
+        <p className="mt-6 text-right text-sm text-amber-700">
+          Waiting for GSS to validate the loaded quantity of:{" "}
+          {notLoaded.map((b) => `${b.po_number}${b.batch_number}`).join(", ")}.
+        </p>
+      )}
+      <div
+        className={`${!alreadyShipped && notLoaded.length > 0 ? "mt-3" : "mt-6"} flex flex-wrap items-center justify-end gap-3`}
+      >
         <Button
           variant="outline"
           className="h-11 min-w-48 rounded-xl"
@@ -969,7 +991,7 @@ export function PlChecklistClient({
         </Button>
         <Button
           className="h-11 min-w-64 rounded-xl"
-          disabled={alreadyShipped || !readyToShip}
+          disabled={alreadyShipped || !readyToShip || notLoaded.length > 0}
           onClick={() => setShipOpen(true)}
         >
           {alreadyShipped ? "Loading confirmed" : "Confirm Loading"}
