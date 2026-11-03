@@ -74,6 +74,12 @@ const gssRef = z
 const itemIds = z.array(uuid).max(MAX_ITEMS, `At most ${MAX_ITEMS} items per request.`);
 const newItems = z.array(newItemSchema).max(MAX_ITEMS, `At most ${MAX_ITEMS} items per request.`);
 
+/** `loaded_quantity` (03/11): marca booleana do lote, como o `is_active`. */
+const loadedQuantityBody = z.boolean({ error: "loaded_quantity must be a boolean." });
+const loadedQuantityQuery = z
+  .enum(["true", "false"], { error: "loaded_quantity must be 'true' or 'false'." })
+  .transform((v) => v === "true");
+
 /**
  * `POST /api/batches`. Campos desconhecidos → 400 (evita "mandei status e nada
  * aconteceu"). É também o WEBHOOK do GSS (decisão de 05/10: o lote nasce lá):
@@ -89,6 +95,7 @@ export const createBatchSchema = z
     item_ids: itemIds.optional(),
     items: newItems.optional(),
     is_active: isActiveBody.optional(),
+    loaded_quantity: loadedQuantityBody.optional(),
   })
   .refine((v) => (v.order_gss_id ? 1 : 0) + (v.po_number ? 1 : 0) === 1, {
     message: "Send exactly one of 'order_gss_id' or 'po_number' to identify the order.",
@@ -106,6 +113,7 @@ export const updateBatchSchema = z
     items: newItems.optional(),
     remove_item_ids: itemIds.optional(),
     is_active: isActiveBody.optional(),
+    loaded_quantity: loadedQuantityBody.optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: "No fields to update.",
@@ -127,6 +135,7 @@ export const batchQuerySchema = z.object({
   po_number: z.string().trim().min(1).optional(),
   status: z.enum(BATCH_STATUSES).optional(),
   is_active: isActiveQuery.optional(),
+  loaded_quantity: loadedQuantityQuery.optional(),
   updated_since: apiInstantQuery.optional(),
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -141,6 +150,7 @@ const QUERY_KEYS = [
   "po_number",
   "status",
   "is_active",
+  "loaded_quantity",
   "updated_since",
   "order",
   "limit",
