@@ -205,23 +205,23 @@ export async function confirmShippingRecord(
 
   // Validação do GSS (03/11/2026): cada lote só embarca depois que o GSS
   // confirma a quantidade carregada — PATCH /api/batches/{id} com
-  // `loaded_quantity: true`. O lote entra em Pre-loading com false (gatilho
-  // trg_batches_loaded_on_transit).
-  const { data: loadedRows, error: loadedError } = await admin
+  // `quantities_confirmed: true`. O lote entra em Pre-loading com false (gatilho
+  // trg_batches_quantities_confirmed).
+  const { data: confirmedRows, error: confirmedError } = await admin
     .from("batches")
-    .select("batch_number, loaded_quantity, orders(po_number)")
+    .select("batch_number, quantities_confirmed, orders(po_number)")
     .in("id", batchIds)
-    .returns<{ batch_number: string; loaded_quantity: boolean; orders: { po_number: string } | null }[]>();
-  if (loadedError) return { ok: false, status: 500, error: loadedError.message };
-  const notLoaded = (loadedRows ?? [])
-    .filter((b) => !b.loaded_quantity)
+    .returns<{ batch_number: string; quantities_confirmed: boolean; orders: { po_number: string } | null }[]>();
+  if (confirmedError) return { ok: false, status: 500, error: confirmedError.message };
+  const notConfirmed = (confirmedRows ?? [])
+    .filter((b) => !b.quantities_confirmed)
     .map((b) => `${b.orders?.po_number ?? ""}${b.batch_number}`)
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  if (notLoaded.length > 0) {
+  if (notConfirmed.length > 0) {
     return {
       ok: false,
       status: 409,
-      error: `Waiting for GSS to validate the loaded quantity of: ${notLoaded.join(", ")}.`,
+      error: `Waiting for GSS to confirm the quantities of: ${notConfirmed.join(", ")}.`,
     };
   }
 

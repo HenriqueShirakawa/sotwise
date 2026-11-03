@@ -88,7 +88,7 @@ export type PlBatchRow = {
   batch_number: string;
   status: BatchStatus;
   /** Validação do GSS (03/11/2026): sem true, o lote segura o Confirm Shipping. */
-  loaded_quantity: boolean;
+  quantities_confirmed: boolean;
 };
 
 export type StepAttachment = {
@@ -548,9 +548,9 @@ export function PlChecklistClient({
     (s) =>
       s.done || (CONFIRM_SHIPPING_COMPLETES.has(s.step) && !!s.estimated_date && !!s.responsible_id)
   );
-  // Lotes que o GSS ainda não validou (`loaded_quantity`) — mesma trava do
+  // Lotes que o GSS ainda não validou (`quantities_confirmed`) — mesma trava do
   // servidor (domain/shipments/confirm.ts).
-  const notLoaded = batches.filter((b) => !b.loaded_quantity);
+  const notConfirmed = batches.filter((b) => !b.quantities_confirmed);
 
   return (
     <div>
@@ -624,7 +624,7 @@ export function PlChecklistClient({
           <span>Client</span>
           <span>Order Number . Batches</span>
           <span>Status</span>
-          <span>Loaded quantity (GSS)</span>
+          <span>Quantities confirmed (GSS)</span>
           {/* Reserva o botão do olho das linhas (size-4). */}
           <span className="size-4" />
         </div>
@@ -649,8 +649,8 @@ export function PlChecklistClient({
               <RowField label="Status">
                 <StatusPill label={BATCH_STATUS_LABELS[b.status]} />
               </RowField>
-              <RowField label="Loaded quantity (GSS)">
-                {b.loaded_quantity ? (
+              <RowField label="Quantities confirmed (GSS)">
+                {b.quantities_confirmed ? (
                   <span className="font-medium text-emerald-700">Validated</span>
                 ) : (
                   <span className="text-amber-700">Waiting for GSS</span>
@@ -971,16 +971,16 @@ export function PlChecklistClient({
       </div>
 
       {/* "Confirm Shipping" só libera com as 7 etapas concluídas (docs §3.9.6)
-          e todos os lotes validados pelo GSS (`loaded_quantity`, 03/11/2026);
+          e todos os lotes validados pelo GSS (`quantities_confirmed`, 03/11/2026);
           abre o modal que cria o Shipment. Um PL já confirmado fica travado. */}
-      {!alreadyShipped && notLoaded.length > 0 && (
+      {!alreadyShipped && notConfirmed.length > 0 && (
         <p className="mt-6 text-right text-sm text-amber-700">
-          Waiting for GSS to validate the loaded quantity of:{" "}
-          {notLoaded.map((b) => `${b.po_number}${b.batch_number}`).join(", ")}.
+          Waiting for GSS to confirm the quantities of:{" "}
+          {notConfirmed.map((b) => `${b.po_number}${b.batch_number}`).join(", ")}.
         </p>
       )}
       <div
-        className={`${!alreadyShipped && notLoaded.length > 0 ? "mt-3" : "mt-6"} flex flex-wrap items-center justify-end gap-3`}
+        className={`${!alreadyShipped && notConfirmed.length > 0 ? "mt-3" : "mt-6"} flex flex-wrap items-center justify-end gap-3`}
       >
         <Button
           variant="outline"
@@ -991,7 +991,7 @@ export function PlChecklistClient({
         </Button>
         <Button
           className="h-11 min-w-64 rounded-xl"
-          disabled={alreadyShipped || !readyToShip || notLoaded.length > 0}
+          disabled={alreadyShipped || !readyToShip || notConfirmed.length > 0}
           onClick={() => setShipOpen(true)}
         >
           {alreadyShipped ? "Loading confirmed" : "Confirm Loading"}
