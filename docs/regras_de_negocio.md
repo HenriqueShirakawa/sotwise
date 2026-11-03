@@ -1067,7 +1067,7 @@ create table public.etd_history (
 **Controles do topo:**
 - Busca por **PO number** (campo único). ✅ **Confirmado:** o segundo campo "PL number" que aparece no Figma **não existe** no Bubble — é invenção do protótipo, descartar.
 - Botão **Filters**.
-- ✅ Botão **Download XLS — MANTIDO nesta tela.** É a **exceção** confirmada à decisão global de cortar exportações do sistema: especificamente na rua ETD Factories o XLS permanece. _(Escopo exato — se respeita filtros aplicados e quais colunas exporta — ainda a confirmar; ver seção 8.)_
+- ✅ Botão **Download XLS — MANTIDO nesta tela.** É a **exceção** confirmada à decisão global de cortar exportações do sistema: especificamente na rua ETD Factories o XLS permanece. **Implementado em 2026-11-03** (até então o botão era só um "coming soon"): `GET /etd-factories/export` (`app/(dashboard)/etd-factories/export/route.ts`) devolve um `.xlsx` com **todas** as linhas da busca/filtros/ordenação aplicados no momento (não só a página aberta) e as **16 colunas da listagem**, com os mesmos rótulos; datas saem como data do Excel (dd/mm/yyyy). Usa a mesma query da página (`./query.ts`), então o arquivo sempre bate com o total "N entries". _(Escopo adotado por padrão — ajustar se o cliente quiser outro; ver seção 8.)_
 
 > ❌ **Descartado (só existe no Figma):** as colunas **Loading**, **Cons. point** (consolidation point) e **POD** (port of discharge) que aparecem na "variante vazia" da tela no protótipo **não existem no Bubble** e não devem ser implementadas. Mesmo caso do campo de busca "PL number".
 
@@ -2532,7 +2532,7 @@ Lacunas onde o sistema tem a funcionalidade mas **falta a regra definida**. Não
 - [x] ✅ **Download XLS na rua ETD Factories — MANTIDO (exceção confirmada).** Diferente das demais telas, o botão de exportação permanece especificamente na ETD Factories. _(Escopo — se respeita filtros e quais colunas exporta — ainda em aberto, ver abaixo.)_
 - [x] ✅ **Download XLS na lista de Pre-loading — MANTIDO (exceção confirmada).** Segunda exceção à decisão global de corte de exportações.
 - [x] ✅ **Download XLS na lista de Shipments — MANTIDO (exceção confirmada).** Terceira exceção à decisão global de corte. Exportações permanecem em: ETD Factories, Pre-loading e Shipments; cortadas em todas as demais telas.
-- [ ] **Download XLS (ETD Factories) — escopo:** respeita os filtros/busca aplicados no momento? Exporta exatamente as 13 colunas da listagem ou um conjunto diferente?
+- [ ] **Download XLS (ETD Factories) — escopo:** respeita os filtros/busca aplicados no momento? Exporta exatamente as 13 colunas da listagem ou um conjunto diferente? _(2026-11-03: implementado respeitando busca/filtros/ordenação e com as 16 colunas atuais da lista — falta o cliente confirmar.)_
 - [x] ✅ **Regra de geração do `batch_number` — RESOLVIDA (print de produção).** É um sequencial simples `.NN` (`.01`, `.02`...) **por pedido**, começando em `.01` e resetando a cada pedido. Não tem relação com o PO. Ver 3.7.2. _(Corrige a leitura anterior errada de `NNNN .NN` independente do PO.)_
 - [ ] **Rua ETD Factories — edição inline?** Confirmar se a tela permite editar os campos de ETD direto na linha (Initial date, Ready, Inspection) ou se é estritamente leitura, com toda edição feita na etapa "ETD" do checklist da Order.
 - [ ] **"Order date" na rua ETD Factories:** confirmar se corresponde exatamente a `orders.date_po` ou é outra data.
