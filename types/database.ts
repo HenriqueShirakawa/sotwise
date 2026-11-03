@@ -774,7 +774,7 @@ export type Database = {
           gss_id: string | null;
           is_active: boolean;
           /** Marca booleana mandada pela API de lotes (20261103120000). */
-          loaded_quantity: boolean;
+          quantities_confirmed: boolean;
         };
         Insert: {
           id?: UUID;
@@ -787,7 +787,7 @@ export type Database = {
           bubble_id?: string | null;
           gss_id?: string | null;
           is_active?: boolean;
-          loaded_quantity?: boolean;
+          quantities_confirmed?: boolean;
         };
         Update: Partial<Database["public"]["Tables"]["batches"]["Insert"]>;
         Relationships: [];
