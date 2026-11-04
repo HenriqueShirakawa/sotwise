@@ -37,6 +37,8 @@ import {
 import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
 import type { ListStateSeed } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import { downloadXlsx, fetchAllRows, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
+import { DownloadXlsxButton } from "@/components/download-xlsx-button";
 import type { BatchStatus, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import {
@@ -231,6 +233,23 @@ const COLUMN_OPTIONS: ColumnOption[] = [
 
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
+/** Colunas do Download XLSX — mesmo valor e rótulo que a tela mostra. */
+const XLSX_COLUMNS = xlsxColumns<OrderRow>(COLUMN_OPTIONS, {
+  bu: { value: (r) => (r.bu ? displayBu(r.bu) : null) },
+  type: { value: (r) => r.type },
+  client: { value: (r) => r.client },
+  po_number: { value: (r) => r.po_number },
+  client_reference: { value: (r) => r.client_reference },
+  batches: { label: "Batch No.", value: (r) => r.batches.map((b) => b.batch_number).join("/") },
+  operational_responsible: { value: (r) => r.operational_responsible },
+  leader: { value: (r) => r.leader },
+  requester: { value: (r) => r.requester },
+  exporter: { value: (r) => r.exporter },
+  date_create: { kind: "timestamp", value: (r) => r.date_create },
+  status: { value: (r) => ORDER_STATUS_LABELS[r.status] },
+  schedule_requested: { kind: "date", value: (r) => r.schedule_requested },
+});
+
 export function OrdersClient({
   rows,
   total,
@@ -355,6 +374,19 @@ export function OrdersClient({
 
   // O select de cliente fica fora do modal, mas é filtro também — entra no badge.
   const filterCount = activeFilterCount(filters) + (state.client ? 1 : 0);
+
+  // Download XLSX: todas as linhas da busca/cliente/filtros/ordenação atuais
+  // (./export/route.ts), com as colunas visíveis da tabela na ordem da tela.
+  const { downloading, download: downloadXls } = useXlsxDownload(async () => {
+    const all = await fetchAllRows<OrderRow>(`/orders/export${listStateToSearch({ ...state, page: 1 })}`);
+    await downloadXlsx({
+      fileBase: "orders",
+      sheetName: "Orders",
+      columnIds: table.getVisibleLeafColumns().map((c) => c.id),
+      columns: XLSX_COLUMNS,
+      rows: all,
+    });
+  });
 
   const columns = useMemo<ColumnDef<OrderRow>[]>(
     () => [
@@ -510,9 +542,7 @@ export function OrdersClient({
           </h1>
           <p className="text-sm text-muted-foreground">Orders management</p>
         </div>
-        {/* Sem "Create Order": quem cria order é o GSS, pela API (19/10/2026).
-            Sem "Download XLS": a exportação foi cortada de todo o sistema,
-            exceto ETD Factories, Pre-loading e Shipments (docs §11). */}
+        {/* Sem "Create Order": quem cria order é o GSS, pela API (19/10/2026). */}
       </div>
 
       <ListToolbar
@@ -554,6 +584,13 @@ export function OrdersClient({
                 </span>
               )}
             </Button>
+            <DownloadXlsxButton
+              downloading={downloading}
+              onClick={() => {
+                close();
+                void downloadXls();
+              }}
+            />
           </>
         )}
         trailing={() => (

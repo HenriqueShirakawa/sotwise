@@ -22,7 +22,6 @@ import {
 } from "@/components/columns-menu";
 import {
   Filter,
-  Download,
   Plus,
   Pencil,
   Trash2,
@@ -32,6 +31,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { downloadXlsx, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
+import { DownloadXlsxButton } from "@/components/download-xlsx-button";
 import { formatDateNumeric } from "@/lib/format";
 import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
@@ -130,7 +131,22 @@ const COLUMN_OPTIONS: ColumnOption[] = [
 
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
-const comingSoon = () => toast.info("Coming soon.");
+/** Colunas do Download XLSX — mesmo valor que cada célula mostra. */
+const XLSX_COLUMNS = xlsxColumns<PreLoadingRow>(COLUMN_OPTIONS, {
+  pl_number: { value: (r) => r.pl_number },
+  client: { value: (r) => r.client },
+  client_reference: { value: (r) => r.client_reference },
+  leader: { value: (r) => r.leader },
+  consolidation_point: { value: (r) => r.consolidation_point },
+  pol: { value: (r) => r.pol },
+  pod: { value: (r) => r.pod },
+  loading_date: { kind: "date", value: (r) => r.loading_date },
+  completed: { value: (r) => (r.completed ? "Yes" : "No") },
+  booking_confirmed: { value: (r) => (r.booking_confirmed ? "Yes" : "No") },
+  cutoff: { kind: "date", value: (r) => r.cutoff },
+  doc_cutoff: { kind: "date", value: (r) => r.doc_cutoff },
+  total_pos: { value: (r) => r.total_pos },
+});
 
 /** Compara datas como string "YYYY-MM-DD" (funciona pra date e timestamp ISO). */
 function inDateRange(value: string | null, from: string, to: string): boolean {
@@ -457,6 +473,18 @@ export function PreLoadingClient({
     },
   });
 
+  // Download XLSX: a lista já tem tudo no navegador — exporta as linhas
+  // filtradas e ordenadas de TODAS as páginas, com as colunas visíveis.
+  const { downloading, download: downloadXls } = useXlsxDownload(() =>
+    downloadXlsx({
+      fileBase: "pre-loading",
+      sheetName: "Pre-loading",
+      columnIds: table.getVisibleLeafColumns().map((c) => c.id),
+      columns: XLSX_COLUMNS,
+      rows: table.getPrePaginationRowModel().rows.map((r) => r.original),
+    })
+  );
+
   const pageIndex = table.getState().pagination.pageIndex;
 
   const handleDelete = () => {
@@ -514,17 +542,13 @@ export function PreLoadingClient({
                 </span>
               )}
             </Button>
-            <Button
-              variant="outline"
-              className="h-11 rounded-xl bg-white"
+            <DownloadXlsxButton
+              downloading={downloading}
               onClick={() => {
                 close();
-                comingSoon();
+                void downloadXls();
               }}
-            >
-              <Download />
-              Download XLS
-            </Button>
+            />
           </>
         )}
         trailing={() => (
