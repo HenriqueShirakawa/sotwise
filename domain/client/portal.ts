@@ -3,6 +3,7 @@ import "server-only";
 import { fetchAll } from "@/lib/fetch-all";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { todayIso } from "@/lib/format";
 import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 
 /**
@@ -39,7 +40,94 @@ export type ClientOrder = {
   batchNumbers: string[];
   /** Quantos itens do pedido estão em cada estágio. */
   progress: { label: string; count: number }[];
+  /**
+   * % do ciclo In Production → Delivered, média dos lotes do pedido (cada lote
+   * vale 25/50/75/100 pelo passo em que está — a mesma régua do stepper do
+   * detalhe). Pedido entregue = 100; sem lote no fluxo = 0.
+   */
+  progressPct: number;
+  /** ETA ao Brasil (passo `eta_brazil` do checklist), igual ao detalhe. */
+  etaBrazil: string | null;
+  /** Entrega efetiva (passo `delivered`/`ata_brazil`), quando houver. */
+  deliveredOn: string | null;
+  /** Linhas de produto ativas (Factory×Category), sem deduplicar — igual ao detalhe. */
+  itemCount: number;
+  /** Categorias distintas do pedido, por nome. */
+  categories: string[];
+  /** Aba de "My orders": entregue, cancelado ou em andamento. */
+  bucket: ClientOrderBucket;
 };
+
+export type ClientOrderBucket = "in_progress" | "delivered" | "canceled";
+
+type ChecklistDates = {
+  step: ChecklistStep;
+  enabled: boolean;
+  estimated_date: string | null;
+  completed_on: string | null;
+};
+
+/** Peso de cada passo do lote no % de progresso (mesma ordem do stepper). */
+const BATCH_PROGRESS: Partial<Record<BatchStatus, number>> = {
+  in_production: 25,
+  preloading: 50,
+  in_transit: 75,
+  delivered: 100,
+};
+
+function bucketOf(status: OrderStatus): ClientOrderBucket {
+  if (status === "delivered") return "delivered";
+  if (status === "canceled") return "canceled";
+  return "in_progress";
+}
+
+/**
+ * ETA e entrega a partir dos passos do checklist do pedido. Passo desabilitado
+ * (enabled=false) não conta. Mesma regra no detalhe e na lista.
+ */
+function etaAndDelivery(steps: ChecklistDates[]): {
+  etaBrazil: string | null;
+  deliveredOn: string | null;
+} {
+  const stepOf = new Map(steps.filter((s) => s.enabled !== false).map((s) => [s.step, s]));
+  const etaStep = stepOf.get("eta_brazil");
+  return {
+    etaBrazil: etaStep?.estimated_date ?? etaStep?.completed_on ?? null,
+    deliveredOn:
+      stepOf.get("delivered")?.completed_on ?? stepOf.get("ata_brazil")?.completed_on ?? null,
+  };
+}
+
+/**
+ * Fallback quando o pedido não tem lote no fluxo (ainda não chegou do GSS, ou
+ * todos cancelados): o % segue o status do próprio pedido, para a barra não
+ * dizer 0% ao lado de um selo "Pre-Loading".
+ */
+const ORDER_PROGRESS: Partial<Record<OrderStatus, number>> = {
+  in_production: 25,
+  pre_loading: 50,
+  partially_shipped: 75,
+  shipped: 75,
+  partially_delivered: 75,
+  delivered: 100,
+};
+
+function progressPctOf(
+  status: OrderStatus,
+  counts: Map<BatchStatus, number> | undefined
+): number {
+  if (status === "delivered") return 100;
+  let sum = 0;
+  let n = 0;
+  for (const [batchStatus, count] of counts ?? []) {
+    const weight = BATCH_PROGRESS[batchStatus];
+    // Lote cancelado/em negociação está fora do ciclo — não puxa a média.
+    if (weight === undefined) continue;
+    sum += weight * count;
+    n += count;
+  }
+  return n === 0 ? ORDER_PROGRESS[status] ?? 0 : Math.round(sum / n);
+}
 
 /**
  * Pedido em negociação não aparece: enquanto não vira produção é conversa
@@ -52,7 +140,7 @@ const HIDDEN_FROM_CLIENT: OrderStatus[] = ["in_negotiation"];
 export async function loadClientOrders(clientId: string): Promise<ClientOrder[]> {
   const admin = createAdminClient();
 
-  const [orders, batches, types] = await Promise.all([
+  const [orders, batches, types, steps, ofc, categories] = await Promise.all([
     fetchAll<{
       id: string;
       po_number: string;
@@ -86,9 +174,49 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("order_types").select("id, name").is("deleted_at", null).range(from, to)
     ),
+    // Mesmo escopo pelo join (`orders!inner` + client_id) da leitura de lotes.
+    fetchAll<ChecklistDates & { order_id: string }>((from, to) =>
+      admin
+        .from("order_checklist_steps")
+        .select("order_id, step, enabled, estimated_date, completed_on, orders!inner(client_id)")
+        .eq("orders.client_id", clientId)
+        .in("step", ["eta_brazil", "ata_brazil", "delivered"])
+        .range(from, to)
+        .returns<(ChecklistDates & { order_id: string })[]>()
+    ),
+    fetchAll<{ order_id: string; category_id: string }>((from, to) =>
+      admin
+        .from("order_factory_category")
+        .select("order_id, category_id, orders!inner(client_id)")
+        .eq("orders.client_id", clientId)
+        .eq("is_active", true)
+        .range(from, to)
+        .returns<{ order_id: string; category_id: string }[]>()
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
   ]);
 
   const typeName = new Map(types.map((t) => [t.id, t.name]));
+  const categoryName = new Map(categories.map((c) => [c.id, c.name.trim()]));
+
+  const stepsByOrder = new Map<string, ChecklistDates[]>();
+  for (const st of steps) {
+    const list = stepsByOrder.get(st.order_id) ?? [];
+    list.push(st);
+    stepsByOrder.set(st.order_id, list);
+  }
+
+  // order → { linhas de produto, categorias distintas }.
+  const itemsByOrder = new Map<string, { count: number; categories: Set<string> }>();
+  for (const row of ofc) {
+    const entry = itemsByOrder.get(row.order_id) ?? { count: 0, categories: new Set<string>() };
+    entry.count += 1;
+    const name = categoryName.get(row.category_id);
+    if (name) entry.categories.add(name);
+    itemsByOrder.set(row.order_id, entry);
+  }
 
   // order → { status → contagem }. Map aninhado em vez de array para a soma sair
   // numa passada só sobre os lotes.
@@ -121,6 +249,13 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
         count: count as number,
       }))
       .sort((a, b) => b.count - a.count),
+    progressPct: progressPctOf(o.status, byOrder.get(o.id)),
+    ...etaAndDelivery(stepsByOrder.get(o.id) ?? []),
+    itemCount: itemsByOrder.get(o.id)?.count ?? 0,
+    categories: [...(itemsByOrder.get(o.id)?.categories ?? [])].sort((a, b) =>
+      a.localeCompare(b)
+    ),
+    bucket: bucketOf(o.status),
   }));
 
   // Mais recente primeiro, no mesmo critério da lista interna: o PO number é
@@ -128,6 +263,60 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
   rows.sort((a, b) => (Number(b.po_number) || 0) - (Number(a.po_number) || 0));
 
   return rows;
+}
+
+/**
+ * Números do Dashboard do portal, derivados da mesma lista de "My orders" —
+ * uma leitura só, e os dois nunca discordam.
+ *
+ * "Precisa de atenção" = em andamento, com ETA ao Brasil já passada e sem
+ * entrega registrada. "Próxima entrega" = a menor ETA de hoje em diante entre
+ * os em andamento. "Hoje" é o dia em São Paulo (fuso da operação).
+ */
+export type ClientDashboard = {
+  total: number;
+  active: number;
+  delivered: number;
+  nextDelivery: ClientOrder | null;
+  attention: (ClientOrder & { daysLate: number })[];
+  recent: ClientOrder[];
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function daysBetween(fromIso: string, toIso: string): number {
+  return Math.round(
+    (Date.parse(`${toIso.slice(0, 10)}T00:00:00Z`) -
+      Date.parse(`${fromIso.slice(0, 10)}T00:00:00Z`)) /
+      DAY_MS
+  );
+}
+
+export function buildClientDashboard(
+  orders: ClientOrder[],
+  today: string = todayIso()
+): ClientDashboard {
+  const active = orders.filter((o) => o.bucket === "in_progress");
+  const pending = active.filter((o) => o.etaBrazil && !o.deliveredOn);
+
+  const upcoming = pending
+    .filter((o) => o.etaBrazil!.slice(0, 10) >= today)
+    .sort((a, b) => a.etaBrazil!.localeCompare(b.etaBrazil!));
+
+  const attention = pending
+    .filter((o) => o.etaBrazil!.slice(0, 10) < today)
+    .map((o) => ({ ...o, daysLate: daysBetween(o.etaBrazil!, today) }))
+    .sort((a, b) => b.daysLate - a.daysLate);
+
+  return {
+    total: orders.length,
+    active: active.length,
+    delivered: orders.filter((o) => o.bucket === "delivered").length,
+    nextDelivery: upcoming[0] ?? null,
+    attention,
+    // A lista já vem do mais recente para o mais antigo (PO desc).
+    recent: active.slice(0, 5),
+  };
 }
 
 /**
@@ -248,12 +437,8 @@ export async function loadClientOrderDetail(
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
   // ETA = estimativa do passo eta_brazil; entrega = ata_brazil/delivered
-  // efetivos. Passo desabilitado (enabled=false) não conta.
-  const stepOf = new Map(checklist.filter((s) => s.enabled !== false).map((s) => [s.step, s]));
-  const etaStep = stepOf.get("eta_brazil");
-  const etaBrazil = etaStep?.estimated_date ?? etaStep?.completed_on ?? null;
-  const deliveredOn =
-    stepOf.get("delivered")?.completed_on ?? stepOf.get("ata_brazil")?.completed_on ?? null;
+  // efetivos (mesma regra da lista — `etaAndDelivery`).
+  const { etaBrazil, deliveredOn } = etaAndDelivery(checklist);
 
   // lote → produtos, UMA linha por entrada Factory×Category (sem deduplicar):
   // é a mesma granularidade da tabela interna (docs §3.5.2), só sem a coluna
