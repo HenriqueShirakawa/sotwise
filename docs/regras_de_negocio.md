@@ -247,6 +247,27 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
     25, pre_loading 50, partially_shipped/shipped/partially_delivered 75).
   - **Fora, de propósito (dependem de decisão — bloco G):** fornecedor/fábrica e valor
     do pedido, que o protótipo mostra.
+- **Portal v2 — bloco B (2026-11-04): linha do tempo do pedido.** No detalhe, cartão
+  *Order progress* com 4 estágios (In Production → Pre-Loading → In Transit → Delivered;
+  `in_negotiation` não aparece), cada um Completed / In progress / Pending conforme o
+  status do pedido, *Current location* (frase fixa por status) e o %.
+  - **De onde vem cada data** (concluído = data do fato; futuro = "Expected"):
+    In Production = `deposit_payment` concluído da Order (sem ele, `place_the_order`);
+    Pre-Loading = o mais cedo entre a criação do PL e o Consolidation Point concluído
+    (no legado do Bubble o `created_date` do PL é o dia da migração); In Transit =
+    Shipping Date do PL (previsto: estimativa da etapa); Delivered = entrega do PL —
+    `pre_loading_client_delivered` do cliente quando o PL tem vários, senão a etapa
+    Delivered (previsto: ETA).
+  - ⚠️ **ETA corrigida:** ETA, ATA e Delivered vivem no checklist do **PL**
+    (`pre_loading_checklist_steps`), não no da Order — o portal lia
+    `order_checklist_steps.eta_brazil`, que nunca tem linha, e por isso a ETA sempre saía
+    vazia. Agora cada lote mostra a ETA/entrega do PL em que viaja, e a ETA do pedido é a
+    **maior** ETA entre os lotes ainda não entregues. Data do fato = `event_date` (desde
+    21/10) ou, no legado, `completed_on` de etapa feita; ETA = `event_date` ou a estimativa.
+  - **Selo "Delayed · N days":** pedido em andamento com ETA já passada e não entregue (a
+    mesma regra do *need attention* do Dashboard). Cabeçalho mostra *Expected delivery*
+    (ETA) ou *Delivered on*.
+  - **"Contact AGK" fica para o bloco F** (abre chamado; sem chamados ainda).
 - **Onde se vê o vínculo:** na tela Users (coluna Profile mostra `Client · <empresa>`) e
   na tela Clients, coluna **Portal users** — os usuários externos daquele cliente, com
   bloqueado riscado. A busca de Clients passou a casar com nome de usuário também
@@ -266,10 +287,8 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   do pedido **por lote** — cada lote com status, barra de progresso (In Production →
   Pre-Loading → In Transit → Delivered) e as categorias de produto que viajam nele; mais
   a visão "All products" (categoria × lote × status). Cada lote mostra também a **ETA ao
-  Brasil** (passo `eta_brazil` do checklist) ou a **data de entrega** (`delivered`/
-  `ata_brazil`) quando já entregue — expor essa estimativa ao cliente foi autorizado em
-  2026-08-26 (antes era "decisão não tomada"). É por PEDIDO (o checklist é do pedido), então
-  a mesma ETA se repete nos lotes. Fora: fábrica, exporter, leader/requester, BU e o resto
+  Brasil** ou a **data de entrega** quando já entregue, tiradas do PL do lote (ver o bloco B
+  acima) — expor essa estimativa ao cliente foi autorizado em 2026-08-26. Fora: fábrica, exporter, leader/requester, BU e o resto
   do ETD interno. **Não aparece porque o banco não guarda:** quantidade, descrição de
   produto, código de produto por linha e datas por etapa do lote — o produto fica na
   granularidade de **categoria**. Documents/History/

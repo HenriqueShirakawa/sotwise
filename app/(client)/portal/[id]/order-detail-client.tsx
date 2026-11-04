@@ -4,13 +4,19 @@ import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  Check,
   Clock,
   FileText,
+  MapPin,
   MessageSquare,
   Package,
 } from "lucide-react";
 
-import type { ClientOrderBatch, ClientOrderDetail } from "@/domain/client/portal";
+import type {
+  ClientOrderBatch,
+  ClientOrderDetail,
+  TimelineStage,
+} from "@/domain/client/portal";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { StatusPill } from "@/components/status-pill";
 import { cn } from "@/lib/utils";
@@ -175,6 +181,121 @@ function BatchCard({
   );
 }
 
+/** Canto direito do cabeçalho: quando chega (ETA) ou quando chegou. */
+function ExpectedDelivery({ order }: { order: ClientOrderDetail }) {
+  const delivered = order.status === "delivered";
+  const date = formatDate(delivered ? order.deliveredOn : order.etaBrazil);
+  if (order.status === "canceled") return null;
+  return (
+    <div className="sm:text-right">
+      <div className="text-xs text-slate-400">
+        {delivered ? "Delivered on" : "Expected delivery"}
+      </div>
+      {date ? (
+        <div
+          className={cn(
+            "mt-0.5 font-mono text-lg font-medium",
+            order.daysLate ? "text-red-600" : "text-slate-900"
+          )}
+        >
+          {date}
+        </div>
+      ) : (
+        <div className="mt-0.5 text-sm text-slate-400">To be confirmed</div>
+      )}
+    </div>
+  );
+}
+
+const STAGE_STATE_TEXT: Record<TimelineStage["state"], string> = {
+  done: "Completed",
+  current: "In progress",
+  upcoming: "Pending",
+};
+
+/**
+ * Linha do tempo do pedido: 4 estágios com a data real de cada um (ou a
+ * prevista, nos que faltam) + onde a carga está agora e o % de progresso.
+ */
+function OrderProgress({ order }: { order: ClientOrderDetail }) {
+  const canceled = order.status === "canceled";
+  return (
+    <section className="rounded-2xl border bg-white p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-slate-900">Order progress</h2>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-slate-50 py-1.5 pr-1.5 pl-3 text-sm">
+          <MapPin className="size-4 shrink-0 text-primary" />
+          <span className="text-slate-400">Current location:</span>
+          <span className="font-medium text-slate-700">{order.currentLocation}</span>
+          {!canceled ? (
+            <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground tabular-nums">
+              {order.progressPct}%
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <ol className="mt-6 grid gap-4 sm:grid-cols-4 sm:gap-0">
+        {order.timeline.map((stage, i) => {
+          const last = i === order.timeline.length - 1;
+          const date = formatDate(stage.date);
+          return (
+            <li key={stage.key} className="relative flex gap-3 sm:flex-col sm:items-center sm:gap-0 sm:text-center">
+              {/* Conector até o próximo estágio (só no horizontal). */}
+              {!last ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute top-3.5 left-[calc(50%+18px)] hidden h-0.5 w-[calc(100%-36px)] sm:block",
+                    stage.state === "done" ? "bg-primary" : "bg-slate-200"
+                  )}
+                />
+              ) : null}
+              <span
+                className={cn(
+                  "relative z-[1] flex size-7 shrink-0 items-center justify-center rounded-full border-2",
+                  stage.state === "done" && "border-primary bg-primary text-white",
+                  stage.state === "current" && "border-primary bg-white",
+                  stage.state === "upcoming" && "border-slate-200 bg-white"
+                )}
+              >
+                {stage.state === "done" ? <Check className="size-4" /> : null}
+                {stage.state === "current" ? (
+                  <span className="size-2.5 rounded-full bg-primary" />
+                ) : null}
+              </span>
+              <div className="min-w-0 sm:mt-2.5">
+                <div
+                  className={cn(
+                    "text-sm font-medium",
+                    stage.state === "upcoming" ? "text-slate-400" : "text-slate-800"
+                  )}
+                >
+                  {stage.label}
+                </div>
+                <div
+                  className={cn(
+                    "mt-0.5 text-xs",
+                    stage.state === "current" ? "text-primary" : "text-slate-400"
+                  )}
+                >
+                  {canceled ? "—" : STAGE_STATE_TEXT[stage.state]}
+                </div>
+                {date && !canceled ? (
+                  <div className="mt-1 text-xs text-slate-500">
+                    {stage.dateKind === "expected" ? "Expected " : ""}
+                    <span className="font-mono">{date}</span>
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 function ComingSoon({ icon: Icon, title, description }: {
   icon: typeof FileText;
   title: string;
@@ -203,13 +324,12 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
     order.batches.reduce((sum, b) => sum + b.products.length, 0) + order.pendingProducts.length;
   const scheduleReq = formatDate(order.scheduleRequested);
 
-  // Slot direito do card do lote: entrega (se o lote já foi) ou ETA ao Brasil
-  // (estimativa do pedido). Repetimos a ETA do pedido em cada lote — não há ETA
-  // por lote no banco; é a mesma para o pedido inteiro.
+  // Slot direito do card do lote: entrega (se o lote já chegou) ou ETA ao
+  // Brasil — as duas do PL em que o lote viaja.
   const batchEta = (batch: ClientOrderBatch) =>
-    batch.status === "delivered"
-      ? { label: "Delivered", value: formatDate(order.deliveredOn) ?? "—" }
-      : { label: "ETA", value: formatDate(order.etaBrazil) ?? "to be confirmed" };
+    batch.status === "delivered" || batch.deliveredOn
+      ? { label: "Delivered", value: formatDate(batch.deliveredOn) ?? "—" }
+      : { label: "ETA", value: formatDate(batch.eta) ?? "to be confirmed" };
 
   // "All products": cada categoria com o lote em que viaja e o status do lote.
   const flatProducts = order.batches.flatMap((b) =>
@@ -273,8 +393,20 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
             </div>
           ) : null}
         </div>
-        <StatusPill label={ORDER_STATUS_LABELS[order.status]} />
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <StatusPill label={ORDER_STATUS_LABELS[order.status]} />
+            {order.daysLate ? (
+              <span className="inline-flex items-center rounded-[4px] border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-red-600">
+                Delayed · {order.daysLate} {order.daysLate === 1 ? "day" : "days"}
+              </span>
+            ) : null}
+          </div>
+          <ExpectedDelivery order={order} />
+        </div>
       </div>
+
+      <OrderProgress order={order} />
 
       {/* Abas + toggle de agrupamento (só na aba Batches). */}
       <div className="flex flex-wrap items-center justify-between gap-3">
