@@ -16,6 +16,8 @@ import {
 import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter, Loader2 } from "lucide-react";
 
 import { formatDateNumeric } from "@/lib/format";
+import { downloadXlsx, fetchAllRows, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
+import { DownloadXlsxButton } from "@/components/download-xlsx-button";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
@@ -148,6 +150,21 @@ const COLUMN_OPTIONS: ColumnOption[] = [
 
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
+/** Colunas do Download XLSX — mesmo valor que cada célula mostra. */
+const XLSX_COLUMNS = xlsxColumns<ShipmentRow>(COLUMN_OPTIONS, {
+  pl_number: { value: (r) => `PL - ${r.pl_number}` },
+  client: { value: (r) => r.client },
+  client_reference: { value: (r) => r.client_reference },
+  order_type: { value: (r) => r.order_type },
+  pol: { value: (r) => r.pol },
+  ship_model: { value: (r) => r.ship_model },
+  loading_date: { kind: "date", value: (r) => r.loading_date },
+  ship_date: { kind: "date", value: (r) => r.ship_date },
+  eta: { kind: "date", value: (r) => r.eta },
+  sum_of_orders: { value: (r) => r.sum_of_orders },
+  status: { value: (r) => r.status },
+});
+
 /**
  * Lista de Shipments (docs §3.10). Sem "Create" — o Shipment nasce do Confirm
  * Shipping do PL. Clicar na linha abre o checklist completo do embarque.
@@ -255,6 +272,19 @@ export function ShipmentsClient({
   const { visibility, save: saveVisibility } = useColumnVisibility("shipments", initialColumns);
 
   const filterCount = activeFilterCount(filters);
+
+  // Download XLSX: todas as linhas da busca/filtros/ordenação atuais
+  // (./export/route.ts), com as colunas visíveis da tabela na ordem da tela.
+  const { downloading, download: downloadXls } = useXlsxDownload(async () => {
+    const all = await fetchAllRows<ShipmentRow>(`/shipments/export${listStateToSearch({ ...state, page: 1 })}`);
+    await downloadXlsx({
+      fileBase: "shipments",
+      sheetName: "Shipments",
+      columnIds: table.getVisibleLeafColumns().map((c) => c.id),
+      columns: XLSX_COLUMNS,
+      rows: all,
+    });
+  });
 
   // pol é (cidade, porto) desnormalizado: o mesmo porto tem várias linhas (Ningbo
   // 12×, INTEGRACAO_GSS §9.3). No filtro basta o nome do porto — deduplicamos a
@@ -370,22 +400,31 @@ export function ShipmentsClient({
         placeholder="PL number"
         activeCount={filterCount}
         controls={(close) => (
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl bg-white"
-            onClick={() => {
-              close();
-              setFiltersOpen(true);
-            }}
-          >
-            <Filter />
-            Filters
-            {filterCount > 0 && (
-              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {filterCount}
-              </span>
-            )}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+            <DownloadXlsxButton
+              downloading={downloading}
+              onClick={() => {
+                close();
+                void downloadXls();
+              }}
+            />
+          </>
         )}
         trailing={() => (
           <ColumnsMenu

@@ -11,11 +11,12 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Filter, Download, ChevronLeft, ChevronRight, ArrowUpDown, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Filter, ChevronLeft, ChevronRight, ArrowUpDown, Loader2 } from "lucide-react";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
+import { downloadXlsx, fetchAllRows, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
+import { DownloadXlsxButton } from "@/components/download-xlsx-button";
 import type { BatchStatus } from "@/types/database";
 import { useEtdRealtime } from "@/lib/use-etd-realtime";
 import { useOrdersRealtime } from "@/lib/use-orders-realtime";
@@ -120,6 +121,28 @@ const COLUMN_OPTIONS: ColumnOption[] = [
 
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
+const yesNo = (v: boolean) => (v ? "Yes" : "No");
+
+/** Colunas do Download XLSX — mesmo valor que cada célula mostra. */
+const XLSX_COLUMNS = xlsxColumns<EtdFactoryRow>(COLUMN_OPTIONS, {
+  client: { value: (r) => r.client },
+  po_batch: { value: (r) => `${r.po_number} ${r.batch_number}` },
+  factory: { value: (r) => r.factory },
+  category: { value: (r) => r.category },
+  order_date: { kind: "date", value: (r) => r.order_date },
+  shipment_req: { kind: "date", value: (r) => r.shipment_req },
+  initial_date: { kind: "date", value: (r) => r.initial_date },
+  current_date: { kind: "date", value: (r) => r.current_date },
+  days_delay: { value: (r) => r.days_delay },
+  last_updated: { kind: "timestamp", value: (r) => r.last_updated },
+  batch_status: { value: (r) => BATCH_STATUS_LABELS[r.batch_status] },
+  ready_parts: { value: (r) => yesNo(r.ready_parts) },
+  gap_of_ready: { value: (r) => r.gap_of_ready },
+  inspection: { value: (r) => yesNo(r.inspection) },
+  dispatch_location: { value: (r) => r.dispatch_location },
+  dispatch_date: { kind: "date", value: (r) => r.dispatch_date },
+});
+
 export function EtdFactoriesClient({
   rows,
   total,
@@ -196,32 +219,20 @@ export function EtdFactoriesClient({
 
   const filterCount = activeFilterCount(filters);
 
-  // Download XLS (./export/route.ts): todas as linhas da busca/filtros/ordenação
-  // atuais, não só a página aberta.
-  const [downloading, setDownloading] = useState(false);
-  const downloadXls = async () => {
-    setDownloading(true);
-    try {
-      const res = await fetch(`/etd-factories/export${listStateToSearch({ ...state, page: 1 })}`);
-      // Sessão caída vira redirect pro login (HTML, 200) — não é planilha.
-      if (!res.ok || !res.headers.get("Content-Type")?.includes("spreadsheetml")) {
-        throw new Error(`export: ${res.status}`);
-      }
-      const name =
-        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ??
-        "etd-factories.xlsx";
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Could not generate the XLS file. Please try again.");
-    } finally {
-      setDownloading(false);
-    }
-  };
+  // Download XLSX: todas as linhas da busca/filtros/ordenação atuais
+  // (./export/route.ts), com as colunas visíveis da tabela na ordem da tela.
+  const { downloading, download: downloadXls } = useXlsxDownload(async () => {
+    const all = await fetchAllRows<EtdFactoryRow>(
+      `/etd-factories/export${listStateToSearch({ ...state, page: 1 })}`
+    );
+    await downloadXlsx({
+      fileBase: "etd-factories",
+      sheetName: "ETD Factories",
+      columnIds: table.getVisibleLeafColumns().map((c) => c.id),
+      columns: XLSX_COLUMNS,
+      rows: all,
+    });
+  });
 
   /** Abre o modal de ETD da linha — usado pela tabela e pelos cards. */
   const openRow = (r: EtdFactoryRow) =>
@@ -415,18 +426,13 @@ export function EtdFactoriesClient({
                 </span>
               )}
             </Button>
-            <Button
-              variant="outline"
-              className="h-11 rounded-xl bg-white"
-              disabled={downloading}
+            <DownloadXlsxButton
+              downloading={downloading}
               onClick={() => {
                 close();
                 void downloadXls();
               }}
-            >
-              {downloading ? <Loader2 className="animate-spin" /> : <Download />}
-              Download XLS
-            </Button>
+            />
           </>
         )}
         trailing={() => (
