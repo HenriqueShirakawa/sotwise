@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import { dailyAboveMonthly, dailyAboveMonthlyMessage, effectivePair } from "@/lib/copilot/limit-rules";
+
 import { setDefaultLimits, setUserLimits } from "./actions";
 
 export type SiaUserRow = {
@@ -35,6 +37,15 @@ function parseTokens(raw: string): number | null | undefined {
 }
 
 const toField = (n: number | null) => (n === null ? "" : fmt(n));
+
+/** Dia acima do mês com o que está digitado (o servidor confere de novo). */
+function pairError(fallback: Limits, daily: string, monthly: string): string | null {
+  const d = parseTokens(daily);
+  const m = parseTokens(monthly);
+  if (d === undefined || m === undefined) return null;
+  const pair = effectivePair(fallback, { daily: d, monthly: m });
+  return dailyAboveMonthly(pair) ? dailyAboveMonthlyMessage(pair) : null;
+}
 
 function Usage({ used, limit }: { used: number; limit: number | null }) {
   const pct = limit === null ? 0 : limit === 0 ? 100 : Math.min(100, (used / limit) * 100);
@@ -68,6 +79,7 @@ function DefaultsForm({ defaults }: { defaults: Limits }) {
   const [monthly, setMonthly] = useState(toField(defaults.monthly));
   const [pending, startTransition] = useTransition();
   const dirty = daily !== toField(defaults.daily) || monthly !== toField(defaults.monthly);
+  const conflict = pairError({ daily: null, monthly: null }, daily, monthly);
 
   function save() {
     const d = parseTokens(daily);
@@ -98,11 +110,12 @@ function DefaultsForm({ defaults }: { defaults: Limits }) {
           Por mês
           <Input className="h-8 w-40" inputMode="numeric" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="sem limite" />
         </label>
-        <Button size="sm" onClick={save} disabled={!dirty || pending}>
+        <Button size="sm" onClick={save} disabled={!dirty || pending || conflict !== null}>
           {pending && <Loader2 className="size-3.5 animate-spin" />}
           Salvar
         </Button>
       </div>
+      {conflict && <p className="mt-2 text-xs text-red-600">{conflict}</p>}
     </div>
   );
 }
@@ -112,6 +125,7 @@ function UserRow({ row, defaults }: { row: SiaUserRow; defaults: Limits }) {
   const [monthly, setMonthly] = useState(toField(row.monthly));
   const [pending, startTransition] = useTransition();
   const dirty = daily !== toField(row.daily) || monthly !== toField(row.monthly);
+  const conflict = pairError(defaults, daily, monthly);
 
   const dayLimit = row.daily ?? defaults.daily;
   const monthLimit = row.monthly ?? defaults.monthly;
@@ -153,10 +167,11 @@ function UserRow({ row, defaults }: { row: SiaUserRow; defaults: Limits }) {
         <Input className="h-8 w-40" inputMode="numeric" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder={fallbackLabel(defaults.monthly)} />
       </td>
       <td className="px-3 py-2 text-right">
-        <Button size="sm" variant="outline" onClick={save} disabled={!dirty || pending}>
+        <Button size="sm" variant="outline" onClick={save} disabled={!dirty || pending || conflict !== null}>
           {pending && <Loader2 className="size-3.5 animate-spin" />}
           Salvar
         </Button>
+        {conflict && <p className="mt-1 text-right text-xs leading-tight text-red-600">Dia maior<br />que o mês</p>}
       </td>
     </tr>
   );
