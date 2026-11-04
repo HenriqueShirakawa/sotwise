@@ -22,6 +22,8 @@ import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
 import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
 import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { STEP_LABELS } from "@/lib/checklist";
+import { downloadXlsx, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
+import { DownloadXlsxButton } from "@/components/download-xlsx-button";
 import type { ChecklistStep, OrderStatus } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
@@ -114,6 +116,17 @@ const COLUMN_OPTIONS: ColumnOption[] = [
 ];
 
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
+
+/** Colunas do Download XLSX — mesmo valor que cada célula mostra. */
+const XLSX_COLUMNS = xlsxColumns<TodoRow>(COLUMN_OPTIONS, {
+  po_number: { value: (r) => r.po_number },
+  pl_number: { value: (r) => (r.pl_number ? `PL - ${r.pl_number}` : null) },
+  step: { value: (r) => STEP_LABELS[r.step] },
+  status: { value: (r) => (r.status ? ORDER_STATUS_LABELS[r.status] : null) },
+  responsible: { value: (r) => r.responsible },
+  date_preview: { kind: "date", value: (r) => r.date_preview },
+  client: { value: (r) => r.client },
+});
 
 /** Compara datas "YYYY-MM-DD" (mesmo helper das outras listas). */
 function inDateRange(value: string | null, from: string, to: string): boolean {
@@ -307,6 +320,18 @@ export function TodoClient({
     initialState: { pagination: { pageSize: 10 } },
   });
 
+  // Download XLSX: a lista já tem tudo no navegador — exporta as linhas da aba,
+  // busca e filtros atuais, ordenadas e de TODAS as páginas, com as colunas visíveis.
+  const { downloading, download: downloadXls } = useXlsxDownload(() =>
+    downloadXlsx({
+      fileBase: "todo-list",
+      sheetName: "To do list",
+      columnIds: table.getVisibleLeafColumns().map((c) => c.id),
+      columns: XLSX_COLUMNS,
+      rows: table.getPrePaginationRowModel().rows.map((r) => r.original),
+    })
+  );
+
   const pageIndex = table.getState().pagination.pageIndex;
   const total = data.length;
 
@@ -354,22 +379,31 @@ export function TodoClient({
         placeholder="PO or PL number"
         activeCount={filterCount}
         controls={(close) => (
-          <Button
-            variant="outline"
-            className="h-11 rounded-xl bg-white"
-            onClick={() => {
-              close();
-              setFiltersOpen(true);
-            }}
-          >
-            <Filter />
-            Filters
-            {filterCount > 0 && (
-              <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                {filterCount}
-              </span>
-            )}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl bg-white"
+              onClick={() => {
+                close();
+                setFiltersOpen(true);
+              }}
+            >
+              <Filter />
+              Filters
+              {filterCount > 0 && (
+                <span className="ml-1 inline-flex size-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+            <DownloadXlsxButton
+              downloading={downloading}
+              onClick={() => {
+                close();
+                void downloadXls();
+              }}
+            />
+          </>
         )}
         trailing={() => (
           <ColumnsMenu columns={columnMenuOptions} visibility={visibility} onSave={saveVisibility} />
