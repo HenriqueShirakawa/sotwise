@@ -1,4 +1,5 @@
 import { resolvePortalLocale } from "@/domain/client/locale";
+import { loadPortalNotifications, readNotifPrefs } from "@/domain/client/portal-notifications";
 import { requireClientScope } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -25,9 +26,14 @@ export default async function ClientLayout({
   const { session, clientId } = await requireClientScope();
 
   const admin = createAdminClient();
-  const [{ data: client }, locale] = await Promise.all([
+  const [{ data: client }, locale, notifications] = await Promise.all([
     admin.from("clients").select("name").eq("id", clientId).single(),
     resolvePortalLocale(),
+    loadPortalNotifications(
+      clientId,
+      readNotifPrefs(session.profile.ui_preferences),
+      session.profile.created_at
+    ),
   ]);
 
   return (
@@ -35,6 +41,7 @@ export default async function ClientLayout({
       fullName={session.profile.full_name}
       clientName={client?.name ?? null}
       locale={locale}
+      notifications={notifications}
     >
       {children}
     </ClientShell>

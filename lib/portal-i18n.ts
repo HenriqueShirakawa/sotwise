@@ -123,6 +123,14 @@ export type PortalMessages = {
     messagesText: string;
   };
   support: { comingSoon: string; text: string };
+  bell: {
+    title: string;
+    open: (unread: number) => string;
+    markAllRead: string;
+    empty: string;
+    item: (po: string, batch: string) => string;
+    movedTo: string;
+  };
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -248,6 +256,14 @@ const en: PortalMessages = {
     messagesTitle: "Messages",
     messagesText:
       "Updates from the AGK team about this order will appear here. For now, replies go through your AGK contact by e-mail.",
+  },
+  bell: {
+    title: "Notifications",
+    open: (n) => (n > 0 ? `Notifications (${n} unread)` : "Notifications"),
+    markAllRead: "Mark all as read",
+    empty: "No notifications yet. You'll see here every time a batch moves forward.",
+    item: (po, batch) => `Order #${po}${batch ? ` · Batch ${batch}` : ""}`,
+    movedTo: "Moved to",
   },
   support: {
     comingSoon: "Support is coming soon",
@@ -377,6 +393,14 @@ const ptBR: PortalMessages = {
     messagesText:
       "As atualizações da equipe AGK sobre este pedido aparecerão aqui. Por enquanto, a conversa segue por e-mail com seu contato na AGK.",
   },
+  bell: {
+    title: "Notificações",
+    open: (n) => (n > 0 ? `Notificações (${n} não lidas)` : "Notificações"),
+    markAllRead: "Marcar todas como lidas",
+    empty: "Nenhuma notificação ainda. Cada vez que um lote avançar, você verá aqui.",
+    item: (po, batch) => `Pedido #${po}${batch ? ` · Lote ${batch}` : ""}`,
+    movedTo: "Passou para",
+  },
   support: {
     comingSoon: "O suporte chega em breve",
     text: "Enquanto isso, fale com seu contato na AGK como de costume.",
@@ -505,6 +529,14 @@ const es: PortalMessages = {
     messagesText:
       "Aquí aparecerán las novedades del equipo de AGK sobre este pedido. Por ahora, la conversación sigue por correo con tu contacto en AGK.",
   },
+  bell: {
+    title: "Notificaciones",
+    open: (n) => (n > 0 ? `Notificaciones (${n} sin leer)` : "Notificaciones"),
+    markAllRead: "Marcar todas como leídas",
+    empty: "Aún no hay notificaciones. Cada vez que un lote avance, lo verás aquí.",
+    item: (po, batch) => `Pedido #${po}${batch ? ` · Lote ${batch}` : ""}`,
+    movedTo: "Pasó a",
+  },
   support: {
     comingSoon: "El soporte llegará pronto",
     text: "Mientras tanto, comunícate con tu contacto en AGK como de costumbre.",
@@ -629,6 +661,14 @@ const zh: PortalMessages = {
     historyText: "这里将按时间倒序显示此订单的每一次变动。",
     messagesTitle: "消息",
     messagesText: "AGK 团队关于此订单的更新将显示在这里。目前请通过电子邮件与您的 AGK 联系人沟通。",
+  },
+  bell: {
+    title: "通知",
+    open: (n) => (n > 0 ? `通知（${n} 条未读）` : "通知"),
+    markAllRead: "全部标为已读",
+    empty: "暂无通知。每当批次状态推进时，都会显示在这里。",
+    item: (po, batch) => `订单 #${po}${batch ? ` · 批次 ${batch}` : ""}`,
+    movedTo: "状态更新为",
   },
   support: {
     comingSoon: "支持功能即将推出",
