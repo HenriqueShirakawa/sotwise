@@ -281,6 +281,17 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   - O status traduzido mantém a cor do status (o `StatusPill` escolhe a cor pelo rótulo
     em inglês e mostra o texto traduzido).
   - Textos em PT/ES/ZH são rascunho do Claude — revisar com quem fala cada língua.
+- **Portal v2 — bloco E (2026-11-04): sino de notificações.** No topo do portal, ao lado
+  da busca. Fonte = a outbox da 2.1 (`client_notifications`): cada avanço de lote que o
+  trigger registrou, os 20 mais recentes do cliente — **a mesma fonte dos e-mails**, e o
+  aviso aparece mesmo se o e-mail falhou (o lote andou de qualquer jeito). Pedido apagado
+  ou em negociação não aparece. Cada aviso: "Pedido #PO · Lote .NN — passou para
+  <status>" + há quanto tempo; clicar abre o pedido e marca como lido; "Marcar todas como
+  lidas" zera o contador (bolinha vermelha, até "9+").
+  - **"Lida" é por usuário** e fica em `profiles.ui_preferences.portal_notifications`
+    (sem tabela nova): `seen_before` (tudo até ali conta como lido; sem valor, vale a
+    criação do usuário — quem acabou de ganhar acesso não começa com o histórico aceso)
+    + `read` (ids lidos um a um depois disso, até 200).
 - **Onde se vê o vínculo:** na tela Users (coluna Profile mostra `Client · <empresa>`) e
   na tela Clients, coluna **Portal users** — os usuários externos daquele cliente, com
   bloqueado riscado. A busca de Clients passou a casar com nome de usuário também

@@ -36,7 +36,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
+import type { PortalNotification } from "@/domain/client/portal-notifications";
+
 import { setPortalLocale } from "./locale-actions";
+import { NotificationBell } from "./notification-bell";
 import { PortalI18nProvider, usePortalI18n } from "./portal-i18n-provider";
 
 /**
@@ -91,6 +94,7 @@ export function ClientShell(props: {
   fullName: string;
   clientName: string | null;
   locale: PortalLocale;
+  notifications: PortalNotification[];
   children: React.ReactNode;
 }) {
   return (
@@ -104,11 +108,13 @@ function Shell({
   fullName,
   clientName,
   locale,
+  notifications,
   children,
 }: {
   fullName: string;
   clientName: string | null;
   locale: PortalLocale;
+  notifications: PortalNotification[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -207,6 +213,7 @@ function Shell({
           >
             <TopSearch />
           </Suspense>
+          <NotificationBell notifications={notifications} />
           <LanguageMenu />
         </header>
 
