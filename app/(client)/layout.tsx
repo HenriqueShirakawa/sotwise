@@ -1,3 +1,4 @@
+import { resolvePortalLocale } from "@/domain/client/locale";
 import { requireClientScope } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -24,14 +25,17 @@ export default async function ClientLayout({
   const { session, clientId } = await requireClientScope();
 
   const admin = createAdminClient();
-  const { data: client } = await admin
-    .from("clients")
-    .select("name")
-    .eq("id", clientId)
-    .single();
+  const [{ data: client }, locale] = await Promise.all([
+    admin.from("clients").select("name").eq("id", clientId).single(),
+    resolvePortalLocale(),
+  ]);
 
   return (
-    <ClientShell fullName={session.profile.full_name} clientName={client?.name ?? null}>
+    <ClientShell
+      fullName={session.profile.full_name}
+      clientName={client?.name ?? null}
+      locale={locale}
+    >
       {children}
     </ClientShell>
   );

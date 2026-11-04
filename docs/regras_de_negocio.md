@@ -268,6 +268,19 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
     mesma regra do *need attention* do Dashboard). Cabeçalho mostra *Expected delivery*
     (ETA) ou *Delivered on*.
   - **"Contact AGK" fica para o bloco F** (abre chamado; sem chamados ainda).
+- **Portal v2 — bloco D (2026-11-04): idioma.** O portal fala **English, Português,
+  Español e 中文** (dicionário em `lib/portal-i18n.ts`; as telas internas seguem em
+  inglês). Seletor no topo (ícone de globo); a escolha fica **no usuário**
+  (`profiles.ui_preferences.portal_locale`, sem migration) e vale em qualquer aparelho.
+  **Idioma inicial** = o mesmo dos e-mails do cliente: `clients.language` →
+  `country_language_defaults` pelo país → English (`domain/client/locale.ts`). Como os
+  e-mails só têm pt-BR/en/zh, **espanhol só entra pelo seletor**.
+  - Traduz telas, nomes de status (pedido e lote), estágios, "Current location" e o
+    título da aba do navegador. **Não traduz** o que é dado digitado (categoria, tipo do
+    pedido, referência do cliente). Datas seguem DD/MM/YYYY nas 4 línguas.
+  - O status traduzido mantém a cor do status (o `StatusPill` escolhe a cor pelo rótulo
+    em inglês e mostra o texto traduzido).
+  - Textos em PT/ES/ZH são rascunho do Claude — revisar com quem fala cada língua.
 - **Onde se vê o vínculo:** na tela Users (coluna Profile mostra `Client · <empresa>`) e
   na tela Clients, coluna **Portal users** — os usuários externos daquele cliente, com
   bloqueado riscado. A busca de Clients passou a casar com nome de usuário também
