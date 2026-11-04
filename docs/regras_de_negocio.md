@@ -222,10 +222,31 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
 - **Convite:** mesmo fluxo do 3.1 (admin cria pela tela Users, Resend entrega o link),
   com seletor de Client no formulário e um texto de e-mail próprio — o externo não foi
   "convidado para o SOTWISE", foi convidado para acompanhar os pedidos da empresa dele.
-- **Portal:** route group `app/(client)/`, rota `/portal`, casca própria (sem sidebar,
-  sem mensagens, sem copilot). Login, `/` e todo `requireFeature` negado levam o cliente
+- **Portal:** route group `app/(client)/`, rota `/portal`, casca própria (sem a sidebar
+  interna, sem mensagens, sem copilot). Login, `/` e todo `requireFeature` negado levam o cliente
   para lá; `requireInternal()` faz o caminho inverso nas telas internas sem feature
   própria (`/profile`, preferências, mensagens).
+- **Portal v2 — bloco A (2026-11-04, card Notion "Fase 2.3 - Portal do Cliente"):**
+  menu lateral PRÓPRIO do portal, fixo no código (Dashboard `/portal` · My orders
+  `/portal/orders` · Support `/portal/support`, este ainda "coming soon" até o bloco F),
+  com gaveta abaixo de 768px e busca no topo (nº do pedido, referência, tipo, categoria;
+  em My orders filtra ao vivo via `?q=`, nas outras telas o Enter leva a My orders na
+  aba All).
+  - **Dashboard:** *Active orders* (em andamento, "of N total · M delivered"); *Next
+    delivery* (menor ETA ao Brasil de hoje em diante entre os em andamento, sem entrega
+    registrada); *Orders that need attention* (em andamento, ETA ao Brasil já passada e
+    sem `delivered`/`ata_brazil`, com "N days late"); *Recent orders in progress* (5 mais
+    recentes, PO desc). "Hoje" = dia em São Paulo.
+  - **My orders:** abas In progress / Delivered / All (`canceled` só em All), colunas
+    Order · Your reference · Category (primeira + "+N") · Items (linhas F×C ativas, sem
+    deduplicar) · Status · Progress · ETA Brazil; cards abaixo de 720px. Saíram da lista
+    Batch No. e Schedule req. (seguem no detalhe).
+  - **Progresso (%):** média dos lotes no fluxo, cada um valendo 25/50/75/100 conforme
+    In Production/Pre-Loading/In Transit/Delivered (mesma régua do stepper do detalhe);
+    pedido `delivered` = 100. Sem lote no fluxo, segue o status do pedido (in_production
+    25, pre_loading 50, partially_shipped/shipped/partially_delivered 75).
+  - **Fora, de propósito (dependem de decisão — bloco G):** fornecedor/fábrica e valor
+    do pedido, que o protótipo mostra.
 - **Onde se vê o vínculo:** na tela Users (coluna Profile mostra `Client · <empresa>`) e
   na tela Clients, coluna **Portal users** — os usuários externos daquele cliente, com
   bloqueado riscado. A busca de Clients passou a casar com nome de usuário também

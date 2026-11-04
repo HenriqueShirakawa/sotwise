@@ -231,7 +231,7 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
   return (
     <div className="space-y-5 animate-in fade-in slide-in-from-bottom-1 duration-300">
       <Link
-        href="/portal"
+        href="/portal/orders"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:underline"
       >
         <ArrowLeft className="size-4" />
