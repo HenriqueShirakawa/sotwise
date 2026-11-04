@@ -2,9 +2,9 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/types/database";
 
 /**
- * Regras de exclusão de Order — usadas pela lixeira da tela
- * (app/(dashboard)/orders/actions.ts → deleteOrder) e pelo
- * DELETE /api/orders/{id} (domain/orders/api-write.ts).
+ * Regras de exclusão de Order — usadas pelo DELETE /api/orders/{id}
+ * (domain/orders/api-write.ts). A tela não edita nem exclui order desde
+ * 04/11/2026 (pedido do usuário): a order vem do GSS.
  */
 
 type AdminClient = ReturnType<typeof createAdminClient>;

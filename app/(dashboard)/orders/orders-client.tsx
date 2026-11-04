@@ -18,8 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  Pencil,
-  Trash2,
   Bike,
   Car,
   Sprout,
@@ -35,7 +33,6 @@ import {
   type LucideIcon,
   Loader2,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
@@ -56,7 +53,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
@@ -70,15 +66,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
-import { deleteOrder } from "./actions";
-import { OrderFormModal } from "./order-form-modal";
 import { activeFilterCount, EMPTY_FILTERS, FiltersModal } from "./filters-modal";
 import {
   DEFAULT_SORT,
@@ -222,53 +210,6 @@ function SortableHeader({
 
 const dash = <span className="text-slate-300">—</span>;
 
-/** Order só é deletável nas fases iniciais ou cancelada (mesma regra do server
- *  em orders/actions.ts) — depois disso há PL/Shipment dependentes. */
-const DELETABLE_ORDER_STATUSES: OrderStatus[] = [
-  "in_negotiation",
-  "in_production",
-  "canceled",
-];
-
-/** Lixeira da Order: desabilitada (com tooltip do porquê) quando o status não
- *  permite excluir. Botão disabled não dispara hover, então o gatilho do tooltip
- *  é um <span> em volta. */
-function DeleteOrderButton({
-  status,
-  onDelete,
-}: {
-  status: OrderStatus;
-  onDelete: () => void;
-}) {
-  const button = (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      className="text-rose-500 hover:text-rose-600 disabled:text-slate-300 disabled:hover:text-slate-300"
-      aria-label="Delete"
-      disabled={!DELETABLE_ORDER_STATUSES.includes(status)}
-      onClick={onDelete}
-    >
-      <Trash2 />
-    </Button>
-  );
-  if (DELETABLE_ORDER_STATUSES.includes(status)) return button;
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span tabIndex={0} className="inline-flex cursor-not-allowed">
-            {button}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>
-          Only orders in Negotiation, Production or Canceled can be deleted.
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 /** Colunas que o usuário pode esconder — "actions" fica sempre visível. */
 const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "bu", label: "BU" },
@@ -363,26 +304,6 @@ export function OrdersClient({
   const sorting: SortingState = [state.sort];
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { visibility, save: saveVisibility } = useColumnVisibility("orders", initialColumns);
-
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<OrderRow | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<OrderRow | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function confirmDelete() {
-    if (!deleteTarget) return;
-    const id = deleteTarget.id;
-    startTransition(async () => {
-      const res = await deleteOrder(id);
-      if (res.ok) {
-        toast.success("Order deleted.");
-        router.refresh();
-      } else {
-        toast.error(res.error);
-      }
-      setDeleteTarget(null);
-    });
-  }
 
   const filterCount = activeFilterCount(filters);
 
@@ -504,34 +425,6 @@ export function OrdersClient({
           <span className="whitespace-nowrap text-slate-600">
             {formatDateNumeric(row.original.schedule_requested)}
           </span>
-        ),
-      },
-      {
-        id: "actions",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <div
-            className="flex items-center justify-end gap-0.5"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-primary hover:text-primary/80"
-              aria-label="Edit"
-              onClick={() => {
-                setEditing(row.original);
-                setFormOpen(true);
-              }}
-            >
-              <Pencil />
-            </Button>
-            <DeleteOrderButton
-              status={row.original.status}
-              onDelete={() => setDeleteTarget(row.original)}
-            />
-          </div>
         ),
       },
     ],
@@ -733,31 +626,6 @@ export function OrdersClient({
         </div>
       </div>
 
-      <OrderFormModal
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        editing={editing}
-        orderTypes={orderTypes}
-        clients={clients}
-        businessUnits={businessUnits}
-        exporters={exporters}
-        profiles={profiles}
-        operationalUsers={operationalUsers}
-      />
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete order?"
-        description={
-          deleteTarget
-            ? `Order ${deleteTarget.po_number} will be permanently deleted, along with its batches and checklist.`
-            : undefined
-        }
-        confirmLabel="Delete"
-        destructive
-        loading={pending}
-        onConfirm={confirmDelete}
-      />
     </div>
   );
 }
