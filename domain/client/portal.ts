@@ -527,9 +527,9 @@ export type ClientOrderProduct = {
 
 export type TimelineStageKey = "in_production" | "pre_loading" | "in_transit" | "delivered";
 
+/** Estágio da linha do tempo. O nome na tela vem do dicionário do portal (lib/portal-i18n.ts). */
 export type TimelineStage = {
   key: TimelineStageKey;
-  label: string;
   state: "done" | "current" | "upcoming";
   /** Data real (quando aconteceu) ou prevista (estágio futuro). */
   date: string | null;
@@ -551,8 +551,6 @@ export type ClientOrderDetail = {
   /** Dias de atraso sobre a ETA (null = no prazo, sem ETA ou entregue). */
   daysLate: number | null;
   progressPct: number;
-  /** Frase curta de onde a carga está, pelo estágio atual do pedido. */
-  currentLocation: string;
   timeline: TimelineStage[];
   /** Lotes do pedido, ordenados pelo número. */
   batches: ClientOrderBatch[];
@@ -572,30 +570,18 @@ const ORDER_STAGE: Record<OrderStatus, number> = {
   canceled: -1,
 };
 
-const CURRENT_LOCATION: Record<OrderStatus, string> = {
-  in_negotiation: "Under negotiation",
-  in_production: "In production at the factory in China",
-  pre_loading: "Being prepared for shipment in China",
-  partially_shipped: "Partially shipped — part of the order is on the way to Brazil",
-  shipped: "In transit — on the way to Brazil",
-  partially_delivered: "Partially delivered in Brazil",
-  delivered: "Delivered in Brazil",
-  canceled: "Order canceled",
-};
-
 function buildTimeline(
   status: OrderStatus,
   productionOn: string | null,
   ship: OrderShipping
 ): TimelineStage[] {
   const current = ORDER_STAGE[status];
-  const stages: { key: TimelineStageKey; label: string; actual: string | null; expected: string | null }[] = [
-    { key: "in_production", label: "In Production", actual: productionOn, expected: null },
-    { key: "pre_loading", label: "Pre-Loading", actual: ship.preLoadingOn, expected: null },
-    { key: "in_transit", label: "In Transit", actual: ship.shippedOn, expected: ship.shipExpected },
+  const stages: { key: TimelineStageKey; actual: string | null; expected: string | null }[] = [
+    { key: "in_production", actual: productionOn, expected: null },
+    { key: "pre_loading", actual: ship.preLoadingOn, expected: null },
+    { key: "in_transit", actual: ship.shippedOn, expected: ship.shipExpected },
     {
       key: "delivered",
-      label: "Delivered",
       actual: ship.deliveredOn ?? ship.firstDeliveredOn,
       expected: ship.etaBrazil,
     },
@@ -612,12 +598,12 @@ function buildTimeline(
     // Concluído mostra a data do fato; futuro, a previsão; o atual mostra quando
     // começou e, se isso não estiver registrado, a previsão de quando termina.
     if (state === "done") {
-      return { key: s.key, label: s.label, state, date: s.actual, dateKind: s.actual ? "actual" : null };
+      return { key: s.key, state, date: s.actual, dateKind: s.actual ? "actual" : null };
     }
     if (state === "current" && s.actual) {
-      return { key: s.key, label: s.label, state, date: s.actual, dateKind: "actual" };
+      return { key: s.key, state, date: s.actual, dateKind: "actual" };
     }
-    return { key: s.key, label: s.label, state, date: s.expected, dateKind: s.expected ? "expected" : null };
+    return { key: s.key, state, date: s.expected, dateKind: s.expected ? "expected" : null };
   });
 }
 
@@ -729,7 +715,6 @@ export async function loadClientOrderDetail(
       order.status,
       batches.map((b) => b.status)
     ),
-    currentLocation: CURRENT_LOCATION[order.status],
     timeline: buildTimeline(order.status, productionOn, { ...ship, etaBrazil }),
     batches: clientBatches,
     pendingProducts: [...pending].sort((a, b) => a.localeCompare(b)),

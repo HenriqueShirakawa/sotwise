@@ -1,28 +1,27 @@
+"use client";
+
+import { ORDER_STATUS_LABELS, BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { cn } from "@/lib/utils";
+import { StatusPill } from "@/components/status-pill";
+import type { BatchStatus, OrderStatus } from "@/types/database";
+
+import { usePortalI18n } from "./portal-i18n-provider";
 
 /**
  * Peças de apresentação compartilhadas pelas telas do portal (Dashboard, My
- * orders). Sem estado e sem dado próprio — o recorte do que o cliente vê é
- * decidido em domain/client/portal.ts.
+ * orders, detalhe). Sem dado próprio — o recorte do que o cliente vê é
+ * decidido em domain/client/portal.ts; o idioma vem do `PortalI18nProvider`.
  */
 
-/** "YYYY-MM-DD" → "DD/MM/YYYY", o formato de data do resto do sistema. */
-export function formatDate(iso: string | null): string | null {
-  if (!iso) return null;
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return y && m && d ? `${d}/${m}/${y}` : iso;
+/** Status do pedido traduzido, com a cor do status (que segue o rótulo em inglês). */
+export function OrderStatusPill({ status }: { status: OrderStatus }) {
+  const { t } = usePortalI18n();
+  return <StatusPill label={ORDER_STATUS_LABELS[status]} text={t.orderStatus[status]} />;
 }
 
-/** "Electronics" / "Electronics +2" — categorias do pedido em pouco espaço. */
-export function categoriesText(categories: string[]): string | null {
-  if (categories.length === 0) return null;
-  return categories.length === 1
-    ? categories[0]
-    : `${categories[0]} +${categories.length - 1}`;
-}
-
-export function itemsText(count: number): string {
-  return `${count} ${count === 1 ? "product" : "products"}`;
+export function BatchStatusPill({ status }: { status: BatchStatus }) {
+  const { t } = usePortalI18n();
+  return <StatusPill label={BATCH_STATUS_LABELS[status]} text={t.batchStatus[status]} />;
 }
 
 /** Barra fina + "%" — progresso do pedido pelos lotes (ver `progressPct`). */

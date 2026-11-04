@@ -6,9 +6,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Package } from "lucide-react";
 
 import type { ClientOrder, ClientOrderBucket } from "@/domain/client/portal";
-import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import type { PortalMessages } from "@/lib/portal-i18n";
 import { cn } from "@/lib/utils";
-import { StatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -19,7 +18,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { ProgressBar, categoriesText, formatDate, itemsText } from "../../portal-ui";
+import { categoriesText, formatDate } from "../../portal-format";
+import { usePortalI18n } from "../../portal-i18n-provider";
+import { OrderStatusPill, ProgressBar } from "../../portal-ui";
 
 /**
  * "My orders" do portal: abas In progress / Delivered / All, busca (a do topo,
@@ -29,10 +30,10 @@ import { ProgressBar, categoriesText, formatDate, itemsText } from "../../portal
 
 type Tab = "in_progress" | "delivered" | "all";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "in_progress", label: "In progress" },
-  { id: "delivered", label: "Delivered" },
-  { id: "all", label: "All" },
+const TABS: { id: Tab; label: (t: PortalMessages) => string }[] = [
+  { id: "in_progress", label: (t) => t.orders.tabInProgress },
+  { id: "delivered", label: (t) => t.orders.tabDelivered },
+  { id: "all", label: (t) => t.orders.tabAll },
 ];
 
 function parseTab(v: string | null): Tab {
@@ -53,6 +54,8 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const { t } = usePortalI18n();
+  const to = t.orders;
   const tab = parseTab(params.get("tab"));
   const q = (params.get("q") ?? "").trim().toLowerCase();
   const [page, setPage] = useState(0);
@@ -103,30 +106,31 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div
           role="tablist"
-          aria-label="Order status"
+          aria-label={to.tabsLabel}
           className="inline-flex rounded-xl border bg-white p-1"
         >
-          {TABS.map((t) => (
+          {TABS.map((tb) => (
             <button
-              key={t.id}
+              key={tb.id}
               type="button"
               role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => selectTab(t.id)}
+              aria-selected={tab === tb.id}
+              onClick={() => selectTab(tb.id)}
               className={cn(
                 "rounded-lg px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
-                tab === t.id
+                tab === tb.id
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-slate-600 hover:bg-slate-100"
               )}
             >
-              {t.label} · {counts[t.id]}
+              {tb.label(t)} · {counts[tb.id]}
             </button>
           ))}
         </div>
         {q ? (
           <p className="text-sm text-slate-500">
-            Results for <span className="font-medium text-slate-700">“{params.get("q")}”</span>
+            {to.resultsFor}{" "}
+            <span className="font-medium text-slate-700">“{params.get("q")}”</span>
           </p>
         ) : null}
       </div>
@@ -135,11 +139,7 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
         <div className="rounded-xl border border-dashed bg-white px-6 py-16 text-center">
           <Package className="mx-auto size-8 text-slate-300" />
           <p className="mt-3 text-sm text-slate-500">
-            {orders.length === 0
-              ? "You have no orders yet."
-              : q
-                ? "No orders match this search."
-                : "No orders here."}
+            {orders.length === 0 ? to.emptyNone : q ? to.emptySearch : to.emptyTab}
           </p>
         </div>
       ) : (
@@ -156,13 +156,13 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
             <Table className="min-w-[860px] [&_td]:py-3.5 [&_th]:py-3.5 [&_thead_tr]:bg-slate-50/80">
               <TableHeader>
                 <TableRow className="hover:bg-slate-50/80">
-                  <TableHead className={TH}>Order</TableHead>
-                  <TableHead className={TH}>Your reference</TableHead>
-                  <TableHead className={TH}>Category</TableHead>
-                  <TableHead className={TH}>Items</TableHead>
-                  <TableHead className={TH}>Status</TableHead>
-                  <TableHead className={TH}>Progress</TableHead>
-                  <TableHead className={TH}>ETA Brazil</TableHead>
+                  <TableHead className={TH}>{to.colOrder}</TableHead>
+                  <TableHead className={TH}>{to.colReference}</TableHead>
+                  <TableHead className={TH}>{to.colCategory}</TableHead>
+                  <TableHead className={TH}>{to.colItems}</TableHead>
+                  <TableHead className={TH}>{to.colStatus}</TableHead>
+                  <TableHead className={TH}>{to.colProgress}</TableHead>
+                  <TableHead className={TH}>{to.colEta}</TableHead>
                   <TableHead className="w-10 px-4" />
                 </TableRow>
               </TableHeader>
@@ -194,13 +194,13 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
                     </TableCell>
                     <TableCell className="px-4 text-sm whitespace-nowrap text-slate-600">
                       {o.itemCount > 0 ? (
-                        itemsText(o.itemCount)
+                        t.common.products(o.itemCount)
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
                     </TableCell>
                     <TableCell className="px-4 text-sm">
-                      <StatusPill label={ORDER_STATUS_LABELS[o.status]} />
+                      <OrderStatusPill status={o.status} />
                     </TableCell>
                     <TableCell className="px-4">
                       <ProgressBar pct={o.progressPct} />
@@ -219,8 +219,7 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
 
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm text-slate-500">
-              Page {page + 1} of {pageCount} · Total: {filtered.length}{" "}
-              {filtered.length === 1 ? "record" : "records"}
+              {to.pageOf(page + 1, pageCount)} · {to.total(filtered.length)}
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -229,7 +228,7 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
                 className="rounded-lg"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                aria-label="Previous page"
+                aria-label={to.previous}
               >
                 <ChevronLeft />
               </Button>
@@ -239,7 +238,7 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
                 className="rounded-lg"
                 onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
                 disabled={page >= pageCount - 1}
-                aria-label="Next page"
+                aria-label={to.next}
               >
                 <ChevronRight />
               </Button>
@@ -253,6 +252,7 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
 
 /** Pedido em card — usado abaixo de 720px (aqui e no Dashboard). */
 export function OrderCard({ order: o }: { order: ClientOrder }) {
+  const { t } = usePortalI18n();
   const eta = formatDate(o.etaBrazil);
   const category = categoriesText(o.categories);
   return (
@@ -267,11 +267,11 @@ export function OrderCard({ order: o }: { order: ClientOrder }) {
             <p className="mt-0.5 truncate text-xs text-slate-500">{o.client_reference}</p>
           ) : null}
         </div>
-        <StatusPill label={ORDER_STATUS_LABELS[o.status]} />
+        <OrderStatusPill status={o.status} />
       </div>
       {category || o.itemCount > 0 ? (
         <p className="mt-3 text-sm text-slate-600">
-          {[category, o.itemCount > 0 ? itemsText(o.itemCount) : null]
+          {[category, o.itemCount > 0 ? t.common.products(o.itemCount) : null]
             .filter(Boolean)
             .join(" · ")}
         </p>
@@ -279,7 +279,7 @@ export function OrderCard({ order: o }: { order: ClientOrder }) {
       <div className="mt-3 flex items-center justify-between gap-3">
         <ProgressBar pct={o.progressPct} />
         <p className="text-xs text-slate-500">
-          ETA Brazil <span className="font-mono text-slate-700">{eta ?? "—"}</span>
+          {t.orders.colEta} <span className="font-mono text-slate-700">{eta ?? "—"}</span>
         </p>
       </div>
     </Link>
