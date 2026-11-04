@@ -7,8 +7,8 @@ import { readListState } from "@/lib/list-state";
 import { fetchAll } from "@/lib/fetch-all";
 
 import { OrdersClient } from "./orders-client";
-import { PAGE_SIZE, listStateToSearch, parseListState } from "./list-params";
-import { ordersListQuery, toOrderRow } from "./query";
+import { listStateToSearch, parseListState } from "./list-params";
+import { fetchOrdersPage } from "./query";
 
 export const metadata = { title: "Orders" };
 
@@ -26,10 +26,9 @@ export default async function OrdersPage({
   const { profile } = await requireFeature("orders");
   const admin = createAdminClient();
   const state = parseListState(await searchParams);
-  const from = (state.page - 1) * PAGE_SIZE;
 
   const [page, buRes, typeRes, clientRes, exporterRes, profileRes] = await Promise.all([
-    ordersListQuery(admin, state, { count: "exact" }).range(from, from + PAGE_SIZE - 1),
+    fetchOrdersPage(admin, state),
     // Cadastros que alimentam os seletores: via fetchAll para nenhum ficar
     // cortado no teto de 1000 do PostgREST (ver lib/fetch-all).
     fetchAll<{ id: string; name: string }>((from, to) =>
@@ -54,16 +53,10 @@ export default async function OrdersPage({
       admin.from("profiles").select("id, full_name, status, hidden, client_id").range(from, to)
     ),
   ]);
-  if (page.error) throw new Error(`orders_list: ${page.error.message}`);
-
-  const total = page.count ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // Página além do fim (filtro estreitou, link antigo): vai para a última.
-  if (state.page > pageCount) {
-    redirect(`/orders${listStateToSearch({ ...state, page: pageCount })}`);
+  if (page.page !== state.page) {
+    redirect(`/orders${listStateToSearch({ ...state, page: page.page })}`);
   }
-
-  const rows = (page.data ?? []).map(toOrderRow);
 
   const byName = (a: { name: string }, b: { name: string }) =>
     a.name.localeCompare(b.name);
@@ -88,9 +81,9 @@ export default async function OrdersPage({
 
   return (
     <OrdersClient
-      rows={rows}
-      total={total}
-      pageCount={pageCount}
+      rows={page.rows}
+      total={page.total}
+      pageCount={page.pageCount}
       state={state}
       clients={clients}
       orderTypes={orderTypes}

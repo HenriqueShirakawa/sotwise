@@ -2,7 +2,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
 
 import type { OrderRow } from "./orders-client";
-import { SORT_COLUMNS, type ListState } from "./list-params";
+import { PAGE_SIZE, SORT_COLUMNS, type ListState } from "./list-params";
 
 type Admin = ReturnType<typeof createAdminClient>;
 type OrdersListRow = Database["public"]["Views"]["orders_list"]["Row"];
@@ -84,4 +84,35 @@ export function toOrderRow(o: OrdersListRow): OrderRow {
     leader_id: o.leader_id,
     operational_responsible_id: o.operational_responsible_id,
   };
+}
+
+export type OrdersPage = {
+  rows: OrderRow[];
+  total: number;
+  pageCount: number;
+  /** Página efetivamente servida (pedido além do fim cai na última). */
+  page: number;
+};
+
+/**
+ * Uma página da lista (com o total) — usada pela página (primeira carga) e
+ * por ./rows (troca de página sem navegação, 04/11/2026).
+ */
+export async function fetchOrdersPage(admin: Admin, state: ListState): Promise<OrdersPage> {
+  const read = async (page: number) => {
+    const from = (page - 1) * PAGE_SIZE;
+    const res = await ordersListQuery(admin, state, { count: "exact" }).range(from, from + PAGE_SIZE - 1);
+    if (res.error) throw new Error(`orders_list: ${res.error.message}`);
+    return res;
+  };
+  let page = state.page;
+  let res = await read(page);
+  const total = res.count ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Página além do fim (filtro estreitou, link antigo): serve a última.
+  if (page > pageCount) {
+    page = pageCount;
+    res = await read(page);
+  }
+  return { rows: (res.data ?? []).map(toOrderRow), total, pageCount, page };
 }
