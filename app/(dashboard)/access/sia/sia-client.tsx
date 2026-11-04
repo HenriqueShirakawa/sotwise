@@ -7,6 +7,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import {
+  BRL_PER_USD,
+  COPILOT_PRICE_PER_MILLION,
+  COPILOT_TYPICAL_PER_10K,
+} from "@/lib/copilot/pricing";
 import { dailyAboveMonthly, dailyAboveMonthlyMessage, effectivePair } from "@/lib/copilot/limit-rules";
 
 import { setDefaultLimits, setUserLimits } from "./actions";
@@ -70,6 +75,75 @@ function Stat({ value, label }: { value: string; label: string }) {
     <div className="rounded-xl border bg-card px-4 py-3">
       <div className="text-2xl font-semibold tabular-nums">{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+const usd = (n: number) =>
+  `US$ ${n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+const brl = (n: number) =>
+  `R$ ${(n * BRL_PER_USD).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: n * BRL_PER_USD < 0.01 ? 4 : 2 })}`;
+
+const PRICE_ROWS = [
+  { label: "Entrada (pergunta + dados lidos)", perMillion: COPILOT_PRICE_PER_MILLION.input },
+  { label: "Saída (texto que a SIA escreve)", perMillion: COPILOT_PRICE_PER_MILLION.output },
+  { label: "Lido do cache", perMillion: COPILOT_PRICE_PER_MILLION.cacheRead },
+  { label: "Gravado no cache", perMillion: COPILOT_PRICE_PER_MILLION.cacheWrite },
+];
+
+/** Quanto os tokens valem em dinheiro — referência para definir os limites. */
+function PricingCard({ defaults }: { defaults: Limits }) {
+  const worst = (tokens: number) => (tokens / 1_000_000) * COPILOT_PRICE_PER_MILLION.output;
+  const typical = { min: COPILOT_TYPICAL_PER_10K.min / 10_000, max: COPILOT_TYPICAL_PER_10K.max / 10_000 };
+  const limitLine = (label: string, tokens: number | null) =>
+    tokens === null ? (
+      <li>{label}: sem limite</li>
+    ) : (
+      <li>
+        {label} ({fmt(tokens)} tokens): uso normal {usd(tokens * typical.min)} a {usd(tokens * typical.max)} · pior
+        caso {usd(worst(tokens))} ({brl(worst(tokens))})
+      </li>
+    );
+
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="text-sm font-medium">Quanto custa</div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Preço de tabela da Anthropic para o modelo da SIA (Claude Haiku 5.5). Reais com o dólar a{" "}
+        {brl(1)}, só de referência.
+      </p>
+      <div className="mt-3 overflow-x-auto rounded-lg border">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 font-medium">Tipo de token</th>
+              <th className="px-3 py-2 text-right font-medium">Por milhão</th>
+              <th className="px-3 py-2 text-right font-medium">10 mil tokens</th>
+              <th className="px-3 py-2 text-right font-medium">10 mil tokens (R$)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PRICE_ROWS.map((r) => (
+              <tr key={r.label} className="border-t">
+                <td className="px-3 py-2">{r.label}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(r.perMillion)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{usd(r.perMillion / 100)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{brl(r.perMillion / 100)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
+        <li>
+          Na prática, uma pergunta gasta uns 7.500 tokens, quase tudo entrada e cache: 10 mil tokens saem por{" "}
+          {usd(COPILOT_TYPICAL_PER_10K.min)} a {usd(COPILOT_TYPICAL_PER_10K.max)} (
+          {brl(COPILOT_TYPICAL_PER_10K.min)} a {brl(COPILOT_TYPICAL_PER_10K.max)}).
+        </li>
+        {limitLine("Limite padrão por dia, por usuário", defaults.daily)}
+        {limitLine("Limite padrão por mês, por usuário", defaults.monthly)}
+        <li>Vale para pergunta de até 100 mil tokens (sempre o caso da SIA); acima disso o preço sobe 5 vezes. O valor exato está na fatura do console da Anthropic.</li>
+      </ul>
     </div>
   );
 }
@@ -218,6 +292,8 @@ export function SiaClient({
       </div>
 
       <DefaultsForm key={`${defaults.daily}-${defaults.monthly}`} defaults={defaults} />
+
+      <PricingCard defaults={defaults} />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative">
