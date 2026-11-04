@@ -1,9 +1,12 @@
 -- =============================================================================
--- WIPE do transacional (27/10/2026) — zera Order, Lote, Pre-loading, Shipment
--- e tudo que depende deles. Mantém bibliotecas, usuários, papéis e permissões.
+-- WIPE do transacional (27/10/2026; de novo em 04/11/2026, nos dois bancos,
+-- antes do GSS reenviar Orders/Lotes e do Bubble trazer PLs/Shipments) — zera
+-- Order, Lote, Pre-loading, Shipment e tudo que depende deles. Mantém
+-- bibliotecas, usuários, papéis e permissões.
 --
--- Rodar no SQL Editor do Supabase Studio (usuário `postgres`) do projeto AGK
--- (qqbeoljgpfllhcvqrsup). As tabelas de e-mail bloqueiam DELETE pelo service
+-- Rodar como `postgres` (SQL Editor do Studio, ou psql) — vale para o AGK
+-- (qqbeoljgpfllhcvqrsup, dev) e o SOT-VISTA (yfeejjzjjwwnbflsztur, produção).
+-- As tabelas de e-mail bloqueiam DELETE pelo service
 -- role (REVOKE), por isso é TRUNCATE como postgres, não pela API.
 --
 -- Conferido no AGK em 27/10: nenhuma tabela de biblioteca/usuário referencia
@@ -57,6 +60,10 @@ begin
   end if;
   if to_regclass('public.gss_sync_log') is not null then
     execute 'truncate table public.gss_sync_log';
+  end if;
+  -- 04/11/2026: log das chamadas ao GSS (criado depois de 27/10).
+  if to_regclass('public.gss_call_log') is not null then
+    execute 'truncate table public.gss_call_log';
   end if;
 end $$;
 
