@@ -707,6 +707,8 @@ Order (pedido, PO auto)
 
 #### 3.7.1 orders
 
+> 🔴 **04/11/2026 — o SOT também NÃO EDITA nem EXCLUI order (dev + main).** Pedido do usuário: "orders não pode mais deletar nem editar". Saíram da lista de Orders o lápis (modal de edição) e a lixeira, e as server actions `updateOrder`/`deleteOrder` (`app/(dashboard)/orders/actions.ts` e `order-form-modal.tsx` apagados). O detalhe da Order nunca editou o cabeçalho; o checklist, o ETD e os anexos continuam como estavam. A API (`PATCH`/`DELETE /api/orders/{id}`) continua: é por onde o GSS mexe na order.
+
 > 🔴 **19/10/2026 — o SOT NÃO CRIA MAIS ORDER (só na `dev`).** Quem cria order é o **GSS**, pela API (`POST /api/gss/orders` / `POST /api/orders`). Saíram o botão "Create Order" da lista e a server action `createOrder` (com a numeração `max(po)+1`, que colidia com os ids do GSS — ver §3.7.5). O modal da lista ficou só de **edição**; editar e excluir order seguem no SOT. Mesma linha da decisão de 13/10 (o SOT não cria lote): toda criação nasce no GSS.
 
 Pedido. PO gerado automaticamente e **não editável**. Exclusão: a doc atual diz "irreversível / cannot be undone" — ⚠️ mas isso **contradiz nossa política global de soft delete**. Ver pendência abaixo.
