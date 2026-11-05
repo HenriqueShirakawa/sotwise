@@ -78,6 +78,7 @@ export type PortalMessages = {
     emptyTab: string;
     colOrder: string;
     colReference: string;
+    colFactory: string;
     colCategory: string;
     colItems: string;
     colStatus: string;
@@ -109,7 +110,8 @@ export type PortalMessages = {
     batch: string;
     eta: string;
     delivered: string;
-    product: string;
+    factory: string;
+    category: string;
     shipReq: string;
     batchNo: string;
     status: string;
@@ -210,6 +212,7 @@ const en: PortalMessages = {
     emptyTab: "No orders here.",
     colOrder: "Order",
     colReference: "Your reference",
+    colFactory: "Factory",
     colCategory: "Category",
     colItems: "Items",
     colStatus: "Status",
@@ -242,7 +245,8 @@ const en: PortalMessages = {
     batch: "Batch",
     eta: "ETA",
     delivered: "Delivered",
-    product: "Product",
+    factory: "Factory",
+    category: "Category",
     shipReq: "Ship req.",
     batchNo: "Batch No.",
     status: "Status",
@@ -346,6 +350,7 @@ const ptBR: PortalMessages = {
     emptyTab: "Nenhum pedido aqui.",
     colOrder: "Pedido",
     colReference: "Sua referência",
+    colFactory: "Fábrica",
     colCategory: "Categoria",
     colItems: "Itens",
     colStatus: "Status",
@@ -378,7 +383,8 @@ const ptBR: PortalMessages = {
     batch: "Lote",
     eta: "Previsão",
     delivered: "Entregue",
-    product: "Produto",
+    factory: "Fábrica",
+    category: "Categoria",
     shipReq: "Embarque req.",
     batchNo: "Lote nº",
     status: "Status",
@@ -482,6 +488,7 @@ const es: PortalMessages = {
     emptyTab: "No hay pedidos aquí.",
     colOrder: "Pedido",
     colReference: "Tu referencia",
+    colFactory: "Fábrica",
     colCategory: "Categoría",
     colItems: "Ítems",
     colStatus: "Estado",
@@ -514,7 +521,8 @@ const es: PortalMessages = {
     batch: "Lote",
     eta: "Llegada prevista",
     delivered: "Entregado",
-    product: "Producto",
+    factory: "Fábrica",
+    category: "Categoría",
     shipReq: "Embarque sol.",
     batchNo: "Lote n.º",
     status: "Estado",
@@ -618,6 +626,7 @@ const zh: PortalMessages = {
     emptyTab: "此处暂无订单。",
     colOrder: "订单",
     colReference: "您的参考号",
+    colFactory: "工厂",
     colCategory: "品类",
     colItems: "项目",
     colStatus: "状态",
@@ -649,7 +658,8 @@ const zh: PortalMessages = {
     batch: "批次",
     eta: "预计到达",
     delivered: "已交付",
-    product: "产品",
+    factory: "工厂",
+    category: "品类",
     shipReq: "要求发运",
     batchNo: "批次号",
     status: "状态",

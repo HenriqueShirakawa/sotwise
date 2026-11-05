@@ -312,12 +312,19 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   Pre-Loading → In Transit → Delivered) e as categorias de produto que viajam nele; mais
   a visão "All products" (categoria × lote × status). Cada lote mostra também a **ETA ao
   Brasil** ou a **data de entrega** quando já entregue, tiradas do PL do lote (ver o bloco B
-  acima) — expor essa estimativa ao cliente foi autorizado em 2026-08-26. Fora: fábrica, exporter, leader/requester, BU e o resto
+  acima) — expor essa estimativa ao cliente foi autorizado em 2026-08-26. Fora: exporter, leader/requester, BU e o resto
   do ETD interno. **Não aparece porque o banco não guarda:** quantidade, descrição de
   produto, código de produto por linha e datas por etapa do lote — o produto fica na
-  granularidade de **categoria**. Documents/History/
+  granularidade da linha **fábrica × categoria**. Documents/History/
   Messages estão desenhados no portal como abas "coming soon" (dependem de decisão +
   backend). Pedido `in_negotiation` não aparece; `canceled` aparece.
+- ⚠️ **Fábrica visível ao cliente (2026-11-05, decisão do Henrique):** o portal mostra
+  **Fábrica** e **Categoria** em colunas separadas — na lista "My orders" (fábricas e
+  categorias distintas do pedido, "primeira +N") e no detalhe (tabela por lote, "All
+  products" e "Not in production yet"). Motivo: sem a fábrica, duas linhas da mesma
+  categoria pareciam duplicadas; e a quantidade que o GSS vai mandar é por linha
+  fábrica × categoria. A coluna "Items" segue = nº de linhas F×C ativas (sem deduplicar)
+  até a quantidade existir.
 - ⚠️ **Reversão do recorte (2026-08-26):** a decisão de 2026-08-18 escondia o número do
   lote (cliente acompanhava só produto × estágio). Foi revertida a pedido do Henrique
   para o portal casar com o desenho do Claude Design "Portal do Cliente Sotwise" — o
