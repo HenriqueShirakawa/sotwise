@@ -1,28 +1,33 @@
 import type { Metadata } from "next";
-import { MessageSquare } from "lucide-react";
 
 import { resolvePortalLocale } from "@/domain/client/locale";
+import { loadRepresentatives, loadSupportThread } from "@/domain/support/chat";
 import { requireClientScope } from "@/lib/dal";
 import { portalMessages } from "@/lib/portal-i18n";
+
+import { SupportClient } from "./support-client";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: portalMessages(await resolvePortalLocale()).nav.support };
 }
 
 /**
- * Suporte (chamados) é o bloco F do card do portal — ainda não construído. A
- * entrada no menu já existe para o desenho ficar completo; a tela avisa sem
- * fabricar dado.
+ * Suporte do portal (bloco F, 05/11/2026): os contatos da AGK que representam
+ * este cliente (marcados em Registration > Clients) + um chat único com eles.
+ * Thread e contatos escopados pelo `clientId` da sessão.
  */
 export default async function PortalSupportPage() {
-  await requireClientScope();
-  const t = portalMessages(await resolvePortalLocale());
+  const { session, clientId } = await requireClientScope();
+  const [representatives, messages] = await Promise.all([
+    loadRepresentatives(clientId),
+    loadSupportThread(clientId),
+  ]);
 
   return (
-    <div className="rounded-2xl border border-dashed bg-white px-6 py-16 text-center">
-      <MessageSquare className="mx-auto size-8 text-slate-300" />
-      <p className="mt-3 text-sm font-medium text-slate-700">{t.support.comingSoon}</p>
-      <p className="mt-1 text-sm text-slate-500">{t.support.text}</p>
-    </div>
+    <SupportClient
+      viewerId={session.userId}
+      representatives={representatives}
+      messages={messages}
+    />
   );
 }

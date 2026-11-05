@@ -1318,6 +1318,33 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["message_recipients"]["Insert"]>;
         Relationships: [];
       };
+      /** Representantes internos de cada cliente (Suporte do portal). Migration 20261105120000. */
+      client_representatives: {
+        Row: { client_id: UUID; user_id: UUID; created_at: Timestamp };
+        Insert: { client_id: UUID; user_id: UUID; created_at?: Timestamp };
+        Update: Partial<Database["public"]["Tables"]["client_representatives"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Chat de suporte — uma thread por cliente. Migration 20261105120000. */
+      support_messages: {
+        Row: { id: UUID; client_id: UUID; author_id: UUID; body: string; created_at: Timestamp };
+        Insert: {
+          id?: UUID;
+          client_id: UUID;
+          author_id: UUID;
+          body: string;
+          created_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["support_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Até onde cada pessoa leu a thread de suporte do cliente. */
+      support_reads: {
+        Row: { client_id: UUID; user_id: UUID; last_read_at: Timestamp };
+        Insert: { client_id: UUID; user_id: UUID; last_read_at?: Timestamp };
+        Update: Partial<Database["public"]["Tables"]["support_reads"]["Insert"]>;
+        Relationships: [];
+      };
       /** Cursor + resultado do pull das bibliotecas a partir do GSS (uma linha
        * por recurso). Ver supabase/migrations/20260811120000_gss_sync_state.sql
        * e docs/INTEGRACAO_GSS.md. */

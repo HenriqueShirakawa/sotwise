@@ -38,6 +38,7 @@ import {
   updateClientRecord,
   deleteClientRecord,
   setClientUsers,
+  setClientRepresentatives,
 } from "./actions";
 
 type Option = { id: string; name: string };
@@ -59,6 +60,8 @@ export type ClientRow = {
   language: EmailLanguage | null;
   /** Usuários externos do cliente (papel `client`, ligados por client_id). */
   users: { name: string; blocked: boolean }[];
+  /** Usuários internos que representam o cliente no Suporte do portal (05/11). */
+  representatives: { id: string; name: string }[];
   counts: {
     total: number;
     in_negotiation: number;
@@ -79,6 +82,14 @@ export type PortalUserOption = {
   blocked: boolean;
 };
 
+/** Opção do picker "Representatives" — usuários INTERNOS (sem client_id). */
+export type RepresentativeOption = {
+  id: string;
+  full_name: string;
+  company: string;
+  blocked: boolean;
+};
+
 /** Colunas de contagem, na ordem da tela do Bubble. */
 const COUNT_COLUMNS: { key: keyof ClientRow["counts"]; label: string }[] = [
   { key: "total", label: "Total PO's" },
@@ -93,10 +104,12 @@ export function ClientsClient({
   data,
   countries,
   portalUsers,
+  representativeOptions,
 }: {
   data: ClientRow[];
   countries: Option[];
   portalUsers: PortalUserOption[];
+  representativeOptions: RepresentativeOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -176,6 +189,19 @@ export function ClientsClient({
           );
         },
       },
+      {
+        id: "representatives",
+        header: "Representatives",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.representatives.length ? (
+            <span className="text-slate-800">
+              {row.original.representatives.map((r) => r.name).join(", ")}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
       ...COUNT_COLUMNS.map<ColumnDef<ClientRow>>(({ key, label }) => ({
         id: key,
         accessorFn: (row) => row.counts[key],
@@ -205,8 +231,9 @@ export function ClientsClient({
     country_id: string;
     language: EmailLanguage | null;
     user_ids: string[];
+    representative_ids: string[];
   }) {
-    const { user_ids, ...clientValues } = values;
+    const { user_ids, representative_ids, ...clientValues } = values;
     startTransition(async () => {
       let clientId: string;
       if (editing) {
@@ -228,13 +255,18 @@ export function ClientsClient({
       // Cliente já está salvo neste ponto — mesmo se a amarração de usuários
       // falhar, fechar e atualizar a lista é o estado real (nada de esconder
       // que metade da operação deu certo).
-      const usersRes = await setClientUsers(clientId, user_ids);
+      const [usersRes, repsRes] = await Promise.all([
+        setClientUsers(clientId, user_ids),
+        setClientRepresentatives(clientId, representative_ids),
+      ]);
       setFormOpen(false);
       router.refresh();
-      if (usersRes.ok) {
+      if (usersRes.ok && repsRes.ok) {
         toast.success(editing ? "Client updated." : "Client created.");
-      } else {
+      } else if (!usersRes.ok) {
         toast.error(`Client saved, but linking users failed: ${usersRes.error}`);
+      } else if (!repsRes.ok) {
+        toast.error(`Client saved, but saving representatives failed: ${repsRes.error}`);
       }
     });
   }
@@ -295,6 +327,7 @@ export function ClientsClient({
             editing={editing}
             countries={countries}
             portalUsers={portalUsers}
+            representativeOptions={representativeOptions}
             pending={pending}
             onCancel={() => setFormOpen(false)}
             onSubmit={handleSubmit}
@@ -322,6 +355,7 @@ function ClientForm({
   editing,
   countries,
   portalUsers,
+  representativeOptions,
   pending,
   onCancel,
   onSubmit,
@@ -329,6 +363,7 @@ function ClientForm({
   editing: ClientRow | null;
   countries: Option[];
   portalUsers: PortalUserOption[];
+  representativeOptions: RepresentativeOption[];
   pending: boolean;
   onCancel: () => void;
   onSubmit: (values: {
@@ -336,6 +371,7 @@ function ClientForm({
     country_id: string;
     language: EmailLanguage | null;
     user_ids: string[];
+    representative_ids: string[];
   }) => void;
 }) {
   const [name, setName] = useState(editing?.name ?? "");
@@ -343,6 +379,18 @@ function ClientForm({
   const [language, setLanguage] = useState(editing?.language ?? null);
   const [userIds, setUserIds] = useState<string[]>(() =>
     editing ? portalUsers.filter((u) => u.client_id === editing.id).map((u) => u.id) : []
+  );
+
+  const [repIds, setRepIds] = useState<string[]>(
+    () => editing?.representatives.map((r) => r.id) ?? []
+  );
+  const repOptions = useMemo(
+    () =>
+      representativeOptions.map((u) => {
+        const tags = [u.company, u.blocked ? "blocked" : null].filter(Boolean).join(" · ");
+        return { id: u.id, name: `${u.full_name} (${tags})` };
+      }),
+    [representativeOptions]
   );
 
   // Rótulo avisa quando marcar alguém move-o de outro cliente para este — sem
@@ -368,7 +416,13 @@ function ClientForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (valid)
-          onSubmit({ name: name.trim(), country_id: countryId, language, user_ids: userIds });
+          onSubmit({
+            name: name.trim(),
+            country_id: countryId,
+            language,
+            user_ids: userIds,
+            representative_ids: repIds,
+          });
       }}
     >
       <p className="border-b pb-2 text-sm text-muted-foreground">Main information</p>
@@ -427,6 +481,20 @@ function ClientForm({
           External users (role Client) who sign in to the portal and track this client&apos;s
           orders. Picking a user tied to another client moves them here — same effect as
           changing their Client on the Users screen.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Representatives</Label>
+        <MultiSearchSelect
+          value={repIds}
+          onChange={setRepIds}
+          options={repOptions}
+          placeholder="Choose our users..."
+        />
+        <p className="text-xs text-muted-foreground">
+          Our team members who answer this client. They show up as contacts on the portal&apos;s
+          Support screen and get the client&apos;s chat messages.
         </p>
       </div>
 

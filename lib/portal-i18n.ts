@@ -124,7 +124,20 @@ export type PortalMessages = {
     messagesTitle: string;
     messagesText: string;
   };
-  support: { comingSoon: string; text: string };
+  support: {
+    contactsTitle: string;
+    contactsText: string;
+    noContacts: string;
+    teamBR: string;
+    teamChina: string;
+    chatTitle: string;
+    empty: string;
+    placeholder: string;
+    send: string;
+    you: string;
+    sendError: string;
+    tooLong: (max: number) => string;
+  };
   bell: {
     title: string;
     open: (unread: number) => string;
@@ -270,8 +283,18 @@ const en: PortalMessages = {
     movedTo: "Moved to",
   },
   support: {
-    comingSoon: "Support is coming soon",
-    text: "In the meantime, reach out to your AGK contact as usual.",
+    contactsTitle: "Your AGK contacts",
+    contactsText: "They get every message you send here.",
+    noContacts: "No AGK contact assigned to your company yet. You can still write — the AGK team will get it.",
+    teamBR: "Brazil team",
+    teamChina: "China team",
+    chatTitle: "Chat with AGK",
+    empty: "No messages yet. Write below to talk to the AGK team.",
+    placeholder: "Write your message…",
+    send: "Send",
+    you: "You",
+    sendError: "Couldn't send the message. Please try again.",
+    tooLong: (max) => `Up to ${max} characters.`,
   },
 };
 
@@ -408,8 +431,18 @@ const ptBR: PortalMessages = {
     movedTo: "Passou para",
   },
   support: {
-    comingSoon: "O suporte chega em breve",
-    text: "Enquanto isso, fale com seu contato na AGK como de costume.",
+    contactsTitle: "Seus contatos na AGK",
+    contactsText: "Eles recebem todas as mensagens que você enviar aqui.",
+    noContacts: "Ainda não há um contato da AGK definido para a sua empresa. Pode escrever mesmo assim — a equipe da AGK recebe.",
+    teamBR: "Equipe Brasil",
+    teamChina: "Equipe China",
+    chatTitle: "Conversa com a AGK",
+    empty: "Nenhuma mensagem ainda. Escreva abaixo para falar com a equipe da AGK.",
+    placeholder: "Escreva sua mensagem…",
+    send: "Enviar",
+    you: "Você",
+    sendError: "Não foi possível enviar a mensagem. Tente de novo.",
+    tooLong: (max) => `Até ${max} caracteres.`,
   },
 };
 
@@ -546,8 +579,18 @@ const es: PortalMessages = {
     movedTo: "Pasó a",
   },
   support: {
-    comingSoon: "El soporte llegará pronto",
-    text: "Mientras tanto, comunícate con tu contacto en AGK como de costumbre.",
+    contactsTitle: "Tus contactos en AGK",
+    contactsText: "Reciben todos los mensajes que envíes aquí.",
+    noContacts: "Tu empresa aún no tiene un contacto de AGK asignado. Puedes escribir igual: el equipo de AGK lo recibirá.",
+    teamBR: "Equipo Brasil",
+    teamChina: "Equipo China",
+    chatTitle: "Conversación con AGK",
+    empty: "Aún no hay mensajes. Escribe abajo para hablar con el equipo de AGK.",
+    placeholder: "Escribe tu mensaje…",
+    send: "Enviar",
+    you: "Tú",
+    sendError: "No se pudo enviar el mensaje. Inténtalo de nuevo.",
+    tooLong: (max) => `Hasta ${max} caracteres.`,
   },
 };
 
@@ -681,8 +724,18 @@ const zh: PortalMessages = {
     movedTo: "状态更新为",
   },
   support: {
-    comingSoon: "支持功能即将推出",
-    text: "在此期间，请照常联系您的 AGK 联系人。",
+    contactsTitle: "您的 AGK 联系人",
+    contactsText: "您在这里发送的每条消息他们都会收到。",
+    noContacts: "贵公司尚未指定 AGK 联系人。您仍可留言，AGK 团队会收到。",
+    teamBR: "巴西团队",
+    teamChina: "中国团队",
+    chatTitle: "与 AGK 对话",
+    empty: "还没有消息。在下方输入即可联系 AGK 团队。",
+    placeholder: "输入您的消息…",
+    send: "发送",
+    you: "您",
+    sendError: "消息发送失败，请重试。",
+    tooLong: (max) => `最多 ${max} 个字符。`,
   },
 };
 

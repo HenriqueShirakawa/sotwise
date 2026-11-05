@@ -56,6 +56,12 @@ export const FEATURES = {
     routes: ["/registration"],
     actions: ALL_ACTIONS,
   },
+  support: {
+    // Chat com o cliente do portal (05/11): ler as conversas e responder.
+    label: "Support",
+    routes: ["/support"],
+    actions: ["view", "create"],
+  },
   users: { label: "Users", routes: ["/users"], actions: ALL_ACTIONS },
   access: {
     label: "Access control",
