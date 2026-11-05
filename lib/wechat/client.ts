@@ -154,6 +154,54 @@ export function sendTemplate(
 }
 
 /**
+ * Link de autorização de página (网页授权, snsapi_userinfo): aberto DENTRO do
+ * WeChat, mostra "permitir" e volta em `redirectUri` com `?code=`. É o único
+ * jeito de a Service Account obter nome e foto da pessoa. O domínio de
+ * `redirectUri` precisa estar cadastrado na conta (网页授权域名).
+ */
+export function userInfoAuthUrl(cfg: WechatConfig, redirectUri: string): string {
+  const q = new URLSearchParams({
+    appid: cfg.appId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "snsapi_userinfo",
+    state: "sot",
+  });
+  return `https://open.weixin.qq.com/connect/oauth2/authorize?${q}#wechat_redirect`;
+}
+
+/** Troca o `code` da autorização por OpenID + nome + foto. */
+export async function userInfoFromCode(
+  cfg: WechatConfig,
+  code: string
+): Promise<
+  { ok: true; openId: string; nickname: string | null; avatarUrl: string | null } | { ok: false; error: string }
+> {
+  try {
+    const token = await call("GET", "/sns/oauth2/access_token", {
+      appid: cfg.appId,
+      secret: cfg.secret,
+      code,
+      grant_type: "authorization_code",
+    });
+    if (token.errcode || typeof token.access_token !== "string" || typeof token.openid !== "string") {
+      return { ok: false, error: `${token.errcode}: ${token.errmsg}` };
+    }
+    const info = await call("GET", "/sns/userinfo", {
+      access_token: token.access_token,
+      openid: token.openid,
+      lang: "zh_CN",
+    });
+    if (info.errcode) return { ok: false, error: `${info.errcode}: ${info.errmsg}` };
+    const nickname = typeof info.nickname === "string" && info.nickname.trim() ? info.nickname.trim() : null;
+    const avatar = typeof info.headimgurl === "string" && info.headimgurl ? info.headimgurl : null;
+    return { ok: true, openId: token.openid, nickname, avatarUrl: avatar };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
  * QR temporário com parâmetro (带参数二维码). Quem escaneia com o WeChat cai na
  * conta; o callback traz o `scene` no EventKey (subscribe → "qrscene_<scene>",
  * quem já segue → SCAN com "<scene>"). Devolve o endereço da imagem.

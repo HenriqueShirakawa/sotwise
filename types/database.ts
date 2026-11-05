@@ -239,6 +239,9 @@ export type Database = {
           bubble_id: string | null;
           /** OpenID da pessoa na Service Account do WeChat (vínculo por QR). Migration 20261104120000. */
           wechat_openid: string | null;
+          /** Nome/foto do WeChat, via autorização de página (snsapi_userinfo). Migration 20261105140000. */
+          wechat_nickname: string | null;
+          wechat_avatar_url: string | null;
         };
         Insert: {
           id: UUID;
@@ -255,6 +258,8 @@ export type Database = {
           updated_at?: Timestamp;
           bubble_id?: string | null;
           wechat_openid?: string | null;
+          wechat_nickname?: string | null;
+          wechat_avatar_url?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
         Relationships: [];

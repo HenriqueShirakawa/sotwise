@@ -60,6 +60,8 @@ export type UserRow = {
   hidden: boolean;
   /** WeChat vinculado (Service Account) — as mensagens do "Forward to" chegam lá. */
   wechat_linked: boolean;
+  /** Nome do WeChat (se a pessoa autorizou), só para exibir. */
+  wechat_nickname: string | null;
 };
 
 const STATUS_HEX: Record<UserStatus, string> = {
@@ -511,6 +513,7 @@ function UserForm({
         <WechatLink
           userId={editing.id}
           initiallyLinked={editing.wechat_linked}
+          nickname={editing.wechat_nickname}
           enabled={wechatEnabled}
         />
       ) : null}

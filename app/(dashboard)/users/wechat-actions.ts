@@ -14,7 +14,7 @@ export async function unlinkWechat(userId: string): Promise<{ ok: true } | { ok:
   await requireFeature("users", "edit");
   const { error } = await createAdminClient()
     .from("profiles")
-    .update({ wechat_openid: null })
+    .update({ wechat_openid: null, wechat_nickname: null, wechat_avatar_url: null })
     .eq("id", userId);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/users");

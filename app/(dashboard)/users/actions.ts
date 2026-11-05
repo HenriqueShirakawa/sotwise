@@ -164,7 +164,7 @@ export async function updateUserRecord(
       // `resolveRoleScope` já devolveu null nesse caso.
       client_id: scope.clientId,
       // WeChat é só da equipe (fase 1): virar client solta o vínculo.
-      ...(scope.isClient ? { wechat_openid: null } : {}),
+      ...(scope.isClient ? { wechat_openid: null, wechat_nickname: null, wechat_avatar_url: null } : {}),
       hidden: parsed.data.hidden,
     })
     .eq("id", id);

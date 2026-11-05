@@ -17,10 +17,13 @@ import { unlinkWechat } from "./wechat-actions";
 export function WechatLink({
   userId,
   initiallyLinked,
+  nickname,
   enabled,
 }: {
   userId: string;
   initiallyLinked: boolean;
+  /** Nome do WeChat, quando a pessoa autorizou (My profile). */
+  nickname: string | null;
   enabled: boolean;
 }) {
   const router = useRouter();
@@ -48,7 +51,7 @@ export function WechatLink({
         <>
           <div className="flex flex-wrap items-center gap-2">
             <span className={linked ? "text-sm text-emerald-700" : "text-sm text-muted-foreground"}>
-              {linked ? "Linked" : "Not linked"}
+              {linked ? `Linked${nickname ? ` as ${nickname}` : ""}` : "Not linked"}
             </span>
             {linked ? (
               <Button type="button" variant="ghost" size="sm" onClick={unlink} disabled={pending}>
