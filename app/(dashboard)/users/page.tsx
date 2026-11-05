@@ -56,10 +56,11 @@ export default async function UsersPage() {
       status: UserRow["status"];
       hidden: boolean;
       wechat_openid: string | null;
+      wechat_nickname: string | null;
     }>((from, to) =>
       admin
         .from("profiles")
-        .select("id, full_name, date_of_birth, role_id, company, client_id, status, hidden, wechat_openid")
+        .select("id, full_name, date_of_birth, role_id, company, client_id, status, hidden, wechat_openid, wechat_nickname")
         .order("full_name")
         .range(from, to)
     ),
@@ -93,6 +94,7 @@ export default async function UsersPage() {
       pending_access: p.status === "active" && !auth?.signedInOnce,
       hidden: p.hidden,
       wechat_linked: !!p.wechat_openid,
+      wechat_nickname: p.wechat_openid ? p.wechat_nickname : null,
     };
   });
 

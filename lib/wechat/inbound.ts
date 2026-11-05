@@ -7,6 +7,7 @@ import type { MessageEntity } from "@/types/database";
 import { profileIdFromEventKey } from "./bind";
 import { wechatConfig, type WechatConfig } from "./client";
 import { xmlField } from "./crypto";
+import { shareInfoText } from "./profile-info";
 import { deliverMessageToWechat, entityLabels, replyToWechatUser } from "./notify";
 import { parseReply } from "./parse-reply";
 
@@ -64,7 +65,8 @@ async function bindProfile(
   cfg: WechatConfig,
   openId: string,
   profileId: string,
-  finish: (row: LogRow) => Promise<void>
+  finish: (row: LogRow) => Promise<void>,
+  origin?: string
 ): Promise<void> {
   const admin = createAdminClient();
   const { data: profile } = await admin
@@ -84,8 +86,27 @@ async function bindProfile(
   }
 
   // Um WeChat responde por UM usuário: solta de quem tinha antes e prende neste.
-  await admin.from("profiles").update({ wechat_openid: null }).eq("wechat_openid", openId).neq("id", profile.id);
-  const { error } = await admin.from("profiles").update({ wechat_openid: openId }).eq("id", profile.id);
+  // Nome/foto são do WeChat, não do usuário: vão junto (se já autorizados).
+  const { data: previous } = await admin
+    .from("profiles")
+    .select("wechat_nickname, wechat_avatar_url")
+    .eq("wechat_openid", openId)
+    .not("wechat_nickname", "is", null)
+    .limit(1)
+    .maybeSingle();
+  await admin
+    .from("profiles")
+    .update({ wechat_openid: null, wechat_nickname: null, wechat_avatar_url: null })
+    .eq("wechat_openid", openId)
+    .neq("id", profile.id);
+  const { error } = await admin
+    .from("profiles")
+    .update({
+      wechat_openid: openId,
+      wechat_nickname: previous?.wechat_nickname ?? null,
+      wechat_avatar_url: previous?.wechat_avatar_url ?? null,
+    })
+    .eq("id", profile.id);
   if (error) {
     await finish({ status: "failed", profile_id: profile.id, error: `bind: ${error.message}` });
     await replyToWechatUser(cfg, openId, "Could not link (error). Try again.\n关联失败,请重试。");
@@ -99,6 +120,9 @@ async function bindProfile(
     `Linked to SOT as ${profile.full_name}. Messages you are tagged in will arrive here.\n${HOW_TO}\n\n` +
       `已关联 SOT 用户 ${profile.full_name}。`
   );
+  // Nome e foto só vêm se a pessoa autorizar numa página do WeChat.
+  const share = previous ? null : shareInfoText(cfg, origin);
+  if (share) await replyToWechatUser(cfg, openId, share);
 }
 
 /**
@@ -152,7 +176,7 @@ export async function handleWechatInbound(xml: string, origin?: string): Promise
 
   if (isBind) {
     const profileId = profileIdFromEventKey(xmlField(xml, "EventKey"));
-    if (profileId) return bindProfile(cfg, from, profileId, finish);
+    if (profileId) return bindProfile(cfg, from, profileId, finish, origin);
     // Seguiu a conta sem QR de vínculo (busca, cartão...): só orienta.
     await finish({ status: "ignored", error: `Event=${event} without bind code` });
     await replyToWechatUser(cfg, from, NOT_LINKED);

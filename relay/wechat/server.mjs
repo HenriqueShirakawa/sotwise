@@ -4,7 +4,7 @@
 //
 // Sem dependências (Node 18+). Duas rotas:
 //   POST /proxy     SOT → WeChat. Bearer RELAY_SECRET. Corpo:
-//                   { method, path: "/cgi-bin/...", query, body }.
+//                   { method, path: "/cgi-bin/..." | "/sns/...", query, body }.
 //   GET|POST /callback   WeChat → SOT. Repassa query + corpo, sem mexer, para
 //                   SOT_CALLBACK_URL. Só necessário se o WeChat não alcançar
 //                   o domínio do SOT (ver README).
@@ -66,7 +66,7 @@ async function proxy(req, res) {
   }
   const { method, path, query, body } = payload ?? {};
   // Só a API do WeChat — o relay não é um proxy aberto.
-  if (!["GET", "POST"].includes(method) || typeof path !== "string" || !/^\/cgi-bin\/[a-z0-9_/]+$/i.test(path)) {
+  if (!["GET", "POST"].includes(method) || typeof path !== "string" || !/^\/(cgi-bin|sns)\/[a-z0-9_/]+$/i.test(path)) {
     return send(res, 400, '{"error":"invalid method/path"}');
   }
 
