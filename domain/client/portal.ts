@@ -16,7 +16,8 @@ import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
  * corpo de um request.
  *
  * O DTO é deliberadamente magro. O que fica de fora não é esquecimento:
- *  - fábrica, exporter, leader, requester, BU → operação interna da AGK;
+ *  - exporter, leader, requester, BU → operação interna da AGK (a FÁBRICA
+ *    saiu dessa lista em 2026-11-05: aparece ao lado da categoria);
  *  - datas de ETD, quantidade e descrição de produto → não modeladas no banco
  *    (ou estimativa interna, no caso do ETD); não dá para expor o que não existe.
  *
@@ -59,8 +60,13 @@ export type ClientOrder = {
   etaBrazil: string | null;
   /** Entrega do pedido inteiro — só quando todos os lotes no fluxo foram entregues. */
   deliveredOn: string | null;
-  /** Linhas de produto ativas (Factory×Category), sem deduplicar — igual ao detalhe. */
+  /**
+   * Linhas de produto ativas (Factory×Category), sem deduplicar — igual ao
+   * detalhe. Quando o GSS mandar quantidade por linha, é aqui que ela entra.
+   */
   itemCount: number;
+  /** Fábricas distintas do pedido, por nome (visíveis ao cliente desde 05/11). */
+  factories: string[];
   /** Categorias distintas do pedido, por nome. */
   categories: string[];
   /** Aba de "My orders": entregue, cancelado ou em andamento. */
@@ -165,6 +171,27 @@ function chunks<T>(items: T[], size = IN_CHUNK): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/**
+ * id → nome das fábricas das linhas F×C. Busca só as fábricas usadas (a tabela
+ * inteira tem centenas). Fábrica apagada continua com nome: a linha ainda
+ * aponta para ela e o cliente precisa ver de onde o produto veio.
+ */
+async function loadFactoryNames(
+  admin: ReturnType<typeof createAdminClient>,
+  factoryIds: string[]
+): Promise<Map<string, string>> {
+  const ids = [...new Set(factoryIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await Promise.all(
+    chunks(ids).map((part) =>
+      fetchAll<{ id: string; name: string }>((from, to) =>
+        admin.from("factories").select("id, name").in("id", part).range(from, to)
+      )
+    )
+  ).then((r) => r.flat());
+  return new Map(rows.map((f) => [f.id, f.name.trim()]));
 }
 
 /**
@@ -341,14 +368,14 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("order_types").select("id, name").is("deleted_at", null).range(from, to)
     ),
-    fetchAll<{ order_id: string; category_id: string }>((from, to) =>
+    fetchAll<{ order_id: string; category_id: string; factory_id: string }>((from, to) =>
       admin
         .from("order_factory_category")
-        .select("order_id, category_id, orders!inner(client_id)")
+        .select("order_id, category_id, factory_id, orders!inner(client_id)")
         .eq("orders.client_id", clientId)
         .eq("is_active", true)
         .range(from, to)
-        .returns<{ order_id: string; category_id: string }[]>()
+        .returns<{ order_id: string; category_id: string; factory_id: string }[]>()
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
@@ -358,12 +385,22 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
 
   const typeName = new Map(types.map((t) => [t.id, t.name]));
   const categoryName = new Map(categories.map((c) => [c.id, c.name.trim()]));
+  const factoryName = await loadFactoryNames(admin, ofc.map((r) => r.factory_id));
 
-  // order → { linhas de produto, categorias distintas }.
-  const itemsByOrder = new Map<string, { count: number; categories: Set<string> }>();
+  // order → { linhas de produto, fábricas e categorias distintas }.
+  const itemsByOrder = new Map<
+    string,
+    { count: number; factories: Set<string>; categories: Set<string> }
+  >();
   for (const row of ofc) {
-    const entry = itemsByOrder.get(row.order_id) ?? { count: 0, categories: new Set<string>() };
+    const entry = itemsByOrder.get(row.order_id) ?? {
+      count: 0,
+      factories: new Set<string>(),
+      categories: new Set<string>(),
+    };
     entry.count += 1;
+    const factory = factoryName.get(row.factory_id);
+    if (factory) entry.factories.add(factory);
     const name = categoryName.get(row.category_id);
     if (name) entry.categories.add(name);
     itemsByOrder.set(row.order_id, entry);
@@ -401,6 +438,9 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
       etaBrazil: o.status === "delivered" ? null : ship.etaBrazil,
       deliveredOn: ship.deliveredOn,
       itemCount: itemsByOrder.get(o.id)?.count ?? 0,
+      factories: [...(itemsByOrder.get(o.id)?.factories ?? [])].sort((a, b) =>
+        a.localeCompare(b)
+      ),
       categories: [...(itemsByOrder.get(o.id)?.categories ?? [])].sort((a, b) =>
         a.localeCompare(b)
       ),
@@ -492,9 +532,9 @@ export function buildClientDashboard(
  * quais produtos (categorias) viajam em cada um.
  *
  * Recorte (revisto 2026-08-26): o número do lote aparece. Segue de fora o que é
- * interno da AGK (fábrica, exporter, ETD) e o que o banco não guarda
- * (quantidade, descrição de produto). O produto continua na granularidade de
- * CATEGORIA, que é o que o `order_factory_category` fixa.
+ * interno da AGK (exporter, ETD) e o que o banco não guarda (quantidade,
+ * descrição de produto). O produto é a linha FÁBRICA × CATEGORIA, que é o que
+ * o `order_factory_category` fixa (fábrica visível desde 2026-11-05).
  *
  * O `clientId` entra no próprio filtro do pedido — é a única fronteira entre um
  * cliente e o de outro. `orderId` vem da URL; sozinho não é confiável, por isso
@@ -508,9 +548,8 @@ export type ClientOrderBatch = {
   status: BatchStatus;
   label: string;
   /**
-   * Produtos (categorias) que viajam neste lote — uma entrada por linha
-   * Factory×Category, sem deduplicar (a mesma categoria pode repetir se vier
-   * de mais de uma fábrica). Ordenados por nome.
+   * Produtos que viajam neste lote — uma entrada por linha Factory×Category,
+   * sem deduplicar. Ordenados por fábrica e depois categoria.
    */
   products: ClientOrderProduct[];
   /** ETA ao Brasil do PL do lote (null = ainda sem PL/ETA). */
@@ -520,7 +559,10 @@ export type ClientOrderBatch = {
 };
 
 export type ClientOrderProduct = {
-  name: string;
+  /** Nome da fábrica (null se a fábrica sumiu do cadastro). */
+  factory: string | null;
+  /** Nome da categoria. */
+  category: string;
   /** `order_factory_category.ship_requirement` — data em que a fábrica precisa entregar. */
   shipRequirement: string;
 };
@@ -554,8 +596,8 @@ export type ClientOrderDetail = {
   timeline: TimelineStage[];
   /** Lotes do pedido, ordenados pelo número. */
   batches: ClientOrderBatch[];
-  /** Produtos do pedido ainda sem lote — não começaram a viajar. */
-  pendingProducts: string[];
+  /** Linhas F×C do pedido ainda sem lote — não começaram a viajar. */
+  pendingProducts: ClientOrderProduct[];
 };
 
 /** Estágio atual da linha do tempo pelo status do pedido (-1 = cancelado). */
@@ -632,11 +674,16 @@ export async function loadClientOrderDetail(
         .eq("order_id", orderId)
         .range(from, to)
     ),
-    fetchAll<{ batch_id: string | null; category_id: string; ship_requirement: string }>(
+    fetchAll<{
+      batch_id: string | null;
+      category_id: string;
+      factory_id: string;
+      ship_requirement: string;
+    }>(
       (from, to) =>
         admin
           .from("order_factory_category")
-          .select("batch_id, category_id, ship_requirement")
+          .select("batch_id, category_id, factory_id, ship_requirement")
           .eq("is_active", true)
           .eq("order_id", orderId)
           .range(from, to)
@@ -662,6 +709,7 @@ export async function loadClientOrderDetail(
   ]);
 
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const factoryName = await loadFactoryNames(admin, ofc.map((r) => r.factory_id));
 
   const stepDone = (step: ChecklistStep) =>
     orderSteps.find((s) => s.step === step && s.enabled !== false)?.completed_on ?? null;
@@ -672,20 +720,26 @@ export async function loadClientOrderDetail(
   const bucket = bucketOf(order.status);
 
   // lote → produtos, UMA linha por entrada Factory×Category (sem deduplicar):
-  // é a mesma granularidade da tabela interna (docs §3.5.2), só sem a coluna
-  // Factory, que segue interna à AGK. Ship req. entrou a pedido do Henrique
-  // (2026-08-27) — é a mesma coluna que a tabela interna mostra.
+  // a mesma granularidade da tabela interna (docs §3.5.2). Ship req. entrou a
+  // pedido do Henrique (2026-08-27); a FÁBRICA passou a aparecer em 2026-11-05
+  // (antes era interna): sem ela, duas linhas da mesma categoria pareciam
+  // duplicadas, e a quantidade que o GSS vai mandar é por fábrica×categoria.
   const byBatch = new Map<string, ClientOrderProduct[]>();
-  const pending = new Set<string>();
+  const pending: ClientOrderProduct[] = [];
   for (const row of ofc) {
-    const name = categoryName.get(row.category_id)?.trim();
-    if (!name) continue;
+    const category = categoryName.get(row.category_id)?.trim();
+    if (!category) continue;
+    const product: ClientOrderProduct = {
+      factory: factoryName.get(row.factory_id) ?? null,
+      category,
+      shipRequirement: row.ship_requirement,
+    };
     if (!row.batch_id) {
-      pending.add(name);
+      pending.push(product);
       continue;
     }
     const list = byBatch.get(row.batch_id) ?? [];
-    list.push({ name, shipRequirement: row.ship_requirement });
+    list.push(product);
     byBatch.set(row.batch_id, list);
   }
 
@@ -695,7 +749,7 @@ export async function loadClientOrderDetail(
       code: b.batch_number,
       status: b.status,
       label: BATCH_STATUS_LABELS[b.status],
-      products: (byBatch.get(b.id) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
+      products: (byBatch.get(b.id) ?? []).sort(byFactoryThenCategory),
       eta: shipping.get(b.id)?.eta ?? null,
       deliveredOn: shipping.get(b.id)?.deliveredOn ?? null,
     }))
@@ -717,6 +771,12 @@ export async function loadClientOrderDetail(
     ),
     timeline: buildTimeline(order.status, productionOn, { ...ship, etaBrazil }),
     batches: clientBatches,
-    pendingProducts: [...pending].sort((a, b) => a.localeCompare(b)),
+    pendingProducts: pending.sort(byFactoryThenCategory),
   };
+}
+
+function byFactoryThenCategory(a: ClientOrderProduct, b: ClientOrderProduct) {
+  return (
+    (a.factory ?? "").localeCompare(b.factory ?? "") || a.category.localeCompare(b.category)
+  );
 }

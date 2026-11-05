@@ -31,8 +31,8 @@ import { BatchStatusPill, OrderStatusPill } from "../../portal-ui";
  * products". Textos no idioma do portal (`usePortalI18n`).
  *
  * O que não aparece não é esquecimento: quantidade e descrição de produto não
- * existem no banco (ver domain/client/portal.ts). O produto fica na
- * granularidade de CATEGORIA. Documentos, histórico e mensagens dependem de
+ * existem no banco (ver domain/client/portal.ts). O produto é a linha
+ * FÁBRICA × CATEGORIA, com as duas em colunas separadas. Documentos, histórico e mensagens dependem de
  * decisão + backend que ainda não existem → "coming soon", nunca dado fabricado.
  */
 
@@ -59,6 +59,8 @@ const BATCH_STEP: Record<BatchStatus, number> = {
   delivered: 3,
   canceled: -1,
 };
+
+const distinct = (xs: string[]) => [...new Set(xs)];
 
 /** Barra de 4 passos para um lote. */
 function BatchProgress({ status }: { status: BatchStatus }) {
@@ -115,7 +117,7 @@ function BatchCard({ batch }: { batch: ClientOrderBatch }) {
             </div>
             <div className="mt-1 truncate text-xs text-slate-500">
               {t.common.products(count)}
-              {count > 0 ? ` · ${batch.products.map((p) => p.name).join(", ")}` : ""}
+              {count > 0 ? ` · ${distinct(batch.products.map((p) => p.category)).join(", ")}` : ""}
             </div>
           </div>
           <div className="text-right">
@@ -135,14 +137,18 @@ function BatchCard({ batch }: { batch: ClientOrderBatch }) {
       <div className="overflow-hidden rounded-2xl border bg-white">
         {count > 0 ? (
           <div role="table" className="text-sm">
-            {/* Mesmo grid de 4 colunas do stepper do lote — Product cai sob o
-                1º passo e Ship req. sob o 2º, alinhados de propósito. */}
+            {/* Mesmo grid de 4 colunas do stepper do lote — Factory, Category e
+                Ship req. caem sob os 3 primeiros passos, alinhados de propósito.
+                A 4ª coluna fica para a quantidade, quando o GSS mandar. */}
             <div
               role="row"
-              className="grid grid-cols-2 gap-3 border-b bg-slate-50/80 px-5 py-3 text-left sm:grid-cols-4"
+              className="grid grid-cols-3 gap-3 border-b bg-slate-50/80 px-5 py-3 text-left sm:grid-cols-4"
             >
               <span role="columnheader" className="text-xs font-semibold whitespace-nowrap text-slate-500">
-                {td.product}
+                {td.factory}
+              </span>
+              <span role="columnheader" className="text-xs font-semibold whitespace-nowrap text-slate-500">
+                {td.category}
               </span>
               <span role="columnheader" className="text-xs font-semibold whitespace-nowrap text-slate-500">
                 {td.shipReq}
@@ -150,12 +156,19 @@ function BatchCard({ batch }: { batch: ClientOrderBatch }) {
             </div>
             {batch.products.map((product, i) => (
               <div
-                key={`${product.name}-${i}`}
+                key={`${product.factory}-${product.category}-${i}`}
                 role="row"
-                className="grid grid-cols-2 gap-3 border-b px-5 py-3.5 last:border-0 sm:grid-cols-4"
+                className="grid grid-cols-3 gap-3 border-b px-5 py-3.5 last:border-0 sm:grid-cols-4"
               >
+                <span
+                  role="cell"
+                  className="min-w-0 truncate text-slate-600"
+                  title={product.factory ?? undefined}
+                >
+                  {product.factory ?? "—"}
+                </span>
                 <span role="cell" className="min-w-0 truncate font-medium text-slate-800">
-                  {product.name}
+                  {product.category}
                 </span>
                 <span role="cell" className="font-mono text-xs text-slate-500">
                   {formatDate(product.shipRequirement) ?? "—"}
@@ -320,10 +333,12 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
     order.batches.reduce((sum, b) => sum + b.products.length, 0) + order.pendingProducts.length;
   const scheduleReq = formatDate(order.scheduleRequested);
 
-  // "All products": cada categoria com o lote em que viaja e o status do lote.
+  // "All products": cada linha fábrica × categoria com o lote em que viaja e o
+  // status do lote.
   const flatProducts = order.batches.flatMap((b) =>
     b.products.map((p) => ({
-      name: p.name,
+      factory: p.factory,
+      category: p.category,
       shipRequirement: p.shipRequirement,
       batch: b.code,
       status: b.status,
@@ -454,12 +469,15 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
               <section className="rounded-2xl border border-dashed bg-white p-5">
                 <p className="text-sm font-medium text-slate-500">{td.notInProductionYet}</p>
                 <ul className="mt-3 flex flex-wrap gap-2">
-                  {order.pendingProducts.map((product) => (
+                  {order.pendingProducts.map((product, i) => (
                     <li
-                      key={product}
+                      key={`${product.factory}-${product.category}-${i}`}
                       className="rounded-lg border bg-white px-3 py-1.5 text-sm text-slate-500"
                     >
-                      {product}
+                      {product.factory ? (
+                        <span className="text-slate-400">{product.factory} · </span>
+                      ) : null}
+                      {product.category}
                     </li>
                   ))}
                 </ul>
@@ -472,11 +490,14 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
           // All products — cada categoria com o lote e o status do lote.
           <div className="overflow-hidden rounded-2xl border bg-white">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] border-collapse text-sm">
+              <table className="w-full min-w-[600px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b bg-slate-50/80 text-left">
                     <th className="px-5 py-3 text-xs font-semibold whitespace-nowrap text-slate-500">
-                      {td.product}
+                      {td.factory}
+                    </th>
+                    <th className="px-4 py-3 text-xs font-semibold whitespace-nowrap text-slate-500">
+                      {td.category}
                     </th>
                     <th className="px-4 py-3 text-xs font-semibold whitespace-nowrap text-slate-500">
                       {td.shipReq}
@@ -491,8 +512,9 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
                 </thead>
                 <tbody>
                   {flatProducts.map((p, i) => (
-                    <tr key={`${p.name}-${p.batch}-${i}`} className="border-b last:border-0">
-                      <td className="px-5 py-3.5 font-medium text-slate-800">{p.name}</td>
+                    <tr key={`${p.factory}-${p.category}-${p.batch}-${i}`} className="border-b last:border-0">
+                      <td className="px-5 py-3.5 text-slate-600">{p.factory ?? "—"}</td>
+                      <td className="px-4 py-3.5 font-medium text-slate-800">{p.category}</td>
                       <td className="px-4 py-3.5 font-mono text-xs text-slate-500">
                         {formatDate(p.shipRequirement) ?? "—"}
                       </td>
@@ -502,9 +524,10 @@ export function PortalOrderDetail({ order }: { order: ClientOrderDetail }) {
                       </td>
                     </tr>
                   ))}
-                  {order.pendingProducts.map((name) => (
-                    <tr key={`pending-${name}`} className="border-b last:border-0">
-                      <td className="px-5 py-3.5 font-medium text-slate-800">{name}</td>
+                  {order.pendingProducts.map((p, i) => (
+                    <tr key={`pending-${p.factory}-${p.category}-${i}`} className="border-b last:border-0">
+                      <td className="px-5 py-3.5 text-slate-600">{p.factory ?? "—"}</td>
+                      <td className="px-4 py-3.5 font-medium text-slate-800">{p.category}</td>
                       <td className="px-4 py-3.5 text-slate-300">—</td>
                       <td className="px-4 py-3.5 text-slate-300">—</td>
                       <td className="px-5 py-3.5 text-xs text-slate-400">{td.notInProductionYet}</td>

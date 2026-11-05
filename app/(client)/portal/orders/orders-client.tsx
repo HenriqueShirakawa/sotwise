@@ -63,7 +63,13 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
   const searched = useMemo(() => {
     if (!q) return orders;
     return orders.filter((o) =>
-      [o.po_number, o.client_reference ?? "", o.type ?? "", ...o.categories].some((v) =>
+      [
+        o.po_number,
+        o.client_reference ?? "",
+        o.type ?? "",
+        ...o.factories,
+        ...o.categories,
+      ].some((v) =>
         v.toLowerCase().includes(q)
       )
     );
@@ -153,11 +159,12 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
           </div>
 
           <div className="hidden overflow-x-auto rounded-2xl border bg-white min-[720px]:block">
-            <Table className="min-w-[860px] [&_td]:py-3.5 [&_th]:py-3.5 [&_thead_tr]:bg-slate-50/80">
+            <Table className="min-w-[980px] [&_td]:py-3.5 [&_th]:py-3.5 [&_thead_tr]:bg-slate-50/80">
               <TableHeader>
                 <TableRow className="hover:bg-slate-50/80">
                   <TableHead className={TH}>{to.colOrder}</TableHead>
                   <TableHead className={TH}>{to.colReference}</TableHead>
+                  <TableHead className={TH}>{to.colFactory}</TableHead>
                   <TableHead className={TH}>{to.colCategory}</TableHead>
                   <TableHead className={TH}>{to.colItems}</TableHead>
                   <TableHead className={TH}>{to.colStatus}</TableHead>
@@ -185,6 +192,12 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate px-4 text-sm">
                       {o.client_reference ?? <span className="text-slate-400">—</span>}
+                    </TableCell>
+                    <TableCell
+                      className="max-w-[180px] truncate px-4 text-sm text-slate-600"
+                      title={o.factories.join(", ")}
+                    >
+                      {categoriesText(o.factories) ?? <span className="text-slate-400">—</span>}
                     </TableCell>
                     <TableCell
                       className="max-w-[180px] truncate px-4 text-sm text-slate-600"
@@ -254,6 +267,7 @@ export function OrdersClient({ orders }: { orders: ClientOrder[] }) {
 export function OrderCard({ order: o }: { order: ClientOrder }) {
   const { t } = usePortalI18n();
   const eta = formatDate(o.etaBrazil);
+  const factory = categoriesText(o.factories);
   const category = categoriesText(o.categories);
   return (
     <Link
@@ -269,9 +283,9 @@ export function OrderCard({ order: o }: { order: ClientOrder }) {
         </div>
         <OrderStatusPill status={o.status} />
       </div>
-      {category || o.itemCount > 0 ? (
+      {factory || category || o.itemCount > 0 ? (
         <p className="mt-3 text-sm text-slate-600">
-          {[category, o.itemCount > 0 ? t.common.products(o.itemCount) : null]
+          {[factory, category, o.itemCount > 0 ? t.common.products(o.itemCount) : null]
             .filter(Boolean)
             .join(" · ")}
         </p>
