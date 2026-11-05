@@ -441,7 +441,7 @@ export function ConfirmShippingModal({
           </Button>
           <Button className="flex-1" disabled={!canConfirm || pending} onClick={confirm}>
             {pending && <Loader2 className="animate-spin" />}
-            Confirm Shipping
+            Confirm Loading
           </Button>
         </DialogFooter>
       </DialogContent>
