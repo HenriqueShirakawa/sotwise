@@ -61,15 +61,16 @@ export function WechatProfileHeader({
         router.refresh(); // desvinculou por outro caminho
         return;
       }
-      if (next.nickname) {
+      // Para quando algo mudou desde a última leitura (nome novo ou foto nova).
+      if (next.nickname && (next.nickname !== nickname || next.avatarUrl !== avatarUrl)) {
         setNickname(next.nickname);
         setAvatarUrl(next.avatarUrl);
         setWatchUntil(null);
-        toast.success("WeChat name and photo added.");
+        toast.success(next.avatarUrl ? "WeChat name and photo updated." : "WeChat name updated (WeChat sent no photo).");
       }
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [watchUntil, router]);
+  }, [watchUntil, nickname, avatarUrl, router]);
 
   const sendInfoLink = () =>
     startTransition(async () => {
@@ -123,16 +124,15 @@ export function WechatProfileHeader({
               <span className="size-1.5 rounded-full bg-emerald-500" />
               Connected
             </span>
-            {!nickname ? (
-              <button
-                type="button"
-                onClick={sendInfoLink}
-                disabled={pending}
-                className="text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                Get my WeChat name and photo
-              </button>
-            ) : null}
+            {/* Sempre à mão: trocou a foto no WeChat → autoriza de novo e atualiza aqui. */}
+            <button
+              type="button"
+              onClick={sendInfoLink}
+              disabled={pending}
+              className="text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              {nickname ? "Update from WeChat" : "Get my WeChat name and photo"}
+            </button>
           </div>
         </div>
 

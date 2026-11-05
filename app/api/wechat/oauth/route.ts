@@ -34,11 +34,21 @@ export async function GET(request: Request): Promise<Response> {
     return page("Error · 出错了", "Could not read your WeChat profile. Try the link again.\n无法读取微信资料,请重新打开链接。", 502);
   }
 
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data, error } = await admin
     .from("profiles")
     .update({ wechat_nickname: info.nickname, wechat_avatar_url: info.avatarUrl })
     .eq("wechat_openid", info.openId)
-    .select("full_name");
+    .select("id, full_name");
+  // Rastro do que o WeChat devolveu (foto vem vazia quando a pessoa usa o avatar padrão).
+  await admin.from("wechat_message_log").insert({
+    direction: "in",
+    status: error ? "failed" : data?.length ? "accepted" : "rejected",
+    wechat_openid: info.openId,
+    profile_id: data?.[0]?.id ?? null,
+    body: `oauth: ${info.nickname ?? "(no name)"}`,
+    error: error?.message ?? (info.avatarUrl ? null : "WeChat sent no photo"),
+  });
   if (error) {
     console.error("[wechat] oauth: gravar perfil falhou:", error.message);
     return page("Error · 出错了", "Could not save. Try the link again.\n保存失败,请重新打开链接。", 500);
