@@ -325,6 +325,21 @@ contato do cliente da AGK, que entra para acompanhar os próprios pedidos. Migra
   categoria pareciam duplicadas; e a quantidade que o GSS vai mandar é por linha
   fábrica × categoria. A coluna "Items" segue = nº de linhas F×C ativas (sem deduplicar)
   até a quantidade existir.
+- ✅ **Suporte = chat com os representantes do cliente (2026-11-05, decisões do Henrique):**
+  cada cliente tem **representantes** — usuários INTERNOS marcados no modal de
+  Registration → Clients (campo "Representatives", tabela `client_representatives`; só
+  usuário sem `client_id`; o picker oferece ativos e não ocultos). No portal, a tela
+  **Suporte** mostra esses contatos (nome, equipe BR/China pelo `company`, e-mail) e **um
+  chat único por cliente** (`support_messages`): todos os representantes recebem e
+  qualquer um responde. O time lê e responde na tela interna **Support** (feature
+  `support`: view = ler, create = responder; seed liberou admin e user), com abas "My
+  clients" (os que eu represento) e "All" (todo cliente que já escreveu) e contador de não
+  lidas por pessoa (`support_reads`). Cliente sem representante pode escrever mesmo assim —
+  aparece em "All". Até 2000 caracteres, sem exclusão (histórico). Atualiza por polling de
+  15 s. **Ainda não:** aviso por e-mail/WeChat quando o cliente escreve. Migration
+  `20261105120000_support_chat.sql` (aplicada no AGK em 05/11). ⚠️ As tabelas novas criaram
+  mais de um caminho `profiles`↔`clients` no PostgREST: embed direto entre os dois agora
+  exige hint (`clients!profiles_client_id_fkey(...)`).
 - ⚠️ **Reversão do recorte (2026-08-26):** a decisão de 2026-08-18 escondia o número do
   lote (cliente acompanhava só produto × estágio). Foi revertida a pedido do Henrique
   para o portal casar com o desenho do Claude Design "Portal do Cliente Sotwise" — o

@@ -140,6 +140,64 @@ export async function setClientUsers(
   return { ok: true };
 }
 
+/**
+ * Representantes do cliente no Suporte do portal (05/11/2026): usuários
+ * INTERNOS que recebem e respondem o chat do cliente. `userIds` é o estado
+ * final — apaga quem saiu e insere quem entrou. Guarda = `registration`/`edit`
+ * (é um campo do cadastro do cliente).
+ */
+export async function setClientRepresentatives(
+  clientId: string,
+  userIds: string[]
+): Promise<ActionResult> {
+  await requireFeature("registration", "edit");
+
+  const admin = createAdminClient();
+  const next = [...new Set(userIds)];
+
+  if (next.length) {
+    // Só interno: usuário de portal (com client_id) não pode representar cliente.
+    const { data: external, error: checkError } = await admin
+      .from("profiles")
+      .select("id")
+      .in("id", next)
+      .not("client_id", "is", null);
+    if (checkError) return { ok: false, error: checkError.message };
+    if (external?.length) {
+      return { ok: false, error: "Only internal users can be representatives." };
+    }
+  }
+
+  const { data: current, error: currentError } = await admin
+    .from("client_representatives")
+    .select("user_id")
+    .eq("client_id", clientId);
+  if (currentError) return { ok: false, error: currentError.message };
+
+  const currentIds = new Set((current ?? []).map((r) => r.user_id));
+  const toAdd = next.filter((id) => !currentIds.has(id));
+  const toRemove = [...currentIds].filter((id) => !next.includes(id));
+
+  if (toRemove.length) {
+    const { error } = await admin
+      .from("client_representatives")
+      .delete()
+      .eq("client_id", clientId)
+      .in("user_id", toRemove);
+    if (error) return { ok: false, error: error.message };
+  }
+  if (toAdd.length) {
+    const { error } = await admin
+      .from("client_representatives")
+      .insert(toAdd.map((user_id) => ({ client_id: clientId, user_id })));
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath(PATH);
+  revalidatePath("/support");
+  return { ok: true };
+}
+
 export async function deleteClientRecord(id: string): Promise<ActionResult> {
   await requireFeature("registration", "delete");
 

@@ -4,7 +4,12 @@ import { fetchAll } from "@/lib/fetch-all";
 import type { EmailLanguage } from "@/lib/email/checklist-step";
 import type { OrderStatus } from "@/types/database";
 
-import { ClientsClient, type ClientRow, type PortalUserOption } from "./clients-client";
+import {
+  ClientsClient,
+  type ClientRow,
+  type PortalUserOption,
+  type RepresentativeOption,
+} from "./clients-client";
 
 /** Status que viram coluna na lista (§3.5.5 / tela do Bubble). Os demais
  * (partially_shipped, partially_delivered) entram só no Total — como no Bubble. */
@@ -70,7 +75,7 @@ export default async function ClientsPage() {
 
   const admin = createAdminClient();
   // Paginados: a lista inteira vai pro cliente, que pagina (ver lib/fetch-all).
-  const [clientsRes, countriesRes, clientUsersRes, counts] = await Promise.all([
+  const [clientsRes, countriesRes, clientUsersRes, counts, internalUsers, repRows] = await Promise.all([
     fetchAll<{
       id: string;
       name: string;
@@ -113,6 +118,20 @@ export default async function ClientsPage() {
           .range(from, to)
     ),
     loadOrderCounts(admin),
+    // Representantes (Suporte do portal, 05/11): só usuário INTERNO pode ser —
+    // `client_id` nulo é a marca do interno (a action de Users força null).
+    fetchAll<{ id: string; full_name: string; company: string; status: string; hidden: boolean }>(
+      (from, to) =>
+        admin
+          .from("profiles")
+          .select("id, full_name, company, status, hidden")
+          .is("client_id", null)
+          .order("full_name")
+          .range(from, to)
+    ),
+    fetchAll<{ client_id: string; user_id: string }>((from, to) =>
+      admin.from("client_representatives").select("client_id, user_id").range(from, to)
+    ),
   ]);
 
   const countries = countriesRes;
@@ -129,6 +148,16 @@ export default async function ClientsPage() {
     usersByClient.set(user.client_id, list);
   }
 
+  const internalName = new Map(internalUsers.map((u) => [u.id, u.full_name.trim()]));
+  const repsByClient = new Map<string, ClientRow["representatives"]>();
+  for (const r of repRows) {
+    const name = internalName.get(r.user_id);
+    if (!name) continue;
+    const list = repsByClient.get(r.client_id) ?? [];
+    list.push({ id: r.user_id, name });
+    repsByClient.set(r.client_id, list);
+  }
+
   const rows: ClientRow[] = clientsRes.map((c) => ({
     id: c.id,
     name: c.name,
@@ -136,6 +165,7 @@ export default async function ClientsPage() {
     country_name: c.country_id ? countryName.get(c.country_id) ?? null : null,
     language: c.language,
     users: usersByClient.get(c.id) ?? [],
+    representatives: (repsByClient.get(c.id) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
     counts: counts.get(c.id) ?? emptyCounts(),
   }));
 
@@ -152,5 +182,28 @@ export default async function ClientsPage() {
       blocked: u.status === "blocked",
     }));
 
-  return <ClientsClient data={rows} countries={countries} portalUsers={portalUsers} />;
+  // Opções do picker de representantes: internos ativos e visíveis, mais quem
+  // já é representante (mesmo bloqueado/oculto) para o form não sumir com ele.
+  const currentReps = new Set(repRows.map((r) => r.user_id));
+  const representativeOptions: RepresentativeOption[] = internalUsers
+    .filter(
+      (u) =>
+        u.full_name.trim() &&
+        ((u.status === "active" && !u.hidden) || currentReps.has(u.id))
+    )
+    .map((u) => ({
+      id: u.id,
+      full_name: u.full_name.trim(),
+      company: u.company,
+      blocked: u.status === "blocked",
+    }));
+
+  return (
+    <ClientsClient
+      data={rows}
+      countries={countries}
+      portalUsers={portalUsers}
+      representativeOptions={representativeOptions}
+    />
+  );
 }
