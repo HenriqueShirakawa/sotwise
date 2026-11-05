@@ -1,9 +1,11 @@
 import { requireInternal } from "@/lib/dal";
 import { PageHeader } from "@/components/page-header";
 import { readViewPrefs } from "@/lib/view-prefs";
+import { wechatConfig } from "@/lib/wechat/client";
 
 import { ProfileForm } from "./profile-form";
 import { ViewPrefsCard } from "./view-prefs-card";
+import { WechatCard } from "./wechat-card";
 
 export const metadata = { title: "Profile" };
 
@@ -20,6 +22,7 @@ export default async function ProfilePage() {
         role={role}
         company={profile.company}
       />
+      <WechatCard initiallyLinked={!!profile.wechat_openid} enabled={!!wechatConfig()} />
       <ViewPrefsCard initial={readViewPrefs(profile.ui_preferences)} />
     </div>
   );
