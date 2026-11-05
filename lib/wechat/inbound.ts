@@ -18,8 +18,8 @@ const HOW_TO =
   '请以单号开头回复:"1676 内容"(订单)、"PL 1473 内容" 或 "SH 1473 内容"(出货)。';
 
 const NOT_LINKED =
-  "Your WeChat is not linked to a SOT user. Ask an admin for your link QR code (Users → Edit → WeChat).\n" +
-  "你的微信尚未关联 SOT 用户,请向管理员索取绑定二维码。";
+  "Your WeChat is not linked to a SOT user. Open SOT → My profile → WeChat → Link WeChat and scan the code.\n" +
+  "你的微信尚未关联 SOT 用户,请在 SOT「My profile」→ WeChat → Link WeChat 扫码绑定。";
 
 /**
  * Para quem vai a resposta: o autor da última mensagem DESTE registro em que a
@@ -79,7 +79,7 @@ async function bindProfile(
   const roleName = role?.name;
   if (!profile || profile.status !== "active" || roleName === "client") {
     await finish({ status: "rejected", profile_id: profile?.id ?? null, error: "bind: profile not eligible" });
-    await replyToWechatUser(cfg, openId, "This link code is not valid. Ask an admin for a new one.\n二维码无效,请向管理员重新索取。");
+    await replyToWechatUser(cfg, openId, "This link code is not valid. Generate a new one in SOT → My profile.\n二维码无效,请在 SOT「My profile」重新生成。");
     return;
   }
 

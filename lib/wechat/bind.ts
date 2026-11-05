@@ -1,7 +1,7 @@
 /**
  * Vínculo usuário do SOT ↔ WeChat. Na Service Account a pessoa é um OpenID
  * (opaco, por conta), que ninguém sabe digitar — então o vínculo é por QR:
- * o admin gera em Users → Edit um QR temporário com `scene = "bind:<profile>"`,
+ * a própria pessoa gera em My profile um QR temporário com `scene = "bind:<profile>"`,
  * a pessoa escaneia com o WeChat e o callback grava o OpenID dela no profile.
  *
  * Só o SOT consegue gerar QR desta conta (precisa do access_token), então o
