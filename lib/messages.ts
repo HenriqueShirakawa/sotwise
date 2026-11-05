@@ -1,9 +1,10 @@
 import "server-only";
 
 import { serverEnv } from "@/lib/env";
+import { fetchAll } from "@/lib/fetch-all";
 import { MESSAGES_EVENT, MESSAGES_TOPIC, type MessagePing } from "@/lib/messages-channel";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { MessageEntity } from "@/types/database";
+import type { CompanyType, MessageEntity } from "@/types/database";
 
 /**
  * Avisa os clientes conectados que existe mensagem nova. Vai pela API REST do
@@ -283,4 +284,103 @@ export async function hydrateMessages(
     author_name: names.get(r.author_id) ?? "—",
     recipients: byMessage.get(r.id) ?? [],
   }));
+}
+
+/**
+ * Número do registro → UUID, sem sessão (o chamador já autenticou). É o que a
+ * tela usa no link por número e o que a resposta do WeChat usa ("PL 1473 ...").
+ * Shipment é 1:1 com PL e usa o número do PL.
+ */
+export async function entityIdFromNumber(
+  entityType: MessageEntity,
+  number: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  if (entityType === "order") {
+    const { data } = await admin.from("orders").select("id").eq("po_number", number).maybeSingle();
+    return data?.id ?? null;
+  }
+  const { data: pl } = await admin
+    .from("pre_loadings")
+    .select("id")
+    .eq("pl_number", number)
+    .maybeSingle();
+  if (!pl) return null;
+  if (entityType === "pre_loading") return pl.id;
+  const { data: shipment } = await admin
+    .from("shipments")
+    .select("id")
+    .eq("pre_loading_id", pl.id)
+    .maybeSingle();
+  return shipment?.id ?? null;
+}
+
+export type CreateMessageInput = {
+  entity_type: MessageEntity;
+  entity_id: string;
+  author_id: string;
+  /** Company do autor — base do "sem destinatário = toda a equipe". */
+  author_company: CompanyType | null;
+  body: string;
+  recipient_ids: string[];
+};
+
+/**
+ * Grava a mensagem + destinatários e avisa o Realtime. Única porta de entrada,
+ * usada pelo compositor (`sendMessage`) e pela resposta que chega do WeChat —
+ * assim as duas seguem a mesma regra de destinatário.
+ */
+export async function createMessage(
+  input: CreateMessageInput
+): Promise<{ ok: true; id: string; recipient_ids: string[] } | { ok: false; error: string }> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("messages")
+    .insert({
+      entity_type: input.entity_type,
+      entity_id: input.entity_id,
+      author_id: input.author_id,
+      body: input.body,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { ok: false, error: error?.message ?? "Could not send." };
+
+  let recipients = [...new Set(input.recipient_ids)].filter((id) => id !== input.author_id);
+
+  // Sem destinatário = notificação pra TODA a equipe do remetente: mesma company
+  // (BR = AGK, China = ZK), usuários ativos e não ocultos, menos o próprio autor.
+  const company = input.author_company;
+  if (recipients.length === 0 && company) {
+    const team = await fetchAll<{ id: string }>((from, to) =>
+      admin
+        .from("profiles")
+        .select("id")
+        .eq("company", company)
+        .eq("status", "active")
+        .eq("hidden", false)
+        .neq("id", input.author_id)
+        .range(from, to)
+    );
+    recipients = team.map((t) => t.id);
+  }
+
+  if (recipients.length) {
+    const { error: linkError } = await admin
+      .from("message_recipients")
+      .insert(recipients.map((user_id) => ({ message_id: data.id, user_id })));
+    if (linkError) return { ok: false, error: linkError.message };
+  }
+
+  // Só depois dos destinatários gravados: quem receber o aviso vai recarregar
+  // na hora, e precisa achar o contador de não lidas já correto.
+  await broadcastMessagePing({
+    message_id: data.id,
+    entity_type: input.entity_type,
+    entity_id: input.entity_id,
+    author_id: input.author_id,
+    recipient_ids: recipients,
+  });
+
+  return { ok: true, id: data.id, recipient_ids: recipients };
 }

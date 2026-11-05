@@ -1,6 +1,7 @@
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { wechatConfig } from "@/lib/wechat/client";
 
 import { UsersClient, type UserRow } from "./users-client";
 
@@ -54,10 +55,11 @@ export default async function UsersPage() {
       client_id: string | null;
       status: UserRow["status"];
       hidden: boolean;
+      wechat_openid: string | null;
     }>((from, to) =>
       admin
         .from("profiles")
-        .select("id, full_name, date_of_birth, role_id, company, client_id, status, hidden")
+        .select("id, full_name, date_of_birth, role_id, company, client_id, status, hidden, wechat_openid")
         .order("full_name")
         .range(from, to)
     ),
@@ -90,6 +92,7 @@ export default async function UsersPage() {
       // continua sendo "Blocked", que é a informação que importa.
       pending_access: p.status === "active" && !auth?.signedInOnce,
       hidden: p.hidden,
+      wechat_linked: !!p.wechat_openid,
     };
   });
 
@@ -99,6 +102,7 @@ export default async function UsersPage() {
       roles={roles}
       clients={clientsRes}
       currentUserId={session.userId}
+      wechatEnabled={!!wechatConfig()}
     />
   );
 }

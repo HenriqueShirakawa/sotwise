@@ -1,14 +1,17 @@
 "use server";
 
+import { headers } from "next/headers";
 import { z } from "zod";
 
 import { requireInternal } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { isUuid } from "@/lib/slugs";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { notifyMessageViaWechat } from "@/lib/wechat/notify";
 import {
-  broadcastMessagePing,
   countUnreadMessages,
+  createMessage,
+  entityIdFromNumber,
   hydrateMessages,
   loadEntityContext,
   loadEntityContexts,
@@ -74,22 +77,7 @@ export async function resolveEntityIdFromSlug(
 ): Promise<string | null> {
   await requireInternal();
   if (isUuid(slugOrId)) return slugOrId;
-
-  const admin = createAdminClient();
-  if (entityType === "order") {
-    const { data } = await admin.from("orders").select("id").eq("po_number", slugOrId).maybeSingle();
-    return data?.id ?? null;
-  }
-  // pre_loading e shipment (1:1) resolvem os dois pelo pl_number do PL.
-  const { data: pl } = await admin.from("pre_loadings").select("id").eq("pl_number", slugOrId).maybeSingle();
-  if (!pl) return null;
-  if (entityType === "pre_loading") return pl.id;
-  const { data: shipment } = await admin
-    .from("shipments")
-    .select("id")
-    .eq("pre_loading_id", pl.id)
-    .maybeSingle();
-  return shipment?.id ?? null;
+  return entityIdFromNumber(entityType, slugOrId);
 }
 
 export async function loadThread(
@@ -388,57 +376,30 @@ export async function sendMessage(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("messages")
-    .insert({
-      entity_type: parsed.data.entity_type,
-      entity_id: parsed.data.entity_id,
-      author_id: session.userId,
-      body: parsed.data.body,
-    })
-    .select("id")
-    .single();
-  if (error || !data) return { ok: false, error: error?.message ?? "Could not send." };
-
-  let recipients = [...new Set(parsed.data.recipient_ids)].filter(
-    (id) => id !== session.userId
-  );
-
-  // Sem destinatário = notificação pra TODA a equipe do remetente: mesma company
-  // (BR = AGK, China = ZK), usuários ativos e não ocultos, menos o próprio autor.
-  if (recipients.length === 0 && session.profile.company) {
-    const team = await fetchAll<{ id: string }>((from, to) =>
-      admin
-        .from("profiles")
-        .select("id")
-        .eq("company", session.profile.company)
-        .eq("status", "active")
-        .eq("hidden", false)
-        .neq("id", session.userId)
-        .range(from, to)
-    );
-    recipients = team.map((t) => t.id);
-  }
-
-  if (recipients.length) {
-    const { error: linkError } = await admin
-      .from("message_recipients")
-      .insert(recipients.map((user_id) => ({ message_id: data.id, user_id })));
-    if (linkError) return { ok: false, error: linkError.message };
-  }
-
-  // Só depois dos destinatários gravados: quem receber o aviso vai recarregar
-  // na hora, e precisa achar o contador de não lidas já correto.
-  await broadcastMessagePing({
-    message_id: data.id,
+  const created = await createMessage({
     entity_type: parsed.data.entity_type,
     entity_id: parsed.data.entity_id,
     author_id: session.userId,
-    recipient_ids: recipients,
+    author_company: session.profile.company ?? null,
+    body: parsed.data.body,
+    recipient_ids: parsed.data.recipient_ids,
   });
+  if (!created.ok) return created;
+
+  // Cópia no WeChat de quem foi marcado e tem a conta vinculada — depois da
+  // resposta, então o compositor nunca espera nem falha por causa do WeChat.
+  notifyMessageViaWechat(created.id, await requestOrigin());
 
   return { ok: true };
+}
+
+/** Origin da request (link "Open in SOT" no WeChat). Fora de request: undefined. */
+async function requestOrigin(): Promise<string | undefined> {
+  try {
+    return (await headers()).get("origin") ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Só o contador do balão — é o que o polling do FAB pede de tempos em tempos. */

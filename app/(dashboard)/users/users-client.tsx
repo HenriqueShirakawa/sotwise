@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/select";
 
 import { createUserRecord, updateUserRecord, setUserStatus } from "./actions";
+import { WechatLink } from "./wechat-link";
 
 type Role = { id: string; name: string };
 type Client = { id: string; name: string };
@@ -57,6 +58,8 @@ export type UserRow = {
   /** Ativo mas nunca entrou — o convite por e-mail ainda não foi ligado. */
   pending_access: boolean;
   hidden: boolean;
+  /** WeChat vinculado (Service Account) — as mensagens do "Forward to" chegam lá. */
+  wechat_linked: boolean;
 };
 
 const STATUS_HEX: Record<UserStatus, string> = {
@@ -87,11 +90,14 @@ export function UsersClient({
   roles,
   clients,
   currentUserId,
+  wechatEnabled,
 }: {
   data: UserRow[];
   roles: Role[];
   clients: Client[];
   currentUserId: string;
+  /** Service Account configurada (envs WECHAT_*) — sem ela o bloco só avisa. */
+  wechatEnabled: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -314,6 +320,7 @@ export function UsersClient({
             roles={roles}
             clients={clients}
             pending={pending}
+            wechatEnabled={wechatEnabled}
             onCancel={() => setFormOpen(false)}
             onSubmit={handleSubmit}
           />
@@ -345,6 +352,7 @@ function UserForm({
   roles,
   clients,
   pending,
+  wechatEnabled,
   onCancel,
   onSubmit,
 }: {
@@ -352,6 +360,7 @@ function UserForm({
   roles: Role[];
   clients: Client[];
   pending: boolean;
+  wechatEnabled: boolean;
   onCancel: () => void;
   onSubmit: (values: UserCreateInput | UserUpdateInput) => void;
 }) {
@@ -495,6 +504,15 @@ function UserForm({
             only, never the internal screens.
           </p>
         </div>
+      ) : null}
+
+      {/* WeChat só da equipe, e só depois de criado: o vínculo precisa do id. */}
+      {editing && !isClientRole ? (
+        <WechatLink
+          userId={editing.id}
+          initiallyLinked={editing.wechat_linked}
+          enabled={wechatEnabled}
+        />
       ) : null}
 
       {editing ? (
