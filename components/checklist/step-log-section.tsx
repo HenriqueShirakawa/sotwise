@@ -130,7 +130,7 @@ function StepLogDialog({
 
 const ACTION_BADGES: Partial<Record<StepLogEntry["action"], string>> = {
   auto_complete: "Auto-completed",
-  confirm_shipping: "Confirm Shipping",
+  confirm_shipping: "Confirm Loading",
 };
 
 function LogCard({ entry }: { entry: StepLogEntry }) {

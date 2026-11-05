@@ -1004,7 +1004,7 @@ export function PlChecklistClient({
           disabled={alreadyShipped || !readyToShip || notConfirmed.length > 0}
           onClick={() => setShipOpen(true)}
         >
-          {alreadyShipped ? "Shipping confirmed" : "Confirm Shipping"}
+          {alreadyShipped ? "Loading confirmed" : "Confirm Loading"}
         </Button>
       </div>
 
