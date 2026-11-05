@@ -2560,6 +2560,27 @@ Pedido do usuário: o GSS passou a aceitar o status da Order e **toda troca de s
 
 Código: `lib/gss/outbound/order-status.ts`, `schedule.ts` (`sendOrderStatusToGss`).
 
+### 6.15 WeChat (Service Account, 服务号): mensagens da equipe, ida e volta (04/11/2026, só na `dev`)
+
+Pedido do usuário: integrar o SOT ao WeChat. **A fase 1 cobre só as equipes (BR + China)**, nos dois sentidos. Fornecedores e clientes ficam para depois.
+
+**WeChat normal, sem WeCom (decisão do usuário, 04/11).** A primeira versão usava o app próprio do WeCom (企业微信), que exige instalar outro app. O usuário recusou ("não quero saber do WeCom"). O WeChat pessoal não tem API oficial, e os robôs não oficiais levam a conta a ser banida. O caminho oficial com o WeChat normal é a **Service Account (服务号)**, a conta oficial da empresa que cada pessoa segue no próprio WeChat. A conta WeCom criada em 04/11 ("Sotwise") ficou sem uso.
+
+O card do Notion ("Integração WeChat") pede também **fornecedores**: automatizar a confirmação de ETD e de "ready parts" (`current_date` e `ready_parts` do ETD Factories). Em 04/11 o usuário decidiu **fazer a equipe primeiro**. A mesma Service Account serve aos fornecedores depois, com um aviso automático e uma página de confirmação que grava pelas regras do ETD (`domain/etd-factories/api-write.ts`).
+
+- **Vínculo:** em **Users → Edit**, bloco **WeChat** → **Link WeChat** gera um QR temporário (10 min) com o código `bind:<profile>`. A pessoa escaneia com o WeChat (ou com a foto do QR), segue a conta, e o callback grava o OpenID dela em `profiles.wechat_openid` (único). A tela percebe sozinha e mostra "Linked". Um WeChat responde por um usuário só: vincular de novo solta o anterior. Papel `client` não vincula. Seguir a conta sem o QR só devolve a instrução.
+- **Ida:** só o **módulo de mensagens**. Quem tem WeChat vinculado e foi marcado no "Forward to" (ou faz parte da equipe toda, na regra de "sem destinatário") recebe: autor, registro e cliente, o texto, a instrução de resposta e o link "Open in SOT". O envio acontece depois da resposta (`after`), então uma falha não trava o compositor.
+- **Janela de 48h:** o WeChat só aceita texto livre (mensagem de atendimento, 客服消息) até 48h depois da última interação da pessoa com a conta. Fora dela (erro 45015/45047), vai um **aviso por template** (模板消息) com os campos do template escolhido no painel e o link para o SOT. Esses campos têm limite de tamanho (thing ≤ 20 caracteres), então o aviso mostra o começo do texto com "…". O texto inteiro está no link e chega completo assim que a pessoa responde, o que reabre a janela. Sem template configurado, quem está fora da janela não recebe (fica `failed` no log).
+- **Volta:** a resposta **SEMPRE começa com o número do registro** (decisão do usuário, 04/11): `1676 texto` (Order), `PL 1473 texto` (Pre-loading), `SH 1473 texto` (Shipment do PL 1473). **Nada é gravado** quando falta o número, o número não existe, o WeChat não está vinculado ou o texto passa de 500 caracteres. Nesses casos o SOT devolve a instrução pelo WeChat. Texto longo é recusado, nunca cortado.
+- **Para quem vai a resposta:** para o autor da última mensagem daquele registro em que a pessoa foi marcada. Se não houver, para o último autor da thread. Com a thread vazia, vale a regra da tela (toda a equipe da company). A resposta vira uma mensagem normal da thread: passa pelo Realtime, entra no contador e segue para o WeChat de quem recebe. Também zera as não lidas de quem respondeu naquele registro.
+- **Segurança do callback:** `/api/wechat/callback` confere o `signature` (Token) e um timestamp de até 5 min. Com `WECHAT_AES_KEY` definida, só aceita o modo seguro (安全模式), em que o `msg_signature` cobre o corpo e o AppID é conferido. Sem a chave, aceita texto claro, o único modo do 测试号.
+- **IP fixo:** a Service Account só entrega o `access_token` a IPs da IP白名单, e a Vercel não tem IP fixo. As chamadas passam por um relay numa VPS (`relay/wechat/`, `WECHAT_RELAY_URL`). O token usa o `stable_token`, que não derruba o token de outras instâncias da Vercel. O 测试号 não tem lista de IP e dispensa o relay.
+- **Rastro:** `wechat_message_log` guarda os envios (sent/failed, com o canal custom/template) e as entradas (accepted/rejected/ignored). O dedup é pelo MsgId (nos eventos, remetente + hora + evento), porque o WeChat reenvia o mesmo callback até 3 vezes.
+- **Pré-requisito:** Service Account **verificada** (认证), o que exige uma empresa chinesa (GSS China ou cliente) e taxa anual. Para testar antes disso, o **测试号** (mp.weixin.qq.com/debug/cgi-bin/sandbox) libera AppID/AppSecret, QR com código, mensagem de atendimento e template livre.
+- Envs em `.env.example` (`WECHAT_*`). `WECHAT_DISABLED=true` desliga tudo. Para testar sem conta: `npx tsx scripts/wechat-selftest.ts`.
+
+Código: `lib/wechat/` (client, crypto, bind, template, notify, inbound, parse-reply), `app/api/wechat/callback/route.ts`, `app/(dashboard)/users/wechat-actions.ts` + `wechat-link.tsx`, e `createMessage` em `lib/messages.ts`, que é a porta única usada pela tela e pelo WeChat. Migration `20261104120000_wechat_messages.sql`.
+
 ---
 
 ## 7. Controle de acesso — a validar com o cliente

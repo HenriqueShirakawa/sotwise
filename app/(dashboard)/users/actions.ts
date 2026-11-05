@@ -163,6 +163,8 @@ export async function updateUserRecord(
       // Promover um cliente a papel interno zera o vínculo (e vice-versa) —
       // `resolveRoleScope` já devolveu null nesse caso.
       client_id: scope.clientId,
+      // WeChat é só da equipe (fase 1): virar client solta o vínculo.
+      ...(scope.isClient ? { wechat_openid: null } : {}),
       hidden: parsed.data.hidden,
     })
     .eq("id", id);

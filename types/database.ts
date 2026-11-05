@@ -237,6 +237,8 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          /** OpenID da pessoa na Service Account do WeChat (vínculo por QR). Migration 20261104120000. */
+          wechat_openid: string | null;
         };
         Insert: {
           id: UUID;
@@ -252,6 +254,7 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          wechat_openid?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
         Relationships: [];
@@ -1490,6 +1493,36 @@ export type Database = {
           origin?: string;
         };
         Update: Partial<Database["public"]["Tables"]["gss_call_log"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Tudo que vai e volta do WeChat (lib/wechat). Migration 20261104120000. */
+      wechat_message_log: {
+        Row: {
+          id: number;
+          created_at: Timestamp;
+          direction: "out" | "in";
+          status: string;
+          channel: "custom" | "template" | null;
+          wechat_openid: string | null;
+          profile_id: UUID | null;
+          message_id: UUID | null;
+          wechat_msgid: string | null;
+          body: string | null;
+          error: string | null;
+        };
+        Insert: {
+          created_at?: Timestamp;
+          direction: "out" | "in";
+          status: string;
+          channel?: "custom" | "template" | null;
+          wechat_openid?: string | null;
+          profile_id?: UUID | null;
+          message_id?: UUID | null;
+          wechat_msgid?: string | null;
+          body?: string | null;
+          error?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["wechat_message_log"]["Insert"]>;
         Relationships: [];
       };
       /** O que o cron trouxe do GSS para Orders e Lotes (lib/gss/sync-orders.ts).
