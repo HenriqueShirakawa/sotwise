@@ -588,6 +588,10 @@ export async function upsertEtdInfo(
   if (patch.inspection !== undefined && existing?.inspection) {
     return { ok: false, error: "Inspection is already locked." };
   }
+  // Initial Date: preenche uma vez e trava (06/11/2026).
+  if (patch.initial_date !== undefined && existing?.initial_date) {
+    return { ok: false, error: "Initial Date is already locked." };
+  }
 
   const update: TablesInsert<"etd_info"> = {
     order_factory_category_id: ofcId,
@@ -661,6 +665,10 @@ export async function updateEtdInfoWithReason(
   const admin = createAdminClient();
 
   if (!remarks.trim()) return { ok: false, error: "Remarks is required." };
+  // Initial Date não se corrige por aqui (06/11/2026) — só o Current Date muda.
+  if (field === "initial_date") {
+    return { ok: false, error: "Initial Date can't be changed." };
+  }
 
   // ETD (current_date) de lote já embarcado não se altera: a data de saída
   // virou fato. Só a data trava — Ready/Inspection/remarks seguem corrigíveis
@@ -715,19 +723,13 @@ export async function updateEtdInfoWithReason(
   if (historyError) return { ok: false, error: historyError };
   await logEtdOnStep(admin, orderId, ofcId, existing, { [field]: value } as EtdLogValues, session.userId, remarks.trim());
 
-  if (field === "initial_date" && value) {
-    await completeEtdIfFilled(admin, orderId, session.userId);
-    revalidatePath("/todo");
-    await broadcastOrderStatusPing({ order_ids: [orderId] });
-  }
-
   // Mesma razão do upsertEtdInfo: a edição do ETD reflete na lista de Orders e
   // na tela ETD Factories, não só no detalhe.
   revalidatePath("/orders/[id]", "page");
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
   await broadcastEtdPing({ order_ids: [orderId] });
-  if (field === "initial_date" || field === "current_date" || field === "ready") sendEtdToGss([ofcId]);
+  if (field === "current_date" || field === "ready") sendEtdToGss([ofcId]);
   return { ok: true };
 }
 

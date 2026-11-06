@@ -51,8 +51,9 @@ const EMPTY_ETD: EtdInfoRow = {
   remarks: null,
 };
 
+// Initial Date não entra: é a data original prometida pela fábrica e não se
+// corrige depois de preenchida (06/11/2026). Mudança de prazo vai no Current Date.
 const EDITABLE_FIELDS = [
-  { value: "initial_date", label: "Initial Date" },
   { value: "current_date", label: "Current Date" },
   { value: "ready", label: "Ready" },
   { value: "inspection", label: "Inspection" },
@@ -218,7 +219,6 @@ function EtdUpdateModal({
     setField(next);
     if (next === "ready") setBoolValue(etd.ready);
     else if (next === "inspection") setBoolValue(etd.inspection);
-    else if (next === "initial_date") setDateValue(etd.initial_date ?? "");
     else if (next === "current_date") setDateValue(etd.current_date ?? "");
     else if (next === "dispatch_date") setDateValue(etd.dispatch_date ?? "");
     else if (next === "dispatch_location_id") setLocationId(etd.dispatch_location_id ?? "");
@@ -290,14 +290,10 @@ function EtdUpdateModal({
               </div>
             </div>
 
-            {field === "initial_date" || field === "current_date" || field === "dispatch_date" ? (
+            {field === "current_date" || field === "dispatch_date" ? (
               <div>
                 <Label className="text-foreground">
-                  {field === "initial_date"
-                    ? "Initial date"
-                    : field === "current_date"
-                      ? "Current date"
-                      : "Dispatch date"}
+                  {field === "current_date" ? "Current date" : "Dispatch date"}
                 </Label>
                 <DatePicker
                   value={dateValue}
@@ -682,9 +678,8 @@ export function EtdStepTable({
                 <TableCell>{r.category_name}</TableCell>
                 <TableCell>{r.batch_id ? (batchNumberById.get(r.batch_id) ?? "—") : "—"}</TableCell>
                 <TableCell>
-                  {/* Trava depois de preenchido, mesmo espírito de Ready/
-                      Inspection — corrigir um Initial Date já setado passa
-                      pelo "ETD update" (motivo obrigatório, fica no histórico). */}
+                  {/* Preenche uma vez e trava — não há correção depois, nem
+                      pelo "ETD update" (06/11/2026). Atraso vai no Current Date. */}
                   <DatePicker
                     value={etd.initial_date}
                     disabled={!!etd.initial_date}
