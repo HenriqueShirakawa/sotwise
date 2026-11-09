@@ -29,7 +29,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import {
+  CREATE_PRELOADING_ESTIMATE_STEPS,
+  type PreLoadingEstimates,
+  type PreLoadingEstimateStep,
+  type StepEstimate,
+} from "@/lib/checklist";
+
 import { createPreLoading, updatePreLoading } from "./actions";
+import {
+  initialStepEstimates,
+  StepEstimatesFields,
+  stepEstimatesFilled,
+} from "./step-estimates-fields";
 import type { Ref } from "./filters-modal";
 import type { PreLoadingRow } from "./pre-loading-client";
 
@@ -144,6 +156,13 @@ export function PreLoadingFormModal({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<BatchSort>(DEFAULT_SORT);
+  // Estimated date + Responsible de cada etapa do Pre-loading — obrigatórios
+  // só na criação (09/11/2026, mesma transição do Confirm Shipping).
+  const [estimates, setEstimates] = useState<PreLoadingEstimates>(() =>
+    initialStepEstimates(CREATE_PRELOADING_ESTIMATE_STEPS)
+  );
+  const setEstimate = (step: PreLoadingEstimateStep, patch: Partial<StepEstimate>) =>
+    setEstimates((e) => ({ ...e, [step]: { ...e[step], ...patch } }));
 
   // Reinicializa o form a cada abertura (novo = vazio; edição = valores
   // atuais). Ajuste de estado durante o render — mesmo padrão do modal de
@@ -160,6 +179,7 @@ export function PreLoadingFormModal({
       setExpanded(null);
       setPage(0);
       setSort(DEFAULT_SORT);
+      setEstimates(initialStepEstimates(CREATE_PRELOADING_ESTIMATE_STEPS));
     }
   }
 
@@ -238,6 +258,7 @@ export function PreLoadingFormModal({
     !!form.client_reference.trim() &&
     !!form.pod_id &&
     !!form.leader_id &&
+    (!!editing || stepEstimatesFilled(CREATE_PRELOADING_ESTIMATE_STEPS, estimates)) &&
     !pending;
 
   function submit() {
@@ -261,7 +282,7 @@ export function PreLoadingFormModal({
         router.refresh();
         return;
       }
-      const res = await createPreLoading(payload);
+      const res = await createPreLoading({ ...payload, step_estimates: estimates });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -342,6 +363,18 @@ export function PreLoadingFormModal({
               </Field>
             </div>
           </Section>
+
+          {/* Previsões das etapas do Pre-loading: o PL já nasce com elas. */}
+          {!editing && (
+            <Section title="Pre-loading steps">
+              <StepEstimatesFields
+                steps={CREATE_PRELOADING_ESTIMATE_STEPS}
+                estimates={estimates}
+                onChange={setEstimate}
+                profiles={profiles}
+              />
+            </Section>
+          )}
 
           <Section title="Order selection">
             <div className="space-y-1.5">

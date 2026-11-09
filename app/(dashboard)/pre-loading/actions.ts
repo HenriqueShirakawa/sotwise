@@ -2,6 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  CREATE_PRELOADING_ESTIMATE_STEPS,
+  STEP_LABELS,
+  type PreLoadingEstimates,
+  type PreLoadingEstimateStep,
+} from "@/lib/checklist";
+import { writeStepLog } from "@/lib/checklist-step-log";
 import { requireFeature } from "@/lib/dal";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -51,6 +58,38 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
   }
   const d = parsed.data;
 
+  // Estimated date + Responsible de todas as etapas do Pre-loading são
+  // obrigatórios na criação pela tela (09/11/2026 — mesma transição do
+  // Confirm Shipping). O POST /api/shipments não passa por aqui.
+  const estimates = d.step_estimates ?? {};
+  const missingDate = CREATE_PRELOADING_ESTIMATE_STEPS.filter(
+    (step) => !/^\d{4}-\d{2}-\d{2}$/.test(estimates[step]?.estimated_date ?? "")
+  );
+  if (missingDate.length > 0) {
+    return {
+      ok: false,
+      error: `Fill in the estimated date of: ${missingDate.map((s) => STEP_LABELS[s]).join(", ")}.`,
+    };
+  }
+  const missingResponsible = CREATE_PRELOADING_ESTIMATE_STEPS.filter(
+    (step) => !estimates[step]?.responsible_id
+  );
+  if (missingResponsible.length > 0) {
+    return {
+      ok: false,
+      error: `Select the responsible of: ${missingResponsible.map((s) => STEP_LABELS[s]).join(", ")}.`,
+    };
+  }
+  const stepEstimates = Object.fromEntries(
+    CREATE_PRELOADING_ESTIMATE_STEPS.map((step) => [
+      step,
+      {
+        estimated_date: estimates[step].estimated_date,
+        responsible_id: estimates[step].responsible_id,
+      },
+    ])
+  ) as PreLoadingEstimates;
+
   const admin = createAdminClient();
 
   // Número (unique, com 1 retentativa), as 14 etapas do checklist e os vínculos
@@ -64,8 +103,25 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
     client_ids: d.client_ids,
     batch_ids: d.batch_ids,
     created_by: session.userId,
+    step_estimates: stepEstimates,
   });
   if (!created.ok) return { ok: false, error: created.error };
+
+  // History de cada etapa: a previsão e o responsável informados na criação.
+  for (const s of created.steps) {
+    const estimate = stepEstimates[s.step as PreLoadingEstimateStep];
+    if (!estimate) continue;
+    await writeStepLog(admin, {
+      owner: { preLoadingStepId: s.id },
+      step: s.step,
+      action: "update",
+      changes: {
+        estimated_date: { from: null, to: estimate.estimated_date },
+        responsible_id: { from: null, to: estimate.responsible_id },
+      },
+      userId: session.userId,
+    });
+  }
 
   revalidatePath(PATH);
   revalidatePath("/orders"); // os lotes selecionados mudaram de fase

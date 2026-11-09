@@ -104,10 +104,33 @@ export const CONFIRM_SHIPPING_ESTIMATE_STEPS = [
 
 export type ShipmentEstimateStep = (typeof CONFIRM_SHIPPING_ESTIMATE_STEPS)[number];
 
-/** Previsão de uma etapa do Shipment: Estimated date (yyyy-mm-dd) + Responsible (profile id). */
-export type ShipmentEstimate = { estimated_date: string; responsible_id: string };
+/** Previsão de uma etapa: Estimated date (yyyy-mm-dd) + Responsible (profile id). */
+export type StepEstimate = { estimated_date: string; responsible_id: string };
+
+/** Previsão de uma etapa do Shipment. */
+export type ShipmentEstimate = StepEstimate;
 
 export type ShipmentEstimates = Record<ShipmentEstimateStep, ShipmentEstimate>;
+
+/**
+ * Etapas do Pre-loading cuja Estimated date + Responsible o modal "Create
+ * pre-loading" pede (obrigatórias, 09/11/2026 — pedido do usuário: mesma
+ * transição do Confirm Shipping, agora na criação do PL). São todas as etapas
+ * do Pre-loading; o PL já nasce com elas preenchidas.
+ */
+export const CREATE_PRELOADING_ESTIMATE_STEPS = [
+  "consolidation_point",
+  "city",
+  "port_of_loading",
+  "shipping_docs",
+  "agents",
+  "booking",
+  "loading_date",
+] as const satisfies readonly ChecklistStep[];
+
+export type PreLoadingEstimateStep = (typeof CREATE_PRELOADING_ESTIMATE_STEPS)[number];
+
+export type PreLoadingEstimates = Record<PreLoadingEstimateStep, StepEstimate>;
 
 /**
  * Etapas do Shipment com data própria (21/10/2026, planilha de regras do
