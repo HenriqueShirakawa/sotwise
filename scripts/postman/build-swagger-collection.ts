@@ -342,8 +342,11 @@ function buildGss(spec: Json): PmItem {
     }
   }
 
-  if (!folders.has("orders")) folders.set("orders", new Map());
-  folders.get("orders")!.set(GSS_UNDOCUMENTED_FOLDER, gssUndocumentedItems());
+  // Só injeta à mão enquanto o GSS não documentar a rota (documentou até 05/11).
+  if (!spec.paths["/orders/{order_id}/batch/{batch_number}/"]) {
+    if (!folders.has("orders")) folders.set("orders", new Map());
+    folders.get("orders")!.set(GSS_UNDOCUMENTED_FOLDER, gssUndocumentedItems());
+  }
 
   const order = ["authentication", "orders", "shipments", "shipments / etd-factories", "core", "commercial"];
   const tops = [...folders.keys()].sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99);

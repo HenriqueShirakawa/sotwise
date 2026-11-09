@@ -100,8 +100,8 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 
 | Folder | Fonte | Base | Auth |
 |---|---|---|---|
-| `1. GSS` | Swagger do GSS (140 operações) | `{{gss_base}}` = `https://api.gssdatahub.com/v1` | CF Access (`gss_cf_client_id`/`gss_cf_client_secret`) + `Bearer {{gss_access}}` |
-| `2. SOTWISE` | `/api/openapi.json` (69 operações em 22/10/2026; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
+| `1. GSS` | Swagger do GSS (87 operações em 09/11/2026) | `{{gss_base}}` = `https://api.gssdatahub.com/v1` | CF Access (`gss_cf_client_id`/`gss_cf_client_secret`) + `Bearer {{gss_access}}` |
+| `2. SOTWISE` | `/api/openapi.json` (69 operações em 09/11/2026; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
 
 **Token do GSS é automático:** o pre-request do folder GSS renova `gss_access` (refresh → login com `gss_username`/`gss_password`) quando falta ou está para expirar. Basta preencher as 4 variáveis `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` no environment (valores = `GSS_CF_ACCESS_CLIENT_ID`, `GSS_CF_ACCESS_CLIENT_SECRET`, `GSS_USERNAME`, `GSS_PASSWORD`).
 
@@ -109,7 +109,9 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 
 > ⚠️ As duas bases apontam para **produção**. Rotas do GSS terminam com `/` — sem a barra o Django devolve 301 e o Postman refaz como GET (volta a lista com 200 e parece que deu certo).
 
-**Rotas fora do Swagger do GSS** (`orders` → `⚠️ lote — fora do Swagger (16/10)`): o servidor do GSS aceita `PATCH /orders/{order_id}/batch/{batch_number}/` (achado por `OPTIONS`), mas o `/openapi.json` deles não documenta. O script injeta 3 requests (ler o lote; PATCH do `status` por `code` e por `id`), já apontando para a Order de teste 1705, lote 1. Em 16/10 o usuário técnico recebia **403** — falta o GSS liberar a permissão de alterar lote.
+**Lote do GSS** (`/orders/{order_id}/batch/{batch_number}/` — GET/PUT/PATCH): em 16/10 a rota estava fora do Swagger e o script injetava um folder `⚠️ lote — fora do Swagger`. O GSS passou a documentá-la (status = **code** do BatchStatus ou `null`; `shipment_requested` imutável depois de criado), então o folder só volta se a rota sumir do spec.
+
+**Mudanças no Swagger do GSS de 22/10 → 09/11:** entraram `PUT`/`PATCH /orders/{id}/`; saíram `GET /orders/totals/` e `/orders/batch-totals/` (+ `{id}`); `commission_rate` do sales-representative-customer virou "General commission (%)". Snapshot do spec em `docs/comparativos/gss-openapi-2026-11-09.json`.
 
 ---
 
