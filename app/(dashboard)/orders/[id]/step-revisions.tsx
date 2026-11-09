@@ -6,6 +6,7 @@ import { ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateNumeric, formatDateTime, todayIso } from "@/lib/format";
+import { gssActorLabel } from "@/lib/gss-user-label";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -296,7 +297,7 @@ export function StepRevisionsModal({
 
 function RevisionItem({ row, original }: { row: StepRevision; original: boolean }) {
   const [open, setOpen] = useState(false);
-  const who = row.source === "gss" ? "GSS" : (row.changed_by_name ?? "—");
+  const who = row.source === "gss" ? gssActorLabel(row.payload) : (row.changed_by_name ?? "—");
   const status = piStatusOf(row.payload.status);
   const previousStatus = piStatusOf(row.payload.previous_status);
   const items = (row.payload.items as FxcItem[] | undefined) ?? [];
@@ -309,7 +310,8 @@ function RevisionItem({ row, original }: { row: StepRevision; original: boolean 
       ? `${items.length} entr${items.length === 1 ? "y" : "ies"}`
       : `+${added.length} / −${removed.length}`;
   } else if (row.kind === "pi_status") {
-    summary = `${status ?? "—"} · ${formatDateNumeric(row.new_date)}`;
+    // Quem mudou o status fica à vista, sem abrir o item (card 05/11/2026).
+    summary = `${status ?? "—"} · ${formatDateNumeric(row.new_date)} · ${who}`;
   } else {
     summary = original
       ? formatDateNumeric(row.new_date)

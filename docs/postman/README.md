@@ -70,6 +70,9 @@ Rode a collection **inteira, na ordem** (Runner): o passo 0 cria uma order desca
 | 6 | `PATCH order` — data futura | `400` |
 | 7 | `PATCH pi` — `pi_status: true` + `pi_status_date` | `200`, `completed_on` = data do status |
 | 7b | `PATCH pi` — `pi_status` em texto | `400` (precisa ser `true`/`false`) |
+| 7c | `PATCH pi` com `changed_by: { name, email }` (quem mudou no GSS) | `200`, revisão com `payload.gss_user` (e-mail minúsculo) |
+| 7d | `PATCH pi` com `changed_by` em texto (e-mail) | `200`, `gss_user = { name: null, email }` |
+| 7e | `PATCH pi` com `changed_by` de campo desconhecido | `400` |
 | 8 | `PATCH po` — `items[]` | `200`, 1 linha de F×C, leva registrada |
 | 9 | `PATCH po` — produto inexistente | `400` |
 | 10 | Etapa desconhecida | `404` |
@@ -78,7 +81,7 @@ Rode a collection **inteira, na ordem** (Runner): o passo 0 cria uma order desca
 
 O passo 8 usa `supplier_category_gss_id_1` do environment (se vazio, o default da collection, `11`). Datas vão em **Unix (segundos)** — geradas nos pre-request scripts.
 
-Rodada em 22/10/2026 pelo Postman CLI (servidor local, mesmo código da produção): **13 requests, 29 asserções, 0 falhas** (antes do `pi_status` boolean).
+Rodada em 22/10/2026 pelo Postman CLI (servidor local, mesmo código da produção): **13 requests, 29 asserções, 0 falhas** (antes do `pi_status` boolean). Rodada em 09/11/2026 (servidor local, banco da dev) com o `changed_by`: **17 requests, 41 asserções, 0 falhas**.
 
 ```bash
 postman collection run docs/postman/SOTWISE-GSS-Checklist-Order.postman_collection.json -e docs/postman/SOTWISE-GSS.postman_environment.json --env-var "api_token=<API_TOKEN>"

@@ -497,6 +497,146 @@
       ]
     },
     {
+      "name": "7c. PATCH pi — changed_by { name, email } (quem mudou no GSS) vai pro History — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "pi"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pi_status\": false,\n  \"pi_status_date\": {{d_pi}},\n  \"changed_by\": { \"name\": \"Postman Tester\", \"email\": \"Postman.Tester@Example.com\" }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200\", () => pm.response.to.have.status(200));",
+              "const revs = (pm.response.json().data || {}).revisions || []; const last = revs[revs.length - 1] || {};",
+              "pm.test(\"revisão nova é do GSS\", () => pm.expect(last.source).to.eql(\"gss\"));",
+              "pm.test(\"payload.gss_user gravado (e-mail minúsculo)\", () => pm.expect(last.payload.gss_user).to.eql({ name: \"Postman Tester\", email: \"postman.tester@example.com\" }));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7d. PATCH pi — changed_by em texto (e-mail) — 200",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "pi"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pi_status\": true,\n  \"pi_status_date\": {{d_pi}},\n  \"changed_by\": \"qa.gss@example.com\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200\", () => pm.response.to.have.status(200));",
+              "const revs = (pm.response.json().data || {}).revisions || []; const last = revs[revs.length - 1] || {};",
+              "pm.test(\"texto com @ vira email\", () => pm.expect(last.payload.gss_user).to.eql({ name: null, email: \"qa.gss@example.com\" }));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7e. PATCH pi — changed_by com campo desconhecido — 400",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/orders/{{test_po_number}}/steps/pi",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "orders",
+            "{{test_po_number}}",
+            "steps",
+            "pi"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pi_status\": true,\n  \"changed_by\": { \"user_id\": 5 }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"400\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "8. PATCH po — leva de Factory × Category gravada (aberta: falta Estimated date + Responsible) — 200",
       "request": {
         "method": "PATCH",

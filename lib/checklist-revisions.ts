@@ -44,7 +44,17 @@ type Admin = ReturnType<typeof createAdminClient>;
 /** O que o GSS grava como motivo quando a revisão vem dele. */
 const GSS_REASON = "Updated by GSS";
 
-type Who = { source: ChecklistRevisionSource; userId: string | null; reason?: string | null };
+/** Quem, do lado do GSS, fez a mudança (09/11/2026, card "Ajustes levantados na
+ *  call de 05-11-26"): o GSS manda nome/e-mail do usuário dele junto do dado e
+ *  a revisão guarda em `payload.gss_user` — o History mostra "Nome (GSS)". */
+export type GssUser = { name: string | null; email: string | null };
+
+type Who = {
+  source: ChecklistRevisionSource;
+  userId: string | null;
+  reason?: string | null;
+  gssUser?: GssUser | null;
+};
 
 type StepRow = {
   id: string;
@@ -132,8 +142,10 @@ async function insertRevision(
   },
   who: Who
 ): Promise<void> {
+  const gssUser = who.source === "gss" ? who.gssUser : null;
   const { error } = await admin.from("checklist_step_revisions").insert({
     ...row,
+    ...(gssUser ? { payload: { ...(row.payload ?? {}), gss_user: gssUser } } : {}),
     source: who.source,
     changed_by: who.source === "manual" ? who.userId : null,
   });

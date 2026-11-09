@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { apiDay, dayToUnix } from "@/lib/api-dates";
-import { recordFxcDelivery, recordPiStatus, setOrderReceivedDate } from "@/lib/checklist-revisions";
+import {
+  recordFxcDelivery,
+  recordPiStatus,
+  setOrderReceivedDate,
+  type GssUser,
+} from "@/lib/checklist-revisions";
 import { todayIso } from "@/lib/format";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -39,20 +44,53 @@ export const isOrderApiStep = (s: string): s is OrderApiStep =>
 
 const reason = z.string().trim().max(500, "reason is too long.").optional();
 
+/**
+ * Quem fez a mudança no GSS (09/11/2026) — aparece no History da etapa como
+ * "Nome (GSS)". Texto (nome ou e-mail) ou `{ name, email }`. Opcional.
+ */
+const changedBy = z
+  .union([
+    z.string().trim().min(1).max(200),
+    z.strictObject({
+      name: z.string().trim().max(200).optional(),
+      email: z.string().trim().max(200).optional(),
+    }),
+  ])
+  .optional();
+
+/** `changed_by` da API → `{ name, email }` (null quando não veio nada útil). */
+export function normalizeChangedBy(raw: unknown): GssUser | null {
+  if (typeof raw === "string") {
+    const v = raw.trim();
+    if (!v) return null;
+    return v.includes("@") ? { name: null, email: v.toLowerCase() } : { name: v, email: null };
+  }
+  if (raw && typeof raw === "object") {
+    const { name, email } = raw as { name?: string; email?: string };
+    const n = name?.trim() || null;
+    const e = email?.trim().toLowerCase() || null;
+    return n || e ? { name: n, email: e } : null;
+  }
+  return null;
+}
+
 /** Corpo do PATCH de cada etapa — campo desconhecido → 400. */
 export const orderStepPatchSchemas = {
-  order: z.strictObject({ order_received_date: apiDay, reason }),
+  order: z.strictObject({ order_received_date: apiDay, reason, changed_by: changedBy }),
   pi: z.strictObject({
     /** true = PI emitida (conclui a etapa); false = ainda não (só grava). */
     pi_status: z.boolean({ error: "pi_status must be true or false." }),
     /** Ausente → hoje. */
     pi_status_date: apiDay.optional(),
     reason,
+    /** Usuário do GSS que mudou o status — vai pro History da etapa PI. */
+    changed_by: changedBy,
   }),
   po: z.strictObject({
     /** Linhas Factory × Category — as novas entram; as que já existem ficam. */
     items: z.array(gssOrderItemSchema).min(1, "Send at least one item."),
     reason,
+    changed_by: changedBy,
   }),
 } satisfies Record<OrderApiStep, z.ZodType>;
 
@@ -170,6 +208,7 @@ export async function patchOrderStep(
     source: "gss" as const,
     userId: null,
     reason: (input.reason as string | undefined) ?? null,
+    gssUser: normalizeChangedBy(input.changed_by),
   };
 
   if (step === "order") {

@@ -255,7 +255,14 @@ export const restPaths = {
                 summary: "Revise the order received date",
                 value: { order_received_date: du("2026-10-21"), reason: "Final PO re-sent by the client" },
               },
-              pi: { summary: "PI issued", value: { pi_status: true, pi_status_date: du("2026-10-21") } },
+              pi: {
+                summary: "PI issued (with the GSS user who changed it)",
+                value: {
+                  pi_status: true,
+                  pi_status_date: du("2026-10-21"),
+                  changed_by: { name: "Jane Doe", email: "jane.doe@example.com" },
+                },
+              },
               po: {
                 summary: "Factory × Category",
                 value: { items: [{ supplier_category_gss_id: "1234", ship_requirement: du("2026-11-30") }] },
@@ -860,7 +867,7 @@ export const restSchemas = {
             kind: { type: "string", enum: ["order_received_date", "fxc", "pi_status", "completed_on"] },
             previous_date: nullableDate,
             new_date: nullableDate,
-            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status (boolean)." },
+            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status (boolean). `gss_user` ({ name, email }) when the change came with `changed_by`." },
             reason: { type: ["string", "null"] },
             source: { type: "string", enum: ["manual", "gss"] },
             changed_at: { type: "string", format: "date-time" },
@@ -887,6 +894,21 @@ export const restSchemas = {
         },
       },
       reason: { type: "string", maxLength: 500, description: "Revision reason (default \"Updated by GSS\")." },
+      changed_by: {
+        description:
+          "Optional, any step — the GSS user who made the change, shown in the step History as \"Name (GSS)\". A string (name or e-mail) or `{ name, email }`. Stored in the revision `payload.gss_user`.",
+        oneOf: [
+          { type: "string", maxLength: 200 },
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string", maxLength: 200 },
+              email: { type: "string", maxLength: 200 },
+            },
+          },
+        ],
+      },
     },
   },
   ShipmentStepPatch: {
