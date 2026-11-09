@@ -8,6 +8,7 @@ import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { MessageFab } from "@/components/messages/message-fab";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import type { PermissionMap } from "@/domain/access/features";
 import { SidebarNav } from "./sidebar-nav";
@@ -157,11 +158,18 @@ export function AppShell({
             </SheetContent>
           </Sheet>
           <SotwiseLogo />
+          <NotificationBell media="mobile" className="ml-auto size-9" />
         </header>
+
+        {/* Faixa do sino de notificações (09/11/2026) — a partir de 768px, no
+            canto superior direito, sem cobrir os botões do cabeçalho da página. */}
+        <div className="hidden h-14 shrink-0 items-center justify-end px-8 pt-4 md:flex">
+          <NotificationBell media="desktop" />
+        </div>
 
         {/* pb generoso: o balão de mensagens é fixo no canto inferior direito e
             cobria a última linha (ex.: abrir o Pre-Loading). */}
-        <main className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 md:pb-28">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 pb-28 md:p-8 md:pt-0 md:pb-28">{children}</main>
       </div>
 
       {/* Copilot ("SIA" na UI) — aberto pelo item da sidebar esquerda. Painel
