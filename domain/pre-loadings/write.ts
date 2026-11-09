@@ -1,4 +1,4 @@
-import { PRELOADING_STEPS, SHIPMENT_STEPS } from "@/lib/checklist";
+import { PRELOADING_STEPS, SHIPMENT_STEPS, type StepEstimate } from "@/lib/checklist";
 import { syncOrderPreLoadingStep } from "@/lib/checklist-revisions";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { syncOrderStatusForBatches } from "@/lib/order-status";
@@ -157,8 +157,14 @@ export async function createPreLoadingRecord(
     gss_id?: string | null;
     /** Só a API manda (marca, 13/10); ausente → default da coluna (true). */
     is_active?: boolean;
+    /** Estimated date + Responsible com que cada etapa já nasce (modal de
+     *  criação, 09/11/2026). Ausente → etapas vazias, como antes. */
+    step_estimates?: Partial<Record<ChecklistStep, StepEstimate>>;
   }
-): Promise<{ ok: true; id: string; pl_number: string } | { ok: false; error: string; conflict?: boolean }> {
+): Promise<
+  | { ok: true; id: string; pl_number: string; steps: { id: string; step: ChecklistStep }[] }
+  | { ok: false; error: string; conflict?: boolean }
+> {
   let created: { id: string; pl_number: string } | null = null;
   let lastError = "";
   for (let attempt = 0; attempt < 2 && !created; attempt++) {
@@ -192,14 +198,16 @@ export async function createPreLoadingRecord(
   // primeiro save de cada etapa, e a To do list — que lê a tabela direto — não
   // enxergaria as etapas nunca tocadas. Os PLs vindos do Bubble já trouxeram as
   // linhas na migração.
-  const { error: stepsError } = await admin
+  const { data: steps, error: stepsError } = await admin
     .from("pre_loading_checklist_steps")
     .insert(
       [...PRELOADING_STEPS, ...SHIPMENT_STEPS].map((step) => ({
         pre_loading_id: preLoadingId,
         step,
+        ...(input.step_estimates?.[step] ?? {}),
       }))
-    );
+    )
+    .select("id, step");
   if (stepsError) return { ok: false, error: stepsError.message };
 
   const relError = await syncPreLoadingRelations(
@@ -211,7 +219,7 @@ export async function createPreLoadingRecord(
   );
   if (relError) return { ok: false, error: relError };
 
-  return { ok: true, id: preLoadingId, pl_number: created.pl_number };
+  return { ok: true, id: preLoadingId, pl_number: created.pl_number, steps: steps ?? [] };
 }
 
 /**

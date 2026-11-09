@@ -1681,7 +1681,8 @@ Fluxo do modal, em ordem:
    | PO / Batch Number | Formato `PO / lote` (ex.: `1488 / 2`, `1485 / 1`) |
    | Factories Number | Contagem de entradas Factory×Category do lote (ex.: "1 register", "3 registers", "0 register") — cada linha é expansível (`⌄`) para ver as entradas |
 
-5. Botão **Create** (habilitado só com os obrigatórios preenchidos) ou **Cancel**.
+5. **Pre-loading steps** (só na criação, 09/11/2026 — pedido do usuário: a mesma transição do popup do Confirm Shipping, agora ao criar o PL) — uma linha por etapa do Pre-loading (Consolidation Point, City, Port of Loading, Shipping Docs, Agents, Booking, Loading Date) com **Estimated date e Responsible, obrigatórios** (`CREATE_PRELOADING_ESTIMATE_STEPS`, lib/checklist.ts; conferido também no servidor em `createPreLoading`). As etapas do PL já nascem com esses valores e cada uma ganha a entrada no History. A edição do PL não mostra o bloco (ajuste é na própria etapa) e o `POST /api/shipments` (GSS) segue criando o PL com as etapas vazias.
+6. Botão **Create** (habilitado só com os obrigatórios preenchidos) ou **Cancel**.
 
 > Observação: a coluna "PO / Batch Number" usa o formato `PO / lote` na seleção, enquanto a rua ETD Factories exibe o lote como `1310 .010`. São representações diferentes do mesmo par (Order + batch).
 

@@ -22,6 +22,14 @@ export const preLoadingSchema = z.object({
   responsible_signer_id: optionalFk,
   leader_id: z.string().uuid("Leader is required."),
   batch_ids: z.array(z.string().uuid()),
+  /** Estimated date + Responsible das etapas do Pre-loading — só na criação
+   *  pela tela (obrigatórios lá, conferidos em createPreLoading; 09/11/2026). */
+  step_estimates: z
+    .record(
+      z.string(),
+      z.object({ estimated_date: z.string(), responsible_id: z.string() })
+    )
+    .optional(),
 });
 
 export type PreLoadingInput = z.infer<typeof preLoadingSchema>;

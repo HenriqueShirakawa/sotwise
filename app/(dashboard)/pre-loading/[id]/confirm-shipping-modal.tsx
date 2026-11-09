@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
 import {
   CONFIRM_SHIPPING_ESTIMATE_STEPS,
-  STEP_LABELS,
   type ShipmentEstimate,
   type ShipmentEstimateStep,
   type ShipmentEstimates,
@@ -28,6 +27,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import {
+  initialStepEstimates,
+  StepEstimatesFields,
+  stepEstimatesFilled,
+} from "../step-estimates-fields";
 import { confirmShipping } from "./actions";
 import type { Ref } from "./pl-checklist-client";
 
@@ -168,17 +172,8 @@ export function ConfirmShippingModal({
   const [signerId, setSignerId] = useState(currentUserId);
   // Estimated date + Responsible de cada etapa do Shipment — obrigatórios
   // (22/10/2026; Responsible desde 23/10).
-  const [estimates, setEstimates] = useState<ShipmentEstimates>(
-    () =>
-      Object.fromEntries(
-        CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => [
-          step,
-          {
-            estimated_date: shipmentEstimates[step]?.estimated_date ?? "",
-            responsible_id: shipmentEstimates[step]?.responsible_id ?? "",
-          },
-        ])
-      ) as ShipmentEstimates
+  const [estimates, setEstimates] = useState<ShipmentEstimates>(() =>
+    initialStepEstimates(CONFIRM_SHIPPING_ESTIMATE_STEPS, shipmentEstimates)
   );
   const setEstimate = (step: ShipmentEstimateStep, patch: Partial<ShipmentEstimate>) =>
     setEstimates((e) => ({ ...e, [step]: { ...e[step], ...patch } }));
@@ -204,9 +199,7 @@ export function ConfirmShippingModal({
     carrierId &&
     shipmentModelId &&
     signerId &&
-    CONFIRM_SHIPPING_ESTIMATE_STEPS.every(
-      (step) => estimates[step].estimated_date && estimates[step].responsible_id
-    );
+    stepEstimatesFilled(CONFIRM_SHIPPING_ESTIMATE_STEPS, estimates);
   const canConfirm = Boolean(headerFilled && lines.length > 0);
 
   function confirm() {
@@ -329,53 +322,13 @@ export function ConfirmShippingModal({
         </div>
 
         {/* Previsões das etapas do Shipment: já aparecem preenchidas nele. */}
-        <div>
-          <p className="text-sm font-medium text-slate-800">Shipment steps</p>
-          {/* Uma linha por etapa; abaixo de sm cada etapa empilha os campos. */}
-          <div className="mt-2 hidden gap-3 text-xs text-muted-foreground sm:grid sm:grid-cols-[9rem_1fr_1fr]">
-            <span>Step</span>
-            <span>
-              Estimated date <span className="text-rose-500">*</span>
-            </span>
-            <span>
-              Responsible <span className="text-rose-500">*</span>
-            </span>
-          </div>
-          <div className="mt-2 space-y-3">
-            {CONFIRM_SHIPPING_ESTIMATE_STEPS.map((step) => (
-              <div
-                key={step}
-                className="grid gap-2 sm:grid-cols-[9rem_1fr_1fr] sm:items-center sm:gap-3"
-              >
-                <p className="text-sm text-slate-700">{STEP_LABELS[step]}</p>
-                <div>
-                  <Label className="text-xs text-muted-foreground sm:sr-only">
-                    Estimated date <span className="text-rose-500">*</span>
-                  </Label>
-                  <DatePicker
-                    value={estimates[step].estimated_date}
-                    ariaLabel={`${STEP_LABELS[step]} estimated date`}
-                    onChange={(v) => setEstimate(step, { estimated_date: v ?? "" })}
-                    className="mt-1 bg-white sm:mt-0"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground sm:sr-only">
-                    Responsible <span className="text-rose-500">*</span>
-                  </Label>
-                  <div className="mt-1 sm:mt-0">
-                    <SearchSelect
-                      value={estimates[step].responsible_id}
-                      onChange={(v) => setEstimate(step, { responsible_id: v })}
-                      options={profiles}
-                      placeholder="Select responsible"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <StepEstimatesFields
+          title="Shipment steps"
+          steps={CONFIRM_SHIPPING_ESTIMATE_STEPS}
+          estimates={estimates}
+          onChange={setEstimate}
+          profiles={profiles}
+        />
 
         {/* Abaixo de sm cada linha vira card. */}
         <div className="mt-2 divide-y rounded-xl border sm:hidden">
