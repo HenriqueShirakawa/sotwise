@@ -232,29 +232,53 @@ export function PreLoadingFormModal({
   const pageIndex = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(pageIndex * ROWS_PER_PAGE, (pageIndex + 1) * ROWS_PER_PAGE);
 
+  /** Clientes (sem repetir) dos lotes marcados. */
+  const clientsOfBatches = (ids: string[]): string[] => {
+    const set = new Set(ids);
+    return [
+      ...new Set(
+        batchOptions
+          .filter((b) => set.has(b.id) && b.client_id)
+          .map((b) => b.client_id as string)
+      ),
+    ];
+  };
+
   const toggleBatch = (batch: BatchOption) => {
     const isSelected = selected.includes(batch.id);
-    setSelected((s) =>
-      isSelected ? s.filter((v) => v !== batch.id) : [...s, batch.id]
-    );
-    // Ao MARCAR um lote, herda o cliente dele no campo Client (que também é o
-    // filtro), se ainda não estiver lá — poupa o usuário de setar o filtro à
-    // mão. Ao desmarcar não mexe: tirar o cliente na mão fica com o usuário.
-    if (!isSelected && batch.client_id) {
-      const clientId = batch.client_id;
-      setForm((f) =>
-        f.client_ids.includes(clientId)
-          ? f
-          : { ...f, client_ids: [...f.client_ids, clientId] }
-      );
+    const next = isSelected ? selected.filter((v) => v !== batch.id) : [...selected, batch.id];
+    setSelected(next);
+    // Com lote marcado, o campo Client = os clientes dos lotes marcados
+    // (09/11/2026, pedido do usuário): marcar herda o cliente do lote,
+    // desmarcar o último lote de um cliente tira ele do campo. Sem nenhum lote
+    // marcado o campo fica como está — aí ele é só o filtro da lista.
+    const batchClients = clientsOfBatches(next);
+    if (next.length > 0 && batchClients.length > 0) {
+      setForm((f) => ({
+        ...f,
+        client_ids: [
+          ...f.client_ids.filter((c) => batchClients.includes(c)),
+          ...batchClients.filter((c) => !f.client_ids.includes(c)),
+        ],
+      }));
     }
   };
+
+  // Cliente no campo sem nenhum lote marcado (escolhido à mão como filtro):
+  // trava o Create/Save — o PL só leva os clientes dos lotes dele.
+  const selectedBatchClients = clientsOfBatches(selected);
+  const clientsWithoutBatch =
+    selected.length > 0
+      ? form.client_ids.filter((c) => !selectedBatchClients.includes(c))
+      : [];
+  const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
 
   const plNumber = editing ? editing.pl_number : nextPlNumber;
   const createDate = editing ? editing.created_date : today;
 
   const canSubmit =
     form.client_ids.length > 0 &&
+    clientsWithoutBatch.length === 0 &&
     !!form.client_reference.trim() &&
     !!form.pod_id &&
     !!form.leader_id &&
@@ -327,6 +351,13 @@ export function PreLoadingFormModal({
                 options={clients}
                 placeholder="Choose some clients..."
               />
+              {clientsWithoutBatch.length > 0 && (
+                <p className="text-xs text-destructive">
+                  No selected batch for:{" "}
+                  {clientsWithoutBatch.map((c) => clientNameById.get(c) ?? c).join(", ")}. Select a
+                  batch or remove the client.
+                </p>
+              )}
             </Field>
             <Field label="Client(s) Reference:" required>
               <Input

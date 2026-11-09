@@ -1813,6 +1813,7 @@ Fluxo do modal, em ordem:
 
 1. **Pre-loading information** — `Pre-Loading No.` e `Create Date` já vêm preenchidos (read-only).
 2. **Operational details** — `Client` (múltiplo, obrigatório), `Client(s) Reference` (obrigatório), `Port of Destination` (obrigatório).
+   - ✅ **Client = clientes dos lotes marcados (09/11/2026, pedido do usuário; Create e Edit).** O campo Client também filtra a lista de lotes. Sem lote marcado ele é só filtro, livre. Com lote marcado, ele espelha os lotes: marcar um lote acrescenta o cliente dele; desmarcar o último lote de um cliente tira esse cliente do campo. Cliente acrescentado à mão (pra filtrar) que não tenha nenhum lote marcado aparece com aviso em vermelho embaixo do campo e trava o Create/Save até marcar um lote dele ou removê-lo — o PL só leva os clientes dos lotes dele, e o que está no campo é exatamente o que é gravado.
 3. **Responsible** — `Responsible and Signer`, `Leader` (obrigatório).
 4. **Order selection** — busca por `Order number` + botão `Clear filters`, e uma tabela paginada com **checkbox por linha**:
 
