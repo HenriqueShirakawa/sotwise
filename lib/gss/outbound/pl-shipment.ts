@@ -72,6 +72,10 @@ export type PlShipmentState = {
   /** `shipments.status` ('in_transit' | 'delivered' | 'canceled'), ou null
    *  enquanto o embarque não foi confirmado. */
   shipmentStatus: string | null;
+  /** Nome do Shipment Model do embarque (Air, Courier, FCL, Hand Carrier, LCL)
+   *  → `shipment_model` do GSS (texto, até 100 — campo novo deles, visto em
+   *  09/11/2026). `undefined` = PL ainda sem embarque: não manda. */
+  shipmentModel?: string | null;
   completedOn: Record<TrackedStep, DateStr | null>;
   /** `gss_id` dos lotes do PL (os que vieram do GSS). Ausente = não enviar
    *  `batch_ids` (o CLI push-pl-shipments monta os lotes por conta própria). */
@@ -101,10 +105,10 @@ export async function loadPlShipmentState(
 
   const { data: shipment, error: shipmentError } = await db
     .from("shipments")
-    .select("status")
+    .select("status, shipment_models(name)")
     .eq("pre_loading_id", preLoadingId)
     .is("deleted_at", null)
-    .maybeSingle<{ status: string }>();
+    .maybeSingle<{ status: string; shipment_models: { name: string } | null }>();
   if (shipmentError) throw new Error(`shipments: ${shipmentError.message}`);
 
   const { data: steps, error: stepsError } = await db
@@ -147,6 +151,8 @@ export async function loadPlShipmentState(
       clientReference: pl.client_reference,
       podGssId: Number.isFinite(podGssId) ? podGssId : null,
       shipmentStatus: shipment?.status ?? null,
+      // Só existe depois do Confirm Loading; antes não se manda nada.
+      shipmentModel: shipment ? (shipment.shipment_models?.name?.trim() || null) : undefined,
       completedOn,
       batchGssIds,
     },
@@ -277,6 +283,7 @@ export async function pushPlShipment(
       return { outcome: "called", call: patch, result: patched, created: false };
     }
     const metaResult = await gssRequest(meta.method, meta.path, meta.body, ctx);
+    await pushShipmentModel(state, ctx);
     return {
       outcome: "called",
       call: patch,
@@ -314,6 +321,22 @@ export async function pushPlShipment(
   }
   await rememberGssId(db, preLoadingId, created);
   return { outcome: "called", call: create, result: created, created: created.kind === "ok" };
+}
+
+/**
+ * 3º PATCH: o Shipment Model (09/11/2026, card "Ajustes levantados na call de
+ * 05-11-26"). Separado dos outros dois porque o GSS desfaz o request inteiro
+ * quando recusa um campo — e o `shipment_model` é novo lá (texto; a doc deles
+ * fala em "ID" mas não existe tabela de modelos na API), então um 400 aqui não
+ * pode levar datas/status junto. Vai o nome, como aparece na tela.
+ */
+async function pushShipmentModel(
+  state: PlShipmentState,
+  ctx: { source: string; ref: string }
+): Promise<void> {
+  if (state.shipmentModel === undefined) return;
+  const body = { shipment_model: state.shipmentModel ? state.shipmentModel.slice(0, 100) : null };
+  await gssRequest("PATCH", `/shipments/${state.plNumber}/`, body, ctx);
 }
 
 /**
