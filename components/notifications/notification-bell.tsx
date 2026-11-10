@@ -19,33 +19,12 @@ function overdueText(days: number): string {
 }
 
 /**
- * Sino de notificações (09/11/2026) — hoje só "ETD vencendo": a Initial Date
- * de uma linha da ETD Factories chegou e a etapa ETD (da qual o usuário é o
- * Responsible) segue aberta. O número = não lidas. Clicar numa notificação
- * marca como lida e abre a ETD Factories filtrada na Order.
+ * Estado das notificações — UMA consulta por shell (o sino aparece em mais de
+ * um lugar: rodapé da sidebar completa, trilho estreito e top bar do celular).
  */
-export function NotificationBell({
-  className,
-  media,
-}: {
-  className?: string;
-  /** O shell tem um sino no celular e outro a partir de 768px (um fica
-   *  escondido por CSS); só o visível consulta o servidor. */
-  media: "mobile" | "desktop";
-}) {
-  const router = useRouter();
+export function useEtdNotifications() {
   const [items, setItems] = useState<EtdNotification[] | null>(null);
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(false);
   const [, startTransition] = useTransition();
-
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const sync = () => setActive(media === "desktop" ? mq.matches : !mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, [media]);
 
   const refresh = useCallback(async () => {
     try {
@@ -56,26 +35,54 @@ export function NotificationBell({
   }, []);
 
   useEffect(() => {
-    if (!active) return;
     // Fora do corpo do effect (timer): a 1ª leitura sem cascata de render.
     const t = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(t);
-  }, [active, refresh]);
-  usePoll(refresh, { enabled: active, intervalMs: POLL_MS });
+  }, [refresh]);
+  usePoll(refresh, { enabled: true, intervalMs: POLL_MS });
 
-  const unread = (items ?? []).filter((n) => !n.read);
-
-  const markRead = (keys: string[]) => {
+  const markRead = useCallback((keys: string[]) => {
     if (keys.length === 0) return;
     setItems((prev) => prev?.map((n) => (keys.includes(n.key) ? { ...n, read: true } : n)) ?? prev);
     startTransition(async () => {
       await markEtdNotificationsRead(keys);
     });
-  };
+  }, []);
+
+  return { items, refresh, markRead };
+}
+
+export type EtdNotificationsState = ReturnType<typeof useEtdNotifications>;
+
+/**
+ * Sino de notificações (09/11/2026; 10/11 saiu do topo e foi pro rodapé da
+ * sidebar, ao lado do usuário) — hoje só "ETD vencendo": a Initial Date de uma
+ * linha da ETD Factories chegou e a etapa ETD (da qual o usuário é o
+ * Responsible) segue aberta. O número = não lidas. Clicar numa notificação
+ * marca como lida e abre a ETD Factories filtrada na Order.
+ */
+export function NotificationBell({
+  state,
+  open,
+  onOpenChange,
+  className,
+  side = "bottom",
+  align = "end",
+}: {
+  state: EtdNotificationsState;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  className?: string;
+  side?: "top" | "right" | "bottom" | "left";
+  align?: "start" | "center" | "end";
+}) {
+  const router = useRouter();
+  const { items, refresh, markRead } = state;
+  const unread = (items ?? []).filter((n) => !n.read);
 
   const openItem = (n: EtdNotification) => {
     markRead([n.key]);
-    setOpen(false);
+    onOpenChange(false);
     router.push(n.href);
   };
 
@@ -83,7 +90,7 @@ export function NotificationBell({
     <Popover
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        onOpenChange(v);
         if (v) void refresh();
       }}
     >
@@ -93,19 +100,25 @@ export function NotificationBell({
           aria-label={unread.length ? `Notifications (${unread.length} unread)` : "Notifications"}
           title="Notifications"
           className={cn(
-            "relative flex size-10 items-center justify-center rounded-full border bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900",
+            "relative flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900",
+            open && "bg-slate-100 text-slate-900",
             className
           )}
         >
           <Bell className="size-[18px]" />
           {unread.length > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white">
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
               {unread.length > 99 ? "99+" : unread.length}
             </span>
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-[min(380px,calc(100vw-32px))] p-0">
+      <PopoverContent
+        side={side}
+        align={align}
+        sideOffset={12}
+        className="w-[min(380px,calc(100vw-32px))] p-0"
+      >
         <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
           <p className="text-sm font-semibold">Notifications</p>
           {unread.length > 0 && (
