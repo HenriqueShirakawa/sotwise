@@ -1,6 +1,10 @@
 import "server-only";
 
-import { allBatchesInPreLoading, hasStepPlan } from "@/lib/checklist-completion";
+import {
+  allBatchesInPreLoading,
+  estimatedFromCompletion,
+  stepPlanReady,
+} from "@/lib/checklist-completion";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -83,9 +87,10 @@ async function readStep(admin: Admin, orderId: string, step: ChecklistStep): Pro
  * só na 1ª (22/10/2026: Completed on = a última atualização). Signed by = quem
  * fez (null quando veio do GSS).
  *
- * Sem Estimated date + Responsible a etapa não fecha (26/10/2026, vale para
- * todas): o dado do gatilho fica gravado e ela fecha quando os dois forem
- * preenchidos (recheckPlanStep); se já estava concluída, reabre.
+ * Sem Responsible a etapa não fecha (26/10/2026, vale para todas): o dado do
+ * gatilho fica gravado e ela fecha quando ele for preenchido (recheckPlanStep);
+ * se já estava concluída, reabre. A Estimated date não segura mais as etapas de
+ * auto complete (10/11/2026): em branco, recebe a data do Completed on.
  */
 async function completeByTrigger(
   admin: Admin,
@@ -93,21 +98,28 @@ async function completeByTrigger(
   completedOn: string,
   userId: string | null
 ): Promise<void> {
-  if (!hasStepPlan(step)) {
+  if (!stepPlanReady(step.step, step)) {
     if (step.completed_on) await reopenByTrigger(admin, step, userId);
     return;
   }
+  // Estimated date em branco = a data do Completed on (10/11/2026).
+  const fill = estimatedFromCompletion(step.step, step, completedOn);
   const { error } = await admin
     .from("order_checklist_steps")
-    .update({ completed_on: completedOn, done: true, signed_by_id: userId })
+    .update({ completed_on: completedOn, done: true, signed_by_id: userId, ...fill })
     .eq("id", step.id);
   if (error) throw new Error(error.message);
-  if (step.completed_on === completedOn) return;
+  if (step.completed_on === completedOn && !fill.estimated_date) return;
   await writeStepLog(admin, {
     owner: { checklistStepId: step.id },
     step: step.step,
     action: "auto_complete",
-    changes: { completed_on: { from: step.completed_on, to: completedOn } },
+    changes: {
+      ...(step.completed_on !== completedOn
+        ? { completed_on: { from: step.completed_on, to: completedOn } }
+        : {}),
+      ...(fill.estimated_date ? { estimated_date: { from: null, to: fill.estimated_date } } : {}),
+    },
     userId,
   });
 }
@@ -685,7 +697,7 @@ export async function recheckPlanStep(
   const step = await readStep(admin, orderId, stepKey);
   if (!step) return;
 
-  if (!hasStepPlan(step)) {
+  if (!stepPlanReady(step.step, step)) {
     if (step.completed_on) await reopenByTrigger(admin, step, userId);
     return;
   }

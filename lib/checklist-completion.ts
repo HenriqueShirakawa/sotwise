@@ -130,6 +130,39 @@ export function hasStepPlan(s: { estimated_date: string | null; responsible_id: 
   return !!s.estimated_date && !!s.responsible_id;
 }
 
+/**
+ * Etapa com auto complete NÃO exige Estimated date (10/11/2026, card "Pontos
+ * discutidos na call de 10/11/2026", item 1): quando o gatilho conclui a etapa
+ * e a Estimated date está em branco, ela é preenchida com a data do Completed
+ * on (só nesse caso). O Responsible continua exigido. Fica de fora a Loading
+ * Date (o popup do Confirm Loading pede a estimativa) e as etapas de Completed
+ * on digitado (Condition Confirm e as ocultas).
+ */
+export function isAutoCompleteStep(step: ChecklistStep): boolean {
+  return LOCKED_COMPLETED_ON_STEPS.has(step) && !CONFIRM_SHIPPING_COMPLETES.has(step);
+}
+
+/** A etapa pode fechar pelo gatilho? Auto complete: basta o Responsible. */
+export function stepPlanReady(
+  step: ChecklistStep,
+  s: { estimated_date: string | null; responsible_id: string | null }
+): boolean {
+  return isAutoCompleteStep(step) ? !!s.responsible_id : hasStepPlan(s);
+}
+
+/**
+ * Ao concluir pelo gatilho: a Estimated date em branco recebe a data do
+ * Completed on (item 1 do card de 10/11/2026). Devolve o pedaço do update —
+ * vazio quando já havia estimativa ou a etapa não é de auto complete.
+ */
+export function estimatedFromCompletion(
+  step: ChecklistStep,
+  s: { estimated_date: string | null },
+  completedOn: string
+): { estimated_date?: string } {
+  return isAutoCompleteStep(step) && !s.estimated_date ? { estimated_date: completedOn } : {};
+}
+
 /** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
 export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
   (p?.total ?? 0) > 1;
@@ -140,7 +173,8 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const noDocs = (f.attachments ?? 0) === 0;
 
   if (!concludedBefore(f, PLAN_REQUIRED_FROM)) {
-    if (f.estimatedDate === null) missing.push("an estimated date");
+    // Auto complete não exige Estimated date (10/11/2026) — o gatilho preenche.
+    if (f.estimatedDate === null && !isAutoCompleteStep(step)) missing.push("an estimated date");
     if (f.responsibleId === null) missing.push("a responsible");
   }
 

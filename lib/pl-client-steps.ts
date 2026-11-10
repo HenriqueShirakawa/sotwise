@@ -1,6 +1,6 @@
 import "server-only";
 
-import { hasStepPlan } from "@/lib/checklist-completion";
+import { estimatedFromCompletion, stepPlanReady } from "@/lib/checklist-completion";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { loadPlClientState } from "@/lib/pl-clients";
@@ -190,12 +190,14 @@ export async function setClientDeliveredDate(
   if (state.clients.length > 0 && dates.every(Boolean)) {
     const latest = (dates as string[]).reduce((max, d) => (d > max ? d : max));
     const today = todayIso();
-    const plan = !!step && hasStepPlan(step);
+    const plan = !!step && stepPlanReady("delivered", step);
+    // Estimated date em branco = a data do Completed on (10/11/2026).
+    const fill = plan && step ? estimatedFromCompletion("delivered", step, today) : {};
     const { error: upError } = await admin
       .from("pre_loading_checklist_steps")
       .update(
         plan
-          ? { event_date: latest, completed_on: today, done: true, signed_by_id: who.userId }
+          ? { event_date: latest, completed_on: today, done: true, signed_by_id: who.userId, ...fill }
           : { event_date: latest }
       )
       .eq("id", stepRow.id);
@@ -207,6 +209,7 @@ export async function setClientDeliveredDate(
       if (step?.signed_by_id !== who.userId) {
         changes.signed_by_id = { from: step?.signed_by_id ?? null, to: who.userId };
       }
+      if (fill.estimated_date) changes.estimated_date = { from: null, to: fill.estimated_date };
     }
   }
 
