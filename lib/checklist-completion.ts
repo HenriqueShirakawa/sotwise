@@ -131,36 +131,55 @@ export function hasStepPlan(s: { estimated_date: string | null; responsible_id: 
 }
 
 /**
- * Etapa com auto complete NÃO exige Estimated date (10/11/2026, card "Pontos
- * discutidos na call de 10/11/2026", item 1): quando o gatilho conclui a etapa
- * e a Estimated date está em branco, ela é preenchida com a data do Completed
- * on (só nesse caso). O Responsible continua exigido. Fica de fora a Loading
- * Date (o popup do Confirm Loading pede a estimativa) e as etapas de Completed
- * on digitado (Condition Confirm e as ocultas).
+ * Etapa com auto complete NÃO exige Estimated date nem Responsible (10/11/2026,
+ * card "Pontos discutidos na call de 10/11/2026", item 1): quando o gatilho
+ * conclui a etapa, a Estimated date em branco recebe a data do Completed on e o
+ * Responsible em branco recebe quem concluiu (só nesses casos — o que já estava
+ * preenchido não muda). Conclusão vinda do GSS não tem usuário do SOT: fecha com
+ * o Responsible em branco. Fica de fora a Loading Date (o popup do Confirm
+ * Loading pede os dois) e as etapas de Completed on digitado (Condition Confirm
+ * e as ocultas).
  */
 export function isAutoCompleteStep(step: ChecklistStep): boolean {
   return LOCKED_COMPLETED_ON_STEPS.has(step) && !CONFIRM_SHIPPING_COMPLETES.has(step);
 }
 
-/** A etapa pode fechar pelo gatilho? Auto complete: basta o Responsible. */
+/** A etapa pode fechar pelo gatilho? Auto complete: sempre (o gatilho preenche). */
 export function stepPlanReady(
   step: ChecklistStep,
   s: { estimated_date: string | null; responsible_id: string | null }
 ): boolean {
-  return isAutoCompleteStep(step) ? !!s.responsible_id : hasStepPlan(s);
+  return isAutoCompleteStep(step) || hasStepPlan(s);
 }
 
 /**
- * Ao concluir pelo gatilho: a Estimated date em branco recebe a data do
- * Completed on (item 1 do card de 10/11/2026). Devolve o pedaço do update —
- * vazio quando já havia estimativa ou a etapa não é de auto complete.
+ * Ao concluir pelo gatilho (item 1 do card de 10/11/2026): Estimated date em
+ * branco = a data do Completed on; Responsible em branco = quem concluiu.
+ * Devolve o pedaço do update — vazio quando os dois já estavam preenchidos ou a
+ * etapa não é de auto complete.
  */
-export function estimatedFromCompletion(
+export function autoCompleteFill(
   step: ChecklistStep,
-  s: { estimated_date: string | null },
-  completedOn: string
-): { estimated_date?: string } {
-  return isAutoCompleteStep(step) && !s.estimated_date ? { estimated_date: completedOn } : {};
+  s: { estimated_date: string | null; responsible_id: string | null },
+  completedOn: string,
+  userId: string | null
+): { estimated_date?: string; responsible_id?: string } {
+  if (!isAutoCompleteStep(step)) return {};
+  return {
+    ...(s.estimated_date ? {} : { estimated_date: completedOn }),
+    ...(s.responsible_id || !userId ? {} : { responsible_id: userId }),
+  };
+}
+
+/** As mudanças do `autoCompleteFill` no formato do History. */
+export function autoCompleteFillChanges(fill: {
+  estimated_date?: string;
+  responsible_id?: string;
+}): Record<string, { from: null; to: string }> {
+  return {
+    ...(fill.estimated_date ? { estimated_date: { from: null, to: fill.estimated_date } } : {}),
+    ...(fill.responsible_id ? { responsible_id: { from: null, to: fill.responsible_id } } : {}),
+  };
 }
 
 /** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
@@ -173,9 +192,10 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const noDocs = (f.attachments ?? 0) === 0;
 
   if (!concludedBefore(f, PLAN_REQUIRED_FROM)) {
-    // Auto complete não exige Estimated date (10/11/2026) — o gatilho preenche.
-    if (f.estimatedDate === null && !isAutoCompleteStep(step)) missing.push("an estimated date");
-    if (f.responsibleId === null) missing.push("a responsible");
+    // Auto complete não exige os dois (10/11/2026) — o gatilho preenche.
+    const auto = isAutoCompleteStep(step);
+    if (f.estimatedDate === null && !auto) missing.push("an estimated date");
+    if (f.responsibleId === null && !auto) missing.push("a responsible");
   }
 
   switch (step) {

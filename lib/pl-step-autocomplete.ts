@@ -1,7 +1,8 @@
 import "server-only";
 
 import {
-  estimatedFromCompletion,
+  autoCompleteFill,
+  autoCompleteFillChanges,
   hasExtraRequirements,
   isStepChecked,
   plStepFacts,
@@ -30,8 +31,8 @@ const PER_CLIENT_AUTOCOMPLETE: ReadonlySet<ChecklistStep> = new Set<ChecklistSte
  *  - ela tem exigência extra — etapa que só pede a data (Loading Date…) não
  *    passa por aqui;
  *  - ~~existe "Estimated date"~~ — desde 10/11/2026 a etapa de auto complete
- *    fecha sem ela, e a Estimated date em branco recebe a data do Completed on
- *    (`estimatedFromCompletion`). O Responsible segue exigido;
+ *    fecha sem ela e sem Responsible: em branco, recebem a data do Completed on
+ *    e quem concluiu (`autoCompleteFill`);
  *  - a etapa ainda não tem "Completed on" OU `refresh` (22/10/2026: Completed on
  *    = a ÚLTIMA atualização) — quem chama passa `refresh` quando o usuário acabou
  *    de mudar um dado da etapa (cadastro, booking, documento novo) e a etapa,
@@ -130,8 +131,9 @@ export async function autoCompletePlStep(
 
   // Incompleta: não fecha.
   if (!isStepChecked(step, facts)) return false;
-  const fill = estimatedFromCompletion(step, s, today);
-  if (s.completed_on === today && s.signed_by_id === userId && !fill.estimated_date) return false;
+  const fill = autoCompleteFill(step, s, today, userId);
+  if (s.completed_on === today && s.signed_by_id === userId && Object.keys(fill).length === 0)
+    return false;
 
   const { error } = await admin
     .from("pre_loading_checklist_steps")
@@ -148,7 +150,7 @@ export async function autoCompletePlStep(
     changes: {
       ...(s.completed_on !== today ? { completed_on: { from: s.completed_on, to: today } } : {}),
       ...(s.signed_by_id !== userId ? { signed_by_id: { from: s.signed_by_id, to: userId } } : {}),
-      ...(fill.estimated_date ? { estimated_date: { from: null, to: fill.estimated_date } } : {}),
+      ...autoCompleteFillChanges(fill),
     },
     userId,
   });

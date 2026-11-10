@@ -2,7 +2,8 @@ import "server-only";
 
 import {
   allBatchesInPreLoading,
-  estimatedFromCompletion,
+  autoCompleteFill,
+  autoCompleteFillChanges,
   stepPlanReady,
 } from "@/lib/checklist-completion";
 import { formatDateNumeric, todayIso } from "@/lib/format";
@@ -87,10 +88,10 @@ async function readStep(admin: Admin, orderId: string, step: ChecklistStep): Pro
  * só na 1ª (22/10/2026: Completed on = a última atualização). Signed by = quem
  * fez (null quando veio do GSS).
  *
- * Sem Responsible a etapa não fecha (26/10/2026, vale para todas): o dado do
- * gatilho fica gravado e ela fecha quando ele for preenchido (recheckPlanStep);
- * se já estava concluída, reabre. A Estimated date não segura mais as etapas de
- * auto complete (10/11/2026): em branco, recebe a data do Completed on.
+ * Estimated date e Responsible não seguram mais as etapas de auto complete
+ * (10/11/2026): em branco, recebem a data do Completed on e quem concluiu (sem
+ * usuário — GSS — o Responsible fica em branco). Etapa que não é de auto
+ * complete segue exigindo os dois (26/10/2026).
  */
 async function completeByTrigger(
   admin: Admin,
@@ -102,14 +103,15 @@ async function completeByTrigger(
     if (step.completed_on) await reopenByTrigger(admin, step, userId);
     return;
   }
-  // Estimated date em branco = a data do Completed on (10/11/2026).
-  const fill = estimatedFromCompletion(step.step, step, completedOn);
+  // Estimated date em branco = a data do Completed on; Responsible em branco =
+  // quem concluiu (10/11/2026).
+  const fill = autoCompleteFill(step.step, step, completedOn, userId);
   const { error } = await admin
     .from("order_checklist_steps")
     .update({ completed_on: completedOn, done: true, signed_by_id: userId, ...fill })
     .eq("id", step.id);
   if (error) throw new Error(error.message);
-  if (step.completed_on === completedOn && !fill.estimated_date) return;
+  if (step.completed_on === completedOn && Object.keys(fill).length === 0) return;
   await writeStepLog(admin, {
     owner: { checklistStepId: step.id },
     step: step.step,
@@ -118,7 +120,7 @@ async function completeByTrigger(
       ...(step.completed_on !== completedOn
         ? { completed_on: { from: step.completed_on, to: completedOn } }
         : {}),
-      ...(fill.estimated_date ? { estimated_date: { from: null, to: fill.estimated_date } } : {}),
+      ...autoCompleteFillChanges(fill),
     },
     userId,
   });

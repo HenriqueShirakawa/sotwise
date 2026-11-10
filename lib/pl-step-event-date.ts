@@ -1,7 +1,7 @@
 import "server-only";
 
 import { EVENT_DATE_ALLOWS_FUTURE, EVENT_DATE_STEPS } from "@/lib/checklist";
-import { estimatedFromCompletion, stepPlanReady } from "@/lib/checklist-completion";
+import { autoCompleteFill, autoCompleteFillChanges, stepPlanReady } from "@/lib/checklist-completion";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { todayIso } from "@/lib/format";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -46,11 +46,10 @@ export async function setPlStepEventDate(
     .eq("step", step)
     .maybeSingle();
   if (readError) return { error: readError.message, completed: false };
-  // Sem Responsible a data é gravada mas a etapa não fecha (26/10/2026, vale
-  // para todas); já concluída, reabre — menos o Delivered, que entregou lotes e
-  // embarque e não volta por aqui. Estimated date não segura (auto complete,
-  // 10/11/2026): em branco, recebe a data do Completed on.
-  const plan = !!existing && stepPlanReady(step, existing);
+  // Auto complete (10/11/2026): a data fecha a etapa mesmo sem Estimated date
+  // e Responsible — em branco, recebem a data do Completed on e quem gravou.
+  const blank = { estimated_date: null, responsible_id: null };
+  const plan = stepPlanReady(step, existing ?? blank);
 
   const previous = existing?.event_date ?? null;
   if (previous === date) return { error: null, completed: false };
@@ -63,7 +62,7 @@ export async function setPlStepEventDate(
   const today = todayIso();
   const reopen = !plan && !!existing?.completed_on && step !== "delivered";
   const completing = plan && !existing?.completed_on;
-  const fill = plan && existing ? estimatedFromCompletion(step, existing, today) : {};
+  const fill = plan ? autoCompleteFill(step, existing ?? blank, today, who.userId) : {};
   const values = plan
     ? { event_date: date, completed_on: today, done: true, signed_by_id: who.userId, ...fill }
     : reopen
@@ -100,7 +99,7 @@ export async function setPlStepEventDate(
       ...((existing?.signed_by_id ?? null) !== after.signed_by_id
         ? { signed_by_id: { from: existing?.signed_by_id ?? null, to: after.signed_by_id } }
         : {}),
-      ...(fill.estimated_date ? { estimated_date: { from: null, to: fill.estimated_date } } : {}),
+      ...autoCompleteFillChanges(fill),
       ...(previous && reason ? { reason } : {}),
     },
     userId: who.userId,
