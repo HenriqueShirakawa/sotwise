@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
-import { useOptimisticRows } from "@/lib/use-optimistic-rows";
+import { useOptimisticObject, useOptimisticRows } from "@/lib/use-optimistic-rows";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
@@ -68,6 +68,10 @@ import {
   updateChecklistStep,
   createStepAttachmentTicket,
   registerStepAttachment,
+  saveBalanceDate,
+  saveDepositDate,
+  saveFactoryPlacedDate,
+  saveOrderReceivedDate,
 } from "./actions";
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
@@ -651,10 +655,11 @@ function AttachmentsSection({
   orderId: string;
   step: ChecklistStepRow;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Remover some da lista na hora (10/11/2026); volta se o servidor recusar.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -666,9 +671,9 @@ function AttachmentsSection({
         (name, size) => createStepAttachmentTicket(orderId, step.id, name, size),
         (path) => registerStepAttachment(orderId, step.id, path, file.name)
       );
+      // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
         setOpen(true);
-        router.refresh();
       } else {
         toast.error(res.error);
       }
@@ -684,10 +689,15 @@ function AttachmentsSection({
   }
 
   function removeAttachment(a: { id: string; file_path: string }) {
-    startTransition(async () => {
-      const res = await deleteStepAttachment(orderId, a.id, a.file_path);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
+    setRemoved((prev) => new Set(prev).add(a.id));
+    void deleteStepAttachment(orderId, a.id, a.file_path).then((res) => {
+      if (res.ok) return;
+      toast.error(res.error);
+      setRemoved((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
     });
   }
 
@@ -695,7 +705,7 @@ function AttachmentsSection({
     <>
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
       <AttachedDocuments
-        attachments={step.attachments}
+        attachments={step.attachments.filter((a) => !removed.has(a.id))}
         pending={pending}
         open={open}
         onOpenChange={setOpen}
@@ -709,7 +719,7 @@ function AttachmentsSection({
 
 export function OrderDetailClient({
   orderId,
-  order,
+  order: serverOrder,
   batches,
   ofc,
   etdByOfc,
@@ -719,7 +729,7 @@ export function OrderDetailClient({
   steps: serverSteps,
   viewPrefs,
   currentUserId,
-  placedDates,
+  placedDates: serverPlacedDates,
 }: {
   orderId: string;
   order: OrderDetail;
@@ -743,6 +753,30 @@ export function OrderDetailClient({
   // o toggle mudam na tela no clique; a gravação roda em segundo plano e a
   // resposta da action (revalidatePath) traz a versão do servidor.
   const [steps, runStep] = useOptimisticRows(serverSteps, (s) => s.id);
+  // Order received / Deposit / Balance date e o "Placed on" por fábrica: o
+  // popup fecha e a data aparece na hora; a gravação roda por trás.
+  const [order, runOrder] = useOptimisticObject(serverOrder);
+  const [placedDates, runPlaced] = useOptimisticObject(serverPlacedDates);
+  function saveOrderDate(step: ChecklistStep, date: string, reason: string | null) {
+    const field =
+      step === "order" ? "order_received_date" : step === "balance_payment" ? "balance_date" : "deposit_date";
+    const call =
+      step === "order"
+        ? () => saveOrderReceivedDate(orderId, date, reason)
+        : step === "balance_payment"
+          ? () => saveBalanceDate(orderId, date, reason ?? "")
+          : () => saveDepositDate(orderId, date, reason ?? "");
+    void runOrder({ [field]: date } as Partial<OrderDetail>, call).then((res) => {
+      if (!res.ok) toast.error(res.error);
+    });
+  }
+  function savePlacedDate(factoryId: string, date: string, reason: string | null) {
+    void runPlaced({ [factoryId]: date }, () =>
+      saveFactoryPlacedDate(orderId, factoryId, date, reason)
+    ).then((res) => {
+      if (!res.ok) toast.error(res.error);
+    });
+  }
   // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
   // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
   // depois de montado mesmo que a URL mude).
@@ -1271,6 +1305,7 @@ export function OrderDetailClient({
                           ofc={ofc}
                           batches={batches}
                           placedDates={placedDates}
+                          onSavePlaced={savePlacedDate}
                         />
                       ) : s.step === "etd" ? (
                         <EtdStepTable
@@ -1341,6 +1376,7 @@ export function OrderDetailClient({
                   ? order.balance_date
                   : revisionsFor.completed_on
           }
+          onSaveDate={(date, reason) => saveOrderDate(revisionsFor.step, date, reason)}
         />
       )}
     </div>

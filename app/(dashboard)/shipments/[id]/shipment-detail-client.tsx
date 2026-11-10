@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useOptimisticObject } from "@/lib/use-optimistic-rows";
 import { useOptimisticRows } from "@/lib/use-optimistic-rows";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
@@ -46,6 +47,7 @@ import {
   deleteShipment,
   deleteShipmentStepAttachment,
   getShipmentAttachmentUrl,
+  saveShipmentEventDate,
   saveShipmentStep,
   createShipmentAttachmentTicket,
   registerShipmentAttachment,
@@ -291,10 +293,11 @@ function AttachmentsSection({
   /** Documento de um cliente (BL / Original Docs por cliente). */
   clientId?: string | null;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Remover some da lista na hora (10/11/2026); volta se o servidor recusar.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -306,9 +309,9 @@ function AttachmentsSection({
         (name, size) => createShipmentAttachmentTicket(preLoadingId, step, name, size),
         (path) => registerShipmentAttachment(preLoadingId, step, path, file.name, clientId)
       );
+      // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
         setOpen(true);
-        router.refresh();
       } else {
         toast.error(res.error);
       }
@@ -324,10 +327,15 @@ function AttachmentsSection({
   }
 
   function remove(a: StepAttachment) {
-    startTransition(async () => {
-      const res = await deleteShipmentStepAttachment(shipmentId, a.id, a.file_path);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
+    setRemoved((prev) => new Set(prev).add(a.id));
+    void deleteShipmentStepAttachment(shipmentId, a.id, a.file_path).then((res) => {
+      if (res.ok) return;
+      toast.error(res.error);
+      setRemoved((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
     });
   }
 
@@ -337,7 +345,7 @@ function AttachmentsSection({
         <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
       )}
       <AttachedDocuments
-        attachments={attachments}
+        attachments={attachments.filter((a) => !removed.has(a.id))}
         pending={pending}
         open={open}
         onOpenChange={setOpen}
@@ -448,16 +456,24 @@ function OriginalDocsFields({
   value: { tracking_number: string | null; telex_release: boolean } | undefined;
   disabled: boolean;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const telex = value?.telex_release ?? false;
+  // Edição instantânea (10/11/2026): muda na hora e grava por trás.
+  const base = useMemo(
+    () => ({
+      tracking_number: value?.tracking_number ?? null,
+      telex_release: value?.telex_release ?? false,
+    }),
+    [value?.tracking_number, value?.telex_release]
+  );
+  const [view, run] = useOptimisticObject(base);
+  const telex = view.telex_release;
+  const pending = false;
 
   function save(patch: { tracking_number?: string | null; telex_release?: boolean }) {
-    startTransition(async () => {
-      const res = await saveShipmentClientOriginalDocs(preLoadingId, client.id, patch);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
-    });
+    void run(patch, () => saveShipmentClientOriginalDocs(preLoadingId, client.id, patch)).then(
+      (res) => {
+        if (!res.ok) toast.error(res.error);
+      }
+    );
   }
 
   return (
@@ -479,13 +495,13 @@ function OriginalDocsFields({
         </Label>
         <Input
           // A chave remonta o campo quando o valor salvo muda (refresh).
-          key={value?.tracking_number ?? ""}
-          defaultValue={value?.tracking_number ?? ""}
+          key={view.tracking_number ?? ""}
+          defaultValue={view.tracking_number ?? ""}
           disabled={disabled || pending || telex}
           placeholder={telex ? "Not needed with telex release" : "Tracking number"}
           onBlur={(e) => {
             const v = e.target.value.trim() || null;
-            if (v !== (value?.tracking_number ?? null)) save({ tracking_number: v });
+            if (v !== (view.tracking_number ?? null)) save({ tracking_number: v });
           }}
           className="mt-1 bg-white"
         />
@@ -634,6 +650,13 @@ export function ShipmentDetailClient({
   }
 
   const doneCount = steps.filter((s) => s.done).length;
+  // Cabeçalho segue a data do fato já editada na tela (edição instantânea).
+  const eventOf = (k: ChecklistStep) => steps.find((s) => s.step === k)?.event_date ?? null;
+  const headerDates = {
+    shipment: eventOf("shipping_date") ?? dates.shipment,
+    eta: eventOf("eta_brazil") ?? dates.eta,
+    delivery: eventOf("delivered") ?? dates.delivery,
+  };
 
   return (
     <div>
@@ -708,11 +731,11 @@ export function ShipmentDetailClient({
                 <InfoField label="Container Number" value={shipment.container_number} />
                 <div className="grid grid-cols-2 gap-3">
                   <InfoField label="Loading date" value={formatDateNumeric(dates.loading)} />
-                  <InfoField label="Shipment date" value={formatDateNumeric(dates.shipment)} />
+                  <InfoField label="Shipment date" value={formatDateNumeric(headerDates.shipment)} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <InfoField label="ETA" value={formatDateNumeric(dates.eta)} />
-                  <InfoField label="Delivery date" value={formatDateNumeric(dates.delivery)} />
+                  <InfoField label="ETA" value={formatDateNumeric(headerDates.eta)} />
+                  <InfoField label="Delivery date" value={formatDateNumeric(headerDates.delivery)} />
                 </div>
               </InfoCard>
               <InfoCard title="Responsible">
@@ -978,6 +1001,13 @@ export function ShipmentDetailClient({
                               preLoadingId={shipment.pre_loading_id}
                               step={s.step}
                               date={s.event_date}
+                              // Pela linha da etapa: o cabeçalho (Shipment
+                              // date / ETA / Delivery date) muda junto, na hora.
+                              onSave={(date, reason) =>
+                                runStep(s.step, { event_date: date }, () =>
+                                  saveShipmentEventDate(shipment.pre_loading_id, s.step, date, reason)
+                                )
+                              }
                             />
                           )
                         )}

@@ -235,10 +235,11 @@ function AttachmentsSection({
   /** Grupo só de leitura (documentos antigos, sem cliente): sem "+ Attach". */
   canAttach?: boolean;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Remover some da lista na hora (10/11/2026); volta se o servidor recusar.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -250,9 +251,9 @@ function AttachmentsSection({
         (name, size) => createPreLoadingAttachmentTicket(preLoadingId, step, name, size),
         (path) => registerPreLoadingAttachment(preLoadingId, step, path, file.name, clientId)
       );
+      // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
         setOpen(true);
-        router.refresh();
       } else {
         toast.error(res.error);
       }
@@ -268,10 +269,15 @@ function AttachmentsSection({
   }
 
   function remove(a: StepAttachment) {
-    startTransition(async () => {
-      const res = await deletePreLoadingStepAttachment(preLoadingId, a.id, a.file_path);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
+    setRemoved((prev) => new Set(prev).add(a.id));
+    void deletePreLoadingStepAttachment(preLoadingId, a.id, a.file_path).then((res) => {
+      if (res.ok) return;
+      toast.error(res.error);
+      setRemoved((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
     });
   }
 
@@ -279,7 +285,7 @@ function AttachmentsSection({
     <>
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
       <AttachedDocuments
-        attachments={attachments}
+        attachments={attachments.filter((a) => !removed.has(a.id))}
         pending={pending}
         open={open}
         onOpenChange={setOpen}

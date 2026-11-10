@@ -95,3 +95,18 @@ export function useOptimisticRows<T>(rows: T[], keyOf: (row: T) => string) {
 
   return [merged, run] as const;
 }
+
+/**
+ * O mesmo, para um objeto só (datas da Order, "Placed on" por fábrica, a data
+ * de um campo): `run(patch, save)` mostra o patch na hora e grava por trás.
+ */
+export function useOptimisticObject<T extends object>(server: T) {
+  const rows = useMemo(() => [server], [server]);
+  const [merged, run] = useOptimisticRows(rows, () => "_");
+  const runPatch = useCallback(
+    <R extends { ok: boolean }>(patch: Partial<T>, save: () => Promise<R>) =>
+      run("_", patch, save),
+    [run]
+  );
+  return [merged[0], runPatch] as const;
+}

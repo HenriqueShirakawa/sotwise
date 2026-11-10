@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,13 +56,15 @@ function PlacedOnDialog({
   factory,
   current,
   onClose,
+  onSave,
 }: {
   orderId: string;
   factory: { id: string; name: string };
   current: string | null;
   onClose: () => void;
+  /** Edição instantânea (10/11/2026): a tela mostra a data na hora e grava por trás. */
+  onSave?: (factoryId: string, date: string, reason: string | null) => void;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [date, setDate] = useState(current ?? "");
   const [reason, setReason] = useState("");
@@ -71,6 +72,11 @@ function PlacedOnDialog({
   const canSave = !!date && date !== current && (!reasonRequired || reason.trim() !== "");
 
   function save() {
+    if (onSave) {
+      onSave(factory.id, date, reason.trim() || null);
+      onClose();
+      return;
+    }
     startTransition(async () => {
       const res = await saveFactoryPlacedDate(orderId, factory.id, date, reason.trim() || null);
       if (!res.ok) {
@@ -79,7 +85,7 @@ function PlacedOnDialog({
       }
       toast.success(current ? "Revision saved." : "Placed-on date saved.");
       onClose();
-      router.refresh();
+      // Sem router.refresh(): a action já revalida a página.
     });
   }
 
@@ -136,12 +142,14 @@ export function PlaceOrderFactoryGroups({
   ofc,
   batches,
   placedDates,
+  onSavePlaced,
 }: {
   orderId: string;
   ofc: OfcRow[];
   batches: BatchRow[];
   /** factory_id → data "Placed on" (YYYY-MM-DD). */
   placedDates: Record<string, string>;
+  onSavePlaced?: (factoryId: string, date: string, reason: string | null) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
@@ -172,6 +180,7 @@ export function PlaceOrderFactoryGroups({
           factory={dateFor}
           current={placedDates[dateFor.id] ?? null}
           onClose={() => setDateFor(null)}
+          onSave={onSavePlaced}
         />
       )}
       <div className="hidden grid-cols-[1fr_120px_170px_40px] items-center gap-2 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 sm:grid">

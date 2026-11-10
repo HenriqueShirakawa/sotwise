@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -113,6 +112,7 @@ export function StepRevisionsModal({
   stepId,
   step,
   currentDate,
+  onSaveDate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -121,8 +121,12 @@ export function StepRevisionsModal({
   step: RevisionStep;
   /** Order: received date vigente; PO/PI: Completed on. Vazio = 1º registro. */
   currentDate: string | null;
+  /**
+   * Edição instantânea (10/11/2026): Order/Deposit/Balance entregam a data pra
+   * tela, que mostra na hora e grava por trás — o popup fecha no clique.
+   */
+  onSaveDate?: (date: string, reason: string | null) => void;
 }) {
-  const router = useRouter();
   const formOnly = FORM_ONLY_REVISIONS.has(step);
   const [pending, startTransition] = useTransition();
   const [rows, setRows] = useState<StepRevision[] | null>(null);
@@ -167,6 +171,11 @@ export function StepRevisionsModal({
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
   function save() {
+    if (formOnly && onSaveDate) {
+      onSaveDate(date, reason.trim() || null);
+      onOpenChange(false);
+      return;
+    }
     startTransition(async () => {
       // Só Order, Deposit e Balance Payment gravam por aqui (canAdd).
       const res =
@@ -180,7 +189,7 @@ export function StepRevisionsModal({
         return;
       }
       toast.success(currentDate ? "Revision saved." : `${DATE_LABELS[step]} saved.`);
-      router.refresh();
+      // Sem router.refresh(): a action já revalida a página.
       if (formOnly) {
         onOpenChange(false);
         return;
