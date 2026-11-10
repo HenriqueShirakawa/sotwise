@@ -420,12 +420,34 @@ export const LOCKED_COMPLETED_ON_ERROR =
  * Retorna a mensagem de erro, ou null quando o patch é válido.
  */
 export function validateStepDates(
-  current: { estimated_date: string | null; completed_on: string | null },
-  patch: { estimated_date?: string | null; completed_on?: string | null },
+  current: {
+    estimated_date: string | null;
+    completed_on: string | null;
+    responsible_id?: string | null;
+  },
+  patch: {
+    estimated_date?: string | null;
+    completed_on?: string | null;
+    responsible_id?: string | null;
+  },
   step?: ChecklistStep
 ): string | null {
   const touchesEstimated = "estimated_date" in patch;
   const touchesCompleted = "completed_on" in patch;
+
+  // Etapa CONCLUÍDA não deixa apagar Estimated date nem Responsible (10/11/2026,
+  // pedido do usuário): trocar por outro valor pode, deixar em branco não. Vale
+  // para todas as etapas. Limpar o Completed on junto (etapa manual) libera.
+  const clearsCompleted = touchesCompleted && !patch.completed_on;
+  if (current.completed_on && !clearsCompleted) {
+    if (touchesEstimated && !patch.estimated_date && current.estimated_date) {
+      return "This step is completed — the estimated date can't be cleared.";
+    }
+    if ("responsible_id" in patch && !patch.responsible_id && current.responsible_id) {
+      return "This step is completed — the responsible can't be cleared.";
+    }
+  }
+
   if (!touchesEstimated && !touchesCompleted) return null;
 
   // "Completed on" registra um fato consumado — nunca pode ser futuro, em

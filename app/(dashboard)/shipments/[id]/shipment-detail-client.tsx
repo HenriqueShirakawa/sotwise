@@ -882,6 +882,8 @@ export function ShipmentDetailClient({
                             <DatePicker
                               value={s.estimated_date}
                               disabled={pending}
+                              // Etapa concluída não perde a estimativa (10/11/2026).
+                              clearable={!s.completed_on}
                               onChange={(v) => {
                                 if (v !== (s.estimated_date ?? null))
                                   save(s.step, { estimated_date: v });

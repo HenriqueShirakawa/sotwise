@@ -1130,6 +1130,8 @@ export function OrderDetailClient({
                           <DatePicker
                             value={s.estimated_date}
                             disabled={stepPending}
+                            // Etapa concluída não perde a estimativa (10/11/2026).
+                            clearable={!s.completed_on}
                             onChange={(v) => {
                               if (v !== (s.estimated_date ?? null))
                                 saveStepField(s, { estimated_date: v });
