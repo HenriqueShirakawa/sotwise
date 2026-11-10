@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useOptimisticRows } from "@/lib/use-optimistic-rows";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Collapsible as CollapsiblePrimitive } from "radix-ui";
 import {
@@ -402,7 +403,7 @@ function SelectField({
 export function PlChecklistClient({
   preLoading,
   batches,
-  steps,
+  steps: serverSteps,
   perClient,
   profiles,
   factories,
@@ -444,6 +445,9 @@ export function PlChecklistClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Edição instantânea (10/11/2026): o campo muda na tela no clique e a
+  // gravação roda em segundo plano (lib/use-optimistic-rows).
+  const [steps, runStep] = useOptimisticRows(serverSteps, (s) => s.step);
   // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
   // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
   // depois de montado mesmo que a URL mude).
@@ -454,14 +458,13 @@ export function PlChecklistClient({
   // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
   const logCounts = useStepLogCounts(
     { kind: "pre_loading", preLoadingId: preLoading.id },
-    JSON.stringify(steps)
+    JSON.stringify(serverSteps)
   );
   const [openSteps, setOpenSteps] = useState<Set<ChecklistStep>>(
     () => new Set(deepLinkStep ? [deepLinkStep] : [])
   );
   const [shipOpen, setShipOpen] = useState(false);
   const [viewBatch, setViewBatch] = useState<PlBatchRow | null>(null);
-  const [pending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!deepLinkStep) return;
@@ -534,10 +537,12 @@ export function PlChecklistClient({
   }
 
   function save(step: ChecklistStep, patch: StepPatch) {
-    startTransition(async () => {
-      const res = await savePreLoadingStep(preLoading.id, step, patch);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
+    // Sem router.refresh(): a action já revalida a página e devolve a tela nova
+    // na mesma resposta.
+    void runStep(step, patch as Partial<PlStepRow>, () =>
+      savePreLoadingStep(preLoading.id, step, patch)
+    ).then((res) => {
+      if (!res.ok) toast.error(res.error);
     });
   }
 
@@ -745,7 +750,6 @@ export function PlChecklistClient({
                         <Label className="text-xs text-muted-foreground">Estimated date</Label>
                         <DatePicker
                           value={s.estimated_date}
-                          disabled={pending}
                           // Etapa concluída não perde a estimativa (10/11/2026).
                           clearable={!s.completed_on}
                           onChange={(v) => {
@@ -773,7 +777,7 @@ export function PlChecklistClient({
                               não ficar presa com o campo travado. */}
                           <DatePicker
                             value={s.completed_on}
-                            disabled={pending || (!s.estimated_date && !s.completed_on)}
+                            disabled={!s.estimated_date && !s.completed_on}
                             // "Completed on" é fato consumado — nunca futuro.
                             max={todayIso()}
                             placeholder={
@@ -886,7 +890,6 @@ export function PlChecklistClient({
                           </Label>
                           <Textarea
                             defaultValue={s.notes ?? ""}
-                            disabled={pending}
                             placeholder="Type here..."
                             onBlur={(e) => {
                               const v = e.target.value.trim() || null;
@@ -905,7 +908,6 @@ export function PlChecklistClient({
                           <Label className="text-xs text-muted-foreground">Booking number</Label>
                           <Input
                             defaultValue={s.booking_number ?? ""}
-                            disabled={pending}
                             placeholder="Booking number"
                             onBlur={(e) => {
                               const v = e.target.value.trim() || null;
@@ -921,7 +923,6 @@ export function PlChecklistClient({
                           <Label className="text-xs text-muted-foreground">Container Cut-off</Label>
                           <DatePicker
                             value={s.cutoff_date}
-                            disabled={pending}
                             ariaLabel="Container Cut-off"
                             onChange={(v) => {
                               if (v !== (s.cutoff_date ?? null))
@@ -934,7 +935,6 @@ export function PlChecklistClient({
                           <Label className="text-xs text-muted-foreground">Doc Cut-off</Label>
                           <DatePicker
                             value={s.doc_cutoff_date}
-                            disabled={pending}
                             ariaLabel="Doc Cut-off"
                             onChange={(v) => {
                               if (v !== (s.doc_cutoff_date ?? null))

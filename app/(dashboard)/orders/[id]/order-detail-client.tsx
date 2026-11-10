@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { useOptimisticRows } from "@/lib/use-optimistic-rows";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
@@ -715,7 +716,7 @@ export function OrderDetailClient({
   loadedByBatch,
   factories,
   profiles,
-  steps,
+  steps: serverSteps,
   viewPrefs,
   currentUserId,
   placedDates,
@@ -738,6 +739,10 @@ export function OrderDetailClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Edição instantânea (10/11/2026): Estimated date, Responsible, Completed on e
+  // o toggle mudam na tela no clique; a gravação roda em segundo plano e a
+  // resposta da action (revalidatePath) traz a versão do servidor.
+  const [steps, runStep] = useOptimisticRows(serverSteps, (s) => s.id);
   // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
   // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
   // depois de montado mesmo que a URL mude).
@@ -753,7 +758,7 @@ export function OrderDetailClient({
   // Popup de revisões das etapas Order/PO/PI.
   const [revisionsFor, setRevisionsFor] = useState<ChecklistStepRow | null>(null);
   // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
-  const logCounts = useStepLogCounts({ kind: "order", orderId }, JSON.stringify(steps));
+  const logCounts = useStepLogCounts({ kind: "order", orderId }, JSON.stringify(serverSteps));
 
   useEffect(() => {
     if (!deepLinkStep) return;
@@ -863,13 +868,14 @@ export function OrderDetailClient({
     step: ChecklistStepRow,
     patch: Parameters<typeof updateChecklistStep>[2]
   ) {
-    startStepTransition(async () => {
-      const res = await updateChecklistStep(orderId, step.id, patch);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
-    });
+    // Sem router.refresh(): a action já revalida a página e devolve a tela nova
+    // na mesma resposta — o refresh era uma 2ª renderização inteira.
+    void runStep(step.id, patch, () => updateChecklistStep(orderId, step.id, patch)).then(
+      (res) => {
+        if (!res.ok) toast.error(res.error);
+      }
+    );
   }
-  const [stepPending, startStepTransition] = useTransition();
 
   return (
     <div>
@@ -1100,7 +1106,6 @@ export function OrderDetailClient({
                     {TOGGLEABLE_STEPS.has(s.step) && (
                       <Switch
                         checked={s.enabled}
-                        disabled={stepPending}
                         onCheckedChange={(checked) =>
                           saveStepField(s, { enabled: checked })
                         }
@@ -1129,7 +1134,6 @@ export function OrderDetailClient({
                           </Label>
                           <DatePicker
                             value={s.estimated_date}
-                            disabled={stepPending}
                             // Etapa concluída não perde a estimativa (10/11/2026).
                             clearable={!s.completed_on}
                             onChange={(v) => {
@@ -1190,9 +1194,7 @@ export function OrderDetailClient({
                                 não ficar presa com o campo travado. */}
                             <DatePicker
                               value={s.completed_on}
-                              disabled={
-                                stepPending || (!s.estimated_date && !s.completed_on)
-                              }
+                              disabled={!s.estimated_date && !s.completed_on}
                               // "Completed on" é fato consumado — nunca futuro.
                               max={todayIso()}
                               placeholder={
