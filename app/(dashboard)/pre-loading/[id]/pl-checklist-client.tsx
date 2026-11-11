@@ -413,6 +413,7 @@ export function PlChecklistClient({
   profiles,
   factories,
   cities,
+  cityIdsByFactory,
   pols,
   agentsBrazil,
   agentsChina,
@@ -433,6 +434,8 @@ export function PlChecklistClient({
   profiles: Ref[];
   factories: Ref[];
   cities: Ref[];
+  /** Cidades de cada fábrica no cadastro do GSS (produtos) — City do Consolidation Point. */
+  cityIdsByFactory: Record<string, string[]>;
   pols: PolRef[];
   agentsBrazil: Ref[];
   agentsChina: Ref[];
@@ -493,7 +496,8 @@ export function PlChecklistClient({
   // sobra o(s) porto(s) dela; deduplicamos por nome para nunca repetir o rótulo.
   // Sem cidade ainda, caímos na lista completa deduplicada (usável, mas ambígua —
   // por isso a cidade vem antes). O pol já salvo entra sempre, mesmo fora do filtro.
-  const cityStepId = steps.find((s) => s.step === "city")?.city_id ?? null;
+  // Desde 11/11/2026 a City é campo da etapa Consolidation Point.
+  const cityStepId = steps.find((s) => s.step === "consolidation_point")?.city_id ?? null;
   const savedPolId = steps.find((s) => s.step === "port_of_loading")?.pol_id ?? null;
   const polOptions = useMemo<Ref[]>(() => {
     const filteredByCity = cityStepId ? pols.filter((p) => p.cityId === cityStepId) : pols;
@@ -539,6 +543,24 @@ export function PlChecklistClient({
       else next.add(step);
       return next;
     });
+  }
+
+  // City do Consolidation Point (11/11/2026, card da call de 10/11, item 6): as
+  // cidades da fábrica no cadastro do GSS; sem nenhuma, a lista completa.
+  function cityOptionsFor(factoryId: string | null): Ref[] {
+    const ids = factoryId ? (cityIdsByFactory[factoryId] ?? []) : [];
+    if (ids.length === 0) return cities;
+    const set = new Set(ids);
+    return cities.filter((c) => set.has(c.id));
+  }
+  // Trocar o Consolidation Point já leva a City: a única da fábrica, a atual se
+  // ainda vale, ou em branco para escolher (o servidor faz a mesma conta).
+  function cityAfterPointChange(factoryId: string | null, currentCityId: string | null) {
+    if (!factoryId) return null;
+    const ids = cityIdsByFactory[factoryId] ?? [];
+    if (ids.length === 1) return ids[0];
+    if (ids.length === 0) return currentCityId;
+    return currentCityId && ids.includes(currentCityId) ? currentCityId : null;
   }
 
   function save(step: ChecklistStep, patch: StepPatch) {
@@ -804,22 +826,31 @@ export function PlChecklistClient({
                     </div>
 
                     {s.step === "consolidation_point" && (
-                      <SelectField
-                        label="Consolidation Point"
-                        value={s.consolidation_point_id}
-                        options={factories}
-                        placeholder="Select consolidation point"
-                        onChange={(v) => save(s.step, { consolidation_point_id: v })}
-                      />
-                    )}
-                    {s.step === "city" && (
-                      <SelectField
-                        label="City"
-                        value={s.city_id}
-                        options={cities}
-                        placeholder="Select city"
-                        onChange={(v) => save(s.step, { city_id: v })}
-                      />
+                      // Consolidation Point + City numa etapa só (11/11/2026).
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <SelectField
+                          label="Consolidation Point"
+                          value={s.consolidation_point_id}
+                          options={factories}
+                          placeholder="Select consolidation point"
+                          onChange={(v) =>
+                            save(s.step, {
+                              consolidation_point_id: v,
+                              city_id: cityAfterPointChange(v, s.city_id),
+                            })
+                          }
+                        />
+                        <SelectField
+                          label="City"
+                          value={s.city_id}
+                          options={cityOptionsFor(s.consolidation_point_id)}
+                          placeholder={
+                            s.consolidation_point_id ? "Select city" : "Select the consolidation point first"
+                          }
+                          disabled={!s.consolidation_point_id}
+                          onChange={(v) => save(s.step, { city_id: v })}
+                        />
+                      </div>
                     )}
                     {s.step === "port_of_loading" && (
                       <SelectField

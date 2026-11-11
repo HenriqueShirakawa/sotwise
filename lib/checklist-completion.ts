@@ -236,8 +236,11 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       if (!f.batchesInPreLoading) missing.push("every batch in a Pre-loading");
       break;
 
+    // Consolidation Point + City numa etapa só (11/11/2026, card da call de
+    // 10/11, item 6): fecha com os dois.
     case "consolidation_point":
       if (!f.consolidationPointId) missing.push("a consolidation point");
+      if (!f.cityId) missing.push("a city");
       break;
     case "city":
       if (!f.cityId) missing.push("a city");

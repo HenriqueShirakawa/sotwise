@@ -28,6 +28,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isGssShipmentStep, sendOrderStatusToGss, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import type { ChecklistStep } from "@/types/database";
 import { userTodayIso } from "@/lib/user-time-zone";
+import { cityForConsolidationPoint } from "@/lib/consolidation-city";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -111,7 +112,20 @@ export async function savePreLoadingStep(
     .maybeSingle();
   if (readError) return { ok: false, error: readError.message };
 
-  // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
+  // Consolidation Point + City numa etapa só (11/11/2026, card da call de
+  // 10/11, item 6): trocar o Consolidation Point sem escolher a City preenche a
+  // cidade do cadastro da fábrica (uma só) ou deixa em branco para escolher.
+  if (step === "consolidation_point" && "consolidation_point_id" in patch && !("city_id" in patch)) {
+    patch = {
+      ...patch,
+      city_id: await cityForConsolidationPoint(
+        admin,
+        patch.consolidation_point_id ?? null,
+        existing?.city_id ?? null
+      ),
+    };
+  }
+
   // Etapa que ainda não existe no banco entra como as duas datas vazias.
   const dateError = validateStepDates(
     existing ?? { estimated_date: null, completed_on: null },

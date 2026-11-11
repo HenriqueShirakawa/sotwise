@@ -18,6 +18,7 @@ import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { fail, isUuid, type Fail, type WriteResult } from "@/domain/api/write-result";
 import { resolveBatchKey } from "@/domain/batches/api-read";
+import { cityForConsolidationPoint } from "@/lib/consolidation-city";
 import { resolveProfileByEmail } from "@/domain/orders/api-write";
 import {
   createPreLoadingRecord,
@@ -470,6 +471,9 @@ export async function patchShipmentStep(
   step: string,
   input: PatchStepInput
 ): Promise<WriteResult<ShipmentRead>> {
+  // City virou campo do Consolidation Point (11/11/2026): `step=city` segue
+  // aceito e grava na etapa unificada.
+  if (step === "city") step = "consolidation_point";
   if (!(PL_CHECKLIST_STEPS as string[]).includes(step)) {
     return fail(404, `Unknown step '${step}'. Steps: ${PL_CHECKLIST_STEPS.join(", ")}.`);
   }
@@ -529,11 +533,21 @@ export async function patchShipmentStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, estimated_date, completed_on, responsible_id")
+    .select("id, estimated_date, completed_on, responsible_id, city_id")
     .eq("pre_loading_id", id)
     .eq("step", checklistStep)
     .maybeSingle();
   if (readError) return fail(500, readError.message);
+
+  // Trocou o Consolidation Point sem mandar a City: ela vem do cadastro da
+  // fábrica (uma cidade só) ou fica em branco para escolher (11/11/2026).
+  if (checklistStep === "consolidation_point" && "consolidation_point_id" in patch && !("city_id" in patch)) {
+    patch.city_id = await cityForConsolidationPoint(
+      admin,
+      (patch.consolidation_point_id as string | null) ?? null,
+      existing?.city_id ?? null
+    );
+  }
 
   // "Completed on" exige "Estimated date" e nunca é futura — mesma trava das telas.
   const dateError = validateStepDates(

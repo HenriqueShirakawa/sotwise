@@ -28,8 +28,8 @@ import type { PartRow } from "./view-parts-modal";
 
 /** Timeline completa: #11–17 (herdadas do PL) + #18–24 (fase Shipment). */
 const STEP_ORDER: ChecklistStep[] = [
+  // City é campo do Consolidation Point desde 11/11/2026.
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",
@@ -390,8 +390,14 @@ export default async function ShipmentDetailPage({
     const one = (label: string, value: string | null) => (value ? [{ label, value }] : null);
     const name = (map: Map<string, string>, id: string | null) => (id ? (map.get(id) ?? "—") : null);
     switch (s.step) {
-      case "consolidation_point":
-        return one("Consolidation point", name(factoryNameById, s.consolidation_point_id));
+      // Consolidation Point + City numa etapa só (11/11/2026).
+      case "consolidation_point": {
+        const fields = [
+          ...(one("Consolidation point", name(factoryNameById, s.consolidation_point_id)) ?? []),
+          ...(one("City", name(cityNameById, s.city_id)) ?? []),
+        ];
+        return fields.length ? fields : null;
+      }
       case "city":
         return one("City", name(cityNameById, s.city_id));
       case "port_of_loading":

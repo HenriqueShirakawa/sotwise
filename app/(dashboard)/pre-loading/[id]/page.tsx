@@ -21,8 +21,9 @@ import {
 
 /** As 7 etapas da fase pre-loading, na ordem do Bubble (docs §3.9.5). */
 const STEP_ORDER: ChecklistStep[] = [
+  // Consolidation Point + City numa etapa só desde 11/11/2026 (card da call de
+  // 10/11, item 6) — a linha "city" antiga fica no banco, fora da tela.
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",
@@ -115,6 +116,7 @@ export default async function PreLoadingChecklistPage({
     clientRes,
     shipmentModelRes,
     carrierRes,
+    factoryCityRes,
   ] = await Promise.all([
     pl.pod_id
       ? admin.from("pods").select("name").eq("id", pl.pod_id).single()
@@ -172,7 +174,23 @@ export default async function PreLoadingChecklistPage({
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("carriers").select("id, name").is("deleted_at", null).range(from, to)
     ),
+    // Cidades de cada fábrica (produtos do GSS) — a City da etapa Consolidation
+    // Point vem daqui (11/11/2026, card da call de 10/11, item 6).
+    fetchAll<{ factory_id: string; city_id: string }>((from, to) =>
+      admin
+        .from("factory_products")
+        .select("factory_id, city_id")
+        .is("deleted_at", null)
+        .not("city_id", "is", null)
+        .range(from, to)
+    ),
   ]);
+
+  const cityIdsByFactory: Record<string, string[]> = {};
+  for (const fp of factoryCityRes) {
+    const list = (cityIdsByFactory[fp.factory_id] ??= []);
+    if (!list.includes(fp.city_id)) list.push(fp.city_id);
+  }
 
   const profileNameById = new Map(profileRes.map((p) => [p.id, p.full_name]));
 
@@ -374,6 +392,7 @@ export default async function PreLoadingChecklistPage({
           .sort(byName)}
         factories={factoryRes.map((f) => ({ id: f.id, name: f.name })).sort(byName)}
         cities={cityNames.sort(byName)}
+        cityIdsByFactory={cityIdsByFactory}
         pols={polRes
           .map((p) => ({ id: p.id, name: p.name, cityId: cityByPol.get(p.id) ?? null }))
           .sort(byName)}
