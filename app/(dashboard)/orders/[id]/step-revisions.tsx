@@ -67,9 +67,9 @@ export function RevisionBadge({ count, onClick }: { count: number; onClick: () =
       onClick={onClick}
       aria-label={`Revisions (${count}) — view details`}
       title="View revisions"
-      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-300 px-2 py-px text-[11px] leading-4 text-slate-700 transition-colors hover:bg-slate-50"
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary px-2 py-px text-[11px] leading-4 text-primary transition-colors hover:bg-primary/5"
     >
-      <HistoryIcon className="size-3 text-slate-600" />
+      <HistoryIcon className="size-3" />
       Revisions
       <span>{count}</span>
     </button>
