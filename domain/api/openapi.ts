@@ -66,7 +66,9 @@ const batchIdParam = {
 /** `quantities_confirmed` (03/11): marca booleana do lote, como o `is_active`. */
 const quantitiesConfirmedIn = {
   type: "boolean",
-  description: "Batch flag. Omitted → unchanged (on create: `false`). Accepted in any batch status.",
+  description:
+    "Batch flag. Omitted → unchanged. On create it is ALWAYS `false` (since 2026-11-11 — GSS confirms later with PATCH). " +
+    "Accepted in any batch status, except `false` on a batch already shipped (409).",
 };
 
 const exampleBatch = {
@@ -476,8 +478,8 @@ export const openApiSpec = {
             type: "boolean",
             description:
               "GSS confirmation of the batch quantities. Confirm Shipping requires `true` on every batch of the PL. " +
-              "Set automatically when the status changes: `false` on `in_negotiation`/`in_production`/`preloading`, `true` on `in_transit`/`delivered`; " +
-              "a PATCH with only this field is always respected.",
+              "Since 2026-11-11: a new batch is always `false`; going back to `in_negotiation`/`in_production`/`preloading` resets it to `false`; " +
+              "a shipped batch (its PL has a shipment) is always `true` and can't go back to `false` (409).",
           },
           created_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
           updated_at: { type: ["number", "null"], description: "Unix seconds (fractional)." },
