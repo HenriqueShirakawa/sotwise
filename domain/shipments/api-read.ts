@@ -41,10 +41,19 @@ export type ShipmentRead = {
    */
   is_active: boolean;
   batches: PlBatchRef[];
+  /**
+   * Etapa Consolidation Point (Consolidation Point + City numa etapa só desde
+   * 11/11/2026): a fábrica e a cidade gravadas, com o gss_id de cada uma.
+   */
+  consolidation_point: LibraryRef | null;
+  city: LibraryRef | null;
 } & PlDates & {
     created_at: number | null;
     updated_at: number | null;
   };
+
+/** Referência a um cadastro na resposta: id do SOTWISE, gss_id e nome. */
+export type LibraryRef = { id: UUID; gss_id: string | null; name: string };
 
 type Embed<T> = T | T[] | null;
 const one = <T,>(v: Embed<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
@@ -83,9 +92,54 @@ function liveShipment(row: PlRow) {
   return s && !s.deleted_at ? s : null;
 }
 
+/** Consolidation Point + City de cada PL (etapa consolidation_point). */
+async function loadPlConsolidation(
+  admin: AdminClient,
+  ids: UUID[]
+): Promise<Map<UUID, { consolidation_point: LibraryRef | null; city: LibraryRef | null }>> {
+  const out = new Map<UUID, { consolidation_point: LibraryRef | null; city: LibraryRef | null }>();
+  if (ids.length === 0) return out;
+  const steps = await fetchAll<{ pre_loading_id: UUID; consolidation_point_id: UUID | null; city_id: UUID | null }>(
+    (from, to) =>
+      admin
+        .from("pre_loading_checklist_steps")
+        .select("pre_loading_id, consolidation_point_id, city_id")
+        .eq("step", "consolidation_point")
+        .in("pre_loading_id", ids)
+        .range(from, to)
+  );
+  const factoryIds = [...new Set(steps.map((s) => s.consolidation_point_id).filter((v): v is UUID => !!v))];
+  const cityIds = [...new Set(steps.map((s) => s.city_id).filter((v): v is UUID => !!v))];
+  const [factories, cities] = await Promise.all([
+    factoryIds.length
+      ? admin.from("factories").select("id, gss_id, name").in("id", factoryIds)
+      : Promise.resolve({ data: [] as LibraryRef[], error: null }),
+    cityIds.length
+      ? admin.from("cities").select("id, gss_id, name").in("id", cityIds)
+      : Promise.resolve({ data: [] as LibraryRef[], error: null }),
+  ]);
+  if (factories.error) throw new Error(factories.error.message);
+  if (cities.error) throw new Error(cities.error.message);
+  const ref = (list: LibraryRef[] | null) =>
+    new Map((list ?? []).map((r) => [r.id, { id: r.id, gss_id: r.gss_id, name: r.name }]));
+  const factoryById = ref(factories.data as LibraryRef[] | null);
+  const cityById = ref(cities.data as LibraryRef[] | null);
+  for (const s of steps) {
+    out.set(s.pre_loading_id, {
+      consolidation_point: s.consolidation_point_id ? (factoryById.get(s.consolidation_point_id) ?? null) : null,
+      city: s.city_id ? (cityById.get(s.city_id) ?? null) : null,
+    });
+  }
+  return out;
+}
+
 async function shape(admin: AdminClient, rows: PlRow[]): Promise<ShipmentRead[]> {
   const ids = rows.map((r) => r.id);
-  const [dates, batches] = await Promise.all([loadPlDates(admin, ids), loadPlBatches(admin, ids)]);
+  const [dates, batches, consolidation] = await Promise.all([
+    loadPlDates(admin, ids),
+    loadPlBatches(admin, ids),
+    loadPlConsolidation(admin, ids),
+  ]);
   return rows.map((r) => {
     const shipment = liveShipment(r);
     const updated = [r.updated_at, shipment?.updated_at].filter(Boolean).sort().pop() ?? r.updated_at;
@@ -96,6 +150,8 @@ async function shape(admin: AdminClient, rows: PlRow[]): Promise<ShipmentRead[]>
       status: shipment?.status ?? "preloading",
       is_active: r.is_active,
       batches: batches.get(r.id) ?? [],
+      consolidation_point: consolidation.get(r.id)?.consolidation_point ?? null,
+      city: consolidation.get(r.id)?.city ?? null,
       ...dates.get(r.id)!,
       created_at: timestampToUnix(r.created_at),
       updated_at: timestampToUnix(updated),

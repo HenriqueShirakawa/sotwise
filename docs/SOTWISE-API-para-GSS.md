@@ -570,6 +570,64 @@ Parâmetro desconhecido é ignorado; valor inválido responde **400** com `issue
 
 > PLs excluídos (soft delete) não aparecem.
 
+## 3.4. Consolidation Point (escrita, desde 11/11/2026)
+
+Quando o GSS já sabe o Consolidation Point de um PL, pode gravar direto no checklist do PL. No SOTWISE, **Consolidation Point e City são uma etapa só**.
+
+```
+PATCH https://sot.gssdatahub.com/api/shipments/{pl_number}/steps/consolidation_point
+Authorization: Bearer <API_TOKEN>
+Content-Type: application/json
+```
+
+`{pl_number}` aceita o número do PL (ex.: `1473`) ou o UUID do SOTWISE.
+
+| Campo | Obrigatório | O que é |
+|---|---|---|
+| `consolidation_point` | sim | A fábrica — o **`gss_id`** dela (ex.: `"91"`) ou o id do SOTWISE |
+| `city` | não | A cidade — **`gss_id`** ou id do SOTWISE. Mande quando a fábrica tem mais de uma cidade |
+
+Regra da City quando ela **não** é enviada (vem do cadastro de produtos da fábrica no GSS):
+
+- fábrica com **uma** cidade → preenchida automaticamente;
+- com **várias** → fica em branco para a equipe escolher na tela (ou mande `city`);
+- **sem** cidade no cadastro → mantém a que já estava.
+
+A etapa conclui quando tem Consolidation Point **e** City (assinada como "GSS Team"). Não precisa de `estimated_date` nem responsável.
+
+**Exemplos**
+
+```jsonc
+// Fábrica com uma cidade só — a City vem sozinha
+{ "consolidation_point": "12" }
+
+// Fábrica com 2+ cidades — mande a City
+{ "consolidation_point": "91", "city": "68" }
+```
+
+**Resposta `200`** — o PL no formato de `GET /api/shipments/{pl_number}`, já com o que ficou gravado:
+
+```jsonc
+{
+  "data": {
+    "pl_number": 1473,
+    "consolidation_point": { "id": "…", "gss_id": "91", "name": "Baoyudi" },
+    "city": { "id": "…", "gss_id": "68", "name": "Changzhou" },
+    "...": "demais campos do PL"
+  }
+}
+```
+
+| Código | Quando |
+|---|---|
+| `200` | Gravado |
+| `400` | `gss_id` de fábrica/cidade não encontrado, campo que a etapa não aceita, ou body vazio |
+| `401` | Token ausente ou errado |
+| `404` | PL não encontrado |
+| `409` | PL já embarcado (só admin corrige etapa do Pre-loading depois do Confirm Loading) |
+
+> Compatibilidade: `PATCH …/steps/city` com `{ "city": "…" }` continua aceito e grava na mesma etapa.
+
 ---
 
 # Parte 4 — ETD Factories
