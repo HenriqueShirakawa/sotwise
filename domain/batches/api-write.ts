@@ -403,6 +403,29 @@ export async function updateBatch(
   if (error) return fail(500, error.message);
   if (!batch) return fail(404, "Batch not found.");
 
+  // Lote que já embarcou (num PL com Shipment) fica com quantities_confirmed =
+  // true para sempre (11/11/2026, pedido do usuário) — o Confirm Loading só
+  // libera com todos true, e depois disso não volta a false.
+  if (input.quantities_confirmed === false) {
+    const { data: links, error: linkError } = await admin
+      .from("pre_loading_batches")
+      .select("pre_loading_id")
+      .eq("batch_id", batchId);
+    if (linkError) return fail(500, linkError.message);
+    const plIds = (links ?? []).map((l) => l.pre_loading_id);
+    const { count: shippedCount, error: shippedError } = plIds.length
+      ? await admin
+          .from("shipments")
+          .select("id", { count: "exact", head: true })
+          .in("pre_loading_id", plIds)
+          .is("deleted_at", null)
+      : { count: 0, error: null };
+    if (shippedError) return fail(500, shippedError.message);
+    if ((shippedCount ?? 0) > 0) {
+      return fail(409, `Batch '${batch.batch_number}' is already shipped — quantities_confirmed stays true.`);
+    }
+  }
+
   // Só marcas (`is_active` 13/10, `quantities_confirmed` 03/11): não mexem em
   // número/status/linhas — não passam pela trava de lote editável nem pelas
   // regras de conteúdo.
