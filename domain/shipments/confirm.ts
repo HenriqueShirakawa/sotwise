@@ -33,8 +33,8 @@ import { userTodayIso } from "@/lib/user-time-zone";
 type Admin = ReturnType<typeof createAdminClient>;
 
 export const PL_STEPS: ChecklistStep[] = [
+  // City é campo do Consolidation Point desde 11/11/2026.
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",

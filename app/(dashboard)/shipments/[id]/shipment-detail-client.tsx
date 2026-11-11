@@ -155,8 +155,8 @@ function StepDetailFields({ fields }: { fields: StepDetailField[] }) {
  * consulta; #18–24 são as etapas da fase Shipment, editáveis nesta tela.
  */
 const PRE_LOADING_STEPS: ChecklistStep[] = [
+  // City é campo do Consolidation Point desde 11/11/2026.
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",

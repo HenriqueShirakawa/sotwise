@@ -180,8 +180,10 @@ export type PatchStepInput = z.infer<typeof patchStepSchema>;
 
 /** Campos específicos que cada etapa aceita (os da tela). */
 export const STEP_FIELDS: Partial<Record<ChecklistStep, (keyof PatchStepInput)[]>> = {
-  consolidation_point: ["consolidation_point"],
-  city: ["city"],
+  // Consolidation Point + City numa etapa só (11/11/2026). A `city` em branco
+  // vem do cadastro da fábrica quando ela tem uma cidade só. `step=city` ainda é
+  // aceito (vira consolidation_point) para quem já integrou.
+  consolidation_point: ["consolidation_point", "city"],
   port_of_loading: ["pol"],
   agents: ["carrier", "agent_brazil", "agent_china", "contact_brazil", "contact_china"],
   booking: ["booking_number", "cutoff_date", "doc_cutoff_date"],

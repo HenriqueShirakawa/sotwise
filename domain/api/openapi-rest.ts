@@ -54,8 +54,8 @@ const deleted = {
 };
 
 const PL_STEPS = [
+  // `city` virou campo do consolidation_point (11/11/2026); `step=city` ainda é aceito.
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",

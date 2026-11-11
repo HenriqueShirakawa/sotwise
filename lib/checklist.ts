@@ -65,11 +65,14 @@ export const ORDER_STEPS: ChecklistStep[] = [
 export const HIDDEN_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
   "packing_confirm",
   "inspection_report",
+  // 11/11/2026 (card da call de 10/11, item 6): a City virou campo da etapa
+  // Consolidation Point — a linha "city" antiga fica no banco, fora do front.
+  "city",
 ]);
 
 export const PRELOADING_STEPS: ChecklistStep[] = [
+  // Consolidation Point + City numa etapa só desde 11/11/2026.
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",
@@ -120,7 +123,6 @@ export type ShipmentEstimates = Record<ShipmentEstimateStep, ShipmentEstimate>;
  */
 export const CREATE_PRELOADING_ESTIMATE_STEPS = [
   "consolidation_point",
-  "city",
   "port_of_loading",
   "shipping_docs",
   "agents",
