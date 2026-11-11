@@ -290,7 +290,7 @@ export const openApiSpec = {
         description:
           "Partial update — only the fields sent are applied. Everything is validated before anything is written. " +
           "`remove_item_ids` takes lines out of the batch (they stay in the order, without batch). " +
-          "A PATCH with only `is_active` and/or `quantities_confirmed` is accepted in any status — they are only flags and skip the editable-batch lock.",
+          "A PATCH with only `is_active` and/or `quantities_confirmed` is accepted in any status — they are only flags and skip the editable-batch lock. Exception (2026-11-11): a batch already shipped (its PL has a shipment) keeps `quantities_confirmed: true` — sending `false` returns 409.",
         requestBody: {
           required: true,
           content: {
