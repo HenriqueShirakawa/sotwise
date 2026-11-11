@@ -237,7 +237,7 @@ export const restPaths = {
       summary: "Update an order checklist step",
       description: [
         "Sends the data that completes the step — same rules as the SOTWISE screens:",
-        "- `order`: `order_received_date`. `pi`: `pi_status` boolean — `true` (PI issued) completes the step, `false` is only recorded (never reopens) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay).",
+        "- `order`: `order_received_date`. `pi`: `pi_status` boolean — `true` (PI issued) completes the step, `false` is only recorded (never reopens) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay). Since 2026-11-11 the items alone do NOT complete `po`: a SOTWISE user also sets the **PO received date** on the screen; the step completes once both are there.",
         "- The first value completes the step; later changes become revisions (the original is kept). `reason` is the revision reason (default: \"Updated by GSS\").",
         "- `completed_on` is always the day of the LAST update (for `pi`, the status date) and can't be set directly. A repeated, identical value changes nothing.",
         "- Fields of another step → 400.",
@@ -846,6 +846,7 @@ export const restSchemas = {
       order_received_date: { ...nullableDate, description: "`order` only — current value." },
       pi_status: { type: ["boolean", "null"], description: "`pi` only — `true` = PI issued." },
       pi_status_date: { ...nullableDate, description: "`pi` only." },
+      po_received_date: { ...nullableDate, description: "`po` only — date set by a SOTWISE user (completes the step together with the items)." },
       items: {
         type: "array",
         description: "`po` only — active Factory × Category lines.",
@@ -864,7 +865,7 @@ export const restSchemas = {
         items: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["order_received_date", "fxc", "pi_status", "completed_on"] },
+            kind: { type: "string", enum: ["order_received_date", "po_received_date", "fxc", "pi_status", "completed_on"] },
             previous_date: nullableDate,
             new_date: nullableDate,
             payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status (boolean). `gss_user` ({ name, email }) when the change came with `changed_by`." },

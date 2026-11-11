@@ -145,7 +145,8 @@ export type ChecklistRevisionKind =
   | "pi_status"
   | "completed_on"
   | "deposit_date"
-  | "balance_date";
+  | "balance_date"
+  | "po_received_date";
 export type ChecklistRevisionSource = "manual" | "gss";
 
 export type Database = {
@@ -724,6 +725,7 @@ export type Database = {
           status: OrderStatus;
           date_po: DateStr | null;
           order_received_date: DateStr | null;
+          po_received_date: DateStr | null;
           pi_status: boolean | null;
           pi_status_date: DateStr | null;
           deposit_date: DateStr | null;
@@ -753,6 +755,7 @@ export type Database = {
           status?: OrderStatus;
           date_po?: DateStr | null;
           order_received_date?: DateStr | null;
+          po_received_date?: DateStr | null;
           pi_status?: boolean | null;
           pi_status_date?: DateStr | null;
           deposit_date?: DateStr | null;

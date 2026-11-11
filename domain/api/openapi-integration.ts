@@ -587,7 +587,7 @@ export const integrationPaths = {
         "- Leader / Requester are SOTWISE users, matched by e-mail; unknown e-mail → 400.",
         "- `items[]` creates Factory × Category lines **without batch**. Additive: a resend only adds new (factory, category) pairs; existing ones are never recreated or overwritten.",
         "- `date_po` defaults to today, on creation only.",
-        "- Checklist: `order_received_date` completes the **Order** step; `pi_status` (+ `pi_status_date`) completes the **PI** step; the first `items[]` delivery completes the **PO** step. Later changes become revisions (original kept).",
+        "- Checklist: `order_received_date` completes the **Order** step; `pi_status` (+ `pi_status_date`) completes the **PI** step; the **PO** step completes when the order has `items[]` AND a SOTWISE user sets the PO received date (since 2026-11-11). Later changes become revisions (original kept).",
       ].join("\n"),
       requestBody: {
         required: true,

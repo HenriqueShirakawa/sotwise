@@ -24,6 +24,7 @@ import {
   saveBalanceDate,
   saveDepositDate,
   saveOrderReceivedDate,
+  savePoReceivedDate,
   type StepRevision,
 } from "./actions";
 
@@ -87,7 +88,7 @@ const TITLES: Record<RevisionStep, string> = {
 /** Rótulo do campo de data dentro do formulário. */
 const DATE_LABELS: Record<RevisionStep, string> = {
   order: "Order received date",
-  po: "Completed on",
+  po: "PO received date",
   pi: "Completed on",
   deposit_payment: "Deposit date",
   balance_payment: "Balance date",
@@ -95,6 +96,7 @@ const DATE_LABELS: Record<RevisionStep, string> = {
 
 const KIND_LABELS: Record<StepRevision["kind"], string> = {
   order_received_date: "Order received date",
+  po_received_date: "PO received date",
   fxc: "Factory × Category received",
   pi_status: "PI status",
   completed_on: "Completed on",
@@ -119,6 +121,7 @@ export function StepRevisionsModal({
   step,
   currentDate,
   onSaveDate,
+  formOnly: formOnlyProp,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -132,8 +135,13 @@ export function StepRevisionsModal({
    * tela, que mostra na hora e grava por trás — o popup fecha no clique.
    */
   onSaveDate?: (date: string, reason: string | null) => void;
+  /**
+   * Força o modo do popup. O PO tem os dois (11/11/2026): o "Set date" abre só o
+   * formulário do PO received date; o pill "Revisions" abre só a lista.
+   */
+  formOnly?: boolean;
 }) {
-  const formOnly = FORM_ONLY_REVISIONS.has(step);
+  const formOnly = formOnlyProp ?? FORM_ONLY_REVISIONS.has(step);
   const [pending, startTransition] = useTransition();
   const [rows, setRows] = useState<StepRevision[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -154,7 +162,7 @@ export function StepRevisionsModal({
   }
 
   useEffect(() => {
-    if (!openFor || FORM_ONLY_REVISIONS.has(step)) return;
+    if (!openFor || formOnly) return;
     let cancelled = false;
     getStepRevisions(openFor)
       .then((r) => !cancelled && setRows(r))
@@ -166,14 +174,15 @@ export function StepRevisionsModal({
     return () => {
       cancelled = true;
     };
-  }, [openFor, step]);
+  }, [openFor, formOnly]);
 
   // Order grava a received date e o Deposit Payment a deposit date; o Completed
   // on de PO/PI vem do GSS e é imutável (22/10/2026) — o popup deles é só a lista.
   // No Deposit o motivo é sempre obrigatório (pedido do usuário); só no Order a
   // 1ª gravação é livre.
   const canAdd = formOnly;
-  const reasonRequired = step === "order" ? !!currentDate : true;
+  // PO received date (11/11/2026) segue o Order: 1ª gravação livre.
+  const reasonRequired = step === "order" || step === "po" ? !!currentDate : true;
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
   function save() {
@@ -183,13 +192,15 @@ export function StepRevisionsModal({
       return;
     }
     startTransition(async () => {
-      // Só Order, Deposit e Balance Payment gravam por aqui (canAdd).
+      // Só Order, PO (received date), Deposit e Balance Payment gravam por aqui (canAdd).
       const res =
         step === "order"
           ? await saveOrderReceivedDate(orderId, date, reason.trim() || null)
-          : step === "balance_payment"
-            ? await saveBalanceDate(orderId, date, reason.trim())
-            : await saveDepositDate(orderId, date, reason.trim());
+          : step === "po"
+            ? await savePoReceivedDate(orderId, date, reason.trim() || null)
+            : step === "balance_payment"
+              ? await saveBalanceDate(orderId, date, reason.trim())
+              : await saveDepositDate(orderId, date, reason.trim());
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -222,7 +233,9 @@ export function StepRevisionsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-lg text-primary">{TITLES[step]}</DialogTitle>
+          <DialogTitle className="text-lg text-primary">
+            {step === "po" && formOnly ? DATE_LABELS.po : TITLES[step]}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="min-w-0 space-y-4">

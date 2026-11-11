@@ -163,6 +163,7 @@ type Lookup =
 /** Rótulo e tipo de cada coluna do log, na ordem em que aparecem na tela. */
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
   order_received_date: { label: "Order received date", kind: "date" },
+  po_received_date: { label: "PO received date", kind: "date" },
   deposit_date: { label: "Deposit date", kind: "date" },
   balance_date: { label: "Balance date", kind: "date" },
   // Place the Order: "Fábrica: dd/mm/yyyy" (uma data por fábrica, 22/10/2026).

@@ -72,6 +72,7 @@ import {
   saveDepositDate,
   saveFactoryPlacedDate,
   saveOrderReceivedDate,
+  savePoReceivedDate,
 } from "./actions";
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
@@ -196,6 +197,8 @@ type OrderDetail = {
   date_po: string | null;
   /** Etapa Order: data do pedido final (a vigente, após revisões). */
   order_received_date: string | null;
+  /** Etapa PO: data gravada pelo usuário ("Set date", 11/11/2026). */
+  po_received_date: string | null;
   /** Etapa PI: último status vindo do GSS (true = emitida) + data. */
   pi_status: boolean | null;
   pi_status_date: string | null;
@@ -759,10 +762,18 @@ export function OrderDetailClient({
   const [placedDates, runPlaced] = useOptimisticObject(serverPlacedDates);
   function saveOrderDate(step: ChecklistStep, date: string, reason: string | null) {
     const field =
-      step === "order" ? "order_received_date" : step === "balance_payment" ? "balance_date" : "deposit_date";
+      step === "order"
+        ? "order_received_date"
+        : step === "po"
+          ? "po_received_date"
+          : step === "balance_payment"
+            ? "balance_date"
+            : "deposit_date";
     const call =
       step === "order"
         ? () => saveOrderReceivedDate(orderId, date, reason)
+        : step === "po"
+          ? () => savePoReceivedDate(orderId, date, reason)
         : step === "balance_payment"
           ? () => saveBalanceDate(orderId, date, reason ?? "")
           : () => saveDepositDate(orderId, date, reason ?? "");
@@ -791,6 +802,13 @@ export function OrderDetailClient({
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   // Popup de revisões das etapas Order/PO/PI.
   const [revisionsFor, setRevisionsFor] = useState<ChecklistStepRow | null>(null);
+  // PO tem dois popups (11/11/2026): o "Set date" (formulário) e o pill
+  // "Revisions" (lista das levas de F×C e das datas).
+  const [revisionsForm, setRevisionsForm] = useState(false);
+  function openRevisions(s: ChecklistStepRow, form = false) {
+    setRevisionsForm(form);
+    setRevisionsFor(s);
+  }
   // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
   const logCounts = useStepLogCounts({ kind: "order", orderId }, JSON.stringify(serverSteps));
 
@@ -1212,7 +1230,7 @@ export function OrderDetailClient({
                           )}
                         </div>
                         {TRIGGER_COMPLETED_STEPS.has(s.step) ? (
-                          <TriggerCompletedOn step={s} onRevise={() => setRevisionsFor(s)} />
+                          <TriggerCompletedOn step={s} onRevise={() => openRevisions(s)} />
                         ) : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
                           // Place the Order fecha sozinha quando toda fábrica
                           // tem "Placed on"; ETD quando a última Initial Date é
@@ -1268,6 +1286,14 @@ export function OrderDetailClient({
                           // A data vigente; o que mudou fica no History da etapa.
                           date={order.order_received_date}
                           onOpen={() => setRevisionsFor(s)}
+                        />
+                      )}
+                      {s.step === "po" && (
+                        <TriggerDateField
+                          label="PO received date"
+                          // Fecha o PO junto com as F×C do GSS (11/11/2026).
+                          date={order.po_received_date}
+                          onOpen={() => openRevisions(s, true)}
                         />
                       )}
                       {s.step === "deposit_payment" && (
@@ -1370,13 +1396,16 @@ export function OrderDetailClient({
           currentDate={
             revisionsFor.step === "order"
               ? order.order_received_date
-              : revisionsFor.step === "deposit_payment"
-                ? order.deposit_date
-                : revisionsFor.step === "balance_payment"
-                  ? order.balance_date
-                  : revisionsFor.completed_on
+              : revisionsFor.step === "po"
+                ? order.po_received_date
+                : revisionsFor.step === "deposit_payment"
+                  ? order.deposit_date
+                  : revisionsFor.step === "balance_payment"
+                    ? order.balance_date
+                    : revisionsFor.completed_on
           }
           onSaveDate={(date, reason) => saveOrderDate(revisionsFor.step, date, reason)}
+          formOnly={revisionsFor.step === "po" ? revisionsForm : undefined}
         />
       )}
     </div>

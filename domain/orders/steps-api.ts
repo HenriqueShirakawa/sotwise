@@ -26,7 +26,8 @@ import { gssOrderItemSchema } from "./gss-schema";
  *   PATCH /api/orders/{id}/steps/{step}   → o dado que conclui a etapa
  *
  * `{step}`: `order` (Order received date), `pi` (status da PI + data) e `po`
- * (leva de Factory × Category). As regras são as das telas (lib/checklist-
+ * (leva de Factory × Category — desde 11/11/2026 NÃO conclui o PO sozinha: o
+ * usuário grava o "PO received date" na tela; o GET mostra a data). As regras são as das telas (lib/checklist-
  * revisions): o 1º dado conclui a etapa, os seguintes viram revisões com motivo
  * (`reason`; sem ele, "Updated by GSS"), e o Completed on é sempre a ÚLTIMA
  * atualização — nunca se grava à mão. O toggle das etapas fica só na tela.
@@ -115,6 +116,8 @@ export type OrderStepRead = {
   order_received_date?: Unix | null;
   pi_status?: boolean | null;
   pi_status_date?: Unix | null;
+  /** PO: a data gravada pelo usuário no SOT ("Set date", 11/11/2026). */
+  po_received_date?: Unix | null;
   /** PO: as Factory × Category ativas da order. */
   items?: { id: UUID; factory: string; category: string; ship_requirement: Unix | null }[];
   /** Mais antigo primeiro; o 1º de cada tipo é o registro original. */
@@ -173,6 +176,13 @@ export async function readOrderStep(
       out.pi_status_date = dayToUnix(order?.pi_status_date ?? null);
     }
   } else {
+    const { data: order, error: oError } = await admin
+      .from("orders")
+      .select("po_received_date")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (oError) throw new Error(oError.message);
+    out.po_received_date = dayToUnix(order?.po_received_date ?? null);
     const { data: lines, error: lError } = await admin
       .from("order_factory_category")
       .select("id, ship_requirement, factories(name), categories(name)")
@@ -223,7 +233,8 @@ export async function patchOrderStep(
     const { items } = input as z.infer<typeof orderStepPatchSchemas.po>;
     const applied = await applyOrderItems(admin, orderId, items);
     if (!applied.ok) return fail(applied.status, applied.error);
-    // Leva que muda o conjunto vira revisão e regrava o Completed on do PO.
+    // Leva que muda o conjunto vira revisão; conclui o PO só se o usuário já
+    // gravou o PO received date (11/11/2026).
     await recordFxcDelivery(admin, orderId, who);
   }
 

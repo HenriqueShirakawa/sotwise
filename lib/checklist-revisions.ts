@@ -26,8 +26,11 @@ type Admin = ReturnType<typeof createAdminClient>;
  *  - **Order**: o usuário grava o "Order received date" (data do pedido final do
  *    cliente). A 1ª gravação conclui a etapa com Completed on = HOJE; cada troca
  *    depois exige motivo e vira revisão.
- *  - **PO**: conclui quando as Factory × Category chegam do GSS. Cada leva que
- *    muda o conjunto de F×C ativas é registrada (lista + o que mudou).
+ *  - **PO**: cada leva de Factory × Category do GSS que muda o conjunto ativo é
+ *    registrada (lista + o que mudou). Desde 11/11/2026 (card da call de 10/11,
+ *    item 2) NÃO conclui sozinha: o usuário grava o "PO received date" ("Set
+ *    date", igual ao Order) e a etapa fecha com as duas coisas — F×C ativas E a
+ *    data. 1ª gravação livre, trocar depois exige motivo.
  *  - **PI**: o GSS manda o status da PI (texto livre) + data. O 1º status conclui
  *    a etapa com Completed on = data dele; os seguintes são revisões.
  *  - **Deposit Payment**: o usuário grava o "Deposit date" (quando o cliente
@@ -182,34 +185,55 @@ function reasonFor(who: Who): string | null {
  * hoje). Depois: revisão com motivo obrigatório (o GSS grava "Updated by GSS").
  * Retorna a mensagem de erro de validação, ou null.
  */
-export async function setOrderReceivedDate(
+export function setOrderReceivedDate(admin: Admin, orderId: string, date: string, who: Who) {
+  return setReceivedDate(admin, orderId, "order_received_date", date, who);
+}
+
+/**
+ * "PO received date" da etapa PO (11/11/2026): mesma mecânica do Order
+ * received date, mas a etapa só conclui se a Order já tem Factory × Category
+ * ativas — sem elas a data fica gravada e o PO fecha quando a 1ª leva chegar.
+ */
+export function setPoReceivedDate(admin: Admin, orderId: string, date: string, who: Who) {
+  return setReceivedDate(admin, orderId, "po_received_date", date, who);
+}
+
+/** As datas "received" que concluem etapa: coluna em `orders` → etapa + rótulo. */
+const RECEIVED_DATES = {
+  order_received_date: { step: "order", label: "order received date" },
+  po_received_date: { step: "po", label: "PO received date" },
+} as const satisfies Record<string, { step: ChecklistStep; label: string }>;
+
+async function setReceivedDate(
   admin: Admin,
   orderId: string,
+  field: keyof typeof RECEIVED_DATES,
   date: string,
   who: Who
 ): Promise<string | null> {
-  if (date > todayIso()) return "The order received date can't be in the future.";
+  const { step: stepKey, label } = RECEIVED_DATES[field];
+  if (date > todayIso()) return `The ${label} can't be in the future.`;
 
   const { data: order, error } = await admin
     .from("orders")
-    .select("order_received_date")
+    .select("order_received_date, po_received_date")
     .eq("id", orderId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!order) return "Order not found.";
 
-  const previous = order.order_received_date;
+  const previous = order[field];
   if (previous === date) return null;
 
   const reason = reasonFor(who);
-  if (previous && !reason) return "A reason is required to revise the order received date.";
+  if (previous && !reason) return `A reason is required to revise the ${label}.`;
 
-  const step = await readStep(admin, orderId, "order");
+  const step = await readStep(admin, orderId, stepKey);
   if (!step) return "Checklist step not found.";
 
   const { error: upError } = await admin
     .from("orders")
-    .update({ order_received_date: date })
+    .update(field === "order_received_date" ? { order_received_date: date } : { po_received_date: date })
     .eq("id", orderId);
   if (upError) throw new Error(upError.message);
 
@@ -218,7 +242,7 @@ export async function setOrderReceivedDate(
     {
       order_id: orderId,
       step_id: step.id,
-      kind: "order_received_date",
+      kind: field,
       previous_date: previous,
       new_date: date,
       reason: previous ? reason : null,
@@ -233,11 +257,14 @@ export async function setOrderReceivedDate(
     step: step.step,
     action: "update",
     changes: {
-      order_received_date: { from: previous, to: date },
+      [field]: { from: previous, to: date },
       ...(previous && reason ? { reason } : {}),
     },
     userId: who.userId,
   });
+
+  // PO: sem Factory × Category ativas ainda não fecha (fecha quando chegarem).
+  if (field === "po_received_date" && (await readActiveFxc(admin, orderId)).length === 0) return null;
 
   // Completed on = o MOMENTO da última gravação (não a data em si) — a cada troca.
   await completeByTrigger(admin, step, todayIso(), who.userId);
@@ -389,7 +416,7 @@ async function readActiveFxc(admin: Admin, orderId: string): Promise<FxcItem[]> 
  * Registra uma "leva" de Factory × Category recebida do GSS. Chamada DEPOIS de
  * cada escrita da API nas F×C da order (uma chamada = uma leva). Compara o
  * conjunto ativo com o da última leva: igual → nada; diferente → nova linha
- * com o que entrou e o que saiu. A 1ª leva conclui o PO (Completed on = hoje).
+ * com o que entrou e o que saiu. Com o "PO received date" já gravado, a leva que traz as 1ªs F×C conclui o PO.
  *
  * Nunca derruba a escrita que a chamou — erro só vai pro console.
  */
@@ -437,10 +464,15 @@ export async function recordFxcDelivery(
       who
     );
 
-    // Cada leva que muda o conjunto regrava o Completed on (a última atualização);
-    // leva que zera as F×C reabre o PO (23/10/2026).
-    if (items.length > 0) await completeByTrigger(admin, step, today, who.userId);
-    else if (step.completed_on) await reopenByTrigger(admin, step, who.userId);
+    // Desde 11/11/2026 a leva não conclui o PO sozinha: precisa também do "PO
+    // received date" do usuário. Com a data já gravada, a 1ª leva fecha a etapa
+    // (Completed on = hoje); levas seguintes não mexem no Completed on. Leva que
+    // zera as F×C reabre o PO (23/10/2026).
+    if (items.length === 0) {
+      if (step.completed_on) await reopenByTrigger(admin, step, who.userId);
+    } else if (!step.completed_on && (await triggerFulfilled(admin, orderId, "po"))) {
+      await completeByTrigger(admin, step, today, who.userId);
+    }
 
     // Fábrica/entrada nova sem data reabre Place the Order e ETD.
     await recheckFactorySteps(admin, orderId, who.userId);
@@ -743,7 +775,16 @@ async function triggerFulfilled(admin: Admin, orderId: string, step: ChecklistSt
       if (error) throw new Error(error.message);
       const active = lines ?? [];
       if (active.length === 0) return false;
-      if (step === "po") return true;
+      if (step === "po") {
+        // F×C ativas E o "PO received date" do usuário (11/11/2026).
+        const { data: order, error: oError } = await admin
+          .from("orders")
+          .select("po_received_date")
+          .eq("id", orderId)
+          .maybeSingle();
+        if (oError) throw new Error(oError.message);
+        return !!order?.po_received_date;
+      }
       if (step === "place_the_order") {
         const { data: dated, error: dError } = await admin
           .from("order_factory_placed_dates")

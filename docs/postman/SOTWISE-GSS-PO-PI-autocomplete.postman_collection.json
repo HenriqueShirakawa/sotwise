@@ -581,7 +581,7 @@
           ]
         },
         {
-          "name": "2.2 PATCH po — 1ª leva de F×C (conclui sozinha) — 200",
+          "name": "2.2 PATCH po — 1ª leva de F×C (NÃO conclui: falta o PO received date) — 200",
           "request": {
             "method": "PATCH",
             "header": [
@@ -603,7 +603,7 @@
                 "po"
               ]
             },
-            "description": "Sem Estimated date nem Responsible: conclui mesmo assim com Completed on = hoje, e a Estimated vazia recebe a mesma data. (Quando o item 2 do card entrar, isto passa a só gravar.)",
+            "description": "Desde 11/11/2026 (item 2 do card) a leva de F×C só GRAVA: o PO fecha quando um usuário do SOT também grava o PO received date na tela (Set date). A leva fica no histórico (fxc).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"items\": [\n    {\n      \"supplier_category_gss_id\": \"{{sc_id}}\",\n      \"ship_requirement\": {{d_ship}}\n    }\n  ],\n  \"changed_by\": { \"name\": \"Postman GSS\", \"email\": \"postman.gss@example.com\" }\n}",
@@ -634,8 +634,8 @@
                   "pm.test('200', () => pm.response.to.have.status(200));",
                   "const d = pm.response.json().data;",
                   "pm.test('1 linha de F×C', () => pm.expect(d.items).to.have.length(1));",
-                  "pm.test('CONCLUÍDA sem Estimated/Responsible (auto complete)', () => pm.expect(d.done).to.eql(true));",
-                  "pm.test('Estimated date vazia recebeu a data do Completed on', () => pm.expect(d.estimated_date).to.eql(d.completed_on));",
+                  "pm.test('segue ABERTA (sem PO received date)', () => pm.expect(d.done).to.eql(false));",
+                  "pm.test('sem PO received date', () => pm.expect(d.po_received_date).to.eql(null));",
                   "pm.test('leva registrada no histórico (fxc)', () => pm.expect(d.revisions.map(r => r.kind)).to.include('fxc'));",
                   "pm.collectionVariables.set('po_revs', d.revisions.length);"
                 ]

@@ -17,6 +17,7 @@ import {
   setFactoryPlacedDate,
   setDepositDate,
   setOrderReceivedDate,
+  setPoReceivedDate,
 } from "@/lib/checklist-revisions";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
@@ -237,6 +238,28 @@ export async function saveOrderReceivedDate(
   const session = await requireFeature("orders", "edit");
   if (!date) return { ok: false, error: "Choose the order received date." };
   const error = await setOrderReceivedDate(createAdminClient(), orderId, date, {
+    source: "manual",
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
+/**
+ * "PO received date" da etapa PO (11/11/2026, igual ao Order received date): a
+ * 1ª gravação é livre, trocar depois exige motivo. A etapa fecha quando a Order
+ * também tem Factory × Category ativas (vindas do GSS).
+ */
+export async function savePoReceivedDate(
+  orderId: string,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!date) return { ok: false, error: "Choose the PO received date." };
+  const error = await setPoReceivedDate(createAdminClient(), orderId, date, {
     source: "manual",
     userId: session.userId,
     reason,

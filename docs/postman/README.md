@@ -155,7 +155,7 @@ Environment novo: **`SOTWISE-GSS-dev.postman_environment.json`** ("SOTWISE — G
 |---|---|
 | 0 | Cria a order de teste `GSS-TEST-POPI-…` (nenhuma order real é tocada) |
 | 1. PI | nasce aberta → **emitida em X** (conclui, Estimated = X, quem emitiu no GSS no histórico) → mesmo status não grava → **deletada em Y com motivo** (reabre, Estimated mantida) → **reemitida em Z** (conclui, Completed = Z, Estimated segue X) → histórico X/Y/Z → data futura vira hoje → `pi_status` em texto = 400 |
-| 2. PO | nasce aberta → 1ª leva de F×C (conclui hoje, Estimated = Completed) → mesma leva não grava → lista vazia = 400 → produto inexistente = 400 |
+| 2. PO | nasce aberta → 1ª leva de F×C (desde 11/11 NÃO conclui: falta o PO received date, gravado na tela) → mesma leva não grava → lista vazia = 400 → produto inexistente = 400 |
 | 3 | Campo de outra etapa = 400, etapa desconhecida = 404, sem token = 401 |
 | 99 | Apaga a order de teste |
 
