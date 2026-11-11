@@ -19,7 +19,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { openApiSpec } from "../../domain/api/openapi";
@@ -451,6 +451,34 @@ function buildSotwise(spec: Json): PmItem {
 }
 
 // ---------------------------------------------------------------------------
+// 3. Testes de cenário (11/11/2026) — collections escritas à mão em
+// docs/postman, embutidas aqui para a collection completa ter tudo num lugar.
+// ---------------------------------------------------------------------------
+
+const SCENARIOS = [resolve("docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json")];
+
+function buildScenarios(): { folder: PmItem; variables: Json[] } {
+  const variables: Json[] = [];
+  const item = SCENARIOS.map((file) => {
+    const c = JSON.parse(readFileSync(file, "utf8")) as Json;
+    for (const v of (c.variable ?? []) as Json[]) {
+      if (!variables.some((x) => x.key === v.key)) variables.push(v);
+    }
+    return { name: c.info.name, description: c.info.description, auth: c.auth, item: c.item };
+  });
+  return {
+    folder: {
+      name: "3. Testes — cenários (GSS → SOTWISE)",
+      description:
+        "Cenários prontos para rodar no Runner (uma pasta por cenário), com asserts. " +
+        "Cada pasta cria os próprios dados de teste e apaga no fim. Mesmo `Bearer {{api_token}}` e `{{base_url}}` da pasta 2.",
+      item,
+    },
+    variables,
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 async function main() {
   const r = await gssGet<Json>("/openapi.json");
@@ -459,6 +487,7 @@ async function main() {
     process.exit(1);
   }
 
+  const scenarios = buildScenarios();
   const collection = {
     info: {
       name: "SOTWISE x GSS — Swagger completo",
@@ -470,7 +499,8 @@ async function main() {
         `Gerada em ${new Date().toISOString().slice(0, 10)}.`,
       schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     },
-    item: [buildGss(r.data), buildSotwise(openApiSpec as unknown as Json)],
+    item: [buildGss(r.data), buildSotwise(openApiSpec as unknown as Json), scenarios.folder],
+    variable: scenarios.variables,
   };
 
   writeFileSync(OUT, JSON.stringify(collection, null, 2) + "\n");

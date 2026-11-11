@@ -105,6 +105,7 @@ O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do 
 |---|---|---|---|
 | `1. GSS` | Swagger do GSS (87 operações em 09/11/2026) | `{{gss_base}}` = `https://api.gssdatahub.com/v1` | CF Access (`gss_cf_client_id`/`gss_cf_client_secret`) + `Bearer {{gss_access}}` |
 | `2. SOTWISE` | `/api/openapi.json` (69 operações em 09/11/2026; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
+| `3. Testes — cenários` | (11/11/2026) collections de cenário embutidas pelo gerador (`SCENARIOS` no script): hoje `SOTWISE-GSS-PO-PI-autocomplete` — GSS mandando PI e PO, com asserts; cria e apaga a própria order de teste | `{{base_url}}` | `Bearer {{api_token}}` |
 
 **Token do GSS é automático:** o pre-request do folder GSS renova `gss_access` (refresh → login com `gss_username`/`gss_password`) quando falta ou está para expirar. Basta preencher as 4 variáveis `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` no environment (valores = `GSS_CF_ACCESS_CLIENT_ID`, `GSS_CF_ACCESS_CLIENT_SECRET`, `GSS_USERNAME`, `GSS_PASSWORD`).
 
@@ -167,3 +168,5 @@ postman collection run docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_colle
 Rodada em 11/11/2026 contra a dev local: 18 requests, 53 asserts, 0 falhas.
 
 ⚠️ Só vale para a dev — a produção ainda não tem o auto complete. Quando entrar o item 2 do card (PO manual com "Set date"), a pasta 2 muda: a leva de F×C passa a só gravar.
+
+**Environment com as chaves (11/11/2026):** não vai pro Git. Para montar um a partir do `.env.local` (dev local: `base_url` = `http://localhost:3000`, `api_token` = `API_TOKEN`, `gss_*` = `GSS_CF_ACCESS_CLIENT_ID` / `GSS_CF_ACCESS_CLIENT_SECRET` / `GSS_USERNAME` / `GSS_PASSWORD`), copie `SOTWISE-GSS.postman_environment.json` e preencha esses campos. O `API_TOKEN` do `.env.local` **não** vale na dev publicada (`dev.sot.gssdatahub.com` responde 401) — lá é o token da Vercel da dev.
