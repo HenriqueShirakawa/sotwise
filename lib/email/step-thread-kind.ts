@@ -23,6 +23,7 @@ const STEP_THREAD_KIND: Record<ChecklistStep, EmailThreadKind> = {
   etd: "internal",
   balance_payment: "internal",
   pre_loading: "internal",
+  shipment_plan: "internal",
   consolidation_point: "internal",
   city: "internal",
   port_of_loading: "internal",

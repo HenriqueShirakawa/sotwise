@@ -28,6 +28,8 @@ import type { PartRow } from "./view-parts-modal";
 
 /** Timeline completa: #11–17 (herdadas do PL) + #18–24 (fase Shipment). */
 const STEP_ORDER: ChecklistStep[] = [
+  // Shipment Plan: 1ª etapa do PL desde 11/11/2026.
+  "shipment_plan",
   // City é campo do Consolidation Point desde 11/11/2026.
   "consolidation_point",
   "port_of_loading",
@@ -409,6 +411,9 @@ export default async function ShipmentDetailPage({
       // (o Completed on da etapa é o dia da confirmação).
       case "loading_date":
         return one("Loading date", s.event_date ? formatDateNumeric(s.event_date) : null);
+      // Shipment Plan (11/11/2026): a data do "Set date".
+      case "shipment_plan":
+        return one("Shipment plan date", s.event_date ? formatDateNumeric(s.event_date) : null);
       case "agents": {
         if (!s.carrier_id && !s.agent_brazil_id && !s.agent_china_id && !s.notes?.trim()) return null;
         // Os dois pares agente + contato numa linha (grade de 4), Carrier abaixo.

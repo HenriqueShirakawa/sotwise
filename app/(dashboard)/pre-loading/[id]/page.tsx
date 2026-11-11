@@ -21,6 +21,8 @@ import {
 
 /** As 7 etapas da fase pre-loading, na ordem do Bubble (docs §3.9.5). */
 const STEP_ORDER: ChecklistStep[] = [
+  // Shipment Plan: 1ª etapa do PL desde 11/11/2026 (card da call de 10/11, item 7).
+  "shipment_plan",
   // Consolidation Point + City numa etapa só desde 11/11/2026 (card da call de
   // 10/11, item 6) — a linha "city" antiga fica no banco, fora da tela.
   "consolidation_point",
@@ -51,6 +53,7 @@ type StepRow = {
   booking_number: string | null;
   cutoff_date: string | null;
   doc_cutoff_date: string | null;
+  event_date: string | null;
 };
 
 /** Etapa ainda não gravada no banco: um PL novo não tem nenhuma linha. */
@@ -75,6 +78,7 @@ function emptyStep(step: ChecklistStep): PlStepRow {
     booking_number: null,
     cutoff_date: null,
     doc_cutoff_date: null,
+    event_date: null,
   };
 }
 
@@ -134,7 +138,7 @@ export default async function PreLoadingChecklistPage({
       .select(
         "id, step, done, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
-          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date"
+          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date, event_date"
       )
       .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),

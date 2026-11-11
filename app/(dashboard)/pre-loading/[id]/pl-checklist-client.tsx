@@ -50,6 +50,7 @@ import {
 import {
   deletePreLoadingStepAttachment,
   getPreLoadingAttachmentUrl,
+  savePreLoadingEventDate,
   savePreLoadingStep,
   createPreLoadingAttachmentTicket,
   registerPreLoadingAttachment,
@@ -61,6 +62,7 @@ import {
   type ShipmentLine,
 } from "./confirm-shipping-modal";
 import { ViewBatchLinesModal } from "./view-batch-lines-modal";
+import { EventDateField } from "../../shipments/[id]/event-date-field";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
 
@@ -134,10 +136,13 @@ export type PlStepRow = {
   /** Etapa Booking: Container Cut-off e Doc Cut-off — obrigatórios (22/10/2026). */
   cutoff_date: string | null;
   doc_cutoff_date: string | null;
+  /** Shipment Plan (11/11/2026): a data do "Set date". */
+  event_date: string | null;
 };
 
 /** As 7 etapas da fase pre-loading, na ordem do Bubble (docs §3.9.5). */
 const STEP_LABELS: Partial<Record<ChecklistStep, string>> = {
+  shipment_plan: "Shipment Plan",
   consolidation_point: "Consolidation Point",
   city: "City",
   port_of_loading: "Port of Loading",
@@ -825,6 +830,19 @@ export function PlChecklistClient({
                       />
                     </div>
 
+                    {s.step === "shipment_plan" && (
+                      // Shipment Plan (11/11/2026, card da call de 10/11, item
+                      // 7): só o "Set date", igual à etapa Order — 1ª gravação
+                      // conclui, trocar depois exige motivo.
+                      <EventDateField
+                        preLoadingId={preLoading.id}
+                        step="shipment_plan"
+                        date={s.event_date}
+                        onSave={(date, reason) =>
+                          savePreLoadingEventDate(preLoading.id, "shipment_plan", date, reason)
+                        }
+                      />
+                    )}
                     {s.step === "consolidation_point" && (
                       // Consolidation Point + City numa etapa só (11/11/2026).
                       <div className="grid gap-3 sm:grid-cols-2">
@@ -983,9 +1001,9 @@ export function PlChecklistClient({
                         clients={perClient.clients}
                         attachments={s.attachments}
                       />
-                    ) : s.step === "agents" ? (
-                      // Sem documento nenhum desde 29/10/2026 (fecha pelos
-                      // agentes) — nem o antigo aparece.
+                    ) : s.step === "agents" || s.step === "shipment_plan" ? (
+                      // Sem documento nenhum: Agents desde 29/10/2026 (fecha
+                      // pelos agentes); Shipment Plan só tem a data (11/11/2026).
                       null
                     ) : (
                       !CONFIRM_SHIPPING_COMPLETES.has(s.step) && (

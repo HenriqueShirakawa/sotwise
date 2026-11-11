@@ -54,6 +54,8 @@ const deleted = {
 };
 
 const PL_STEPS = [
+  // 1ª etapa do PL desde 11/11/2026: só `date` (+ `reason` para trocar).
+  "shipment_plan",
   // `city` virou campo do consolidation_point (11/11/2026); `step=city` ainda é aceito.
   "consolidation_point",
   "port_of_loading",
@@ -623,7 +625,7 @@ export const restPaths = {
         "- Step-specific fields are only accepted on their step: `consolidation_point`/`city` (consolidation_point), `pol` (port_of_loading), " +
           "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (Container Cut-off)/`doc_cutoff_date` (Doc Cut-off) (booking — all three required to complete it).",
         "- A step that gets everything it needs (+ an estimated date) closes by itself.",
-        "- `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
+        "- `shipment_plan` (first Pre-loading step since 2026-11-11), `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
           "the first `date` completes the step (`completed_on` = that day); changing it later needs `reason`. Only `eta_brazil` accepts a future date.",
         "- Completing `delivered` sets the shipment and its batches to `delivered`.",
         "- Attachments (Shipping Docs, BL, Original Docs) are uploaded in SOTWISE only.",

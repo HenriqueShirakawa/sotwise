@@ -29,6 +29,7 @@ import { isGssShipmentStep, sendOrderStatusToGss, sendPlShipmentToGss } from "@/
 import type { ChecklistStep } from "@/types/database";
 import { userTodayIso } from "@/lib/user-time-zone";
 import { cityForConsolidationPoint } from "@/lib/consolidation-city";
+import { setPlStepEventDate } from "@/lib/pl-step-event-date";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -217,6 +218,32 @@ export async function savePreLoadingStep(
   await broadcastPreLoadingPing();
   // Data do Loading date mudou → GSS na hora (depois da resposta).
   if (isGssShipmentStep(step)) sendPlShipmentToGss(preLoadingId);
+  return { ok: true };
+}
+
+/**
+ * "Set date" de uma etapa do PL com data própria — hoje a Shipment Plan
+ * (11/11/2026, card da call de 10/11, item 7). Mesma regra das datas do fato
+ * do Shipment (lib/pl-step-event-date): a 1ª gravação conclui (Completed on =
+ * o dia da gravação), trocar depois exige motivo.
+ */
+export async function savePreLoadingEventDate(
+  preLoadingId: string,
+  step: ChecklistStep,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("pre_loading", "edit");
+  if (step !== "shipment_plan") return { ok: false, error: "This step has no date of its own here." };
+  const { error } = await setPlStepEventDate(createAdminClient(), preLoadingId, step, date, {
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  revalidatePath("/pre-loading/[id]", "page");
+  revalidatePath("/pre-loading");
+  revalidatePath("/todo");
+  await broadcastPreLoadingPing();
   return { ok: true };
 }
 
