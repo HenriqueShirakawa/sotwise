@@ -458,7 +458,11 @@ function buildSotwise(spec: Json): PmItem {
 // docs/postman, embutidas aqui para a collection completa ter tudo num lugar.
 // ---------------------------------------------------------------------------
 
-const SCENARIOS = [resolve("docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json")];
+const SCENARIOS = [
+  resolve("docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json"),
+  // 11/11/2026: GSS gravando o Consolidation Point (+ City) de um PL.
+  resolve("docs/postman/SOTWISE-GSS-consolidation-point.postman_collection.json"),
+];
 
 function buildScenarios(): { folder: PmItem; variables: Json[] } {
   const variables: Json[] = [];

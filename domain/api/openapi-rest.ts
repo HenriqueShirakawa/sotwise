@@ -114,6 +114,8 @@ const exampleShipment = {
     { order: 1230, batch: ".02" },
     { order: 1324, batch: ".03" },
   ],
+  consolidation_point: { id: "d7dac5e3-aec0-4df8-b6b1-956a48e1a753", gss_id: "91", name: "Baoyudi" },
+  city: { id: "b4efb75d-1d8b-4890-8ab1-4f9d7ee108b1", gss_id: "68", name: "Changzhou" },
   estimated_loading_date: du("2026-07-08"),
   loading_date: du("2026-07-10"),
   ETD: du("2026-07-18"),
@@ -616,8 +618,9 @@ export const restPaths = {
       summary: "Update a checklist step",
       description: [
         "Same rules as the SOTWISE screens:",
-        "- `completed_on` is never in the future and needs `estimated_date`.",
-        "- Step-specific fields are only accepted on their step: `consolidation_point` (consolidation_point), `city` (city), `pol` (port_of_loading), " +
+        "- `completed_on` is never in the future. Since 2026-11-11 no step needs `estimated_date`/responsible to complete except `loading_date`: what is blank is filled (estimated = the completion day; signer/responsible = GSS Team when it comes from the API).",
+        "- **Consolidation Point + City are one step since 2026-11-11** (`consolidation_point`): send `consolidation_point` (factory — SOTWISE id or gss_id) and, optionally, `city` (SOTWISE id or gss_id). Without `city`, the city comes from the factory's products in GSS: one city → filled in automatically; several → left empty for the team to choose (or send `city`); none → kept. The step completes with both. `steps/city` is still accepted and writes to this same step.",
+        "- Step-specific fields are only accepted on their step: `consolidation_point`/`city` (consolidation_point), `pol` (port_of_loading), " +
           "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (Container Cut-off)/`doc_cutoff_date` (Doc Cut-off) (booking — all three required to complete it).",
         "- A step that gets everything it needs (+ an estimated date) closes by itself.",
         "- `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
@@ -633,6 +636,14 @@ export const restPaths = {
           "application/json": {
             schema: ref("ShipmentStepPatch"),
             examples: {
+              consolidationPoint: {
+                summary: "Consolidation Point (city from the factory)",
+                value: { consolidation_point: "91" },
+              },
+              consolidationPointCity: {
+                summary: "Consolidation Point + City (factory with 2+ cities)",
+                value: { consolidation_point: "91", city: "68" },
+              },
               dates: { summary: "Dates", value: { estimated_date: du("2026-09-05"), completed_on: du("2026-09-06") } },
               booking: { summary: "Booking", value: { booking_number: "BK123456", cutoff_date: du("2026-07-05"), doc_cutoff_date: du("2026-07-03"), estimated_date: du("2026-07-04") } },
               reopen: { summary: "Reopen", value: { completed_on: null } },
@@ -647,7 +658,7 @@ export const restPaths = {
       },
       responses: {
         200: { description: "The PL after the change.", content: json({ type: "object", properties: { data: ref("Shipment") } }) },
-        400: R400Body("Fill in the estimated date before setting the completion date."),
+        400: R400Body("The completion date can't be in the future."),
         401: R401,
         403: R403,
         404: err("Pre-loading or step not found.", "Unknown step 'xpto'."),
@@ -739,6 +750,16 @@ export const restSchemas = {
       pl_number: { type: ["integer", "null"] },
       status: { type: "string", enum: ["preloading", "in_transit", "delivered"] },
       batches: { type: "array", items: ref("PlBatchRef") },
+      consolidation_point: {
+        type: ["object", "null"],
+        description: "Consolidation Point step — the factory (since 2026-11-11 the City is part of this step).",
+        properties: { id: uuid, gss_id: { type: ["string", "null"] }, name: { type: "string" } },
+      },
+      city: {
+        type: ["object", "null"],
+        description: "City of the Consolidation Point step.",
+        properties: { id: uuid, gss_id: { type: ["string", "null"] }, name: { type: "string" } },
+      },
       estimated_loading_date: { ...nullableDate, description: "Estimated date of the Loading Date step." },
       loading_date: { ...nullableDate, description: "Actual date of the Loading Date step." },
       ETD: { ...nullableDate, description: "Estimated date of the Shipping Date step." },
