@@ -309,6 +309,8 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
       }
       if (!f.eventDate) missing.push("the delivered date");
       break;
+    // Shipment Plan (11/11/2026): fecha pelo "Set date", como as datas do fato.
+    case "shipment_plan":
     case "shipping_date":
     case "eta_brazil":
     case "ata_brazil":
@@ -382,6 +384,8 @@ export const LOCKED_COMPLETED_ON_STEPS: ReadonlySet<ChecklistStep> = new Set<Che
   "pre_loading",
   "consolidation_point",
   "city",
+  // Shipment Plan (11/11/2026): Completed on = o dia do "Set date", travado.
+  "shipment_plan",
   "port_of_loading",
   "shipping_docs",
   "agents",

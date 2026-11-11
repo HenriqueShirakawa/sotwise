@@ -125,6 +125,15 @@ Please let us know if you have any questions.
 Best regards,
 [Your Name]`,
 
+  shipment_plan: `Dear [Customer Name],
+
+We are sharing the shipment plan for your order.
+
+Please review the planned loading and shipping details and let us know if anything needs to be adjusted.
+
+Best regards,
+[Your Name]`,
+
   consolidation_point: `Dear [Customer Name],
 
 Please find below the consolidation point confirmed for your shipment.
@@ -372,6 +381,15 @@ Por favor, nos avise caso tenha alguma dúvida.
 Atenciosamente,
 [Your Name]`,
 
+  shipment_plan: `Prezado(a) [Customer Name],
+
+Compartilhamos o plano de embarque do seu pedido.
+
+Por favor, revise as informações previstas de carregamento e embarque e nos avise se algo precisar ser ajustado.
+
+Atenciosamente,
+[Your Name]`,
+
   consolidation_point: `Prezado(a) [Customer Name],
 
 Segue abaixo o ponto de consolidação (consolidation point) confirmado para o seu embarque.
@@ -615,6 +633,15 @@ const ZH_TEMPLATES: Record<ChecklistStep, string> = {
 我们将在并柜及装货安排推进过程中持续向您通报。
 
 如有任何疑问，请告知我们。
+
+顺祝商祺，
+[Your Name]`,
+
+  shipment_plan: `尊敬的 [Customer Name]：
+
+现与您分享该订单的发货计划。
+
+请核对计划的装货及发运信息，如需调整请告知我们。
 
 顺祝商祺，
 [Your Name]`,

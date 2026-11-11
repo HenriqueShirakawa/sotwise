@@ -98,6 +98,7 @@ const STEP_LABELS: Record<ChecklistStep, string> = {
   etd: "ETD",
   balance_payment: "Balance Payment",
   pre_loading: "Pre-Loading",
+  shipment_plan: "Shipment Plan",
   consolidation_point: "Consolidation point",
   city: "City",
   port_of_loading: "Port of loading",

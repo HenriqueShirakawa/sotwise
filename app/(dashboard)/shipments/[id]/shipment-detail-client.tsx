@@ -155,6 +155,8 @@ function StepDetailFields({ fields }: { fields: StepDetailField[] }) {
  * consulta; #18–24 são as etapas da fase Shipment, editáveis nesta tela.
  */
 const PRE_LOADING_STEPS: ChecklistStep[] = [
+  // Shipment Plan: 1ª etapa do PL desde 11/11/2026.
+  "shipment_plan",
   // City é campo do Consolidation Point desde 11/11/2026.
   "consolidation_point",
   "port_of_loading",
@@ -165,6 +167,7 @@ const PRE_LOADING_STEPS: ChecklistStep[] = [
 ];
 
 const STEP_LABELS: Partial<Record<ChecklistStep, string>> = {
+  shipment_plan: "Shipment Plan",
   consolidation_point: "Consolidation Point",
   city: "City",
   port_of_loading: "Port of Loading",

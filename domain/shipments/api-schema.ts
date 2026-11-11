@@ -188,6 +188,8 @@ export const STEP_FIELDS: Partial<Record<ChecklistStep, (keyof PatchStepInput)[]
   agents: ["carrier", "agent_brazil", "agent_china", "contact_brazil", "contact_china"],
   booking: ["booking_number", "cutoff_date", "doc_cutoff_date"],
   // Concluem pela data do fato — o `completed_on` delas não é aceito.
+  // Shipment Plan (11/11/2026): só o "Set date", igual às datas do fato.
+  shipment_plan: ["date", "reason"],
   shipping_date: ["date", "reason"],
   eta_brazil: ["date", "reason"],
   ata_brazil: ["date", "reason"],

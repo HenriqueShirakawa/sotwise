@@ -16,6 +16,7 @@ export const STEP_LABELS: Record<ChecklistStep, string> = {
   etd: "ETD",
   balance_payment: "Balance Payment",
   pre_loading: "Pre-Loading",
+  shipment_plan: "Shipment plan",
   consolidation_point: "Consolidation point",
   city: "City",
   port_of_loading: "Port of loading",
@@ -71,6 +72,8 @@ export const HIDDEN_STEPS: ReadonlySet<ChecklistStep> = new Set<ChecklistStep>([
 ]);
 
 export const PRELOADING_STEPS: ChecklistStep[] = [
+  // 1ª etapa do PL desde 11/11/2026 (card da call de 10/11, item 7).
+  "shipment_plan",
   // Consolidation Point + City numa etapa só desde 11/11/2026.
   "consolidation_point",
   "port_of_loading",
@@ -122,6 +125,7 @@ export type ShipmentEstimates = Record<ShipmentEstimateStep, ShipmentEstimate>;
  * do Pre-loading; o PL já nasce com elas preenchidas.
  */
 export const CREATE_PRELOADING_ESTIMATE_STEPS = [
+  "shipment_plan",
   "consolidation_point",
   "port_of_loading",
   "shipping_docs",
@@ -142,6 +146,9 @@ export type PreLoadingEstimates = Record<PreLoadingEstimateStep, StepEstimate>;
  * Valor = rótulo do campo na tela.
  */
 export const EVENT_DATE_STEPS: Partial<Record<ChecklistStep, string>> = {
+  // Shipment Plan (11/11/2026, card da call de 10/11, item 7): 1ª etapa do PL,
+  // só o "Set date" — igual à etapa Order.
+  shipment_plan: "Shipment plan date",
   shipping_date: "Shipping date",
   eta_brazil: "ETA",
   ata_brazil: "ATA",

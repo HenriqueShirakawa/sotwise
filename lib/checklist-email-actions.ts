@@ -601,6 +601,7 @@ const sendSchema = z.object({
     "etd",
     "balance_payment",
     "pre_loading",
+    "shipment_plan",
     "consolidation_point",
     "city",
     "port_of_loading",
