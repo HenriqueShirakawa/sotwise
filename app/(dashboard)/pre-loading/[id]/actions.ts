@@ -3,11 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  autoCompleteFill,
   LOCKED_COMPLETED_ON_ERROR,
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
 } from "@/lib/checklist-completion";
-import { todayIso } from "@/lib/format";
+
 import {
   diffStepFields,
   PL_STEP_LOG_COLUMNS,
@@ -26,6 +27,7 @@ import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isGssShipmentStep, sendOrderStatusToGss, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
 import type { ChecklistStep } from "@/types/database";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -113,7 +115,9 @@ export async function savePreLoadingStep(
   // Etapa que ainda não existe no banco entra como as duas datas vazias.
   const dateError = validateStepDates(
     existing ?? { estimated_date: null, completed_on: null },
-    patch
+    patch,
+    undefined,
+    await userTodayIso()
   );
   if (dateError) return { ok: false, error: dateError };
 
@@ -131,6 +135,22 @@ export async function savePreLoadingStep(
   const completedOn =
     "completed_on" in patch ? (patch.completed_on ?? null) : (existing?.completed_on ?? null);
   const values: StepPatch & { done: boolean } = { ...patch, done: completedOn != null };
+  // Concluir à mão sem Estimated/Responsible pode (11/11/2026): o que estiver em
+  // branco recebe a data do Completed on e quem concluiu.
+  if (patch.completed_on && patch.completed_on !== (existing?.completed_on ?? null)) {
+    Object.assign(
+      values,
+      autoCompleteFill(
+        step,
+        {
+          estimated_date: "estimated_date" in patch ? (patch.estimated_date ?? null) : (existing?.estimated_date ?? null),
+          responsible_id: "responsible_id" in patch ? (patch.responsible_id ?? null) : (existing?.responsible_id ?? null),
+        },
+        patch.completed_on,
+        session.userId
+      )
+    );
+  }
 
   // Definir "Completed on" autopreenche "Signed by" com o usuário atual — quem
   // conclui a etapa assina (mesma regra do checklist de Orders). Só ao definir,
@@ -371,7 +391,7 @@ export async function confirmShipping(
   if (!result.ok) return { ok: false, error: result.error };
 
   if (loadingStep) {
-    const today = todayIso();
+    const today = await userTodayIso();
     await writeStepLog(admin, {
       owner: { preLoadingStepId: loadingStep.id },
       step: "loading_date",

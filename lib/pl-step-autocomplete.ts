@@ -10,9 +10,10 @@ import {
 import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
-import { todayIso } from "@/lib/format";
+
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -97,7 +98,7 @@ export async function autoCompletePlStep(
 
   // A regra de hoje: Completed on = hoje desliga a exceção das etapas
   // concluídas antes de uma regra nova.
-  const today = todayIso();
+  const today = await userTodayIso();
   const facts = plStepFacts(
     { ...s, completed_on: today },
     attachments ?? 0,

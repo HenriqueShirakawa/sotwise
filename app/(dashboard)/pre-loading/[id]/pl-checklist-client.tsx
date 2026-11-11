@@ -777,17 +777,12 @@ export function PlChecklistClient({
                       ) : (
                         <div>
                           <Label className="text-xs text-muted-foreground">Completed on</Label>
-                          {/* Sem "Estimated date" não há o que concluir. Etapa
-                              antiga que já tem a conclusão segue editável, pra
-                              não ficar presa com o campo travado. */}
-                          <DatePicker
+                                                    <DatePicker
                             value={s.completed_on}
-                            disabled={!s.estimated_date && !s.completed_on}
+                            // Sem Estimated também pode (11/11/2026): concluir preenche o que faltar.
                             // "Completed on" é fato consumado — nunca futuro.
                             max={todayIso()}
-                            placeholder={
-                              s.estimated_date ? "dd/mm/yyyy" : "Set the estimated date"
-                            }
+                            placeholder="dd/mm/yyyy"
                             onChange={(v) => {
                               if (v !== (s.completed_on ?? null))
                                 save(s.step, { completed_on: v });

@@ -1,7 +1,7 @@
 "use server";
 
 import { requireInternal } from "@/lib/dal";
-import { todayIso } from "@/lib/format";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   ETD_READ_KEY,
@@ -9,6 +9,7 @@ import {
   readEtdReadKeys,
   type EtdNotification,
 } from "@/lib/etd-notifications";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 /** Notificações de ETD vencendo do usuário logado (ver lib/etd-notifications). */
 export async function getEtdNotifications(): Promise<EtdNotification[]> {
@@ -31,7 +32,7 @@ export async function markEtdNotificationsRead(
   keys: string[]
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const session = await requireInternal();
-  const today = todayIso();
+  const today = await userTodayIso();
   const fresh = keys.filter((k) => typeof k === "string" && k.endsWith(`:${today}`)).slice(0, 2000);
 
   const admin = createAdminClient();

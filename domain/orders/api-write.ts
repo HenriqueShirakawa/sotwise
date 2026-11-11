@@ -3,13 +3,14 @@ import "server-only";
 import { revalidatePath } from "next/cache";
 
 import { recordPiStatus, setOrderReceivedDate } from "@/lib/checklist-revisions";
-import { todayIso } from "@/lib/format";
+
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { fail, isUuid, type WriteResult } from "@/domain/api/write-result";
 
 import { deleteOrderWithRules } from "./delete-rules";
 import type { GssOrderHeaderInput, GssOrderItemInput, GssOrderPatchInput } from "./gss-schema";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 /**
  * Escrita de ORDERS pela API: o upsert do POST /api/orders (helpers abaixo) e
@@ -213,7 +214,7 @@ export async function applyChecklistFields(
     return { ok: false, error: "pi_status_date requires pi_status." };
   }
   if (input.pi_status !== undefined) {
-    const date = input.pi_status_date ?? todayIso();
+    const date = input.pi_status_date ?? (await userTodayIso());
     const error = await recordPiStatus(admin, orderId, input.pi_status, date, who);
     if (error) return { ok: false, error };
   }

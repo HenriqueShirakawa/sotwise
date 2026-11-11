@@ -144,6 +144,17 @@ export function isAutoCompleteStep(step: ChecklistStep): boolean {
   return LOCKED_COMPLETED_ON_STEPS.has(step) && !CONFIRM_SHIPPING_COMPLETES.has(step);
 }
 
+/**
+ * A etapa EXIGE Estimated date + Responsible para concluir? Desde 11/11/2026
+ * (pedido do usuário: "aqui não precisa de estimated ou responsible") só a
+ * Loading Date — o popup do Confirm Loading pede os dois. Nas outras, concluir
+ * (pelo gatilho OU à mão, ex.: Condition Confirm) preenche o que estiver em
+ * branco: Estimated = a data do Completed on, Responsible = quem concluiu.
+ */
+export function requiresStepPlan(step: ChecklistStep): boolean {
+  return CONFIRM_SHIPPING_COMPLETES.has(step);
+}
+
 /** A etapa pode fechar pelo gatilho? Auto complete: sempre (o gatilho preenche). */
 export function stepPlanReady(
   step: ChecklistStep,
@@ -164,7 +175,7 @@ export function autoCompleteFill(
   completedOn: string,
   userId: string | null
 ): { estimated_date?: string; responsible_id?: string } {
-  if (!isAutoCompleteStep(step)) return {};
+  if (requiresStepPlan(step)) return {};
   return {
     ...(s.estimated_date ? {} : { estimated_date: completedOn }),
     ...(s.responsible_id || !userId ? {} : { responsible_id: userId }),
@@ -192,8 +203,8 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const noDocs = (f.attachments ?? 0) === 0;
 
   if (!concludedBefore(f, PLAN_REQUIRED_FROM)) {
-    // Auto complete não exige os dois (10/11/2026) — o gatilho preenche.
-    const auto = isAutoCompleteStep(step);
+    // Só a Loading Date exige os dois (11/11/2026) — nas outras, concluir preenche.
+    const auto = !requiresStepPlan(step);
     if (f.estimatedDate === null && !auto) missing.push("an estimated date");
     if (f.responsibleId === null && !auto) missing.push("a responsible");
   }
@@ -430,7 +441,9 @@ export function validateStepDates(
     completed_on?: string | null;
     responsible_id?: string | null;
   },
-  step?: ChecklistStep
+  step?: ChecklistStep,
+  /** "Hoje" de quem grava (11/11/2026: fuso do computador). Sem ele, o do navegador/São Paulo. */
+  today: string = todayIso()
 ): string | null {
   const touchesEstimated = "estimated_date" in patch;
   const touchesCompleted = "completed_on" in patch;
@@ -453,7 +466,7 @@ export function validateStepDates(
   // "Completed on" registra um fato consumado — nunca pode ser futuro, em
   // NENHUMA etapa. Só barra quando o patch está DEFININDO a data (não trava
   // estado antigo nem a limpeza da data).
-  if (touchesCompleted && patch.completed_on && patch.completed_on > todayIso()) {
+  if (touchesCompleted && patch.completed_on && patch.completed_on > today) {
     return "The completion date can't be in the future.";
   }
 
@@ -463,15 +476,10 @@ export function validateStepDates(
   if (step && TRIGGER_COMPLETED_STEPS.has(step)) return null;
   // Etapa que conclui sozinha: apagar o Estimated date reabre ela (26/10/2026 —
   // a previsão é exigência de toda etapa), não fica barrado.
-  if (step && LOCKED_COMPLETED_ON_STEPS.has(step) && !touchesCompleted) return null;
-
-  const estimated = touchesEstimated ? (patch.estimated_date ?? null) : current.estimated_date;
-  const completed = touchesCompleted ? (patch.completed_on ?? null) : current.completed_on;
-  if (!completed || estimated) return null;
-
-  return touchesEstimated
-    ? "Clear the completion date before removing the estimated date."
-    : "Fill in the estimated date before setting the completion date.";
+  // Concluir sem Estimated date pode (11/11/2026): a data do Completed on vira
+  // o Estimated (autoCompleteFill). Apagar o Estimated de etapa concluída já é
+  // barrado acima.
+  return null;
 }
 
 /** Linha de `pre_loading_checklist_steps`, no mínimo que a regra consulta. */

@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { userTodayIso } from "@/lib/user-time-zone";
+
 
 import { PRELOADING_STEPS } from "@/lib/checklist";
 import {
+  autoCompleteFill,
   LOCKED_COMPLETED_ON_ERROR,
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
@@ -234,7 +237,9 @@ export async function saveShipmentStep(
   // "Completed on" exige "Estimated date" — travado também aqui, não só na UI.
   const dateError = validateStepDates(
     existing ?? { estimated_date: null, completed_on: null },
-    patch
+    patch,
+    undefined,
+    await userTodayIso()
   );
   if (dateError) return { ok: false, error: dateError };
 
@@ -254,6 +259,22 @@ export async function saveShipmentStep(
     ...patch,
     done: completedOn != null,
   };
+  // Concluir à mão sem Estimated/Responsible pode (11/11/2026): o que estiver em
+  // branco recebe a data do Completed on e quem concluiu.
+  if (patch.completed_on && patch.completed_on !== (existing?.completed_on ?? null)) {
+    Object.assign(
+      values,
+      autoCompleteFill(
+        step,
+        {
+          estimated_date: "estimated_date" in patch ? (patch.estimated_date ?? null) : (existing?.estimated_date ?? null),
+          responsible_id: "responsible_id" in patch ? (patch.responsible_id ?? null) : (existing?.responsible_id ?? null),
+        },
+        patch.completed_on,
+        session.userId
+      )
+    );
+  }
 
   // Quem conclui a etapa assina — mesma regra do checklist de Pre-loading.
   if (patch.completed_on) values.signed_by_id = session.userId;

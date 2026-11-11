@@ -5,10 +5,11 @@ import {
   type ShipmentEstimates,
 } from "@/lib/checklist";
 import { isReadyToShip, plStepFacts } from "@/lib/checklist-completion";
-import { todayIso } from "@/lib/format";
+
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 /**
  * "Confirm Shipping": converte um Pre-loading concluído num Shipment (regra
@@ -270,7 +271,7 @@ export async function confirmShippingRecord(
     .from("pre_loading_checklist_steps")
     .update({
       event_date: input.loading_date_completed_on,
-      completed_on: todayIso(),
+      completed_on: (await userTodayIso()),
       signed_by_id: createdBy,
       done: true,
     })

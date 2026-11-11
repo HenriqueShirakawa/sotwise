@@ -4,9 +4,10 @@ import { EVENT_DATE_ALLOWS_FUTURE, EVENT_DATE_STEPS } from "@/lib/checklist";
 import { autoCompleteFill, autoCompleteFillChanges, stepPlanReady } from "@/lib/checklist-completion";
 import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
-import { todayIso } from "@/lib/format";
+
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -36,7 +37,7 @@ export async function setPlStepEventDate(
   const label = EVENT_DATE_STEPS[step];
   if (!label) return { error: "This step has no date of its own.", completed: false };
   if (!date) return { error: `Choose the ${label.toLowerCase()}.`, completed: false };
-  if (date > todayIso() && !EVENT_DATE_ALLOWS_FUTURE.has(step)) {
+  if (date > (await userTodayIso()) && !EVENT_DATE_ALLOWS_FUTURE.has(step)) {
     return { error: `The ${label.toLowerCase()} can't be in the future.`, completed: false };
   }
 
@@ -60,7 +61,7 @@ export async function setPlStepEventDate(
     return { error: `A reason is required to revise the ${label.toLowerCase()}.`, completed: false };
   }
 
-  const today = todayIso();
+  const today = await userTodayIso();
   const reopen = !plan && !!existing?.completed_on && step !== "delivered";
   const completing = plan && !existing?.completed_on;
   // Sem usuário do SOT (GSS pela API): assina o "GSS Team" (11/11/2026).

@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { userTodayIso } from "@/lib/user-time-zone";
+
 
 import { DOCUMENTS_BUCKET, type UploadTicket } from "@/lib/attachments";
 import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import {
-  hasStepPlan,
+  autoCompleteFill,
   LOCKED_COMPLETED_ON_ERROR,
   LOCKED_COMPLETED_ON_STEPS,
   validateStepDates,
@@ -144,20 +146,9 @@ export async function updateChecklistStep(
   if (readError) return { ok: false, error: readError.message };
   if (!current) return { ok: false, error: "Checklist step not found." };
 
-  const dateError = validateStepDates(current, patch, current.step);
+  const dateError = validateStepDates(current, patch, current.step, await userTodayIso());
   if (dateError) return { ok: false, error: dateError };
 
-  // Concluir à mão (Condition Confirm) exige Estimated date + Responsible —
-  // vale para toda etapa desde 26/10/2026.
-  if (patch.completed_on && patch.completed_on !== current.completed_on) {
-    const after = {
-      estimated_date: "estimated_date" in patch ? (patch.estimated_date ?? null) : current.estimated_date,
-      responsible_id: "responsible_id" in patch ? (patch.responsible_id ?? null) : current.responsible_id,
-    };
-    if (!hasStepPlan(after)) {
-      return { ok: false, error: "Fill in the estimated date and the responsible before completing this step." };
-    }
-  }
 
   // Order conclui pelo "Order received date", Deposit Payment pelo "Deposit date";
   // PO/PI pelo gatilho do GSS — o campo é imutável, ninguém edita (22/10/2026).
@@ -178,6 +169,22 @@ export async function updateChecklistStep(
 
   const update: TablesUpdate<"order_checklist_steps"> = { ...patch };
   if ("completed_on" in patch) update.done = !!patch.completed_on;
+  // Concluir à mão sem Estimated/Responsible pode (11/11/2026): o que estiver em
+  // branco recebe a data do Completed on e quem concluiu.
+  if (patch.completed_on && patch.completed_on !== current.completed_on) {
+    Object.assign(
+      update,
+      autoCompleteFill(
+        current.step,
+        {
+          estimated_date: "estimated_date" in patch ? (patch.estimated_date ?? null) : current.estimated_date,
+          responsible_id: "responsible_id" in patch ? (patch.responsible_id ?? null) : current.responsible_id,
+        },
+        patch.completed_on,
+        session.userId
+      )
+    );
+  }
   // Selecionar Completed On autopreenche o Signed By com o usuário atual —
   // só quando o campo está sendo definido (não ao limpar) e ninguém setou
   // signed_by explicitamente nesta mesma chamada.
@@ -627,7 +634,7 @@ export async function upsertEtdInfo(
     update.current_date = patch.initial_date;
   }
   if (patch.ready === true && !existing?.ready_date) {
-    update.ready_date = new Date().toISOString().slice(0, 10);
+    update.ready_date = await userTodayIso();
   }
 
   const { data: saved, error } = await admin
@@ -732,7 +739,7 @@ export async function updateEtdInfoWithReason(
     remarks: remarks.trim(),
   };
   if (field === "ready" && value === true && !existing?.ready_date) {
-    update.ready_date = new Date().toISOString().slice(0, 10);
+    update.ready_date = await userTodayIso();
   }
 
   const { data: saved, error } = await admin

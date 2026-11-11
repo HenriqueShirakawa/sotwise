@@ -1,7 +1,8 @@
 import "server-only";
 
-import { todayIso } from "@/lib/format";
+
 import type { createAdminClient } from "@/lib/supabase/admin";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -66,7 +67,7 @@ export async function loadEtdNotifications(
   userId: string,
   uiPreferences: unknown
 ): Promise<EtdNotification[]> {
-  const today = todayIso();
+  const today = await userTodayIso();
 
   const { data: steps, error } = await admin
     .from("order_checklist_steps")

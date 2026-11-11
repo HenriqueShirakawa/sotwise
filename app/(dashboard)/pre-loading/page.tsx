@@ -1,12 +1,13 @@
 import { requireFeature } from "@/lib/dal";
 import { isStepChecked, plStepFacts } from "@/lib/checklist-completion";
 import { fetchAll } from "@/lib/fetch-all";
-import { todayIso } from "@/lib/format";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
 import { readListState } from "@/lib/list-state";
 
 import { PreLoadingClient, type PreLoadingRow } from "./pre-loading-client";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 // Etapas que a lista usa (a view pre_loadings_list traz só essas).
 type ListStep = "consolidation_point" | "port_of_loading" | "loading_date" | "booking" | "agents";
@@ -140,7 +141,7 @@ export default async function PreLoadingPage() {
   return (
     <PreLoadingClient
       rows={rows}
-      today={todayIso()}
+      today={(await userTodayIso())}
       initialColumns={readColumnVisibility(profile.ui_preferences, "pre-loading")}
       initialListState={readListState(profile, "pre-loading")}
     />
