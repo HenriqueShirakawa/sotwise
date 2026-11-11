@@ -2,7 +2,7 @@
   "info": {
     "name": "SOTWISE — GSS → PO e PI (auto complete)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Simula o **GSS mandando** os dados das etapas **PI** e **PO** do checklist da Order para o SOTWISE, com as regras em vigor na **dev** desde 10/11/2026 (card \"Pontos discutidos na call de 10/11/2026\", item 1):\n\n- **Auto complete**: PO e PI concluem sozinhas quando o dado chega — **sem** precisar de Estimated date nem Responsible.\n- **Estimated date em branco** recebe a **mesma data do Completed on** (só nesse caso; estimativa já preenchida não muda).\n- **Responsible em branco** recebe quem concluiu — vindo do GSS não há usuário do SOT, então **fica em branco**.\n- **PI**: `pi_status: true` (emitida) conclui com Completed on = `pi_status_date` (nunca futura); `false` (deletada / não emitida) **reabre** a etapa e fica no histórico com o motivo (`reason`). Reemitir conclui de novo. O histórico guarda emitida em X → deletada em Y → reemitida em Z.\n- **PO**: a leva de Factory × Category conclui com Completed on = hoje. Mandar o mesmo conjunto não grava nada.\n\nEndpoints: `PATCH /api/orders/{id}/steps/{pi|po}` e `GET` do mesmo caminho (Swagger: `{{base_url}}/api/docs` → getOrderStep / patchOrderStep). `{id}` = UUID ou `po_number`. Datas em Unix (segundos).\n\n**Como rodar:** environment **\"SOTWISE — GSS (dev)\"** (`base_url` + `api_token` da dev). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-POPI-…`) e o último a apaga — nenhuma order real é tocada. Se parar no meio, rode só o passo 99 (Cleanup). O PO usa `supplier_category_gss_id_1` do environment (vazio → default da collection, `11`).\n\n⚠️ **Só na dev.** A produção (main) ainda não tem o auto complete: lá PO e PI ficam abertas até a equipe preencher Estimated date + Responsible (collection `SOTWISE-GSS-Checklist-Estimated-Responsible`).\n⚠️ **Item 2 do card (PO vira manual, com \"Set date\")** ainda não foi feito. Quando for, a pasta **2. PO** muda: a leva de F×C passa a só gravar, sem concluir.\n⚠️ **Item 3 (motivo da PI deletada vindo do GSS)**: hoje o motivo vai no campo `reason` do PATCH. Se o GSS criar um campo próprio, a pasta 1 ganha esse campo."
+    "description": "Simula o **GSS mandando** os dados das etapas **PI** e **PO** do checklist da Order para o SOTWISE, com as regras em vigor na **dev** desde 10/11/2026 (card \"Pontos discutidos na call de 10/11/2026\", item 1):\n\n- **Auto complete**: PO e PI concluem sozinhas quando o dado chega — **sem** precisar de Estimated date nem Responsible.\n- **Estimated date em branco** recebe a **mesma data do Completed on** (só nesse caso; estimativa já preenchida não muda).\n- **Responsible em branco** recebe quem concluiu — vindo do GSS não há usuário do SOT, então **fica em branco**.\n- **PI**: `pi_status: true` (emitida) conclui com Completed on = `pi_status_date` (nunca futura); `false` (deletada / não emitida) **reabre** a etapa e fica no histórico com o motivo (`reason`). Reemitir conclui de novo. O histórico guarda emitida em X → deletada em Y → reemitida em Z.\n- **PO**: a leva de Factory × Category conclui com Completed on = hoje. Mandar o mesmo conjunto não grava nada.\n\nEndpoints: `PATCH /api/orders/{id}/steps/{pi|po}` e `GET` do mesmo caminho (Swagger: `{{base_url}}/api/docs` → getOrderStep / patchOrderStep). `{id}` = UUID ou `po_number`. Datas em Unix (segundos).\n\n**Como rodar:** environment **\"SOTWISE — GSS (dev)\"** (`base_url` + `api_token` da dev). Rode a collection inteira no Runner, NA ORDEM: o passo 0 cria uma order de teste (`GSS-TEST-POPI-…`) e o último a apaga — nenhuma order real é tocada. Se parar no meio, rode só o passo 99 (Cleanup). **Send avulso:** qualquer request cria a order de teste sozinho se ela ainda não existe (auto-setup) — selecione o environment antes (canto superior direito) e rode o 99 no fim. O PO usa `supplier_category_gss_id_1` do environment (vazio → default da collection, `11`).\n\n⚠️ **Só na dev.** A produção (main) ainda não tem o auto complete: lá PO e PI ficam abertas até a equipe preencher Estimated date + Responsible (collection `SOTWISE-GSS-Checklist-Estimated-Responsible`).\n⚠️ **Item 2 do card (PO vira manual, com \"Set date\")** ainda não foi feito. Quando for, a pasta **2. PO** muda: a leva de F×C passa a só gravar, sem concluir.\n⚠️ **Item 3 (motivo da PI deletada vindo do GSS)**: hoje o motivo vai no campo `reason` do PATCH. Se o GSS criar um campo próprio, a pasta 1 ganha esse campo."
   },
   "auth": {
     "type": "bearer",
@@ -14,6 +14,32 @@
       }
     ]
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-setup (11/11/2026): um Send avulso em qualquer request cria a order de teste",
+          "// se ela ainda não existe — sem precisar rodar o passo 0 antes. O passo 0 cria a dele.",
+          "if (pm.info.requestName.startsWith('0.') || pm.collectionVariables.get('test_order_id')) return;",
+          "const n = 'GSS-TEST-POPI-' + Date.now();",
+          "pm.sendRequest({",
+          "  url: pm.variables.replaceIn('{{base_url}}') + '/api/orders',",
+          "  method: 'POST',",
+          "  header: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + pm.variables.replaceIn('{{api_token}}') },",
+          "  body: { mode: 'raw', raw: JSON.stringify({ gss_id: n, po_number: n, client_reference: 'Postman — teste PO/PI auto complete (descartável)' }) },",
+          "}, (err, res) => {",
+          "  if (err || res.code !== 201) { console.error('Auto-setup falhou — confira base_url/api_token do environment', err || res.text()); return; }",
+          "  pm.collectionVariables.set('test_gss_id', n);",
+          "  pm.collectionVariables.set('test_po_number', n);",
+          "  pm.collectionVariables.set('test_order_id', res.json().data.id);",
+          "  console.log('Order de teste criada (auto-setup): ' + n + ' — rode o 99. Cleanup no fim.');",
+          "});"
+        ]
+      }
+    }
+  ],
   "variable": [
     {
       "key": "default_supplier_category_gss_id",
@@ -38,58 +64,63 @@
   ],
   "item": [
     {
-      "name": "0. Setup — cria a order de teste (POST /api/orders) — 201",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/api/orders",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "orders"
-          ]
-        },
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"gss_id\": \"{{test_gss_id}}\",\n  \"po_number\": \"{{test_po_number}}\",\n  \"client_reference\": \"Postman — teste PO/PI auto complete (descartável)\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "0. Setup — cria a order de teste (POST /api/orders) — 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gss_id\": \"{{test_gss_id}}\",\n  \"po_number\": \"{{test_po_number}}\",\n  \"client_reference\": \"Postman — teste PO/PI auto complete (descartável)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
-          }
-        }
-      },
-      "event": [
-        {
-          "listen": "prerequest",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "const n = 'GSS-TEST-POPI-' + Date.now();",
-              "pm.collectionVariables.set('test_gss_id', n);",
-              "pm.collectionVariables.set('test_po_number', n);"
-            ]
-          }
-        },
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('201 — order criada', () => pm.response.to.have.status(201));",
-              "const b = pm.response.json();",
-              "pm.collectionVariables.set('test_order_id', b.data.id);",
-              "console.log('Order de teste na tela: ' + pm.environment.get('base_url') + '/orders/' + b.data.id);"
-            ]
-          }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const n = 'GSS-TEST-POPI-' + Date.now();",
+                  "pm.collectionVariables.set('test_gss_id', n);",
+                  "pm.collectionVariables.set('test_po_number', n);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 — order criada', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('test_order_id', b.data.id);",
+                  "console.log('Order de teste na tela: ' + pm.variables.replaceIn('{{base_url}}') + '/orders/' + b.data.id);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -868,31 +899,38 @@
       ]
     },
     {
-      "name": "99. Cleanup — apaga a order de teste (DELETE /api/orders/{id}) — 200",
-      "request": {
-        "method": "DELETE",
-        "header": [],
-        "url": {
-          "raw": "{{base_url}}/api/orders/{{test_order_id}}",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "orders",
-            "{{test_order_id}}"
-          ]
-        }
-      },
-      "event": [
+      "name": "99. Cleanup",
+      "item": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test('200 — order de teste apagada', () => pm.response.to.have.status(200));"
-            ]
-          }
+          "name": "99. Cleanup — apaga a order de teste (DELETE /api/orders/{id}) — 200",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{test_order_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "orders",
+                "{{test_order_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 — order de teste apagada', () => pm.response.to.have.status(200));",
+                  "// Limpa as variáveis: o próximo Send começa uma order nova.",
+                  "['test_order_id', 'test_po_number', 'test_gss_id'].forEach(k => pm.collectionVariables.unset(k));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

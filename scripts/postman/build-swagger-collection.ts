@@ -464,7 +464,9 @@ function buildScenarios(): { folder: PmItem; variables: Json[] } {
     for (const v of (c.variable ?? []) as Json[]) {
       if (!variables.some((x) => x.key === v.key)) variables.push(v);
     }
-    return { name: c.info.name, description: c.info.description, auth: c.auth, item: c.item };
+    // `event` leva o auto-setup da collection de cenário (cria a order de teste
+    // num Send avulso) para a pasta.
+    return { name: c.info.name, description: c.info.description, auth: c.auth, event: c.event, item: c.item };
   });
   return {
     folder: {
