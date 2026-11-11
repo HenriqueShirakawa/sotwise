@@ -237,7 +237,7 @@ export const restPaths = {
       summary: "Update an order checklist step",
       description: [
         "Sends the data that completes the step — same rules as the SOTWISE screens:",
-        "- `order`: `order_received_date`. `pi`: `pi_status` boolean — `true` (PI issued) completes the step, `false` is only recorded (never reopens) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay).",
+        "- `order`: `order_received_date`. `pi`: `pi_status` boolean — `true` (PI issued) completes the step, `false` is only recorded (never reopens) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay). Since 2026-11-11 the items alone do NOT complete `po`: a SOTWISE user also sets the **PO received date** on the screen; the step completes once both are there.",
         "- The first value completes the step; later changes become revisions (the original is kept). `reason` is the revision reason (default: \"Updated by GSS\").",
         "- `completed_on` is always the day of the LAST update (for `pi`, the status date) and can't be set directly. A repeated, identical value changes nothing.",
         "- Fields of another step → 400.",
@@ -255,7 +255,14 @@ export const restPaths = {
                 summary: "Revise the order received date",
                 value: { order_received_date: du("2026-10-21"), reason: "Final PO re-sent by the client" },
               },
-              pi: { summary: "PI issued", value: { pi_status: true, pi_status_date: du("2026-10-21") } },
+              pi: {
+                summary: "PI issued (with the GSS user who changed it)",
+                value: {
+                  pi_status: true,
+                  pi_status_date: du("2026-10-21"),
+                  changed_by: { name: "Jane Doe", email: "jane.doe@example.com" },
+                },
+              },
               po: {
                 summary: "Factory × Category",
                 value: { items: [{ supplier_category_gss_id: "1234", ship_requirement: du("2026-11-30") }] },
@@ -571,7 +578,7 @@ export const restPaths = {
         403: R403,
         404: R404("Pre-loading"),
         409: R409(
-          "Already shipped / not shipped, checklist steps still open, or the undo is not possible.",
+          "Already shipped / not shipped, checklist steps still open, every line `none` in a batch, or the undo is not possible.",
           "Complete all checklist steps before shipping — still open: Shipping docs."
         ),
         500: R500,
@@ -839,6 +846,7 @@ export const restSchemas = {
       order_received_date: { ...nullableDate, description: "`order` only — current value." },
       pi_status: { type: ["boolean", "null"], description: "`pi` only — `true` = PI issued." },
       pi_status_date: { ...nullableDate, description: "`pi` only." },
+      po_received_date: { ...nullableDate, description: "`po` only — date set by a SOTWISE user (completes the step together with the items)." },
       items: {
         type: "array",
         description: "`po` only — active Factory × Category lines.",
@@ -857,10 +865,10 @@ export const restSchemas = {
         items: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["order_received_date", "fxc", "pi_status", "completed_on"] },
+            kind: { type: "string", enum: ["order_received_date", "po_received_date", "fxc", "pi_status", "completed_on"] },
             previous_date: nullableDate,
             new_date: nullableDate,
-            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status (boolean)." },
+            payload: { type: "object", description: "`fxc`: items/added/removed; `pi_status`: status/previous_status (boolean). `gss_user` ({ name, email }) when the change came with `changed_by`." },
             reason: { type: ["string", "null"] },
             source: { type: "string", enum: ["manual", "gss"] },
             changed_at: { type: "string", format: "date-time" },
@@ -887,6 +895,21 @@ export const restSchemas = {
         },
       },
       reason: { type: "string", maxLength: 500, description: "Revision reason (default \"Updated by GSS\")." },
+      changed_by: {
+        description:
+          "Optional, any step — the GSS user who made the change, shown in the step History as \"Name (GSS)\". A string (name or e-mail) or `{ name, email }`. Stored in the revision `payload.gss_user`.",
+        oneOf: [
+          { type: "string", maxLength: 200 },
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string", maxLength: 200 },
+              email: { type: "string", maxLength: 200 },
+            },
+          },
+        ],
+      },
     },
   },
   ShipmentStepPatch: {

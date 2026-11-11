@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import {
   STEP_LABELS,
   CHECKLIST_STEP_ORDER,
@@ -11,7 +11,7 @@ import {
   SHIPMENT_STEPS,
   HIDDEN_STEPS,
 } from "@/lib/checklist";
-import type { ChecklistStep, OrderStatus } from "@/types/database";
+import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/date-picker";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { countActiveFilters } from "@/lib/list-state";
+import { KeepFiltersSwitch } from "@/components/keep-filters";
 
 export type Ref = { id: string; name: string };
 
@@ -49,12 +51,12 @@ export const EMPTY_FILTERS: TodoFilters = {
 };
 
 export function activeFilterCount(filters: TodoFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
+  return countActiveFilters(filters);
 }
 
 /** Enums viram opções {id,name} pro SearchSelect (mesma UI dos cadastros). */
 const STATUS_OPTIONS: Ref[] = (
-  Object.entries(ORDER_STATUS_LABELS) as [OrderStatus, string][]
+  Object.entries(BATCH_STATUS_LABELS) as [BatchStatus, string][]
 ).map(([id, name]) => ({ id, name }));
 
 const STEPS_BY_PHASE: Record<StepPhase, ChecklistStep[]> = {
@@ -95,6 +97,8 @@ export function FiltersModal({
   filters,
   onApply,
   onClear,
+  keep,
+  onKeepChange,
   clients,
   users,
   phase,
@@ -104,6 +108,9 @@ export function FiltersModal({
   filters: TodoFilters;
   onApply: (filters: TodoFilters) => void;
   onClear: () => void;
+  /** "Keep filters" da lista — ver components/keep-filters. */
+  keep: boolean;
+  onKeepChange: (keep: boolean) => void;
   clients: Ref[];
   /** Vazio pra quem não é admin — a tela nem oferece o filtro nesse caso. */
   users: Ref[];
@@ -160,7 +167,7 @@ export function FiltersModal({
                 placeholder="Choose some clients"
               />
             </Field>
-            <Field label="Status">
+            <Field label="Batch Status">
               <SearchSelect
                 value={draft.status}
                 onChange={(v) => set("status", v)}
@@ -199,6 +206,7 @@ export function FiltersModal({
         </div>
 
         <DialogFooter>
+          <KeepFiltersSwitch keep={keep} onChange={onKeepChange} />
           <Button variant="outline" className="sm:min-w-32" onClick={clear}>
             Clear Filters
           </Button>

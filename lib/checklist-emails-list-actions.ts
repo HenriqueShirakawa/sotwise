@@ -2,7 +2,7 @@
 
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
-import { withDeliveryIssues } from "@/lib/email/delivery-issues";
+import { withDeliveryStatus } from "@/lib/email/delivery-issues";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { loadEntityContexts, loadProfileNames, type EntityRef } from "@/lib/messages";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -36,10 +36,12 @@ export type EmailListRow = {
   number: string;
   /** Nome(s) do(s) cliente(s), já juntados por vírgula — PL/Shipment podem ter vários. */
   clients: string | null;
-  /** Order que esta linha respondeu de verdade (`thread_id` →
-   *  `email_threads.order_id`) — só resolvido pra `group === "pl"`; um `po`
-   *  já É o próprio Order, sem ambiguidade nenhuma (ver `sendStepEmail`). */
-  orderPoNumber: string | null;
+  /** Nome do cliente da thread que esta linha atingiu de verdade (`thread_id`
+   *  → `email_threads.client_id`) — só não-nulo pra `group === "pl"` cuja
+   *  thread é `external` dividida por cliente; um `po` já É o próprio Order
+   *  (sem ambiguidade) e uma thread `internal` de PL não divide por cliente
+   *  (ver `sendStepEmail`). */
+  threadClientName: string | null;
   replyCount: number;
   unreadReplyCount: number;
 };
@@ -69,24 +71,29 @@ export async function loadEmailRecords(): Promise<EmailListRow[]> {
       .range(from, to)
   );
   if (fetched.length === 0) return [];
-  // Bounce/falha avisados pelo webhook do Resend depois do envio.
-  const rows = await withDeliveryIssues(admin, fetched);
+  // Entregue / devolvido de cada destinatário, do que já está gravado — quem
+  // ainda está a caminho a tela consulta depois (`refreshEmailDelivery`).
+  const rows = await withDeliveryStatus(admin, fetched);
 
-  // Order que cada linha respondeu de verdade — só interessa pra linhas de
-  // Pre-loading/Shipment (`group === "pl"`); um `po` já é o próprio Order.
+  // Cliente que cada thread atingiu de verdade — só interessa pra linhas de
+  // Pre-loading/Shipment (`group === "pl"`); um `po` já é o próprio Order, e
+  // uma thread `internal` de PL (client_id null) não divide por cliente.
   const threadIds = [...new Set(rows.map((r) => r.thread_id).filter((id): id is string => Boolean(id)))];
-  const poNumberByThreadId = new Map<string, string>();
+  const clientNameByThreadId = new Map<string, string>();
   if (threadIds.length > 0) {
-    const { data: threadRows } = await admin.from("email_threads").select("id, order_id").in("id", threadIds);
-    const orderIdByThreadId = new Map((threadRows ?? []).map((t) => [t.id, t.order_id]));
-    const orderIds = [...new Set([...orderIdByThreadId.values()])];
-    const { data: orderRows } = orderIds.length
-      ? await admin.from("orders").select("id, po_number").in("id", orderIds)
-      : { data: [] as { id: string; po_number: string }[] };
-    const poNumberByOrderId = new Map((orderRows ?? []).map((o) => [o.id, o.po_number]));
-    for (const [threadId, orderId] of orderIdByThreadId) {
-      const po = poNumberByOrderId.get(orderId);
-      if (po) poNumberByThreadId.set(threadId, po);
+    const { data: threadRows } = await admin
+      .from("email_threads")
+      .select("id, client_id")
+      .in("id", threadIds)
+      .not("client_id", "is", null);
+    const clientIds = [...new Set((threadRows ?? []).map((t) => t.client_id).filter((id): id is string => Boolean(id)))];
+    const { data: clientRows } = clientIds.length
+      ? await admin.from("clients").select("id, name").in("id", clientIds)
+      : { data: [] as { id: string; name: string }[] };
+    const nameByClientId = new Map((clientRows ?? []).map((c) => [c.id, c.name]));
+    for (const t of threadRows ?? []) {
+      const name = t.client_id ? nameByClientId.get(t.client_id) : undefined;
+      if (name) clientNameByThreadId.set(t.id, name);
     }
   }
 
@@ -147,7 +154,7 @@ export async function loadEmailRecords(): Promise<EmailListRow[]> {
       group,
       number: ctx?.number ?? "—",
       clients: ctx?.clients.length ? ctx.clients.map((c) => c.name).join(", ") : null,
-      orderPoNumber: group === "pl" && r.thread_id ? (poNumberByThreadId.get(r.thread_id) ?? null) : null,
+      threadClientName: group === "pl" && r.thread_id ? (clientNameByThreadId.get(r.thread_id) ?? null) : null,
       replyCount: replies.length,
       unreadReplyCount: replies.filter((reply) => !reply.read_by_me).length,
     });

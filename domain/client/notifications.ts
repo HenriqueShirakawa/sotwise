@@ -193,18 +193,29 @@ export async function dispatchClientNotifications(
 
     const html = batchAdvanceEmailHtml(payload);
 
-    // Mesma thread "internal" que qualquer etapa do checklist usa (ver
-    // lib/email/step-thread-kind.ts) — este aviso automático precisa cair na
-    // MESMA conversa da Order no inbox do cliente, não chegar como e-mail
-    // solto sem relação com o resto (feedback do usuário, 16/09/2026: essa
-    // notificação é anterior ao redesenho de threading, 11/09, e nunca tinha
-    // sido integrada a ele). Falha ao achar/criar a thread não pode derrubar
-    // o aviso em si — cai pro assunto antigo, sem cabeçalho de thread.
-    const threadResult = await findOrCreateThread(admin, row.order_id, "internal");
+    // MAIN (11/11/2026): e-mail novo (threads por cliente, switch "Include
+    // client") fica só na dev — aqui o aviso segue na thread "internal" da
+    // Order, como a produção sempre fez. Na dev:
+    // Thread "external" da Order — a mesma conversa com o cliente que o
+    // compositor usa com o switch "Include client" ligado. Este aviso
+    // automático precisa cair na MESMA conversa da Order no inbox do cliente,
+    // não chegar como e-mail solto sem relação com o resto (feedback do
+    // usuário, 16/09/2026). Até 28/09/2026 ia na "internal", quando toda etapa
+    // caía nela; desde o switch, a "internal" é só da equipe — o cliente nunca
+    // entra nela. Falha ao achar/criar a thread não pode derrubar o aviso em
+    // si — cai pro assunto antigo, sem cabeçalho de thread.
+    const threadResult = await findOrCreateThread(admin, { ownerType: "order", ownerId: row.order_id }, "internal");
     const thread: ResolvedThread | null =
       "error" in threadResult
         ? null
-        : { id: threadResult.id, orderId: row.order_id, kind: "internal", anchorMessageId: threadResult.anchorMessageId };
+        : {
+            id: threadResult.id,
+            ownerType: "order",
+            ownerId: row.order_id,
+            kind: "internal",
+            clientId: null,
+            anchorMessageId: threadResult.anchorMessageId,
+          };
     const threadHeaders: ThreadingHeaders = thread ? await threadingHeaders(admin, [thread]) : {};
     const replyTo = thread ? replyToAddress(thread.id) : undefined;
     const baseSubject = thread ? `Order #${poNumber}` : batchAdvanceSubject(payload);

@@ -529,7 +529,7 @@ export async function patchShipmentStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, estimated_date, completed_on")
+    .select("id, estimated_date, completed_on, responsible_id")
     .eq("pre_loading_id", id)
     .eq("step", checklistStep)
     .maybeSingle();
@@ -538,7 +538,7 @@ export async function patchShipmentStep(
   // "Completed on" exige "Estimated date" e nunca é futura — mesma trava das telas.
   const dateError = validateStepDates(
     existing ?? { estimated_date: null, completed_on: null },
-    patch as { estimated_date?: string | null; completed_on?: string | null }
+    patch as { estimated_date?: string | null; completed_on?: string | null; responsible_id?: string | null }
   );
   if (dateError) return fail(400, dateError);
 

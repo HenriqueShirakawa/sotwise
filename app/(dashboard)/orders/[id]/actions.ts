@@ -17,6 +17,7 @@ import {
   setFactoryPlacedDate,
   setDepositDate,
   setOrderReceivedDate,
+  setPoReceivedDate,
 } from "@/lib/checklist-revisions";
 import { diffStepFields, readAttachmentForLog, writeStepLog } from "@/lib/checklist-step-log";
 import { requireAnyFeature, requireFeature } from "@/lib/dal";
@@ -247,6 +248,28 @@ export async function saveOrderReceivedDate(
 }
 
 /**
+ * "PO received date" da etapa PO (11/11/2026, igual ao Order received date): a
+ * 1ª gravação é livre, trocar depois exige motivo. A etapa fecha quando a Order
+ * também tem Factory × Category ativas (vindas do GSS).
+ */
+export async function savePoReceivedDate(
+  orderId: string,
+  date: string,
+  reason: string | null
+): Promise<ActionResult> {
+  const session = await requireFeature("orders", "edit");
+  if (!date) return { ok: false, error: "Choose the PO received date." };
+  const error = await setPoReceivedDate(createAdminClient(), orderId, date, {
+    source: "manual",
+    userId: session.userId,
+    reason,
+  });
+  if (error) return { ok: false, error };
+  await refreshChecklistViews(orderId);
+  return { ok: true };
+}
+
+/**
  * Deposit Payment "resolvido" — Deposit date gravado ou toggle desligado: os
  * lotes In Negotiation com Factory x Category da Order vão para In Production
  * (docs §3.7.2) e o status novo é empurrado ao GSS. Reabrir não rebaixa nada.
@@ -267,13 +290,13 @@ async function settleDepositPayment(
 
 /**
  * "Deposit date" da etapa Deposit Payment: a data em que o cliente depositou de
- * fato. Motivo é obrigatório em toda gravação; a 1ª conclui a etapa (Completed
- * on = hoje) e resolve o Deposit, promovendo os lotes In Negotiation.
+ * fato. A 1ª gravação é livre, trocar exige motivo (11/11/2026); a 1ª conclui a
+ * etapa (Completed on = hoje) e resolve o Deposit, promovendo os lotes In Negotiation.
  */
 export async function saveDepositDate(
   orderId: string,
   date: string,
-  reason: string
+  reason: string | null
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
   if (!date) return { ok: false, error: "Choose the deposit date." };
@@ -292,13 +315,13 @@ export async function saveDepositDate(
 
 /**
  * "Balance date" da etapa Balance Payment (22/10/2026, igual ao Deposit): a data
- * em que o cliente pagou o saldo. Motivo é obrigatório em toda gravação; cada
- * uma regrava o Completed on com o dia (imutável). Sem efeito nos lotes.
+ * em que o cliente pagou o saldo. A 1ª gravação é livre, trocar exige motivo
+ * (11/11/2026); cada uma regrava o Completed on com o dia (imutável). Sem efeito nos lotes.
  */
 export async function saveBalanceDate(
   orderId: string,
   date: string,
-  reason: string
+  reason: string | null
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
   if (!date) return { ok: false, error: "Choose the balance date." };

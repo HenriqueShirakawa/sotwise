@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import {
@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 
 import { displayBu, formatDate, formatDateNumeric } from "@/lib/format";
+import type { ListStateSeed } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/status-colors";
 import { downloadXlsx, fetchAllRows, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
 import { DownloadXlsxButton } from "@/components/download-xlsx-button";
@@ -56,6 +57,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -74,6 +76,7 @@ import {
   DEFAULT_SORT,
   SORT_COLUMNS,
   listStateToSearch,
+  parseListState,
   type ListState,
   type SortId,
 } from "./list-params";
@@ -248,11 +251,17 @@ const XLSX_COLUMNS = xlsxColumns<OrderRow>(COLUMN_OPTIONS, {
   schedule_requested: { kind: "date", value: (r) => r.schedule_requested },
 });
 
+/** Resposta de ./rows (ver ./query). */
+type PageData = { rows: OrderRow[]; total: number; pageCount: number; page: number };
+
+/** Quanto tempo uma página buscada/pré-carregada vale antes de buscar de novo. */
+const PAGE_CACHE_MS = 30_000;
+
 export function OrdersClient({
-  rows,
-  total,
-  pageCount,
-  state,
+  rows: initialRows,
+  total: initialTotal,
+  pageCount: initialPageCount,
+  state: initialState,
   clients,
   orderTypes,
   businessUnits,
@@ -260,6 +269,7 @@ export function OrdersClient({
   profiles,
   operationalUsers,
   initialColumns,
+  initialListState,
 }: {
   rows: OrderRow[];
   total: number;
@@ -273,8 +283,87 @@ export function OrdersClient({
   /** Opções do Operational Responsible: só usuários internos ativos. */
   operationalUsers: Ref[];
   initialColumns: VisibilityState;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
+
+  // Troca de página/filtro/ordenação SEM navegação (04/11/2026): a URL muda via
+  // history.pushState (o router do Next acompanha) e só as linhas vêm de
+  // ./rows em JSON; as páginas vizinhas ficam pré-carregadas, então "próxima"
+  // e "anterior" aparecem na hora. Antes cada clique re-renderizava a página
+  // inteira no servidor e reenviava todos os cadastros dos seletores.
+  const [view, setView] = useState(() => ({
+    rows: initialRows,
+    total: initialTotal,
+    pageCount: initialPageCount,
+    state: initialState,
+  }));
+  const { rows, total, pageCount, state } = view;
+  const cache = useRef(new Map<string, { at: number; data: Promise<PageData> }>());
+  // Render novo do servidor (primeira carga, refresh do realtime): ele manda.
+  useEffect(() => {
+    cache.current.clear();
+    setView({
+      rows: initialRows,
+      total: initialTotal,
+      pageCount: initialPageCount,
+      state: initialState,
+    });
+  }, [initialRows, initialTotal, initialPageCount, initialState]);
+
+  const fetchPage = useCallback((target: ListState): Promise<PageData> => {
+    const key = listStateToSearch(target);
+    const hit = cache.current.get(key);
+    if (hit && Date.now() - hit.at < PAGE_CACHE_MS) return hit.data;
+    const data = fetch(`/orders/rows${key}`, { cache: "no-store" }).then(async (r) => {
+      if (!r.ok) throw new Error(`orders/rows ${r.status}`);
+      return (await r.json()) as PageData;
+    });
+    cache.current.set(key, { at: Date.now(), data });
+    data.catch(() => cache.current.delete(key));
+    return data;
+  }, []);
+
+  // A URL é a fonte: quando ela muda (clique aqui, voltar/avançar do
+  // navegador) e não bate com o que está na tela, busca as linhas.
+  const searchParams = useSearchParams();
+  const urlState = useMemo(
+    () => parseListState(Object.fromEntries(searchParams.entries())),
+    [searchParams]
+  );
+  const urlKey = listStateToSearch(urlState);
+  const viewKey = listStateToSearch(state);
+  const navigating = urlKey !== viewKey;
+  useEffect(() => {
+    if (urlKey === viewKey) return;
+    let cancelled = false;
+    fetchPage(urlState)
+      .then((data) => {
+        if (cancelled) return;
+        const served = { ...urlState, page: data.page };
+        setView({ rows: data.rows, total: data.total, pageCount: data.pageCount, state: served });
+        // Pediu página além do fim (filtro estreitou): a URL vai pra última.
+        if (data.page !== urlState.page) {
+          window.history.replaceState(null, "", `/orders${listStateToSearch(served)}`);
+        }
+      })
+      .catch(() => {
+        // Falhou a busca leve: cai na navegação normal (render do servidor).
+        if (!cancelled) router.refresh();
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlKey]);
+
+  // Pré-carrega a página anterior e a próxima da que está na tela.
+  useEffect(() => {
+    if (navigating) return;
+    for (const p of [state.page + 1, state.page - 1]) {
+      if (p >= 1 && p <= pageCount) fetchPage({ ...state, page: p }).catch(() => {});
+    }
+  }, [state, pageCount, navigating, fetchPage]);
 
   // Realtime: o Status PO (e o popover de status por lote) reflete na hora
   // quando um lote muda de status em qualquer lugar — mesmo com esta tela
@@ -282,6 +371,7 @@ export function OrdersClient({
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useOrdersRealtime(() => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    cache.current.clear();
     refreshTimer.current = setTimeout(() => router.refresh(), 300);
   });
   useEffect(
@@ -292,11 +382,10 @@ export function OrdersClient({
   );
 
   // Paginada no servidor (29/10/2026): página, busca, cliente, ordenação e
-  // filtros moram na URL; mudar qualquer um navega e o servidor devolve só a
-  // página nova (view `orders_list`, ver ./page.tsx).
-  const [navigating, startNavigation] = useTransition();
+  // filtros moram na URL; mudar qualquer um troca a URL e o efeito acima busca
+  // só as linhas novas (view `orders_list`, ver ./list-query).
   const navigate = (next: ListState) =>
-    startNavigation(() => router.push(`/orders${listStateToSearch(next)}`, { scroll: false }));
+    window.history.pushState(null, "", `/orders${listStateToSearch(next)}`);
 
   // Busca: digita livre, vai pra URL depois de uma pausa (volta pra página 1).
   const [search, setSearch] = useState(state.q);
@@ -321,10 +410,55 @@ export function OrdersClient({
 
   const filters = state.filters;
   const sorting: SortingState = [state.sort];
+
+  // "Keep filters" (components/keep-filters): o estado da URL é gravado no
+  // usuário a cada mudança; abrir a lista sem nada na URL volta ao que ficou
+  // gravado (ex.: voltando do detalhe da order).
+  const list = useListState("orders", initialListState, {
+    search: "",
+    client: "all",
+    filters: EMPTY_FILTERS,
+    sorting: [DEFAULT_SORT] as SortingState,
+    pageIndex: 0,
+  });
+  // `state` só muda de referência quando o servidor devolve uma página nova.
+  useEffect(() => {
+    list.update({
+      search: state.q,
+      client: state.client || "all",
+      filters: state.filters,
+      sorting: [state.sort],
+      pageIndex: state.page - 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const saved = list.state;
+    const savedSort = saved.sorting[0];
+    const fromSaved: ListState = {
+      q: saved.search,
+      client: saved.client === "all" ? "" : saved.client,
+      filters: { ...EMPTY_FILTERS, ...saved.filters },
+      sort:
+        savedSort && savedSort.id in SORT_COLUMNS
+          ? { id: savedSort.id as SortId, desc: savedSort.desc }
+          : DEFAULT_SORT,
+      page: saved.pageIndex + 1,
+    };
+    const target = listStateToSearch(fromSaved);
+    if (list.keep && listStateToSearch(state) === "" && target !== "") {
+      window.history.replaceState(null, "", `/orders${target}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { visibility, save: saveVisibility } = useColumnVisibility("orders", initialColumns);
 
-  const filterCount = activeFilterCount(filters);
+  // O select de cliente fica fora do modal, mas é filtro também — entra no badge.
+  const filterCount = activeFilterCount(filters) + (state.client ? 1 : 0);
 
   // Download XLSX: todas as linhas da busca/cliente/filtros/ordenação atuais
   // (./export/route.ts), com as colunas visíveis da tabela na ordem da tela.
@@ -559,6 +693,8 @@ export function OrdersClient({
         filters={filters}
         onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
         onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         orderTypes={orderTypes}
         businessUnits={businessUnits}
         exporters={exporters}

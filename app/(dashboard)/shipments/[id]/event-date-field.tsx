@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useOptimisticObject } from "@/lib/use-optimistic-rows";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -33,7 +33,7 @@ import { saveShipmentEventDate } from "./actions";
 export function EventDateField({
   preLoadingId,
   step,
-  date,
+  date: serverDate,
   label: labelOverride,
   onSave,
 }: {
@@ -43,12 +43,16 @@ export function EventDateField({
   label?: string;
   onSave?: (date: string, reason: string | null) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
-  const router = useRouter();
   const label = labelOverride ?? EVENT_DATE_STEPS[step] ?? "Date";
+  // Edição instantânea (10/11/2026): o popup fecha e a data aparece na hora; a
+  // gravação roda por trás e volta ao valor anterior se o servidor recusar.
+  const base = useMemo(() => ({ date: serverDate }), [serverDate]);
+  const [view, run] = useOptimisticObject(base);
+  const date = view.date;
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
-  const [pending, startTransition] = useTransition();
+  const pending = false;
 
   const reasonRequired = !!date;
   const canSave = !!value && value !== date && (!reasonRequired || reason.trim() !== "");
@@ -60,17 +64,13 @@ export function EventDateField({
   }
 
   function save() {
-    startTransition(async () => {
-      const res = onSave
-        ? await onSave(value, reason.trim() || null)
-        : await saveShipmentEventDate(preLoadingId, step, value, reason.trim() || null);
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
-      }
-      toast.success(date ? "Revision saved." : `${label} saved.`);
-      setOpen(false);
-      router.refresh();
+    const next = value;
+    const why = reason.trim() || null;
+    setOpen(false);
+    void run({ date: next }, () =>
+      onSave ? onSave(next, why) : saveShipmentEventDate(preLoadingId, step, next, why)
+    ).then((res) => {
+      if (!res.ok) toast.error(res.error);
     });
   }
 

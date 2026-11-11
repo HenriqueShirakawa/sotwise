@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import { fetchAll } from "@/lib/fetch-all";
 
 import { EtdFactoriesClient } from "./etd-factories-client";
@@ -78,6 +79,7 @@ export default async function EtdFactoriesPage({
       factories={factories}
       categories={categories}
       initialColumns={readColumnVisibility(profile.ui_preferences, "etd-factories")}
+      initialListState={readListState(profile, "etd-factories")}
     />
   );
 }

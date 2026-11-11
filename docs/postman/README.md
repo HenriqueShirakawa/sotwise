@@ -70,6 +70,9 @@ Rode a collection **inteira, na ordem** (Runner): o passo 0 cria uma order desca
 | 6 | `PATCH order` — data futura | `400` |
 | 7 | `PATCH pi` — `pi_status: true` + `pi_status_date` | `200`, `completed_on` = data do status |
 | 7b | `PATCH pi` — `pi_status` em texto | `400` (precisa ser `true`/`false`) |
+| 7c | `PATCH pi` com `changed_by: { name, email }` (quem mudou no GSS) | `200`, revisão com `payload.gss_user` (e-mail minúsculo) |
+| 7d | `PATCH pi` com `changed_by` em texto (e-mail) | `200`, `gss_user = { name: null, email }` |
+| 7e | `PATCH pi` com `changed_by` de campo desconhecido | `400` |
 | 8 | `PATCH po` — `items[]` | `200`, 1 linha de F×C, leva registrada |
 | 9 | `PATCH po` — produto inexistente | `400` |
 | 10 | Etapa desconhecida | `404` |
@@ -78,13 +81,41 @@ Rode a collection **inteira, na ordem** (Runner): o passo 0 cria uma order desca
 
 O passo 8 usa `supplier_category_gss_id_1` do environment (se vazio, o default da collection, `11`). Datas vão em **Unix (segundos)** — geradas nos pre-request scripts.
 
-Rodada em 22/10/2026 pelo Postman CLI (servidor local, mesmo código da produção): **13 requests, 29 asserções, 0 falhas** (antes do `pi_status` boolean).
+Rodada em 22/10/2026 pelo Postman CLI (servidor local, mesmo código da produção): **13 requests, 29 asserções, 0 falhas** (antes do `pi_status` boolean). Rodada em 09/11/2026 (servidor local, banco da dev) com o `changed_by`: **17 requests, 41 asserções, 0 falhas**.
 
 ```bash
 postman collection run docs/postman/SOTWISE-GSS-Checklist-Order.postman_collection.json -e docs/postman/SOTWISE-GSS.postman_environment.json --env-var "api_token=<API_TOKEN>"
 ```
 
 Referência: `app/api/orders/[id]/steps/[step]/route.ts` · regras: `domain/orders/steps-api.ts` · Swagger: `{{base_url}}/api/docs` → Orders → `getOrderStep` / `patchOrderStep`.
+
+---
+
+# Collection completa — `SOTWISE-x-GSS-Swagger.postman_collection.json`
+
+**Todas** as chamadas dos dois Swaggers numa collection só, gerada por script (não editar à mão):
+
+```bash
+npx tsx scripts/postman/build-swagger-collection.ts
+```
+
+O script baixa ao vivo o `/v1/openapi.json` do GSS (precisa das envs `GSS_*` do `.env.local`) e lê o nosso `domain/api/openapi.ts`. Rode de novo sempre que algum dos dois specs mudar.
+
+| Folder | Fonte | Base | Auth |
+|---|---|---|---|
+| `1. GSS` | Swagger do GSS (87 operações em 09/11/2026) | `{{gss_base}}` = `https://api.gssdatahub.com/v1` | CF Access (`gss_cf_client_id`/`gss_cf_client_secret`) + `Bearer {{gss_access}}` |
+| `2. SOTWISE` | `/api/openapi.json` (69 operações em 09/11/2026; uma request por exemplo nomeado) | `{{base_url}}` | `Bearer {{api_token}}` |
+| `3. Testes — cenários` | (11/11/2026) collections de cenário embutidas pelo gerador (`SCENARIOS` no script): hoje `SOTWISE-GSS-PO-PI-autocomplete` — GSS mandando PI e PO, com asserts; cria e apaga a própria order de teste | `{{base_url}}` | `Bearer {{api_token}}` |
+
+**Token do GSS é automático:** o pre-request do folder GSS renova `gss_access` (refresh → login com `gss_username`/`gss_password`) quando falta ou está para expirar. Basta preencher as 4 variáveis `gss_cf_client_id`, `gss_cf_client_secret`, `gss_username`, `gss_password` no environment (valores = `GSS_CF_ACCESS_CLIENT_ID`, `GSS_CF_ACCESS_CLIENT_SECRET`, `GSS_USERNAME`, `GSS_PASSWORD`).
+
+**Corpos:** exemplo do spec quando existe; senão só os obrigatórios. PATCH vem `{}` de propósito (Send sem querer não zera nada). A aba **Docs** de cada request lista todos os campos do body e as respostas. Query params vêm desmarcados; path vars (`:id`, `:pl_number`) vêm vazias.
+
+> ⚠️ As duas bases apontam para **produção**. Rotas do GSS terminam com `/` — sem a barra o Django devolve 301 e o Postman refaz como GET (volta a lista com 200 e parece que deu certo).
+
+**Lote do GSS** (`/orders/{order_id}/batch/{batch_number}/` — GET/PUT/PATCH): em 16/10 a rota estava fora do Swagger e o script injetava um folder `⚠️ lote — fora do Swagger`. O GSS passou a documentá-la (status = **code** do BatchStatus ou `null`; `shipment_requested` imutável depois de criado), então o folder só volta se a rota sumir do spec.
+
+**Mudanças no Swagger do GSS de 22/10 → 09/11:** entraram `PUT`/`PATCH /orders/{id}/`; saíram `GET /orders/totals/` e `/orders/batch-totals/` (+ `{id}`); `commission_rate` do sales-representative-customer virou "General commission (%)". Snapshot do spec em `docs/comparativos/gss-openapi-2026-11-09.json`.
 
 ---
 
@@ -97,3 +128,45 @@ Referência: `app/api/orders/[id]/steps/[step]/route.ts` · regras: `domain/orde
 3. Rode **2. PATCH**. O **1. GET** mostra o status antes/depois e o **3.** lista o catálogo.
 
 ⚠️ Em 26/10 o PATCH devolve **403**: falta o GSS dar ao usuário técnico a permissão de alterar Order.
+
+---
+
+# Postman — simular o GSS com a regra Estimated date + Responsible
+
+`SOTWISE-GSS-Checklist-Estimated-Responsible.postman_collection.json` (26/10/2026) — o GSS atualizando as etapas Order / PI / PO pela API, com a regra nova: **nenhuma etapa conclui sem Estimated date + Responsible**. O dado do GSS é gravado e a etapa fica aberta até a equipe preencher os dois na tela.
+
+Environment **"SOTWISE — GSS (prod)"** (`base_url` + `api_token`). Três pastas, nesta ordem:
+
+1. **GSS manda o dado** (Runner) — cria a order `GSS-TEST-PLAN-…` e manda Order received date, `pi_status: true` e uma leva de F×C. Confere que as 3 etapas ficaram **abertas**.
+2. **Na tela** (manual) — abra a order (link no Console) e preencha Estimated date + Responsible em Order, PO e PI.
+3. **Depois de preencher** (Runner) — confere que as 3 **concluíram**, testa uma revisão do Order received date (segue concluída) e `pi_status: false` (a PI reabre), e apaga a order de teste.
+
+Rodada local em 26/10/2026 (Postman CLI): pasta 1 com 22 asserções e pasta 3 com 23, 0 falhas. A collection `SOTWISE-GSS-Checklist-Order` foi ajustada à mesma regra (26/10: os passos 2, 7 e 8 agora esperam a etapa aberta; 14 requests, 35 asserções, 0 falhas no localhost).
+
+---
+
+# Postman — GSS mandando PO e PI (auto complete) — `SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json`
+
+(11/11/2026) Simula o **GSS mandando** os dados das etapas **PI** e **PO** do checklist da Order, com as regras da **dev** desde 10/11/2026 (card "Pontos discutidos na call de 10/11/2026", item 1): a etapa **conclui sozinha** sem Estimated date nem Responsible; a **Estimated date em branco recebe a data do Completed on**; vindo do GSS o **Responsible fica em branco**.
+
+Environment novo: **`SOTWISE-GSS-dev.postman_environment.json`** ("SOTWISE — GSS (dev)", `base_url` = `https://dev.sot.gssdatahub.com`). Preencha `api_token` com o token da dev. Para a dev local, troque `base_url` por `http://localhost:3000`.
+
+| Pasta | O que testa |
+|---|---|
+| 0 | Cria a order de teste `GSS-TEST-POPI-…` (nenhuma order real é tocada) |
+| 1. PI | nasce aberta → **emitida em X** (conclui, Estimated = X, quem emitiu no GSS no histórico) → mesmo status não grava → **deletada em Y com motivo** (reabre, Estimated mantida) → **reemitida em Z** (conclui, Completed = Z, Estimated segue X) → histórico X/Y/Z → data futura vira hoje → `pi_status` em texto = 400 |
+| 2. PO | nasce aberta → 1ª leva de F×C (desde 11/11 NÃO conclui: falta o PO received date, gravado na tela) → mesma leva não grava → lista vazia = 400 → produto inexistente = 400 |
+| 3 | Campo de outra etapa = 400, etapa desconhecida = 404, sem token = 401 |
+| 99 | Apaga a order de teste |
+
+Pela linha de comando:
+
+```bash
+postman collection run docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json -e docs/postman/SOTWISE-GSS-dev.postman_environment.json --env-var "api_token=<API_TOKEN_DA_DEV>"
+```
+
+Rodada em 11/11/2026 contra a dev local: 18 requests, 53 asserts, 0 falhas.
+
+⚠️ Só vale para a dev — a produção ainda não tem o auto complete. Quando entrar o item 2 do card (PO manual com "Set date"), a pasta 2 muda: a leva de F×C passa a só gravar.
+
+**Environment com as chaves (11/11/2026):** não vai pro Git. Para montar um a partir do `.env.local` (dev local: `base_url` = `http://localhost:3000`, `api_token` = `API_TOKEN`, `gss_*` = `GSS_CF_ACCESS_CLIENT_ID` / `GSS_CF_ACCESS_CLIENT_SECRET` / `GSS_USERNAME` / `GSS_PASSWORD`), copie `SOTWISE-GSS.postman_environment.json` e preencha esses campos. O `API_TOKEN` do `.env.local` **não** vale na dev publicada (`dev.sot.gssdatahub.com` responde 401) — lá é o token da Vercel da dev.

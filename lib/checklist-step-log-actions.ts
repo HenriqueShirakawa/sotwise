@@ -3,6 +3,7 @@
 import { EVENT_DATE_LABELS } from "@/lib/checklist";
 import { requireInternal } from "@/lib/dal";
 import type { StepOwner } from "@/lib/checklist-email-actions";
+import { gssUserName } from "@/lib/gss-user-label";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep, ChecklistStepLogAction } from "@/types/database";
 
@@ -18,16 +19,62 @@ type Admin = ReturnType<typeof createAdminClient>;
  * alteração de usuário, mas esse campo é exceção (20/10/2026): o History da
  * etapa Order mostra também as do GSS — lidas da tabela de revisões, onde já
  * ficam gravadas, e marcadas como "GSS".
+ *
+ * 09/11/2026: o status da PI (etapa PI) entra do mesmo jeito, com quem mudou
+ * no GSS (`payload.gss_user`, mandado em `changed_by`) — "Nome (GSS)".
  */
 async function gssReceivedDateRevisions(admin: Admin, stepIds: string[]) {
   if (stepIds.length === 0) return [];
   const { data } = await admin
     .from("checklist_step_revisions")
-    .select("id, step_id, previous_date, new_date, reason, changed_at")
-    .eq("kind", "order_received_date")
+    .select("id, step_id, kind, previous_date, new_date, payload, reason, changed_at")
+    .in("kind", ["order_received_date", "pi_status"])
     .eq("source", "gss")
     .in("step_id", stepIds);
   return data ?? [];
+}
+
+const piStatusText = (v: unknown): string | null =>
+  v === true ? "Issued" : v === false ? "Not issued" : null;
+
+/** Revisão do GSS → as linhas de "o que mudou" do History. */
+function gssRevisionChanges(rev: {
+  kind: string;
+  previous_date: string | null;
+  new_date: string | null;
+  payload: Record<string, unknown> | null;
+}): StepLogChange[] {
+  if (rev.kind === "pi_status") {
+    const p = rev.payload ?? {};
+    const changes: StepLogChange[] = [
+      {
+        field: "pi_status",
+        label: "PI status",
+        kind: "text",
+        from: piStatusText(p.previous_status),
+        to: piStatusText(p.status),
+      },
+    ];
+    if (rev.previous_date !== rev.new_date) {
+      changes.push({
+        field: "pi_status_date",
+        label: "PI status date",
+        kind: "date",
+        from: rev.previous_date,
+        to: rev.new_date,
+      });
+    }
+    return changes;
+  }
+  return [
+    {
+      field: "order_received_date",
+      label: "Order received date",
+      kind: "date",
+      from: rev.previous_date,
+      to: rev.new_date,
+    },
+  ];
 }
 
 /**
@@ -116,6 +163,7 @@ type Lookup =
 /** Rótulo e tipo de cada coluna do log, na ordem em que aparecem na tela. */
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
   order_received_date: { label: "Order received date", kind: "date" },
+  po_received_date: { label: "PO received date", kind: "date" },
   deposit_date: { label: "Deposit date", kind: "date" },
   balance_date: { label: "Balance date", kind: "date" },
   // Place the Order: "Fábrica: dd/mm/yyyy" (uma data por fábrica, 22/10/2026).
@@ -181,16 +229,9 @@ export async function loadStepLog(owner: StepOwner): Promise<StepLogEntry[]> {
           id: rev.id,
           action: "update" as const,
           created_at: rev.changed_at,
-          actor_name: "GSS",
-          changes: [
-            {
-              field: "order_received_date",
-              label: FIELDS.order_received_date.label,
-              kind: "date" as const,
-              from: rev.previous_date,
-              to: rev.new_date,
-            },
-          ],
+          // O selo "GSS" já sai ao lado; aqui vai só quem mudou, se o GSS mandou.
+          actor_name: gssUserName(rev.payload) ?? "GSS",
+          changes: gssRevisionChanges(rev),
           file_name: null,
           factory_name: null,
           reason: rev.reason,

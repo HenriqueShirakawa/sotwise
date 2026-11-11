@@ -1,6 +1,13 @@
 import "server-only";
 
-import { hasExtraRequirements, isStepChecked, plStepFacts } from "@/lib/checklist-completion";
+import {
+  autoCompleteFill,
+  autoCompleteFillChanges,
+  hasExtraRequirements,
+  isStepChecked,
+  plStepFacts,
+} from "@/lib/checklist-completion";
+import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { todayIso } from "@/lib/format";
@@ -24,8 +31,9 @@ const PER_CLIENT_AUTOCOMPLETE: ReadonlySet<ChecklistStep> = new Set<ChecklistSte
  * Só age quando:
  *  - ela tem exigência extra — etapa que só pede a data (Loading Date…) não
  *    passa por aqui;
- *  - existe "Estimated date" — a mesma trava de `validateStepDates`: não se
- *    conclui etapa que nunca foi prevista;
+ *  - ~~existe "Estimated date"~~ — desde 10/11/2026 a etapa de auto complete
+ *    fecha sem ela e sem Responsible: em branco, recebem a data do Completed on
+ *    e quem concluiu (`autoCompleteFill`);
  *  - a etapa ainda não tem "Completed on" OU `refresh` (22/10/2026: Completed on
  *    = a ÚLTIMA atualização) — quem chama passa `refresh` quando o usuário acabou
  *    de mudar um dado da etapa (cadastro, booking, documento novo) e a etapa,
@@ -61,7 +69,7 @@ export async function autoCompletePlStep(
     .eq("step", step)
     .maybeSingle();
   if (!s) return false;
-  if (s.completed_on ? !(refresh || recheck) : !s.estimated_date) return false;
+  if (s.completed_on && !(refresh || recheck)) return false;
 
   const { count: attachments } = await admin
     .from("step_attachments")
@@ -124,11 +132,15 @@ export async function autoCompletePlStep(
 
   // Incompleta: não fecha.
   if (!isStepChecked(step, facts)) return false;
-  if (s.completed_on === today && s.signed_by_id === userId) return false;
+  // Sem usuário do SOT (GSS, rollup de lote): assina o "GSS Team" (11/11/2026).
+  const actor = await actorOrGssTeam(admin, userId);
+  const fill = autoCompleteFill(step, s, today, actor);
+  if (s.completed_on === today && s.signed_by_id === actor && Object.keys(fill).length === 0)
+    return false;
 
   const { error } = await admin
     .from("pre_loading_checklist_steps")
-    .update({ completed_on: today, done: true, signed_by_id: userId })
+    .update({ completed_on: today, done: true, signed_by_id: actor, ...fill })
     .eq("id", s.id);
   if (error) return false;
 
@@ -140,7 +152,8 @@ export async function autoCompletePlStep(
     action: "auto_complete",
     changes: {
       ...(s.completed_on !== today ? { completed_on: { from: s.completed_on, to: today } } : {}),
-      ...(s.signed_by_id !== userId ? { signed_by_id: { from: s.signed_by_id, to: userId } } : {}),
+      ...(s.signed_by_id !== actor ? { signed_by_id: { from: s.signed_by_id, to: actor } } : {}),
+      ...autoCompleteFillChanges(fill),
     },
     userId,
   });

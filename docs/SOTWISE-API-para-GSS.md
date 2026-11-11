@@ -670,7 +670,7 @@ Com `gss_id` a chamada é **idempotente**: reenviar o mesmo lote responde `200` 
 - `status` só aceita `in_negotiation` e `in_production` (outro valor → **400**).
 - A mesma Category + Factory não repete no lote → **409**.
 - Lote `in_production` nunca fica sem linha — nem o lote, nem o lote de onde uma linha sai → **409**.
-- Lote novo nasce `in_negotiation`; vai para `in_production` pelo `PATCH` com `status`.
+- Com o Deposit Payment da order resolvido, o lote que recebe a 1ª linha vai sozinho para `in_production` (a não ser que o mesmo PATCH mande `status`).
 - `batch_number` omitido no POST = próximo `.NN` livre da order; repetido na order → **409**.
 - Campo desconhecido no corpo → **400** (ex.: mandar `status` no POST — use o PATCH).
 - O status da order é recalculado a partir dos lotes depois de toda escrita.

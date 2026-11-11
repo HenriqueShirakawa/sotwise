@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireFeature } from "@/lib/dal";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { readColumnVisibility } from "@/lib/column-prefs";
+import { readListState } from "@/lib/list-state";
 import { PageHeader } from "@/components/page-header";
 
 import { ShipmentsClient } from "./shipments-client";
@@ -54,6 +55,7 @@ export default async function ShipmentsPage({
         pageCount={pageCount}
         state={state}
         initialColumns={readColumnVisibility(profile.ui_preferences, "shipments")}
+        initialListState={readListState(profile, "shipments")}
       />
     </div>
   );

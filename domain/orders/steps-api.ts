@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { apiDay, dayToUnix } from "@/lib/api-dates";
-import { recordFxcDelivery, recordPiStatus, setOrderReceivedDate } from "@/lib/checklist-revisions";
+import {
+  recordFxcDelivery,
+  recordPiStatus,
+  setOrderReceivedDate,
+  type GssUser,
+} from "@/lib/checklist-revisions";
 import { todayIso } from "@/lib/format";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -21,7 +26,8 @@ import { gssOrderItemSchema } from "./gss-schema";
  *   PATCH /api/orders/{id}/steps/{step}   → o dado que conclui a etapa
  *
  * `{step}`: `order` (Order received date), `pi` (status da PI + data) e `po`
- * (leva de Factory × Category). As regras são as das telas (lib/checklist-
+ * (leva de Factory × Category — desde 11/11/2026 NÃO conclui o PO sozinha: o
+ * usuário grava o "PO received date" na tela; o GET mostra a data). As regras são as das telas (lib/checklist-
  * revisions): o 1º dado conclui a etapa, os seguintes viram revisões com motivo
  * (`reason`; sem ele, "Updated by GSS"), e o Completed on é sempre a ÚLTIMA
  * atualização — nunca se grava à mão. O toggle das etapas fica só na tela.
@@ -39,20 +45,53 @@ export const isOrderApiStep = (s: string): s is OrderApiStep =>
 
 const reason = z.string().trim().max(500, "reason is too long.").optional();
 
+/**
+ * Quem fez a mudança no GSS (09/11/2026) — aparece no History da etapa como
+ * "Nome (GSS)". Texto (nome ou e-mail) ou `{ name, email }`. Opcional.
+ */
+const changedBy = z
+  .union([
+    z.string().trim().min(1).max(200),
+    z.strictObject({
+      name: z.string().trim().max(200).optional(),
+      email: z.string().trim().max(200).optional(),
+    }),
+  ])
+  .optional();
+
+/** `changed_by` da API → `{ name, email }` (null quando não veio nada útil). */
+export function normalizeChangedBy(raw: unknown): GssUser | null {
+  if (typeof raw === "string") {
+    const v = raw.trim();
+    if (!v) return null;
+    return v.includes("@") ? { name: null, email: v.toLowerCase() } : { name: v, email: null };
+  }
+  if (raw && typeof raw === "object") {
+    const { name, email } = raw as { name?: string; email?: string };
+    const n = name?.trim() || null;
+    const e = email?.trim().toLowerCase() || null;
+    return n || e ? { name: n, email: e } : null;
+  }
+  return null;
+}
+
 /** Corpo do PATCH de cada etapa — campo desconhecido → 400. */
 export const orderStepPatchSchemas = {
-  order: z.strictObject({ order_received_date: apiDay, reason }),
+  order: z.strictObject({ order_received_date: apiDay, reason, changed_by: changedBy }),
   pi: z.strictObject({
     /** true = PI emitida (conclui a etapa); false = ainda não (só grava). */
     pi_status: z.boolean({ error: "pi_status must be true or false." }),
     /** Ausente → hoje. */
     pi_status_date: apiDay.optional(),
     reason,
+    /** Usuário do GSS que mudou o status — vai pro History da etapa PI. */
+    changed_by: changedBy,
   }),
   po: z.strictObject({
     /** Linhas Factory × Category — as novas entram; as que já existem ficam. */
     items: z.array(gssOrderItemSchema).min(1, "Send at least one item."),
     reason,
+    changed_by: changedBy,
   }),
 } satisfies Record<OrderApiStep, z.ZodType>;
 
@@ -77,6 +116,8 @@ export type OrderStepRead = {
   order_received_date?: Unix | null;
   pi_status?: boolean | null;
   pi_status_date?: Unix | null;
+  /** PO: a data gravada pelo usuário no SOT ("Set date", 11/11/2026). */
+  po_received_date?: Unix | null;
   /** PO: as Factory × Category ativas da order. */
   items?: { id: UUID; factory: string; category: string; ship_requirement: Unix | null }[];
   /** Mais antigo primeiro; o 1º de cada tipo é o registro original. */
@@ -135,6 +176,13 @@ export async function readOrderStep(
       out.pi_status_date = dayToUnix(order?.pi_status_date ?? null);
     }
   } else {
+    const { data: order, error: oError } = await admin
+      .from("orders")
+      .select("po_received_date")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (oError) throw new Error(oError.message);
+    out.po_received_date = dayToUnix(order?.po_received_date ?? null);
     const { data: lines, error: lError } = await admin
       .from("order_factory_category")
       .select("id, ship_requirement, factories(name), categories(name)")
@@ -170,6 +218,7 @@ export async function patchOrderStep(
     source: "gss" as const,
     userId: null,
     reason: (input.reason as string | undefined) ?? null,
+    gssUser: normalizeChangedBy(input.changed_by),
   };
 
   if (step === "order") {
@@ -184,7 +233,8 @@ export async function patchOrderStep(
     const { items } = input as z.infer<typeof orderStepPatchSchemas.po>;
     const applied = await applyOrderItems(admin, orderId, items);
     if (!applied.ok) return fail(applied.status, applied.error);
-    // Leva que muda o conjunto vira revisão e regrava o Completed on do PO.
+    // Leva que muda o conjunto vira revisão; conclui o PO só se o usuário já
+    // gravou o PO received date (11/11/2026).
     await recordFxcDelivery(admin, orderId, who);
   }
 

@@ -8,6 +8,7 @@ import {
   Layers,
   Users,
   ShieldCheck,
+  LifeBuoy,
 } from "lucide-react";
 
 import type { FeatureKey } from "@/domain/access/features";
@@ -82,6 +83,7 @@ export const NAV: NavItem[] = [
       { title: "Shipment Models", href: "/registration/shipment-models" },
     ].sort((a, b) => a.title.localeCompare(b.title)),
   },
+  { type: "link", title: "Support", href: "/support", icon: LifeBuoy, feature: "support" },
   { type: "link", title: "Users", href: "/users", icon: Users, feature: "users" },
   {
     type: "group",

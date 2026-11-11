@@ -36,6 +36,9 @@ export type BatchStatus =
   | "delivered"
   | "canceled";
 export type LoadingStatus = "total" | "partial" | "none";
+/** Fila de saída para o GSS (`gss_outbound`). `pl_shipment` = PL → /v1/shipments/. */
+export type GssOutboundKind = "pl_shipment";
+export type GssOutboundStatus = "pending" | "sending" | "sent" | "failed" | "skipped";
 /** Registro ao qual uma thread de mensagens está ancorada. */
 export type MessageEntity = "order" | "pre_loading" | "shipment";
 /** Resultado de UM destinatário, congelado em `checklist_step_emails.recipients`. */
@@ -50,22 +53,43 @@ export type StepEmailRecipient = {
   /** Message-ID da mensagem entregue a ESTE destinatário (Fase 2 do
    *  threading) — ausente/nulo em envios antigos ou que falharam. */
   message_id?: string | null;
-  /** Calculado na LEITURA (não gravado em `recipients`): o Resend avisou pelo
-   *  webhook que o e-mail não chegou a este destinatário. Ver
+  /** Id do e-mail DESTE destinatário no Resend. Desde 29/09/2026 cada
+   *  destinatário é um envio (request) próprio, e é por este id que o app
+   *  consulta se chegou (`GET /emails/:id`). Ausente em envios antigos, que
+   *  iam numa mensagem só para todos. */
+  provider_id?: string | null;
+  /** Calculado na LEITURA (não gravado em `recipients`): o e-mail não chegou
+   *  a este destinatário (bounce, supressão, falha, spam). Ver
    *  lib/email/delivery-issues.ts. */
   delivery_issue?: EmailDeliveryIssue | null;
+  /** Calculado na LEITURA: onde está o e-mail enquanto não deu problema —
+   *  `null` em envio antigo (sem `provider_id`) ou que o Resend recusou. */
+  delivery?: EmailDelivery | null;
 };
-export type EmailDeliveryEvent = "bounced" | "failed" | "suppressed" | "complained";
+/** Tudo o que o app grava do destino de um e-mail (`email_delivery_events`). */
+export type EmailDeliveryEvent = "delivered" | EmailDeliveryProblem;
+/** Os eventos que significam "não chegou". */
+export type EmailDeliveryProblem = "bounced" | "failed" | "suppressed" | "complained";
 export type EmailDeliveryIssue = {
-  event: EmailDeliveryEvent;
+  event: EmailDeliveryProblem;
   reason: string | null;
   occurred_at: Timestamp;
+};
+/** `sending` = o Resend aceitou e ainda não houve resposta do servidor do
+ *  destinatário; `delayed` = recusa temporária, o Resend segue tentando;
+ *  `unconfirmed` = passou a janela de consulta sem resposta final. */
+export type EmailDelivery = {
+  state: "sending" | "delayed" | "delivered" | "unconfirmed";
+  at: Timestamp | null;
 };
 /** Fase 2.1 (Disparo de e-mails) — idioma do template e status do envio. */
 export type EmailLanguage = "pt-BR" | "en" | "zh";
 export type StepEmailStatus = "success" | "partial" | "failed";
-/** Threading por Order (docs/regras_de_negocio.md) — as 2 conversas por Order. */
+/** Threading (docs/regras_de_negocio.md) — até 2 conversas (`kind`) por dono. */
 export type EmailThreadKind = "internal" | "external";
+/** Dono de uma thread — Order, ou Pre-loading/Shipment (que compartilham o
+ *  mesmo checklist, ver `StepOwner` em lib/checklist-email-actions.ts). */
+export type EmailThreadOwnerType = "order" | "pre_loading";
 /** Como o webhook decidiu a qual envio uma resposta pertence (Fase 2):
  *  'message_id' = casou o In-Reply-To (certeza); 'fallback' = sem cabeçalho
  *  utilizável, caiu na linha mais recente da thread (chute marcado);
@@ -121,7 +145,8 @@ export type ChecklistRevisionKind =
   | "pi_status"
   | "completed_on"
   | "deposit_date"
-  | "balance_date";
+  | "balance_date"
+  | "po_received_date";
 export type ChecklistRevisionSource = "manual" | "gss";
 
 export type Database = {
@@ -213,6 +238,11 @@ export type Database = {
           created_at: Timestamp;
           updated_at: Timestamp;
           bubble_id: string | null;
+          /** OpenID da pessoa na Service Account do WeChat (vínculo por QR). Migration 20261104120000. */
+          wechat_openid: string | null;
+          /** Nome/foto do WeChat, via autorização de página (snsapi_userinfo). Migration 20261105140000. */
+          wechat_nickname: string | null;
+          wechat_avatar_url: string | null;
         };
         Insert: {
           id: UUID;
@@ -228,6 +258,9 @@ export type Database = {
           created_at?: Timestamp;
           updated_at?: Timestamp;
           bubble_id?: string | null;
+          wechat_openid?: string | null;
+          wechat_nickname?: string | null;
+          wechat_avatar_url?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
         Relationships: [];
@@ -692,6 +725,7 @@ export type Database = {
           status: OrderStatus;
           date_po: DateStr | null;
           order_received_date: DateStr | null;
+          po_received_date: DateStr | null;
           pi_status: boolean | null;
           pi_status_date: DateStr | null;
           deposit_date: DateStr | null;
@@ -721,6 +755,7 @@ export type Database = {
           status?: OrderStatus;
           date_po?: DateStr | null;
           order_received_date?: DateStr | null;
+          po_received_date?: DateStr | null;
           pi_status?: boolean | null;
           pi_status_date?: DateStr | null;
           deposit_date?: DateStr | null;
@@ -1294,6 +1329,33 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["message_recipients"]["Insert"]>;
         Relationships: [];
       };
+      /** Representantes internos de cada cliente (Suporte do portal). Migration 20261105120000. */
+      client_representatives: {
+        Row: { client_id: UUID; user_id: UUID; created_at: Timestamp };
+        Insert: { client_id: UUID; user_id: UUID; created_at?: Timestamp };
+        Update: Partial<Database["public"]["Tables"]["client_representatives"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Chat de suporte — uma thread por cliente. Migration 20261105120000. */
+      support_messages: {
+        Row: { id: UUID; client_id: UUID; author_id: UUID; body: string; created_at: Timestamp };
+        Insert: {
+          id?: UUID;
+          client_id: UUID;
+          author_id: UUID;
+          body: string;
+          created_at?: Timestamp;
+        };
+        Update: Partial<Database["public"]["Tables"]["support_messages"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Até onde cada pessoa leu a thread de suporte do cliente. */
+      support_reads: {
+        Row: { client_id: UUID; user_id: UUID; last_read_at: Timestamp };
+        Insert: { client_id: UUID; user_id: UUID; last_read_at?: Timestamp };
+        Update: Partial<Database["public"]["Tables"]["support_reads"]["Insert"]>;
+        Relationships: [];
+      };
       /** Cursor + resultado do pull das bibliotecas a partir do GSS (uma linha
        * por recurso). Ver supabase/migrations/20260811120000_gss_sync_state.sql
        * e docs/INTEGRACAO_GSS.md. */
@@ -1441,6 +1503,36 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["gss_call_log"]["Insert"]>;
         Relationships: [];
       };
+      /** Tudo que vai e volta do WeChat (lib/wechat). Migration 20261104120000. */
+      wechat_message_log: {
+        Row: {
+          id: number;
+          created_at: Timestamp;
+          direction: "out" | "in";
+          status: string;
+          channel: "custom" | "template" | null;
+          wechat_openid: string | null;
+          profile_id: UUID | null;
+          message_id: UUID | null;
+          wechat_msgid: string | null;
+          body: string | null;
+          error: string | null;
+        };
+        Insert: {
+          created_at?: Timestamp;
+          direction: "out" | "in";
+          status: string;
+          channel?: "custom" | "template" | null;
+          wechat_openid?: string | null;
+          profile_id?: UUID | null;
+          message_id?: UUID | null;
+          wechat_msgid?: string | null;
+          body?: string | null;
+          error?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["wechat_message_log"]["Insert"]>;
+        Relationships: [];
+      };
       /** O que o cron trouxe do GSS para Orders e Lotes (lib/gss/sync-orders.ts).
        * Tela: /access/gss/sync. Migration 20261027120000_gss_sync_log.sql. */
       gss_sync_log: {
@@ -1472,6 +1564,45 @@ export type Database = {
           origin?: string;
         };
         Update: Partial<Database["public"]["Tables"]["gss_sync_log"]["Insert"]>;
+        Relationships: [];
+      };
+      /** Fila de envio SOTWISE → GSS (via de saída). Escrita por trigger,
+       * drenada por lib/gss/outbound/dispatch.ts. Ver
+       * supabase/migrations/20261002120000_gss_outbound.sql e INTEGRACAO_GSS §10. */
+      gss_outbound: {
+        Row: {
+          id: UUID;
+          kind: GssOutboundKind;
+          entity_id: UUID;
+          status: GssOutboundStatus;
+          attempts: number;
+          next_attempt_at: Timestamp;
+          locked_until: Timestamp | null;
+          request: Record<string, unknown> | null;
+          response_status: number | null;
+          response_body: string | null;
+          last_error: string | null;
+          created_at: Timestamp;
+          updated_at: Timestamp;
+          sent_at: Timestamp | null;
+        };
+        Insert: {
+          id?: UUID;
+          kind: GssOutboundKind;
+          entity_id: UUID;
+          status?: GssOutboundStatus;
+          attempts?: number;
+          next_attempt_at?: Timestamp;
+          locked_until?: Timestamp | null;
+          request?: Record<string, unknown> | null;
+          response_status?: number | null;
+          response_body?: string | null;
+          last_error?: string | null;
+          created_at?: Timestamp;
+          updated_at?: Timestamp;
+          sent_at?: Timestamp | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["gss_outbound"]["Insert"]>;
         Relationships: [];
       };
       /** Outbox dos avanços de lote a comunicar ao cliente (Fase 2.1). */
@@ -1599,8 +1730,9 @@ export type Database = {
         >;
         Relationships: [];
       };
-      // Bounce/falha de entrega avisados pelo webhook do Resend (migration
-      // 20260925140000). Insert-only.
+      // Destino de cada destinatário dos e-mails por etapa: bounce/falha (webhook
+      // do Resend, migration 20260925140000) e, desde 20260929140000, também
+      // "delivered" (consulta por destinatário). Insert-only.
       email_delivery_events: {
         Row: {
           id: UUID;
@@ -1625,14 +1757,18 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["email_delivery_events"]["Insert"]>;
         Relationships: [];
       };
-      // Fase 1 do threading — conversa contínua por Order (ver migration
-      // 20260910120000). SEM revoke de update: anchor_* é promovido por um
-      // UPDATE condicional legítimo (ver lib/email/threads.ts).
+      // Threading por owner polimórfico — conversa contínua de Order, ou de
+      // Pre-loading/Shipment (ver migrations 20260910120000 e
+      // 20260922120000_email_threads_owner_columns). SEM revoke de update:
+      // anchor_* é promovido por um UPDATE condicional legítimo (ver
+      // lib/email/threads.ts).
       email_threads: {
         Row: {
           id: UUID;
-          order_id: UUID;
+          owner_type: EmailThreadOwnerType;
+          owner_id: UUID;
           kind: EmailThreadKind;
+          client_id: UUID | null;
           anchor_email_id: UUID | null;
           anchor_message_id: string | null;
           created_at: Timestamp;
@@ -1640,8 +1776,10 @@ export type Database = {
         };
         Insert: {
           id?: UUID;
-          order_id: UUID;
+          owner_type: EmailThreadOwnerType;
+          owner_id: UUID;
           kind: EmailThreadKind;
+          client_id?: UUID | null;
           anchor_email_id?: UUID | null;
           anchor_message_id?: string | null;
           created_at?: Timestamp;
@@ -1696,7 +1834,7 @@ export type Database = {
           ata_date: DateStr | null;
           delivered_date: DateStr | null;
           sum_of_orders: number;
-          orders_summary: { po_number: string; ofc_count: number }[];
+          orders_summary: { po_number: string; batch_number: string; ofc_count: number }[];
           status: string;
         };
         Relationships: [];
@@ -1835,6 +1973,14 @@ export type Database = {
       delete_shipment: {
         Args: { p_shipment_id: string };
         Returns: { pre_loading_id: string; changed_order_ids: string[] };
+      };
+      enqueue_gss_outbound: {
+        Args: { p_kind: GssOutboundKind; p_entity_id: string };
+        Returns: undefined;
+      };
+      claim_gss_outbound: {
+        Args: { p_limit?: number };
+        Returns: Database["public"]["Tables"]["gss_outbound"]["Row"][];
       };
     };
     Enums: {

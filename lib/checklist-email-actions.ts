@@ -10,24 +10,25 @@ import { fetchAll } from "@/lib/fetch-all";
 import { STEP_LABELS } from "@/lib/checklist";
 import { loadRepliesByEmailIds } from "@/lib/checklist-emails";
 import { checklistStepEmailHtml, type EmailLanguage, type StepEmailFacts } from "@/lib/email/checklist-step";
-import { withDeliveryIssues } from "@/lib/email/delivery-issues";
+import { withDeliveryStatus } from "@/lib/email/delivery-issues";
 import { sendEmail } from "@/lib/email/resend";
-import { threadKindForStep } from "@/lib/email/step-thread-kind";
 import {
   loadQuotedHistory,
   peekQuotedHistory,
   promoteAnchorIfMissing,
+  recipientThreadingHeaders,
   recordThreadFanout,
   replyToAddress,
   resolveOwnerOrders,
-  resolveThreadsForOrderIds,
+  resolveOwnerThreads,
   threadingHeaders,
+  type OwnerOrder,
   type QuotedMessage,
   type ResolvedThread,
   type ThreadingHeaders,
 } from "@/lib/email/threads";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { ChecklistStep, StepEmailRecipient, StepEmailReply } from "@/types/database";
+import type { ChecklistStep, EmailThreadKind, StepEmailRecipient, StepEmailReply } from "@/types/database";
 
 export type Option = { id: string; name: string };
 
@@ -53,39 +54,46 @@ export type StepEmailRow = {
   status: "success" | "partial" | "failed" | null;
   /** Respostas do cliente por e-mail (Resend inbound), mais antiga primeiro. */
   replies: StepEmailReply[];
-  /** Order que esta linha respondeu de verdade (via `thread_id` →
-   *  `email_threads.order_id`) — só resolvido pra owner Pre-loading/Shipment
-   *  (Order já é 1:1 com sua própria etapa, sem ambiguidade de qual linha é
-   *  de qual Order; ver o fan-out por Order em `sendStepEmail`). */
-  order_po_number: string | null;
+  /** Nome do cliente quando esta linha foi pra conversa COM o cliente (thread
+   *  `external`, switch "Include client" ligado) — Pre-loading/Shipment via
+   *  `email_threads.client_id`, Order pelo cliente da própria Order. Nulo na
+   *  thread `internal` (só equipe). */
+  thread_client_name: string | null;
 };
 
 type Admin = ReturnType<typeof createAdminClient>;
 
 /**
- * Destinatários selecionáveis — só papel `client`, ativos, não ocultos.
- * Este e-mail (qualquer etapa, Order/Pre-loading/Shipment) é comunicação
- * COM O CLIENTE; equipe interna nunca deve aparecer aqui como destinatário
- * (decisão do usuário, 16/09/2026). Quem precisa ser avisado internamente
- * usa o módulo de mensagens (`loadPeople` em `lib/messages-actions.ts`),
- * critério independente de propósito — não há razão pra acoplar os dois.
+ * Destinatários selecionáveis — ativos, não ocultos, conforme o switch
+ * "Include client" do compositor (28/09/2026):
+ * - `scopeClientId` null (desligado): só a equipe interna — contato de
+ *   cliente nunca entra na thread interna.
+ * - `scopeClientId` = cliente da conversa (ligado; Order: o cliente dela,
+ *   Pre-loading/Shipment: o da aba): a equipe + os contatos SÓ daquele
+ *   cliente — contato de outro cliente nunca aparece.
+ * Revoga a lista "só clientes" de 16/09/2026, que valia pra Order e pra PL
+ * sem aba — a equipe voltou a ser destinatária dos dois lados.
  */
-export async function loadStepRecipientOptions(): Promise<Option[]> {
+export async function loadStepRecipientOptions(scopeClientId: string | null = null): Promise<Option[]> {
   await requireInternal();
   const admin = createAdminClient();
   const { data: clientRole } = await admin.from("roles").select("id").eq("name", "client").maybeSingle();
   if (!clientRole) return [];
-  const data = await fetchAll<{ id: string; full_name: string }>((from, to) =>
-    admin
-      .from("profiles")
-      .select("id, full_name")
-      .eq("status", "active")
-      .eq("hidden", false)
-      .eq("role_id", clientRole.id)
-      .order("full_name")
-      .range(from, to)
+
+  const data = await fetchAll<{ id: string; full_name: string; role_id: string; client_id: string | null }>(
+    (from, to) =>
+      admin
+        .from("profiles")
+        .select("id, full_name, role_id, client_id")
+        .eq("status", "active")
+        .eq("hidden", false)
+        .order("full_name")
+        .range(from, to)
   );
-  return data.filter((p) => p.full_name.trim()).map((p) => ({ id: p.id, name: p.full_name }));
+  return data
+    .filter((p) => p.full_name.trim())
+    .filter((p) => p.role_id !== clientRole.id || (scopeClientId !== null && p.client_id === scopeClientId))
+    .map((p) => ({ id: p.id, name: p.full_name }));
 }
 
 /** Acha o id da linha de etapa sem criar — etapa nunca tocada não tem e-mail
@@ -159,15 +167,15 @@ async function loadStepFacts(admin: Admin, owner: StepOwner, stepId: string): Pr
 }
 
 /** Cliente(s) por trás do owner — pelas Order(s) DE VERDADE que ele consolida
- *  (`resolveOwnerOrders`, mesma fonte de `clientNameByOrderId` em
- *  `sendStepEmail` e da coluna "Client" da tabela de lotes do PL), não mais
+ *  (`resolveOwnerOrders`, mesma fonte usada em `sendStepEmail` pra resolver
+ *  as threads e a coluna "Client" da tabela de lotes do PL), não mais
  *  `pre_loading_clients`. Aquela tabela é editada à mão no modal Create/Edit
  *  Pre-loading e podia divergir de quais Orders o PL realmente tem hoje —
  *  esse drift fazia esta função enxergar só 1 cliente quando havia 2+ de
  *  verdade, o que travava `resolveClientLanguageGroups` em modo "nome único":
- *  o rascunho já saía com o nome ERRADO gravado por igual pras duas Orders
- *  (sem sobrar um colchete `[Customer Name]` pra `applyOrderClientName` trocar
- *  depois), em vez de ficar em branco pra cada Order corrigir na hora do
+ *  o rascunho já saía com o nome ERRADO gravado por igual pra todas (sem
+ *  sobrar um colchete `[Customer Name]` pra `applyCustomerName` trocar
+ *  depois), em vez de ficar em branco pra cada thread corrigir na hora do
  *  envio. Bug reportado pelo usuário em 17/09/2026 (PL consolidando AGK +
  *  Nacional - MG mandou "AGK" pras duas). */
 async function loadOwnerClientIds(admin: Admin, owner: StepOwner): Promise<string[]> {
@@ -175,9 +183,21 @@ async function loadOwnerClientIds(admin: Admin, owner: StepOwner): Promise<strin
   return [...new Set(orders.map((o) => o.client_id).filter((id): id is string => Boolean(id)))];
 }
 
+/** Por que o idioma de um cliente caiu no padrão (`'en'`, RN03) — vira o
+ *  aviso do compositor (QA A3/A4, 28/09/2026: o inglês saía sem avisar).
+ *  Sem isto (`null`), o idioma veio do override manual do cliente ou do mapa
+ *  País → Idioma. */
+export type StepEmailLanguageFallback = { reason: "no_country" } | { reason: "unmapped_country"; countryName: string };
+
 /** Um idioma + os clientes (do owner) que resolvem pra ele + o(s) nome(s)
- *  deles juntos (rótulo da aba/variante). */
-type ClientLanguageGroup = { language: EmailLanguage; clientIds: string[]; customerName: string | null };
+ *  deles juntos (rótulo da aba/variante). `fallback` só vem preenchido com 1
+ *  cliente no grupo (aba de cliente) — com vários, não há um motivo só. */
+type ClientLanguageGroup = {
+  language: EmailLanguage;
+  clientIds: string[];
+  customerName: string | null;
+  fallback: StepEmailLanguageFallback | null;
+};
 
 /**
  * Agrupa os clientes do owner por idioma resolvido — substitui a antiga
@@ -203,9 +223,14 @@ type ClientLanguageGroup = { language: EmailLanguage; clientIds: string[]; custo
  * idioma pra tudo; agora decide também quem absorve órfãs, então ganhou um
  * critério explícito.
  */
-async function resolveClientLanguageGroups(admin: Admin, owner: StepOwner): Promise<ClientLanguageGroup[]> {
-  const clientIds = await loadOwnerClientIds(admin, owner);
-  if (clientIds.length === 0) return [{ language: "en", clientIds: [], customerName: null }];
+async function resolveClientLanguageGroups(
+  admin: Admin,
+  owner: StepOwner,
+  scopeClientId: string | null = null
+): Promise<ClientLanguageGroup[]> {
+  // Aba por cliente: só o cliente da aba conta — 1 grupo, 1 idioma, nome dele.
+  const clientIds = (await loadOwnerClientIds(admin, owner)).filter((id) => !scopeClientId || id === scopeClientId);
+  if (clientIds.length === 0) return [{ language: "en", clientIds: [], customerName: null, fallback: null }];
 
   const { data: clientsData } = await admin
     .from("clients")
@@ -214,28 +239,44 @@ async function resolveClientLanguageGroups(admin: Admin, owner: StepOwner): Prom
   const clients = [...(clientsData ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
   const countryIds = [...new Set(clients.map((c) => c.country_id).filter((id): id is string => Boolean(id)))];
-  const { data: defaultsData } = countryIds.length
-    ? await admin.from("country_language_defaults").select("country_id, language").in("country_id", countryIds)
-    : { data: [] as { country_id: string; language: EmailLanguage }[] };
+  const [{ data: defaultsData }, { data: countriesData }] = countryIds.length
+    ? await Promise.all([
+        admin.from("country_language_defaults").select("country_id, language").in("country_id", countryIds),
+        admin.from("countries").select("id, name").in("id", countryIds),
+      ])
+    : [
+        { data: [] as { country_id: string; language: EmailLanguage }[] },
+        { data: [] as { id: string; name: string }[] },
+      ];
   const languageByCountry = new Map((defaultsData ?? []).map((d) => [d.country_id, d.language]));
+  const countryNameById = new Map((countriesData ?? []).map((c) => [c.id, c.name]));
 
-  const groupsByLanguage = new Map<EmailLanguage, { clientIds: string[]; names: string[] }>();
+  const groupsByLanguage = new Map<
+    EmailLanguage,
+    { clientIds: string[]; names: string[]; fallbacks: (StepEmailLanguageFallback | null)[] }
+  >();
   for (const client of clients) {
-    const language: EmailLanguage =
-      (client.language as EmailLanguage | null) ??
-      (client.country_id ? languageByCountry.get(client.country_id) : undefined) ??
-      "en";
-    const group = groupsByLanguage.get(language) ?? { clientIds: [], names: [] };
+    const mapped = client.country_id ? languageByCountry.get(client.country_id) : undefined;
+    const language: EmailLanguage = (client.language as EmailLanguage | null) ?? mapped ?? "en";
+    const fallback: StepEmailLanguageFallback | null =
+      client.language || mapped
+        ? null
+        : client.country_id
+          ? { reason: "unmapped_country", countryName: countryNameById.get(client.country_id) ?? "this country" }
+          : { reason: "no_country" };
+    const group = groupsByLanguage.get(language) ?? { clientIds: [], names: [], fallbacks: [] };
     group.clientIds.push(client.id);
     group.names.push(client.name);
+    group.fallbacks.push(fallback);
     groupsByLanguage.set(language, group);
   }
 
-  if (groupsByLanguage.size === 0) return [{ language: "en", clientIds: [], customerName: null }];
+  if (groupsByLanguage.size === 0) return [{ language: "en", clientIds: [], customerName: null, fallback: null }];
   return [...groupsByLanguage.entries()].map(([language, group]) => ({
     language,
     clientIds: group.clientIds,
     customerName: group.names.join(", ") || null,
+    fallback: group.clientIds.length === 1 ? group.fallbacks[0] : null,
   }));
 }
 
@@ -309,28 +350,25 @@ type RenderedClientVariant = {
  * citado de um PL multi-Order já só olhava pra 1 thread), mantida de
  * propósito: não é o bug reportado.
  *
- * `orderClientName` (16/09/2026, gatilho corrigido em 17/09/2026): quando o
- * owner consolida 2+ clientes DE VERDADE no total — mesmo em grupos de
- * idioma DIFERENTES, não só quando colidem no mesmo idioma — o rascunho de
- * TODA aba fica com "[Customer Name]" literal na saudação
- * (`loadStepEmailDefaults` deixa de resolver de propósito) — aqui, chamada 1x
- * POR ORDER (`sendStepEmail`), o token é trocado pelo nome do cliente DAQUELA
- * Order específica. Precisa valer pro owner INTEIRO (não só por grupo)
- * porque a variante INTERNA acima reusa a aba do idioma PRIMÁRIO pra toda
- * Order, inclusive as de outro grupo/cliente — um grupo com 1 cliente só
- * (sem ambiguidade DENTRO dele) já teria o nome resolvido de verdade, e essa
- * mesma aba, reusada pra Order de outro cliente, não sobraria colchete
- * nenhum pra trocar (bug reportado pelo usuário em 17/09/2026: PL com AGK
- * pt-BR + Nacional - MG zh mandou "AGK" pras duas Orders na cópia interna).
- * Decisão explícita do usuário: não precisa aparecer certo na caixa de
- * composição (a UI pode continuar mostrando o colchete/nome combinado), só o
- * e-mail que cada Order recebe precisa ser certo — é o único ponto aceito de
- * "tela mostra X, envia Y" neste arquivo, então NÃO generalizar pra mais nada
- * sem perguntar de novo (ver [[feedback-wysiwyg-no-hidden-swaps]]). Se o
+ * `customerNameOverride` (16/09/2026, gatilho corrigido em 17/09/2026,
+ * generalizado de "por Order" pra "por thread" em 22/09/2026): quando o owner
+ * consolida 2+ clientes DE VERDADE no total — mesmo em grupos de idioma
+ * DIFERENTES, não só quando colidem no mesmo idioma — o rascunho de TODA aba
+ * fica com "[Customer Name]" literal na saudação (`loadStepEmailDefaults`
+ * deixa de resolver de propósito) — aqui, chamada 1x POR THREAD
+ * (`sendStepEmail`), o token é trocado pelo nome do cliente DAQUELA thread
+ * (`customerNameForThread`: pra Order é sempre a Order, sem ambiguidade; pra
+ * Pre-loading/Shipment é o cliente da thread `external`, ou `null` — sem
+ * substituição — na thread `internal`, que não é mais dividida por cliente
+ * nenhum). Decisão explícita do usuário: não precisa aparecer certo na caixa
+ * de composição (a UI pode continuar mostrando o colchete/nome combinado), só
+ * o e-mail que cada thread recebe precisa ser certo — é o único ponto aceito
+ * de "tela mostra X, envia Y" neste arquivo, então NÃO generalizar pra mais
+ * nada sem perguntar de novo (ver [[feedback-wysiwyg-no-hidden-swaps]]). Se o
  * usuário já apagou/reescreveu o colchete à mão, não sobra nada a trocar —
- * continua WYSIWYG pro resto do texto (mesmo risco de antes, agora só possível
- * se a pessoa editar à mão, não mais um efeito colateral automático da conta
- * por grupo).
+ * continua WYSIWYG pro resto do texto. Desde 02/10/2026 o rascunho sem aba de
+ * cliente já nasce com os nomes de todos os clientes (`loadStepEmailDefaults`),
+ * então o colchete só sobra aqui se alguém digitar de novo.
  */
 async function renderStepEmailHtmls(
   admin: Admin,
@@ -339,17 +377,25 @@ async function renderStepEmailHtmls(
   senderName: string,
   input: { subject: string; bodies: Partial<Record<EmailLanguage, string>>; recordPath: string; step: ChecklistStep },
   quoted: QuotedMessage[],
-  orderClientName: string | null = null
+  customerNameOverride: string | null = null,
+  scopeClientId: string | null = null
 ): Promise<{
   internalHtml: string;
   internalBody: string;
   clientVariants: RenderedClientVariant[];
   primaryLanguage: EmailLanguage;
 }> {
-  const [facts, groups, origin] = await Promise.all([
+  const [facts, groups, origin, recordRefs] = await Promise.all([
     stepId ? loadStepFacts(admin, owner, stepId) : Promise.resolve(EMPTY_FACTS),
-    resolveClientLanguageGroups(admin, owner),
+    resolveClientLanguageGroups(admin, owner, scopeClientId),
     currentOrigin(),
+    // Aba de cliente de PL/Shipment: Order(s)/lote(s) DELE, numa linha abaixo
+    // do título. Order não precisa — o assunto já é a própria Order.
+    scopeClientId && owner.kind === "pre_loading"
+      ? resolveOwnerOrders(admin, owner).then((orders) =>
+          formatOrderLabel(orders.filter((o) => o.client_id === scopeClientId))
+        )
+      : Promise.resolve(null),
   ]);
   const primaryLanguage = groups[0].language;
   const actionUrl = origin ? `${origin}${input.recordPath}` : null;
@@ -358,12 +404,12 @@ async function renderStepEmailHtmls(
   // a conversa — a etapa, que antes ia no assunto, vai em destaque no corpo.
   const stepLabel = STEP_LABELS[input.step];
 
-  const applyOrderClientName = (text: string): string =>
-    orderClientName ? text.replace("[Customer Name]", orderClientName) : text;
+  const applyCustomerName = (text: string): string =>
+    customerNameOverride ? text.replace("[Customer Name]", customerNameOverride) : text;
 
   const fallbackBody = Object.values(input.bodies).find((b): b is string => Boolean(b?.trim())) ?? "";
   const rawInternalBody = input.bodies[primaryLanguage]?.trim() ? input.bodies[primaryLanguage]! : fallbackBody;
-  const internalBody = applyOrderClientName(rawInternalBody);
+  const internalBody = applyCustomerName(rawInternalBody);
 
   const internalHtml = checklistStepEmailHtml({
     subject: input.subject,
@@ -375,10 +421,11 @@ async function renderStepEmailHtmls(
     logoUrl,
     language: primaryLanguage,
     quoted,
+    recordRefs,
   });
 
   const clientVariants: RenderedClientVariant[] = groups.map((group) => {
-    const body = applyOrderClientName(
+    const body = applyCustomerName(
       input.bodies[group.language]?.trim() ? input.bodies[group.language]! : rawInternalBody
     );
     return {
@@ -394,6 +441,7 @@ async function renderStepEmailHtmls(
         logoUrl,
         language: group.language,
         quoted,
+        recordRefs,
       }),
     };
   });
@@ -414,8 +462,9 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     .order("created_at", { ascending: false });
 
   if (!data || data.length === 0) return [];
-  // Bounce/falha avisados pelo webhook do Resend depois do envio.
-  const rows = await withDeliveryIssues(admin, data);
+  // Entregue / devolvido de cada destinatário, do que já está gravado — quem
+  // ainda está a caminho a tela consulta depois (`refreshEmailDelivery`).
+  const rows = await withDeliveryStatus(admin, data);
 
   const senderIds = [...new Set(rows.map((r) => r.sender_id))];
   const { data: senders } = await admin
@@ -430,25 +479,32 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     session.userId
   );
 
-  // Qual Order cada linha respondeu de verdade — só vale a query pra owner
-  // que consolida mais de 1 Order (Pre-loading/Shipment); pra Order já é 1:1.
-  // Rótulo inclui o lote (".NN") — um PL/Shipment pode consolidar lotes
-  // diferentes do mesmo Order, então só o po_number não diz qual (pedido do
-  // usuário, 16/09/2026).
-  const orderLabelByThreadId = new Map<string, string>();
-  if (owner.kind !== "order") {
-    const threadIds = [...new Set(rows.map((r) => r.thread_id).filter((id): id is string => Boolean(id)))];
-    if (threadIds.length > 0) {
-      const [{ data: threadRows }, orders] = await Promise.all([
-        admin.from("email_threads").select("id, order_id").in("id", threadIds),
-        resolveOwnerOrders(admin, owner),
-      ]);
-      const orderIdByThreadId = new Map((threadRows ?? []).map((t) => [t.id, t.order_id]));
-      const labelByOrderId = new Map(orders.map((o) => [o.id, `${o.po_number}${o.batch_numbers.join(", ")}`]));
-      for (const [threadId, orderId] of orderIdByThreadId) {
-        const label = labelByOrderId.get(orderId);
-        if (label) orderLabelByThreadId.set(threadId, label);
-      }
+  // Nome do cliente da conversa `external` que cada linha atingiu — vira o
+  // chip do card. Thread `internal` (só equipe) fica sem chip. A thread de
+  // Order não guarda `client_id` (a Order já tem 1 cliente só, check
+  // `email_threads_client_scope_check`) — o nome vem da própria Order.
+  const clientNameByThreadId = new Map<string, string>();
+  const threadIds = [...new Set(rows.map((r) => r.thread_id).filter((id): id is string => Boolean(id)))];
+  if (threadIds.length > 0) {
+    const { data: threadRows } = await admin
+      .from("email_threads")
+      .select("id, client_id")
+      .in("id", threadIds)
+      .eq("kind", "external");
+    const externalThreads = threadRows ?? [];
+    const orderClientId =
+      owner.kind === "order" && externalThreads.length > 0
+        ? ((await resolveOwnerOrders(admin, owner))[0]?.client_id ?? null)
+        : null;
+    const clientIdByThreadId = new Map(externalThreads.map((t) => [t.id, t.client_id ?? orderClientId]));
+    const clientIds = [...new Set([...clientIdByThreadId.values()].filter((id): id is string => Boolean(id)))];
+    const { data: clientsData } = clientIds.length
+      ? await admin.from("clients").select("id, name").in("id", clientIds)
+      : { data: [] as { id: string; name: string }[] };
+    const nameByClientId = new Map((clientsData ?? []).map((c) => [c.id, c.name]));
+    for (const [threadId, clientId] of clientIdByThreadId) {
+      const name = clientId ? nameByClientId.get(clientId) : undefined;
+      if (name) clientNameByThreadId.set(threadId, name);
     }
   }
 
@@ -461,8 +517,35 @@ export async function loadStepEmailHistory(owner: StepOwner): Promise<StepEmailR
     created_at: r.created_at,
     status: r.status,
     replies: repliesByEmailId.get(r.id) ?? [],
-    order_po_number: r.thread_id ? (orderLabelByThreadId.get(r.thread_id) ?? null) : null,
+    thread_client_name: r.thread_id ? (clientNameByThreadId.get(r.thread_id) ?? null) : null,
   }));
+}
+
+const refreshIdsSchema = z.array(z.uuid()).min(1).max(50);
+
+/**
+ * Consulta no Resend o status dos destinatários que ainda estão a caminho
+ * nestas linhas, grava o que já é final (entregue / devolvido) e devolve os
+ * destinatários de cada linha atualizados. A tela chama em intervalo enquanto
+ * algum chip está "enviando" — histórico da etapa e lista de E-mails (ver
+ * components/checklist/use-live-delivery.ts).
+ */
+export async function refreshEmailDelivery(
+  emailIds: string[]
+): Promise<{ ok: true; recipients: Record<string, StepEmailRecipient[]> } | { ok: false; error: string }> {
+  await requireInternal();
+  const parsed = refreshIdsSchema.safeParse(emailIds);
+  if (!parsed.success) return { ok: false, error: "Invalid e-mail ids." };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("checklist_step_emails")
+    .select("id, recipients, created_at")
+    .in("id", parsed.data);
+  if (error) return { ok: false, error: error.message };
+
+  const rows = await withDeliveryStatus(admin, data ?? [], { refresh: true });
+  return { ok: true, recipients: Object.fromEntries(rows.map((r) => [r.id, r.recipients])) };
 }
 
 /** "Mark as read" de UMA resposta, chamado ao abrir o card no histórico
@@ -484,9 +567,10 @@ const sendSchema = z.object({
   feature: z.enum(["orders", "pre_loading", "shipments"]),
   recipient_ids: z.array(z.uuid()).min(1, "Select at least one recipient."),
   /** E-mails digitados à mão, de gente sem cadastro no SOTWISE (Fase 3).
-   *  Sempre recebem a versão LIMPA do e-mail: sem perfil pra checar papel, o
-   *  seguro é tratar como externo — e, sem `client_id`, sempre no idioma
-   *  PRIMÁRIO do envio (ver `resolveClientLanguageGroups`). */
+   *  Recebem o mesmo que o resto da conversa: com o cliente, a versão LIMPA,
+   *  sempre no idioma PRIMÁRIO do envio (sem `client_id` — ver
+   *  `resolveClientLanguageGroups`); só com a equipe (desde 29/09/2026), o
+   *  e-mail da equipe, com o histórico interno no rodapé. */
   ad_hoc_emails: z
     .array(z.email("Invalid e-mail address.").transform((e) => e.trim().toLowerCase()))
     .max(20, "Too many extra e-mails.")
@@ -504,10 +588,8 @@ const sendSchema = z.object({
   /** Caminho da tela de origem (ex: "/orders/<id>") — vira o botão "Go to" pro
    *  destinatário interno; cliente nunca recebe esse link. */
   recordPath: z.string().trim().min(1),
-  /** Etapa do checklist que está compondo — decide em qual `email_threads` da
-   *  Order o envio entra (ver `lib/email/threads.ts`) e vira o título em
-   *  destaque no corpo do e-mail. `previewStepEmail` só usa pro título
-   *  (preview nunca cria/toca thread nenhuma). */
+  /** Etapa do checklist que está compondo — vira o título em destaque no
+   *  corpo do e-mail. Não decide mais a thread (ver `thread_kind`). */
   step: z.enum([
     "order",
     "po",
@@ -534,12 +616,139 @@ const sendSchema = z.object({
     "ata_brazil",
     "delivered",
   ]),
+  /** Switch "Include client" do compositor (28/09/2026) — decide em qual
+   *  `email_threads` o envio entra: `internal` = só a equipe (desligado),
+   *  `external` = a conversa com o cliente (ligado). Substitui o mapa fixo
+   *  por etapa (`step-thread-kind.ts`, que virou só a posição inicial). */
+  thread_kind: z.enum(["internal", "external"]),
+  /** Cliente da conversa quando `thread_kind` é `external` (obrigatório aí —
+   *  ver `checkAudience`): Order = o cliente dela; Pre-loading/Shipment = o
+   *  da aba. O envio vai só pra conversa própria desse cliente
+   *  (`resolveOwnerThreads`), no idioma e com o nome dele. `null` com o
+   *  switch desligado. */
+  client_id: z.uuid().nullable().default(null),
 });
 
-export type SendStepEmailInput = z.infer<typeof sendSchema>;
+export type SendStepEmailInput = z.input<typeof sendSchema>;
 
-export type StepEmailLanguageGroup = { language: EmailLanguage; customerName: string | null };
-export type StepEmailDefaults = { senderName: string; groups: StepEmailLanguageGroup[] };
+export type StepEmailLanguageGroup = {
+  language: EmailLanguage;
+  customerName: string | null;
+  fallback: StepEmailLanguageFallback | null;
+};
+export type StepEmailClientTab = { id: string; name: string };
+export type StepEmailDefaults = {
+  senderName: string;
+  groups: StepEmailLanguageGroup[];
+  /** Clientes do registro, por nome — 1 aba cada com o switch "Include
+   *  client" ligado (Order: só o dela, sem barra de abas). Vazio = não há
+   *  cliente pra incluir (o switch fica travado em "só equipe"). */
+  clients: StepEmailClientTab[];
+  /** Responsible + Signed by da etapa — pré-preenchidos no "To" dos dois
+   *  lados do switch. */
+  defaultRecipientIds: string[];
+};
+
+/** "Order #1573 · Batch .01" (1 Order) ou "Orders #1573 .01, #1580 .02"
+ *  (várias) — mesmo formato "po .lote" da tabela de lotes do PL. Vai numa
+ *  linha do corpo, abaixo do título da etapa (`recordRefs`), nunca no
+ *  assunto — assunto fixo por PL é o que empilha a conversa no Gmail. */
+function formatOrderLabel(orders: OwnerOrder[]): string | null {
+  const sorted = [...orders].sort((a, b) => a.po_number.localeCompare(b.po_number, undefined, { numeric: true }));
+  if (sorted.length === 0) return null;
+  if (sorted.length === 1) {
+    const [o] = sorted;
+    return o.batch_numbers.length
+      ? `Order #${o.po_number} · Batch ${o.batch_numbers.join(", ")}`
+      : `Order #${o.po_number}`;
+  }
+  return `Orders ${sorted.map((o) => `#${o.po_number}${o.batch_numbers.length ? ` ${o.batch_numbers.join(", ")}` : ""}`).join(", ")}`;
+}
+
+/** "AGK e Amacom" / "AGK and Amacom" / "AGK和Amacom" — lista de nomes no
+ *  idioma do texto, pra saudação de um registro com vários clientes. */
+function formatNameList(names: string[], language: EmailLanguage): string | null {
+  if (names.length === 0) return null;
+  return new Intl.ListFormat(language, { style: "long", type: "conjunction" }).format(names);
+}
+
+/** Clientes DE VERDADE do owner (pelas Orders consolidadas), ordenados por
+ *  nome — mesma fonte das threads e dos grupos de idioma. */
+async function loadOwnerClients(admin: Admin, owner: StepOwner): Promise<StepEmailClientTab[]> {
+  const clientIds = await loadOwnerClientIds(admin, owner);
+  if (clientIds.length === 0) return [];
+  const { data } = await admin.from("clients").select("id, name").in("id", clientIds);
+  return [...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Guard do `client_id` da conversa: só pra um cliente que o owner de fato
+ *  tem AGORA (Order: o dela; Pre-loading/Shipment: um dos consolidados). */
+async function checkScopeClient(admin: Admin, owner: StepOwner, scopeClientId: string | null): Promise<string | null> {
+  if (!scopeClientId) return null;
+  const clientIds = await loadOwnerClientIds(admin, owner);
+  if (!clientIds.includes(scopeClientId)) {
+    return "The clients on this record changed — reopen the compose box to refresh the tabs.";
+  }
+  return null;
+}
+
+/**
+ * Guard do switch "Include client" (28/09/2026), o mesmo no preview e no
+ * envio — a lista do compositor já não oferece nada disso, aqui é o servidor:
+ * - `internal` (só equipe): nenhum contato de cliente. Avulso pode (decisão
+ *   do usuário, 29/09/2026 — antes era barrado) e recebe o mesmo e-mail da
+ *   equipe, com o histórico interno citado no rodapé; só não pode ser
+ *   e-mail de contato de cliente (`checkTeamAdHoc`).
+ * - `external` (com o cliente): precisa nomear o cliente da conversa, e
+ *   contato de OUTRO cliente nunca entra.
+ */
+function checkAudience(
+  kind: EmailThreadKind,
+  scopeClientId: string | null,
+  recipientIds: string[],
+  recipientInfoById: Map<string, RecipientInfo>
+): string | null {
+  if (kind === "internal") {
+    if (scopeClientId) return "Team-only e-mails aren't tied to a client — reopen the compose box.";
+    if (recipientIds.some((id) => recipientInfoById.get(id)?.isClient)) {
+      return "Team-only e-mails can't go to client contacts — turn on Include client.";
+    }
+    return null;
+  }
+  if (!scopeClientId) return "Choose which client this conversation is with.";
+  for (const id of recipientIds) {
+    const info = recipientInfoById.get(id);
+    if (info?.isClient && info.clientId !== scopeClientId) {
+      return "A recipient belongs to another client — remove them from this conversation.";
+    }
+  }
+  return null;
+}
+
+/**
+ * Avulso na conversa só da equipe: e-mail digitado à mão que é de um contato
+ * de CLIENTE cadastrado não entra — mesma trava de quem é escolhido na lista
+ * (a tela promete "The client never sees it"). Sem conseguir checar, não
+ * deixa passar.
+ */
+async function checkTeamAdHoc(admin: Admin, kind: EmailThreadKind, adHocEmails: string[]): Promise<string | null> {
+  if (kind !== "internal" || adHocEmails.length === 0) return null;
+  const matches = await Promise.all(
+    adHocEmails.map(async (email) => {
+      const { data, error } = await admin.rpc("profile_id_by_email", { p_email: email });
+      return { email, profileId: data ?? null, failed: Boolean(error) };
+    })
+  );
+  if (matches.some((m) => m.failed)) return "Couldn't check the extra e-mail addresses — try again.";
+
+  const profileIds = matches.map((m) => m.profileId).filter((id): id is string => Boolean(id));
+  if (profileIds.length === 0) return null;
+  const infoById = await loadRecipientInfoByUserId(admin, profileIds);
+  const clientContact = matches.find((m) => m.profileId && infoById.get(m.profileId)?.isClient);
+  return clientContact
+    ? `${clientContact.email} is a client contact — team-only e-mails can't go to clients. Turn on Include client.`
+    : null;
+}
 
 /**
  * Nome de quem está compondo agora + um grupo por idioma que a etapa resolve
@@ -550,10 +759,17 @@ export type StepEmailDefaults = { senderName: string; groups: StepEmailLanguageG
  * 15/09/2026 — antes disto devolvia um único `{customerName, language}`,
  * sempre "o primeiro cliente que resolver").
  */
-export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmailDefaults> {
+export async function loadStepEmailDefaults(
+  owner: StepOwner,
+  scopeClientId: string | null = null
+): Promise<StepEmailDefaults> {
   const session = await requireInternal();
   const admin = createAdminClient();
-  const groups = await resolveClientLanguageGroups(admin, owner);
+  const [groups, clients, defaultRecipientIds] = await Promise.all([
+    resolveClientLanguageGroups(admin, owner, scopeClientId),
+    loadOwnerClients(admin, owner),
+    loadStepTeamIds(admin, owner),
+  ]);
   // Owner com 2+ clientes DE VERDADE no total (somando TODOS os grupos, não só
   // o de cada aba) — não só "2+ clientes NO MESMO grupo de idioma". Bug
   // reportado pelo usuário em 17/09/2026: um PL com AGK (pt-BR) + Nacional -
@@ -570,14 +786,44 @@ export async function loadStepEmailDefaults(owner: StepOwner): Promise<StepEmail
   // preserva o comportamento de hoje (nome já preenchido) só quando o owner
   // é de fato 1 cliente só (a esmagadora maioria: toda Order, e todo PL/
   // Shipment de 1 cliente).
+  //
+  // 2+ clientes só acontece sem aba de cliente (`scopeClientId` nulo) — hoje
+  // o lado "só equipe" de PL/Shipment, cuja thread `internal` não tem cliente
+  // nenhum pra trocar o colchete no envio (`customerNameForThread` = null).
+  // O colchete saía literal pra equipe ("Prezado(a) [Customer Name],", QA da
+  // Fase 2.2, 30/09/2026); agora a saudação já nasce com os nomes de TODOS os
+  // clientes do registro, no idioma da caixa ("AGK e Amacom") — WYSIWYG.
   const totalClientCount = groups.reduce((n, g) => n + g.clientIds.length, 0);
+  const clientNames = clients.map((c) => c.name);
   return {
     senderName: session.profile.full_name,
     groups: groups.map((g) => ({
       language: g.language,
-      customerName: totalClientCount > 1 ? null : g.customerName,
+      customerName: totalClientCount > 1 ? formatNameList(clientNames, g.language) : g.customerName,
+      fallback: g.fallback,
     })),
+    clients,
+    defaultRecipientIds,
   };
+}
+
+/** Responsible + Signed by da etapa (sem duplicar quando é a mesma pessoa). */
+async function loadStepTeamIds(admin: Admin, owner: StepOwner): Promise<string[]> {
+  const { data } =
+    owner.kind === "order"
+      ? await admin
+          .from("order_checklist_steps")
+          .select("responsible_id, signed_by_id")
+          .eq("id", owner.stepId)
+          .maybeSingle()
+      : await admin
+          .from("pre_loading_checklist_steps")
+          .select("responsible_id, signed_by_id")
+          .eq("pre_loading_id", owner.preLoadingId)
+          .eq("step", owner.step)
+          .maybeSingle();
+  if (!data) return [];
+  return [...new Set([data.responsible_id, data.signed_by_id].filter((id): id is string => Boolean(id)))];
 }
 
 export type StepEmailClientVariant = { language: EmailLanguage; html: string; customerName: string | null };
@@ -608,28 +854,41 @@ export async function previewStepEmail(
   const session = await requireFeature(parsed.data.feature, "edit");
   const admin = createAdminClient();
 
+  const kind = parsed.data.thread_kind;
+  const scopeClientId = parsed.data.client_id;
+  const scopeError = await checkScopeClient(admin, owner, scopeClientId);
+  if (scopeError) return { ok: false, error: scopeError };
+
   const recipientIds = [...new Set(parsed.data.recipient_ids)];
   const adHocEmails = [...new Set(parsed.data.ad_hoc_emails)];
   const [stepId, recipientInfoById, quoted] = await Promise.all([
     findStepId(admin, owner),
     loadRecipientInfoByUserId(admin, recipientIds),
-    peekQuotedHistory(admin, owner, parsed.data.step),
+    peekQuotedHistory(admin, owner, kind, scopeClientId),
   ]);
+  const audienceError =
+    checkAudience(kind, scopeClientId, recipientIds, recipientInfoById) ??
+    (await checkTeamAdHoc(admin, kind, adHocEmails));
+  if (audienceError) return { ok: false, error: audienceError };
+
   const { internalHtml, clientVariants, primaryLanguage } = await renderStepEmailHtmls(
     admin,
     owner,
     stepId,
     session.profile.full_name,
     parsed.data,
-    quoted
+    quoted,
+    null,
+    scopeClientId
   );
 
-  // Etapa de conversa com o cliente (`external`): TODO MUNDO recebe a versão
-  // limpa — sem campos internos e sem botão "Go to", só ler e responder
-  // (decisão do usuário em 11/09/2026). Ver `sendStepEmail`.
-  const externalThread = threadKindForStep(parsed.data.step) === "external";
+  // Conversa com o cliente (`external`): TODO MUNDO recebe a versão limpa —
+  // sem campos internos e sem botão "Go to", só ler e responder (decisão do
+  // usuário em 11/09/2026). Ver `sendStepEmail`.
+  const externalThread = kind === "external";
   const isPlain = (id: string) => externalThread || recipientInfoById.get(id)?.isClient === true;
-  const hasInternal = !externalThread && recipientIds.some((id) => !isPlain(id));
+  // Avulso só da equipe recebe o e-mail da equipe (ver `checkAudience`).
+  const hasInternal = !externalThread && (recipientIds.some((id) => !isPlain(id)) || adHocEmails.length > 0);
 
   // clientId -> idioma do grupo, pra saber em qual variante cada destinatário
   // "plain" cai. Avulso e destinatário cujo client_id não bate com nenhum
@@ -645,7 +904,7 @@ export async function previewStepEmail(
   };
 
   const activeLanguages = new Set<EmailLanguage>();
-  if (adHocEmails.length > 0) activeLanguages.add(primaryLanguage);
+  if (adHocEmails.length > 0 && externalThread) activeLanguages.add(primaryLanguage);
   for (const id of recipientIds) {
     if (isPlain(id)) activeLanguages.add(languageForRecipient(id));
   }
@@ -744,40 +1003,45 @@ const missingEmail = (people: Person[]): StepEmailRecipient[] =>
     .map((p) => ({ user_id: p.userId, name: p.name, email: "", ok: false, error: "No e-mail on file." }));
 
 /**
- * Envio síncrono. Cada Order por trás do owner (`resolveOwnerOrders`) tem sua
- * PRÓPRIA thread (`email_threads`, chave `(order_id, kind)`); pra Order
- * (`owner.kind === "order"`) só existe 1, então nada disto muda nada. Pra
- * Pre-loading/Shipment (que consolidam N Orders, mesmo `owner.kind ===
- * "pre_loading"`) cada Order recebe sua PRÓPRIA cópia do e-mail, respondendo
- * de verdade dentro da conversa daquele Order — não mais "pegando carona" na
- * thread de um único Order escolhido como primário. Decisão do usuário em
- * 16/09/2026, vale pra QUALQUER etapa depois da fase Order (não é específico
- * de nenhuma etapa) — ver docs/regras_de_negocio.md.
+ * Envio síncrono. Cada owner (`resolveOwnerOrders`) tem sua(s) PRÓPRIA(S)
+ * thread(s) (`resolveOwnerThreads`): Order sempre 1 (só tem 1 cliente, nada a
+ * dividir); Pre-loading/Shipment (`owner.kind === "pre_loading"`) tem 1
+ * thread pro `kind` `internal` (equipe inteira, não é client-scoped) e 1 POR
+ * CLIENTE distinto consolidado pro `kind` `external` (nunca funde 2 clientes
+ * reais na mesma conversa). Decisão do usuário em 22/09/2026 — supera o
+ * fan-out por Order de 16/09/2026 (PL/Shipment deixou de "pegar carona" em
+ * Order nenhuma) — ver docs/regras_de_negocio.md. O `kind` vem do switch
+ * "Include client" (`thread_kind`, 28/09/2026): desligado = só equipe na
+ * thread `internal`; ligado = a conversa `external` de UM cliente (Order: o
+ * dela; PL: o da aba) — ver `checkAudience`.
  *
- * Cada destinatário "plain" (papel `client`, ou qualquer um numa etapa
+ * Cada destinatário "plain" (papel `client`, ou qualquer um numa thread
  * `external` — decisão do usuário em 11/09/2026) pertence a um GRUPO DE
- * IDIOMA (via `profiles.client_id`) e recebe uma cópia em cada Order que o
- * SEU cliente de fato tem neste owner (`threadsForLanguage`); quem não é
- * "plain" fica de fora de qualquer grupo — recebe uma cópia em TODOS os
- * Orders do owner, sempre no idioma PRIMÁRIO (não é ligado a nenhum cliente
- * específico).
+ * IDIOMA (via `profiles.client_id`, `resolveClientLanguageGroups`) — isso
+ * decide só qual HTML/idioma ele recebe; QUAL THREAD é outra conta agora,
+ * client_id cru já resolvido em `allThreads` (`threadByClientId`), nunca mais
+ * via idioma. Quem não é "plain" fica de fora de qualquer grupo — recebe uma
+ * cópia em TODAS as threads do owner, sempre no idioma PRIMÁRIO (não é ligado
+ * a nenhum cliente específico).
  *
  * **Colapsa pro caminho mais simples quando ≤1 grupo tem destinatário
  * "plain" selecionado NESTE envio** (Fase multi-idioma, 15/09/2026): 1 linha
- * em `checklist_step_emails` POR ORDER (combinando interno + o único grupo
- * ativo, ou só interno) — a esmagadora maioria dos envios (todo Order, e todo
- * PL de idioma único e 1 Order) nunca sai desse caminho. Só quando 2+ grupos
- * têm destinatário "plain" de verdade é que interno e cada grupo geram
- * mensagens/linhas separadas — de novo, uma por Order de cada um. Todos no
- * "To" dentro do próprio grupo, igual à decisão de 11/09/2026 — o "grupo" é
- * (papel, idioma), não só papel.
+ * em `checklist_step_emails` POR THREAD atingida (combinando interno + o
+ * único grupo ativo, ou só interno). Desde o switch (28/09/2026) todo envio
+ * do compositor cai aqui: `internal` não tem destinatário "plain" nenhum, e
+ * `external` é sempre de 1 cliente só. O caminho de 2+ grupos (thread
+ * `external` sem cliente escolhido, consolidando 2+ clientes — interno e
+ * cada grupo em mensagens/linhas separadas) ficou sem chamador:
+ * `checkAudience` exige o cliente. O "grupo" é (papel, idioma), não só papel.
+ * Dentro dele, desde 29/09/2026 cada destinatário recebe um envio próprio (não
+ * mais todos no "To" da mesma mensagem, decisão de 11/09/2026) — é o que deixa
+ * saber se o e-mail chegou a cada um (ver `deliverAndRecord`).
  *
- * Order cujo `client_id` não bate com nenhum grupo (ou é nulo) — drift do
- * `pre_loading_clients`, editado à mão — tem suas threads somadas ao grupo
- * PRIMÁRIO; grupo sem NENHUMA thread própria (drift no sentido oposto) usa
- * as threads do grupo primário também. Nenhum Order fica de fora de toda
- * mensagem-cliente, e a mensagem interna sempre atinge todos os Orders, sem
- * depender de grupo nenhum.
+ * Recipiente `external` cujo `client_id` não bate com NENHUM cliente que o
+ * owner de fato consolida agora (estado mudou entre abrir o compositor e
+ * mandar) é REJEITADO com erro — nunca cai silenciosamente numa thread
+ * errada, que é exatamente o vazamento entre clientes que este modelo existe
+ * pra evitar (guard logo antes de montar `people`).
  */
 export async function sendStepEmail(
   owner: StepOwner,
@@ -790,6 +1054,10 @@ export async function sendStepEmail(
 
   const session = await requireFeature(parsed.data.feature, "edit");
   const admin = createAdminClient();
+
+  const scopeClientId = parsed.data.client_id;
+  const scopeError = await checkScopeClient(admin, owner, scopeClientId);
+  if (scopeError) return { ok: false, error: scopeError };
 
   const stepRow = await ensureStepId(admin, owner);
   if ("error" in stepRow) return { ok: false, error: stepRow.error };
@@ -814,46 +1082,39 @@ export async function sendStepEmail(
     };
   }
 
-  const threadsResult = await resolveThreadsForOrderIds(admin, orders, parsed.data.step);
+  const kind = parsed.data.thread_kind;
+  const audienceError =
+    checkAudience(kind, scopeClientId, recipientIds, recipientInfoById) ??
+    (await checkTeamAdHoc(admin, kind, [...new Set(parsed.data.ad_hoc_emails)]));
+  if (audienceError) return { ok: false, error: audienceError };
+
+  const threadsResult = await resolveOwnerThreads(admin, owner, orders, kind, scopeClientId);
   if (!threadsResult.ok) return { ok: false, error: threadsResult.error };
-  const allThreads = threadsResult.threads; // ordenado por po_number — [0] é a PRIMÁRIA GERAL
-  const overallPrimaryThread = allThreads[0];
-  const threadByOrderId = new Map(allThreads.map((t) => [t.orderId, t]));
-  const poNumberByOrderId = new Map(orders.map((o) => [o.id, o.po_number]));
-  // Nome do cliente de CADA Order (não o grupo de idioma combinado) — pra
-  // etapa consolidar clientes diferentes no mesmo idioma, cada Order recebe
-  // o e-mail com o nome do SEU PRÓPRIO cliente (ver `orderClientName` em
-  // `renderStepEmailHtmls`). Uma query só, fora do loop de threads.
+  const allThreads = threadsResult.threads;
+  const threadByClientId = new Map(allThreads.map((t) => [t.clientId, t] as const));
+
+  // Nome do cliente da thread, pra "[Customer Name]" no corpo (ver
+  // `customerNameOverride` em `renderStepEmailHtmls`) — pra Order é sempre a
+  // SUA própria (nunca ambíguo); pra Pre-loading/Shipment é o cliente da
+  // thread `external` daquela cópia especificamente, ou `null` (sem
+  // substituição) na thread `internal`, que não é mais dividida por cliente.
   const orderClientIds = [...new Set(orders.map((o) => o.client_id).filter((id): id is string => Boolean(id)))];
   const { data: orderClientsData } = orderClientIds.length
     ? await admin.from("clients").select("id, name").in("id", orderClientIds)
     : { data: [] as { id: string; name: string }[] };
   const nameByClientId = new Map((orderClientsData ?? []).map((c) => [c.id, c.name]));
-  const clientNameByOrderId = new Map(
-    orders.map((o) => [o.id, o.client_id ? (nameByClientId.get(o.client_id) ?? null) : null] as const)
-  );
-  // Assunto que aparece no CORPO do e-mail (destaque no topo) e fica gravado
-  // em `checklist_step_emails.subject` (o que o histórico mostra) — pra
-  // Pre-loading/Shipment, cada Order ganha o seu, com o número do lote,
-  // porque uma etapa consolidada pode atingir lotes diferentes ao mesmo
-  // tempo e o texto digitado sozinho não diz qual (pedido do usuário,
-  // 16/09/2026). O ENVELOPE SMTP não usa isto — fica igual em todo Order,
-  // de propósito (ver `smtpSubjectForThread`), senão o Gmail para de agrupar.
-  const bodySubjectByOrderId = new Map(
-    orders.map((o) => [
-      o.id,
-      owner.kind === "order" ? parsed.data.subject : `${parsed.data.subject} — Order #${o.po_number}${o.batch_numbers.join(", ")}`,
-    ])
-  );
+  const customerNameForThread = (thread: ResolvedThread): string | null => {
+    if (owner.kind === "order") {
+      const clientId = orders[0]?.client_id ?? null;
+      return clientId ? (nameByClientId.get(clientId) ?? null) : null;
+    }
+    return thread.clientId ? (nameByClientId.get(thread.clientId) ?? null) : null;
+  };
 
-  // Cada thread tem seu PRÓPRIO histórico citado — cada Order recebe sua
-  // própria cópia do e-mail, respondendo de verdade dentro da conversa
-  // daquele Order (decisão do usuário em 16/09/2026), não mais uma única
-  // renderização compartilhada a partir de UMA thread "primária" geral.
+  // Cada thread tem seu PRÓPRIO histórico citado.
   const contentByThreadId = new Map<string, Awaited<ReturnType<typeof renderStepEmailHtmls>>>();
   for (const thread of allThreads) {
     const quoted = await loadQuotedHistory(admin, thread.id);
-    const threadInput = { ...parsed.data, subject: bodySubjectByOrderId.get(thread.orderId) ?? parsed.data.subject };
     contentByThreadId.set(
       thread.id,
       await renderStepEmailHtmls(
@@ -861,54 +1122,60 @@ export async function sendStepEmail(
         owner,
         stepRow.id,
         session.profile.full_name,
-        threadInput,
+        parsed.data,
         quoted,
-        clientNameByOrderId.get(thread.orderId) ?? null
+        customerNameForThread(thread),
+        scopeClientId
       )
     );
   }
   // `clientVariants`/`primaryLanguage` não dependem de `quoted` — idênticos
   // em qualquer entrada do map; só `internalHtml`/`clientVariants[].html`
   // variam de fato por thread (lidos via `contentByThreadId` mais abaixo).
-  const { clientVariants, primaryLanguage } = contentByThreadId.get(overallPrimaryThread.id)!;
+  const { clientVariants, primaryLanguage } = contentByThreadId.get(allThreads[0]!.id)!;
 
-  // clientId -> idioma do grupo (pra classificar destinatário -> grupo).
+  // clientId -> idioma do grupo (pra classificar destinatário -> grupo e
+  // conteúdo).
   const clientIdToLanguage = new Map<string, EmailLanguage>();
   for (const variant of clientVariants) {
     for (const clientId of variant.clientIds) clientIdToLanguage.set(clientId, variant.language);
   }
-  // orderId -> idioma do grupo daquele Order (via client_id do Order) — órfão
-  // (client_id nulo, ou fora de todo grupo resolvido) cai no idioma primário.
-  const languageForOrder = new Map<string, EmailLanguage>(
-    orders.map((o) => [o.id, (o.client_id && clientIdToLanguage.get(o.client_id)) || primaryLanguage])
-  );
-  const threadsByLanguage = new Map<EmailLanguage, ResolvedThread[]>();
-  for (const order of orders) {
-    const thread = threadByOrderId.get(order.id);
-    if (!thread) continue;
-    const language = languageForOrder.get(order.id)!;
-    const list = threadsByLanguage.get(language) ?? [];
-    list.push(thread);
-    threadsByLanguage.set(language, list);
-  }
-  // Grupo sem NENHUMA thread própria (cliente listado em `pre_loading_clients`
-  // que não está de fato atrás de nenhum Order deste owner — drift no sentido
-  // oposto): cai nas threads do grupo PRIMÁRIO em vez de falhar o envio; se
-  // até o primário estiver órfão (drift duplo, patológico), cai em todas as
-  // threads do owner — nunca em lista vazia.
+  // Threads que um GRUPO DE IDIOMA atinge — os clientes daquele grupo, cada
+  // um na SUA PRÓPRIA thread (`threadByClientId`, nunca funde 2 clientes).
+  // `kind === "internal"` nunca tem o que dividir — `allThreads` já é a
+  // thread única do owner.
   const threadsForLanguage = (language: EmailLanguage): ResolvedThread[] => {
-    const own = threadsByLanguage.get(language);
-    if (own?.length) return own;
-    const primary = threadsByLanguage.get(primaryLanguage);
-    if (primary?.length) return primary;
-    return allThreads;
+    if (kind === "internal") return allThreads;
+    const variant = clientVariants.find((v) => v.language === language);
+    const threads = (variant?.clientIds ?? [])
+      .map((id) => threadByClientId.get(id))
+      .filter((t): t is ResolvedThread => Boolean(t));
+    return threads.length ? threads : allThreads;
   };
 
-  const isPlain = (id: string) => overallPrimaryThread.kind === "external" || recipientInfoById.get(id)?.isClient === true;
+  const isPlain = (id: string) => kind === "external" || recipientInfoById.get(id)?.isClient === true;
   const languageForUser = (id: string): EmailLanguage => {
     const clientId = recipientInfoById.get(id)?.clientId ?? null;
     return (clientId && clientIdToLanguage.get(clientId)) || primaryLanguage;
   };
+
+  // Numa thread `external` de PL (dividida por cliente), um destinatário cujo
+  // `client_id` não bate com NENHUM cliente que o owner de fato consolida
+  // agora precisa ser REJEITADO, não cair silenciosamente numa thread
+  // errada — é o vazamento entre clientes que este modelo existe pra evitar.
+  // Order não entra: a thread dela não tem `client_id`, e `checkAudience` já
+  // barrou contato de outro cliente.
+  if (kind === "external" && owner.kind === "pre_loading") {
+    for (const id of recipientIds) {
+      const clientId = recipientInfoById.get(id)?.clientId ?? null;
+      if (clientId && !threadByClientId.has(clientId)) {
+        return {
+          ok: false,
+          error: "The clients on this record changed — reopen the compose box to refresh the recipient list.",
+        };
+      }
+    }
+  }
 
   const people: Person[] = await Promise.all(
     recipientIds.map(async (userId) => {
@@ -922,33 +1189,29 @@ export async function sendStepEmail(
       };
     })
   );
-  // Avulso entra como qualquer outro destinatário, só sem `user_id` — sempre
-  // "plain" e sempre no idioma PRIMÁRIO (sem client_id, não há como saber o
-  // idioma de verdade — RN03: nunca bloqueia, cai no idioma padrão do envio).
+  // Avulso entra como qualquer outro destinatário, só sem `user_id`, e recebe
+  // o mesmo que o resto da conversa: com o cliente, a versão "plain" no idioma
+  // PRIMÁRIO (sem client_id, não há como saber o idioma de verdade — RN03:
+  // nunca bloqueia, cai no idioma padrão do envio); só com a equipe, o e-mail
+  // da equipe (decisão do usuário, 29/09/2026).
   const knownEmails = new Set(people.map((p) => p.email?.toLowerCase()).filter(Boolean));
   for (const email of [...new Set(parsed.data.ad_hoc_emails)]) {
     if (knownEmails.has(email)) continue; // já está na lista como usuário
-    people.push({ userId: null, name: email, email, language: primaryLanguage });
+    people.push({ userId: null, name: email, email, language: kind === "external" ? primaryLanguage : null });
   }
 
   const threadHeadersFor = (threads: ResolvedThread[]): Promise<ThreadingHeaders> => threadingHeaders(admin, threads);
-  // Gmail agrupa por Subject exato (ignorando "Re:"), não só por References —
-  // pra uma cópia de Pre-loading/Shipment cair de verdade na conversa do seu
-  // Order, o ENVELOPE precisa usar o assunto do PRÓPRIO Order (igual a um
-  // envio direto da tela daquele Order), mesmo quando o owner só tem 1 Order.
-  // O rótulo visível NO CORPO (`checklistStepEmailHtml`) continua vindo do
-  // assunto digitado no compositor — só o envelope SMTP muda aqui.
-  const smtpSubjectForThread = (thread: ResolvedThread, h: ThreadingHeaders): string => {
-    if (owner.kind === "order") {
-      return h["In-Reply-To"] && !/^re:/i.test(parsed.data.subject) ? `Re: ${parsed.data.subject}` : parsed.data.subject;
-    }
-    const base = `Order #${poNumberByOrderId.get(thread.orderId) ?? ""}`;
-    return h["In-Reply-To"] ? `Re: ${base}` : base;
-  };
+  // Cada thread agora é a conversa PRÓPRIA do seu owner (Order, ou o
+  // Pre-loading/Shipment inteiro) — não há mais "pegar carona" no assunto de
+  // outro registro, então o envelope SMTP volta a ser sempre o assunto
+  // digitado no compositor (igual ao que uma Order já fazia antes desta
+  // mudança), só com "Re:" quando a thread já tem âncora.
+  const smtpSubjectForThread = (h: ThreadingHeaders): string =>
+    h["In-Reply-To"] && !/^re:/i.test(parsed.data.subject) ? `Re: ${parsed.data.subject}` : parsed.data.subject;
 
   /** Manda todos os `passes` (1 por variante de HTML) pra dentro de UMA
    *  thread e grava 1 linha em `checklist_step_emails` pra ela — chamada uma
-   *  vez por Order atingido neste envio (ver os 2 branches abaixo).
+   *  vez por thread atingida neste envio (ver os 2 branches abaixo).
    *  `const`/arrow de propósito (não `function`): precisa fechar sobre o
    *  `stepRow`/`parsed.data` já NARROWED pelos guards acima — uma function
    *  declaration hoisted perde essa narrowing pro TS. */
@@ -959,22 +1222,25 @@ export async function sendStepEmail(
     rowLanguage: EmailLanguage
   ): Promise<{ ok: true; sent: number; failed: number } | { ok: false; error: string }> => {
     const threadHeaders = await threadHeadersFor([thread]);
+    const headersFor = await recipientThreadingHeaders(admin, thread.id, threadHeaders);
     const replyTo = replyToAddress(thread.id);
-    const smtpSubject = smtpSubjectForThread(thread, threadHeaders);
+    const smtpSubject = smtpSubjectForThread(threadHeaders);
 
+    // Um envio (request) por destinatário (29/09/2026): cada um ganha seu id no
+    // Resend e o status dele — entregue ou devolvido — é consultado sozinho
+    // (ver lib/email/delivery-issues.ts). Numa mensagem só para todos, o Resend
+    // dava UM status para o grupo e o bounce de um endereço sumia.
     const recipients: StepEmailRecipient[] = [];
     for (const pass of passes) {
       recipients.push(...missingEmail(pass.people));
-      const members = withEmail(pass.people);
-      if (members.length === 0) continue;
-      const sent = await sendEmail({
-        to: members.map((p) => p.email),
-        subject: smtpSubject,
-        html: pass.html,
-        replyTo,
-        headers: threadHeaders,
-      });
-      for (const p of members) {
+      for (const p of withEmail(pass.people)) {
+        const sent = await sendEmail({
+          to: p.email,
+          subject: smtpSubject,
+          html: pass.html,
+          replyTo,
+          headers: headersFor(p.email),
+        });
         recipients.push({
           user_id: p.userId,
           name: p.name,
@@ -982,6 +1248,7 @@ export async function sendStepEmail(
           ok: sent.ok,
           error: sent.ok ? null : sent.error,
           message_id: sent.ok ? sent.messageId : null,
+          provider_id: sent.ok ? sent.id || null : null,
         });
       }
     }
@@ -990,7 +1257,7 @@ export async function sendStepEmail(
       owner,
       stepId: stepRow.id,
       senderId: session.userId,
-      subject: bodySubjectByOrderId.get(thread.orderId) ?? parsed.data.subject,
+      subject: parsed.data.subject,
       body,
       language: rowLanguage,
       recipients,
@@ -1019,9 +1286,11 @@ export async function sendStepEmail(
   }
 
   if (activeLanguages.length < 2) {
-    // ---- ≤1 grupo de idioma ativo: 1 e-mail por Order atingido, cada um com
-    // o passe interno (sempre que houver gente interna) + o passe de cliente
-    // (só nos Orders que esse cliente/idioma realmente tem neste owner). ----
+    // ---- ≤1 grupo de idioma ativo: 1 e-mail por thread atingida, cada uma
+    // com o passe interno (sempre que houver gente interna) + o passe de
+    // cliente (só nas threads desse cliente/idioma — sempre `allThreads`
+    // inteiro quando `kind === "internal"`, só a(s) thread(s) daquele cliente
+    // quando `external`). ----
     const collapsedLanguage = activeLanguages[0] ?? primaryLanguage;
     const hasInternal = people.some((p) => p.language === null);
     const hasClientGroup = activeLanguages.length === 1;
@@ -1056,8 +1325,10 @@ export async function sendStepEmail(
     return { ok: true, sent: totalSent, failed: totalFailed };
   }
 
-  // ---- 2+ grupos ativos: 1 e-mail interno por Order (todos os Orders do
-  // owner) + 1 e-mail por grupo de idioma, por Order que aquele grupo tem. ----
+  // ---- 2+ grupos ativos (só possível numa thread `external` que consolida
+  // 2+ clientes): 1 e-mail interno por thread (todas as threads do owner) +
+  // 1 e-mail por grupo de idioma, pelas threads (clientes) que aquele grupo
+  // tem. ----
   let totalSent = 0;
   let totalFailed = 0;
 

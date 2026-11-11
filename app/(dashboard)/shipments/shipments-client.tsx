@@ -18,9 +18,11 @@ import { ChevronLeft, ChevronRight, ArrowUpDown, Eye, Filter, Loader2 } from "lu
 import { formatDateNumeric } from "@/lib/format";
 import { downloadXlsx, fetchAllRows, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
 import { DownloadXlsxButton } from "@/components/download-xlsx-button";
+import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -61,10 +63,11 @@ export type ShipmentRow = {
   ship_date: string | null;
   eta: string | null;
   sum_of_orders: number;
-  /** Uma entrada por Order deste PL — PO number + quantas linhas Factory x
-   *  Category ela contribui (só as dos lotes DESTE PL, não o total da Order
-   *  em outros PLs/shipments). Alimenta o popover da coluna "Sum of Orders". */
-  orders_summary: { po_number: string; ofc_count: number }[];
+  /** Uma entrada por LOTE deste PL (não por Order — docs §3.10.2: o rótulo diz
+   *  "Orders" mas a contagem é de lotes) — PO number + Batch number + quantas
+   *  linhas Factory x Category esse lote tem neste PL. Alimenta o popover da
+   *  coluna "Sum of Orders". */
+  orders_summary: { po_number: string; batch_number: string; ofc_count: number }[];
   /** Label exibido. */
   status: string;
 };
@@ -99,7 +102,7 @@ const text = (v: string | null) => v || dash;
 function OrdersSummaryCell({
   orders,
 }: {
-  orders: { po_number: string; ofc_count: number }[];
+  orders: { po_number: string; batch_number: string; ofc_count: number }[];
 }) {
   if (orders.length === 0) return <span className="text-slate-400">0</span>;
   return (
@@ -120,10 +123,12 @@ function OrdersSummaryCell({
       >
         {orders.map((o) => (
           <div
-            key={o.po_number}
+            key={`${o.po_number}${o.batch_number}`}
             className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
           >
-            <span className="text-slate-600">PO {o.po_number}</span>
+            <span className="text-slate-600">
+              PO {o.po_number} {o.batch_number}
+            </span>
             <span className="text-xs text-muted-foreground">
               {o.ofc_count} {o.ofc_count === 1 ? "Factory x Category" : "Factories x Categories"}
             </span>
@@ -218,12 +223,14 @@ export function ShipmentsClient({
   pageCount,
   state,
   initialColumns,
+  initialListState,
 }: {
   rows: ShipmentRow[];
   total: number;
   pageCount: number;
   state: ListState;
   initialColumns: VisibilityState;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
 
@@ -268,6 +275,48 @@ export function ShipmentsClient({
 
   const sorting: SortingState = [state.sort];
   const filters = state.filters;
+
+  // "Keep filters" (components/keep-filters): o estado da URL é gravado no
+  // usuário a cada mudança; abrir a lista sem nada na URL volta ao que ficou
+  // salvo. Formato salvo = o de antes (search/filters/sorting/pageIndex).
+  const list = useListState("shipments", initialListState, {
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [DEFAULT_SORT] as SortingState,
+    pageIndex: 0,
+  });
+  // `state` só muda de referência quando o servidor devolve uma página nova.
+  useEffect(() => {
+    list.update({
+      search: state.q,
+      filters: state.filters,
+      sorting: [state.sort],
+      pageIndex: state.page - 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const saved = list.state;
+    const savedSort = saved.sorting[0];
+    const fromSaved: ListState = {
+      q: saved.search,
+      filters: { ...EMPTY_FILTERS, ...saved.filters },
+      sort:
+        savedSort && savedSort.id in SORT_COLUMNS
+          ? { id: savedSort.id as SortId, desc: savedSort.desc }
+          : DEFAULT_SORT,
+      page: saved.pageIndex + 1,
+    };
+    const target = listStateToSearch(fromSaved);
+    if (list.keep && listStateToSearch(state) === "" && target !== "") {
+      startTransition(() => router.replace(`/shipments${target}`, { scroll: false }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { visibility, save: saveVisibility } = useColumnVisibility("shipments", initialColumns);
 
@@ -441,6 +490,8 @@ export function ShipmentsClient({
         filters={filters}
         onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
         onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         {...options}
         pols={uniquePols}
       />

@@ -3,6 +3,7 @@ import "server-only";
 import { fetchAll } from "@/lib/fetch-all";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { todayIso } from "@/lib/format";
 import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
 
 /**
@@ -15,7 +16,8 @@ import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
  * corpo de um request.
  *
  * O DTO é deliberadamente magro. O que fica de fora não é esquecimento:
- *  - fábrica, exporter, leader, requester, BU → operação interna da AGK;
+ *  - exporter, leader, requester, BU → operação interna da AGK (a FÁBRICA
+ *    saiu dessa lista em 2026-11-05: aparece ao lado da categoria);
  *  - datas de ETD, quantidade e descrição de produto → não modeladas no banco
  *    (ou estimativa interna, no caso do ETD); não dá para expor o que não existe.
  *
@@ -23,8 +25,13 @@ import type { BatchStatus, ChecklistStep, OrderStatus } from "@/types/database";
  * revertida a pedido do Henrique — o cliente agora vê o lote (`.01/.02`) e a
  * quebra por lote, para o portal casar com o desenho do Claude Design. O que
  * segue de fora é só o que a AGK não quer mostrar (campos internos) ou o que o
- * banco não guarda (quantidade, descrição, ETA por lote). Ver
- * docs/regras_de_negocio.md.
+ * banco não guarda (quantidade, descrição). Ver docs/regras_de_negocio.md.
+ *
+ * Datas de embarque e entrega (2026-11-04, bloco B do Portal v2): saem do
+ * checklist do PRE-LOADING em que cada lote viaja (`pre_loading_checklist_steps`
+ * — Shipping Date, ETA, Delivered), não do checklist da Order: desde a divisão
+ * da esteira essas etapas só existem no PL (lib/checklist.ts, SHIPMENT_STEPS).
+ * Antes o portal lia `order_checklist_steps.eta_brazil`, que nunca tem linha.
  */
 
 export type ClientOrder = {
@@ -39,7 +46,281 @@ export type ClientOrder = {
   batchNumbers: string[];
   /** Quantos itens do pedido estão em cada estágio. */
   progress: { label: string; count: number }[];
+  /**
+   * % do ciclo In Production → Delivered, média dos lotes do pedido (cada lote
+   * vale 25/50/75/100 pelo passo em que está — a mesma régua do stepper do
+   * detalhe). Pedido entregue = 100; sem lote no fluxo, segue o status do pedido.
+   */
+  progressPct: number;
+  /**
+   * ETA ao Brasil do que AINDA não foi entregue: a maior ETA entre os PLs dos
+   * lotes pendentes (o pedido só termina quando o último chega). Null quando
+   * nenhum lote pendente tem PL com ETA.
+   */
+  etaBrazil: string | null;
+  /** Entrega do pedido inteiro — só quando todos os lotes no fluxo foram entregues. */
+  deliveredOn: string | null;
+  /**
+   * Linhas de produto ativas (Factory×Category), sem deduplicar — igual ao
+   * detalhe. Quando o GSS mandar quantidade por linha, é aqui que ela entra.
+   */
+  itemCount: number;
+  /** Fábricas distintas do pedido, por nome (visíveis ao cliente desde 05/11). */
+  factories: string[];
+  /** Categorias distintas do pedido, por nome. */
+  categories: string[];
+  /** Aba de "My orders": entregue, cancelado ou em andamento. */
+  bucket: ClientOrderBucket;
 };
+
+export type ClientOrderBucket = "in_progress" | "delivered" | "canceled";
+
+/** Peso de cada passo do lote no % de progresso (mesma ordem do stepper). */
+const BATCH_PROGRESS: Partial<Record<BatchStatus, number>> = {
+  in_production: 25,
+  preloading: 50,
+  in_transit: 75,
+  delivered: 100,
+};
+
+function bucketOf(status: OrderStatus): ClientOrderBucket {
+  if (status === "delivered") return "delivered";
+  if (status === "canceled") return "canceled";
+  return "in_progress";
+}
+
+/**
+ * Fallback quando o pedido não tem lote no fluxo (ainda não chegou do GSS, ou
+ * todos cancelados): o % segue o status do próprio pedido, para a barra não
+ * dizer 0% ao lado de um selo "Pre-Loading".
+ */
+const ORDER_PROGRESS: Partial<Record<OrderStatus, number>> = {
+  in_production: 25,
+  pre_loading: 50,
+  partially_shipped: 75,
+  shipped: 75,
+  partially_delivered: 75,
+  delivered: 100,
+};
+
+function progressPctOf(status: OrderStatus, batchStatuses: BatchStatus[]): number {
+  if (status === "delivered") return 100;
+  let sum = 0;
+  let n = 0;
+  for (const batchStatus of batchStatuses) {
+    const weight = BATCH_PROGRESS[batchStatus];
+    // Lote cancelado/em negociação está fora do ciclo — não puxa a média.
+    if (weight === undefined) continue;
+    sum += weight;
+    n += 1;
+  }
+  return n === 0 ? ORDER_PROGRESS[status] ?? 0 : Math.round(sum / n);
+}
+
+/** Lote que conta para o acompanhamento (fora: negociação e cancelado). */
+function inFlow(status: BatchStatus) {
+  return BATCH_PROGRESS[status] !== undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Datas de embarque/entrega por lote, a partir do PL em que ele viaja
+// ---------------------------------------------------------------------------
+
+/** Datas de UM lote, tiradas do PL dele. "Actual" = fato; "expected" = previsão. */
+export type BatchShipping = {
+  /** Data de criação do PL — o lote entrou em Pre-Loading. */
+  preLoadingOn: string | null;
+  shippedOn: string | null;
+  shipExpected: string | null;
+  /** ETA ao Brasil do PL (data informada ou, no legado, a estimativa da etapa). */
+  eta: string | null;
+  deliveredOn: string | null;
+};
+
+const PL_STEPS: ChecklistStep[] = [
+  "consolidation_point",
+  "shipping_date",
+  "eta_brazil",
+  "ata_brazil",
+  "delivered",
+];
+
+type PlStep = {
+  pre_loading_id: string;
+  step: ChecklistStep;
+  done: boolean;
+  estimated_date: string | null;
+  completed_on: string | null;
+  event_date: string | null;
+};
+
+/** Data do fato: `event_date` (desde 21/10) ou, no legado do Bubble, o `completed_on` de etapa feita. */
+function actualOf(s: PlStep | undefined): string | null {
+  if (!s) return null;
+  return s.event_date ?? (s.done ? s.completed_on : null);
+}
+
+const minDate = (xs: (string | null | undefined)[]) =>
+  xs.filter((x): x is string => !!x).sort()[0] ?? null;
+const maxDate = (xs: (string | null | undefined)[]) =>
+  xs.filter((x): x is string => !!x).sort().at(-1) ?? null;
+
+const IN_CHUNK = 100;
+
+function chunks<T>(items: T[], size = IN_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * id → nome das fábricas das linhas F×C. Busca só as fábricas usadas (a tabela
+ * inteira tem centenas). Fábrica apagada continua com nome: a linha ainda
+ * aponta para ela e o cliente precisa ver de onde o produto veio.
+ */
+async function loadFactoryNames(
+  admin: ReturnType<typeof createAdminClient>,
+  factoryIds: string[]
+): Promise<Map<string, string>> {
+  const ids = [...new Set(factoryIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await Promise.all(
+    chunks(ids).map((part) =>
+      fetchAll<{ id: string; name: string }>((from, to) =>
+        admin.from("factories").select("id, name").in("id", part).range(from, to)
+      )
+    )
+  ).then((r) => r.flat());
+  return new Map(rows.map((f) => [f.id, f.name.trim()]));
+}
+
+/**
+ * lote → datas do PL em que ele viaja, para os lotes deste cliente (opcionalmente
+ * só de um pedido). O escopo vem do join `batches!inner(orders!inner(client_id))`
+ * — o mesmo cuidado das outras leituras: o filtro do dono vai na query, não no
+ * código depois. Lote em mais de um PL (raro) fica com o PL mais recente.
+ */
+async function loadBatchShipping(
+  admin: ReturnType<typeof createAdminClient>,
+  clientId: string,
+  orderId?: string
+): Promise<Map<string, BatchShipping>> {
+  const links = await fetchAll<{ pre_loading_id: string; batch_id: string }>((from, to) => {
+    let q = admin
+      .from("pre_loading_batches")
+      .select("pre_loading_id, batch_id, batches!inner(order_id, orders!inner(client_id))")
+      .eq("batches.orders.client_id", clientId);
+    if (orderId) q = q.eq("batches.order_id", orderId);
+    return q.range(from, to).returns<{ pre_loading_id: string; batch_id: string }[]>();
+  });
+
+  const plIds = [...new Set(links.map((l) => l.pre_loading_id))];
+  if (plIds.length === 0) return new Map();
+
+  const [pls, steps, clientDelivered] = await Promise.all([
+    Promise.all(
+      chunks(plIds).map((ids) =>
+        fetchAll<{ id: string; created_date: string }>((from, to) =>
+          admin
+            .from("pre_loadings")
+            .select("id, created_date")
+            .in("id", ids)
+            .is("deleted_at", null)
+            .range(from, to)
+        )
+      )
+    ).then((r) => r.flat()),
+    Promise.all(
+      chunks(plIds).map((ids) =>
+        fetchAll<PlStep>((from, to) =>
+          admin
+            .from("pre_loading_checklist_steps")
+            .select("pre_loading_id, step, done, estimated_date, completed_on, event_date")
+            .in("pre_loading_id", ids)
+            .in("step", PL_STEPS)
+            .range(from, to)
+        )
+      )
+    ).then((r) => r.flat()),
+    // PL com vários clientes: a entrega de CADA cliente tem data própria
+    // (`pre_loading_client_delivered`) e vale antes da etapa geral.
+    fetchAll<{ pre_loading_id: string; delivered_date: string }>((from, to) =>
+      admin
+        .from("pre_loading_client_delivered")
+        .select("pre_loading_id, delivered_date")
+        .eq("client_id", clientId)
+        .range(from, to)
+    ),
+  ]);
+
+  const plCreated = new Map(pls.map((p) => [p.id, p.created_date]));
+  const stepsByPl = new Map<string, Map<ChecklistStep, PlStep>>();
+  for (const s of steps) {
+    const m = stepsByPl.get(s.pre_loading_id) ?? new Map<ChecklistStep, PlStep>();
+    m.set(s.step, s);
+    stepsByPl.set(s.pre_loading_id, m);
+  }
+  const deliveredForClient = new Map(
+    clientDelivered.map((d) => [d.pre_loading_id, d.delivered_date])
+  );
+
+  // PL apagado some (não está em `plCreated`). Entre vários PLs, o mais recente.
+  const plOfBatch = new Map<string, string>();
+  for (const l of links) {
+    const created = plCreated.get(l.pre_loading_id);
+    if (!created) continue;
+    const prev = plOfBatch.get(l.batch_id);
+    if (!prev || (plCreated.get(prev) ?? "") < created) plOfBatch.set(l.batch_id, l.pre_loading_id);
+  }
+
+  const out = new Map<string, BatchShipping>();
+  for (const [batchId, plId] of plOfBatch) {
+    const st = stepsByPl.get(plId) ?? new Map<ChecklistStep, PlStep>();
+    const ship = st.get("shipping_date");
+    const eta = st.get("eta_brazil");
+    const shippedOn = actualOf(ship);
+    out.set(batchId, {
+      // Entrada em Pre-Loading: a criação do PL ou, se veio antes, a chegada ao
+      // Consolidation Point (1ª etapa do PL). No legado do Bubble o
+      // `created_date` do PL é o dia da migração, e só a etapa tem a data real.
+      preLoadingOn: minDate([plCreated.get(plId), actualOf(st.get("consolidation_point"))]),
+      shippedOn,
+      shipExpected: shippedOn ? null : ship?.estimated_date ?? null,
+      eta: eta?.event_date ?? eta?.estimated_date ?? actualOf(eta),
+      deliveredOn:
+        deliveredForClient.get(plId) ?? actualOf(st.get("delivered")) ?? null,
+    });
+  }
+  return out;
+}
+
+/** Datas do pedido somando os lotes no fluxo. */
+type OrderShipping = {
+  preLoadingOn: string | null;
+  shippedOn: string | null;
+  shipExpected: string | null;
+  etaBrazil: string | null;
+  firstDeliveredOn: string | null;
+  deliveredOn: string | null;
+};
+
+function orderShippingOf(
+  batches: { id: string; status: BatchStatus }[],
+  shipping: Map<string, BatchShipping>
+): OrderShipping {
+  const flow = batches.filter((b) => inFlow(b.status));
+  const dates = flow.map((b) => shipping.get(b.id));
+  const notDelivered = flow.filter((b) => !shipping.get(b.id)?.deliveredOn && b.status !== "delivered");
+  const allDelivered = flow.length > 0 && notDelivered.length === 0;
+  return {
+    preLoadingOn: minDate(dates.map((d) => d?.preLoadingOn)),
+    shippedOn: minDate(dates.map((d) => d?.shippedOn)),
+    shipExpected: minDate(notDelivered.map((b) => shipping.get(b.id)?.shipExpected)),
+    etaBrazil: maxDate(notDelivered.map((b) => shipping.get(b.id)?.eta)),
+    firstDeliveredOn: minDate(dates.map((d) => d?.deliveredOn)),
+    deliveredOn: allDelivered ? maxDate(dates.map((d) => d?.deliveredOn)) : null,
+  };
+}
 
 /**
  * Pedido em negociação não aparece: enquanto não vira produção é conversa
@@ -52,7 +333,7 @@ const HIDDEN_FROM_CLIENT: OrderStatus[] = ["in_negotiation"];
 export async function loadClientOrders(clientId: string): Promise<ClientOrder[]> {
   const admin = createAdminClient();
 
-  const [orders, batches, types] = await Promise.all([
+  const [orders, batches, types, ofc, categories, shipping] = await Promise.all([
     fetchAll<{
       id: string;
       po_number: string;
@@ -75,53 +356,97 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
     // Filtra pelo dono do pedido no próprio join, em vez de baixar os lotes e
     // cruzar em memória: sem o `!inner` + `eq` o escopo dependeria de o código
     // acertar o filtro depois, e é exatamente aí que vazamento nasce.
-    fetchAll<{ order_id: string; batch_number: string; status: BatchStatus }>((from, to) =>
-      admin
-        .from("batches")
-        .select("order_id, batch_number, status, orders!inner(client_id)")
-        .eq("orders.client_id", clientId)
-        .range(from, to)
-        .returns<{ order_id: string; batch_number: string; status: BatchStatus }[]>()
+    fetchAll<{ id: string; order_id: string; batch_number: string; status: BatchStatus }>(
+      (from, to) =>
+        admin
+          .from("batches")
+          .select("id, order_id, batch_number, status, orders!inner(client_id)")
+          .eq("orders.client_id", clientId)
+          .range(from, to)
+          .returns<{ id: string; order_id: string; batch_number: string; status: BatchStatus }[]>()
     ),
     fetchAll<{ id: string; name: string }>((from, to) =>
       admin.from("order_types").select("id, name").is("deleted_at", null).range(from, to)
     ),
+    fetchAll<{ order_id: string; category_id: string; factory_id: string }>((from, to) =>
+      admin
+        .from("order_factory_category")
+        .select("order_id, category_id, factory_id, orders!inner(client_id)")
+        .eq("orders.client_id", clientId)
+        .eq("is_active", true)
+        .range(from, to)
+        .returns<{ order_id: string; category_id: string; factory_id: string }[]>()
+    ),
+    fetchAll<{ id: string; name: string }>((from, to) =>
+      admin.from("categories").select("id, name").is("deleted_at", null).range(from, to)
+    ),
+    loadBatchShipping(admin, clientId),
   ]);
 
   const typeName = new Map(types.map((t) => [t.id, t.name]));
+  const categoryName = new Map(categories.map((c) => [c.id, c.name.trim()]));
+  const factoryName = await loadFactoryNames(admin, ofc.map((r) => r.factory_id));
 
-  // order → { status → contagem }. Map aninhado em vez de array para a soma sair
-  // numa passada só sobre os lotes.
-  const byOrder = new Map<string, Map<BatchStatus, number>>();
-  // order → números dos lotes (para a coluna Batch No.).
-  const batchNumbersByOrder = new Map<string, string[]>();
-  for (const b of batches) {
-    const counts = byOrder.get(b.order_id) ?? new Map<BatchStatus, number>();
-    counts.set(b.status, (counts.get(b.status) ?? 0) + 1);
-    byOrder.set(b.order_id, counts);
-
-    const nums = batchNumbersByOrder.get(b.order_id) ?? [];
-    nums.push(b.batch_number);
-    batchNumbersByOrder.set(b.order_id, nums);
+  // order → { linhas de produto, fábricas e categorias distintas }.
+  const itemsByOrder = new Map<
+    string,
+    { count: number; factories: Set<string>; categories: Set<string> }
+  >();
+  for (const row of ofc) {
+    const entry = itemsByOrder.get(row.order_id) ?? {
+      count: 0,
+      factories: new Set<string>(),
+      categories: new Set<string>(),
+    };
+    entry.count += 1;
+    const factory = factoryName.get(row.factory_id);
+    if (factory) entry.factories.add(factory);
+    const name = categoryName.get(row.category_id);
+    if (name) entry.categories.add(name);
+    itemsByOrder.set(row.order_id, entry);
   }
 
-  const rows: ClientOrder[] = orders.map((o) => ({
-    id: o.id,
-    po_number: o.po_number,
-    client_reference: o.client_reference,
-    type: o.order_type_id ? typeName.get(o.order_type_id) ?? null : null,
-    status: o.status,
-    scheduleRequested: o.schedule_requested,
-    batchNumbers: (batchNumbersByOrder.get(o.id) ?? []).sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true })
-    ),
-    progress: [...(byOrder.get(o.id) ?? new Map())]
-      .map(([status, count]) => ({
-        label: BATCH_STATUS_LABELS[status as BatchStatus],
-        count: count as number,
-      }))
-      .sort((a, b) => b.count - a.count),
-  }));
+  const batchesByOrder = new Map<string, typeof batches>();
+  for (const b of batches) {
+    const list = batchesByOrder.get(b.order_id) ?? [];
+    list.push(b);
+    batchesByOrder.set(b.order_id, list);
+  }
+
+  const rows: ClientOrder[] = orders.map((o) => {
+    const own = batchesByOrder.get(o.id) ?? [];
+    const counts = new Map<BatchStatus, number>();
+    for (const b of own) counts.set(b.status, (counts.get(b.status) ?? 0) + 1);
+    const ship = orderShippingOf(own, shipping);
+    return {
+      id: o.id,
+      po_number: o.po_number,
+      client_reference: o.client_reference,
+      type: o.order_type_id ? typeName.get(o.order_type_id) ?? null : null,
+      status: o.status,
+      scheduleRequested: o.schedule_requested,
+      batchNumbers: own
+        .map((b) => b.batch_number)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      progress: [...counts]
+        .map(([status, count]) => ({ label: BATCH_STATUS_LABELS[status], count }))
+        .sort((a, b) => b.count - a.count),
+      progressPct: progressPctOf(
+        o.status,
+        own.map((b) => b.status)
+      ),
+      etaBrazil: o.status === "delivered" ? null : ship.etaBrazil,
+      deliveredOn: ship.deliveredOn,
+      itemCount: itemsByOrder.get(o.id)?.count ?? 0,
+      factories: [...(itemsByOrder.get(o.id)?.factories ?? [])].sort((a, b) =>
+        a.localeCompare(b)
+      ),
+      categories: [...(itemsByOrder.get(o.id)?.categories ?? [])].sort((a, b) =>
+        a.localeCompare(b)
+      ),
+      bucket: bucketOf(o.status),
+    };
+  });
 
   // Mais recente primeiro, no mesmo critério da lista interna: o PO number é
   // sequencial, então ordenar por ele numericamente é ordenar por recência.
@@ -130,16 +455,86 @@ export async function loadClientOrders(clientId: string): Promise<ClientOrder[]>
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
 /**
- * Detalhe de UM pedido para o portal — os LOTES do pedido e quais produtos
- * (categorias) viajam em cada um. É a promessa do painel do cliente: "veja onde
- * cada lote está e exatamente quais produtos viajam nele".
+ * Números do Dashboard do portal, derivados da mesma lista de "My orders" —
+ * uma leitura só, e os dois nunca discordam.
  *
- * Recorte (revisto 2026-08-26): o número do lote AGORA aparece (a decisão de
- * 2026-08-18 que o escondia foi revertida — ver o cabeçalho do arquivo). Segue
- * de fora o que é interno da AGK (fábrica, exporter, ETD) e o que o banco não
- * guarda (quantidade, descrição de produto, ETA por lote). O produto continua
- * na granularidade de CATEGORIA, que é o que o `order_factory_category` fixa.
+ * "Precisa de atenção" = em andamento, com ETA ao Brasil já passada e sem
+ * entrega registrada. "Próxima entrega" = a menor ETA de hoje em diante entre
+ * os em andamento. "Hoje" é o dia em São Paulo (fuso da operação).
+ */
+export type ClientDashboard = {
+  total: number;
+  active: number;
+  delivered: number;
+  nextDelivery: ClientOrder | null;
+  attention: (ClientOrder & { daysLate: number })[];
+  recent: ClientOrder[];
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function daysBetween(fromIso: string, toIso: string): number {
+  return Math.round(
+    (Date.parse(`${toIso.slice(0, 10)}T00:00:00Z`) -
+      Date.parse(`${fromIso.slice(0, 10)}T00:00:00Z`)) /
+      DAY_MS
+  );
+}
+
+/** Dias de atraso: ETA já passou e o pedido não foi entregue. Null = no prazo / sem ETA. */
+export function daysLateOf(
+  o: { bucket: ClientOrderBucket; etaBrazil: string | null; deliveredOn: string | null },
+  today: string = todayIso()
+): number | null {
+  if (o.bucket !== "in_progress" || !o.etaBrazil || o.deliveredOn) return null;
+  const days = daysBetween(o.etaBrazil, today);
+  return days > 0 ? days : null;
+}
+
+export function buildClientDashboard(
+  orders: ClientOrder[],
+  today: string = todayIso()
+): ClientDashboard {
+  const active = orders.filter((o) => o.bucket === "in_progress");
+  const pending = active.filter((o) => o.etaBrazil && !o.deliveredOn);
+
+  const upcoming = pending
+    .filter((o) => o.etaBrazil!.slice(0, 10) >= today)
+    .sort((a, b) => a.etaBrazil!.localeCompare(b.etaBrazil!));
+
+  const attention = pending
+    .map((o) => ({ ...o, daysLate: daysLateOf(o, today) ?? 0 }))
+    .filter((o) => o.daysLate > 0)
+    .sort((a, b) => b.daysLate - a.daysLate);
+
+  return {
+    total: orders.length,
+    active: active.length,
+    delivered: orders.filter((o) => o.bucket === "delivered").length,
+    nextDelivery: upcoming[0] ?? null,
+    attention,
+    // A lista já vem do mais recente para o mais antigo (PO desc).
+    recent: active.slice(0, 5),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Detalhe do pedido
+// ---------------------------------------------------------------------------
+
+/**
+ * Detalhe de UM pedido para o portal — linha do tempo do pedido, os LOTES e
+ * quais produtos (categorias) viajam em cada um.
+ *
+ * Recorte (revisto 2026-08-26): o número do lote aparece. Segue de fora o que é
+ * interno da AGK (exporter, ETD) e o que o banco não guarda (quantidade,
+ * descrição de produto). O produto é a linha FÁBRICA × CATEGORIA, que é o que
+ * o `order_factory_category` fixa (fábrica visível desde 2026-11-05).
  *
  * O `clientId` entra no próprio filtro do pedido — é a única fronteira entre um
  * cliente e o de outro. `orderId` vem da URL; sozinho não é confiável, por isso
@@ -153,17 +548,34 @@ export type ClientOrderBatch = {
   status: BatchStatus;
   label: string;
   /**
-   * Produtos (categorias) que viajam neste lote — uma entrada por linha
-   * Factory×Category, sem deduplicar (a mesma categoria pode repetir se vier
-   * de mais de uma fábrica). Ordenados por nome.
+   * Produtos que viajam neste lote — uma entrada por linha Factory×Category,
+   * sem deduplicar. Ordenados por fábrica e depois categoria.
    */
   products: ClientOrderProduct[];
+  /** ETA ao Brasil do PL do lote (null = ainda sem PL/ETA). */
+  eta: string | null;
+  /** Entrega do lote (do PL; por cliente quando o PL tem vários). */
+  deliveredOn: string | null;
 };
 
 export type ClientOrderProduct = {
-  name: string;
+  /** Nome da fábrica (null se a fábrica sumiu do cadastro). */
+  factory: string | null;
+  /** Nome da categoria. */
+  category: string;
   /** `order_factory_category.ship_requirement` — data em que a fábrica precisa entregar. */
   shipRequirement: string;
+};
+
+export type TimelineStageKey = "in_production" | "pre_loading" | "in_transit" | "delivered";
+
+/** Estágio da linha do tempo. O nome na tela vem do dicionário do portal (lib/portal-i18n.ts). */
+export type TimelineStage = {
+  key: TimelineStageKey;
+  state: "done" | "current" | "upcoming";
+  /** Data real (quando aconteceu) ou prevista (estágio futuro). */
+  date: string | null;
+  dateKind: "actual" | "expected" | null;
 };
 
 export type ClientOrderDetail = {
@@ -174,19 +586,68 @@ export type ClientOrderDetail = {
   status: OrderStatus;
   /** Data pedida de embarque (orders.schedule_requested). */
   scheduleRequested: string | null;
-  /**
-   * ETA ao Brasil (passo `eta_brazil` do checklist do pedido). É estimativa
-   * interna; expô-la ao cliente foi autorizado em 2026-08-26 (ver o cabeçalho
-   * do arquivo). Por pedido, não por lote — o checklist é do pedido.
-   */
+  /** ETA ao Brasil do que falta entregar (ver `ClientOrder.etaBrazil`). */
   etaBrazil: string | null;
-  /** Data de entrega efetiva (passo `delivered`/`ata_brazil`), quando houver. */
+  /** Entrega do pedido inteiro, quando todos os lotes chegaram. */
   deliveredOn: string | null;
+  /** Dias de atraso sobre a ETA (null = no prazo, sem ETA ou entregue). */
+  daysLate: number | null;
+  progressPct: number;
+  timeline: TimelineStage[];
   /** Lotes do pedido, ordenados pelo número. */
   batches: ClientOrderBatch[];
-  /** Produtos do pedido ainda sem lote — não começaram a viajar. */
-  pendingProducts: string[];
+  /** Linhas F×C do pedido ainda sem lote — não começaram a viajar. */
+  pendingProducts: ClientOrderProduct[];
 };
+
+/** Estágio atual da linha do tempo pelo status do pedido (-1 = cancelado). */
+const ORDER_STAGE: Record<OrderStatus, number> = {
+  in_negotiation: -1,
+  in_production: 0,
+  pre_loading: 1,
+  partially_shipped: 2,
+  shipped: 2,
+  partially_delivered: 3,
+  delivered: 3,
+  canceled: -1,
+};
+
+function buildTimeline(
+  status: OrderStatus,
+  productionOn: string | null,
+  ship: OrderShipping
+): TimelineStage[] {
+  const current = ORDER_STAGE[status];
+  const stages: { key: TimelineStageKey; actual: string | null; expected: string | null }[] = [
+    { key: "in_production", actual: productionOn, expected: null },
+    { key: "pre_loading", actual: ship.preLoadingOn, expected: null },
+    { key: "in_transit", actual: ship.shippedOn, expected: ship.shipExpected },
+    {
+      key: "delivered",
+      actual: ship.deliveredOn ?? ship.firstDeliveredOn,
+      expected: ship.etaBrazil,
+    },
+  ];
+  return stages.map((s, i) => {
+    const state: TimelineStage["state"] =
+      current < 0
+        ? "upcoming"
+        : i < current || (i === current && status === "delivered")
+          ? "done"
+          : i === current
+            ? "current"
+            : "upcoming";
+    // Concluído mostra a data do fato; futuro, a previsão; o atual mostra quando
+    // começou e, se isso não estiver registrado, a previsão de quando termina.
+    if (state === "done") {
+      return { key: s.key, state, date: s.actual, dateKind: s.actual ? "actual" : null };
+    }
+    if (state === "current" && s.actual) {
+      return { key: s.key, state, date: s.actual, dateKind: "actual" };
+    }
+    return { key: s.key, state, date: s.expected, dateKind: s.expected ? "expected" : null };
+  });
+}
 
 export async function loadClientOrderDetail(
   clientId: string,
@@ -205,7 +666,7 @@ export async function loadClientOrderDetail(
 
   if (!order) return null;
 
-  const [batches, ofc, categories, orderType, checklist] = await Promise.all([
+  const [batches, ofc, categories, orderType, orderSteps, shipping] = await Promise.all([
     fetchAll<{ id: string; batch_number: string; status: BatchStatus }>((from, to) =>
       admin
         .from("batches")
@@ -213,11 +674,16 @@ export async function loadClientOrderDetail(
         .eq("order_id", orderId)
         .range(from, to)
     ),
-    fetchAll<{ batch_id: string | null; category_id: string; ship_requirement: string }>(
+    fetchAll<{
+      batch_id: string | null;
+      category_id: string;
+      factory_id: string;
+      ship_requirement: string;
+    }>(
       (from, to) =>
         admin
           .from("order_factory_category")
-          .select("batch_id, category_id, ship_requirement")
+          .select("batch_id, category_id, factory_id, ship_requirement")
           .eq("is_active", true)
           .eq("order_id", orderId)
           .range(from, to)
@@ -228,48 +694,52 @@ export async function loadClientOrderDetail(
     order.order_type_id
       ? admin.from("order_types").select("name").eq("id", order.order_type_id).single()
       : Promise.resolve({ data: null as { name: string } | null }),
-    // Datas do checklist do pedido para ETA e entrega. Só os passos que
-    // interessam ao cliente — não é a régua interna toda.
-    fetchAll<{
-      step: ChecklistStep;
-      enabled: boolean;
-      estimated_date: string | null;
-      completed_on: string | null;
-    }>((from, to) =>
-      admin
-        .from("order_checklist_steps")
-        .select("step, enabled, estimated_date, completed_on")
-        .eq("order_id", orderId)
-        .in("step", ["eta_brazil", "ata_brazil", "delivered"])
-        .range(from, to)
+    // Início da produção: o pedido entra em produção no Deposit Payment (regra
+    // do GSS); sem ele, o Place the Order.
+    fetchAll<{ step: ChecklistStep; enabled: boolean; completed_on: string | null }>(
+      (from, to) =>
+        admin
+          .from("order_checklist_steps")
+          .select("step, enabled, completed_on")
+          .eq("order_id", orderId)
+          .in("step", ["deposit_payment", "place_the_order"])
+          .range(from, to)
     ),
+    loadBatchShipping(admin, clientId, orderId),
   ]);
 
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const factoryName = await loadFactoryNames(admin, ofc.map((r) => r.factory_id));
 
-  // ETA = estimativa do passo eta_brazil; entrega = ata_brazil/delivered
-  // efetivos. Passo desabilitado (enabled=false) não conta.
-  const stepOf = new Map(checklist.filter((s) => s.enabled !== false).map((s) => [s.step, s]));
-  const etaStep = stepOf.get("eta_brazil");
-  const etaBrazil = etaStep?.estimated_date ?? etaStep?.completed_on ?? null;
-  const deliveredOn =
-    stepOf.get("delivered")?.completed_on ?? stepOf.get("ata_brazil")?.completed_on ?? null;
+  const stepDone = (step: ChecklistStep) =>
+    orderSteps.find((s) => s.step === step && s.enabled !== false)?.completed_on ?? null;
+  const productionOn = stepDone("deposit_payment") ?? stepDone("place_the_order");
+
+  const ship = orderShippingOf(batches, shipping);
+  const etaBrazil = order.status === "delivered" ? null : ship.etaBrazil;
+  const bucket = bucketOf(order.status);
 
   // lote → produtos, UMA linha por entrada Factory×Category (sem deduplicar):
-  // é a mesma granularidade da tabela interna (docs §3.5.2), só sem a coluna
-  // Factory, que segue interna à AGK. Ship req. entrou a pedido do Henrique
-  // (2026-08-27) — é a mesma coluna que a tabela interna mostra.
+  // a mesma granularidade da tabela interna (docs §3.5.2). Ship req. entrou a
+  // pedido do Henrique (2026-08-27); a FÁBRICA passou a aparecer em 2026-11-05
+  // (antes era interna): sem ela, duas linhas da mesma categoria pareciam
+  // duplicadas, e a quantidade que o GSS vai mandar é por fábrica×categoria.
   const byBatch = new Map<string, ClientOrderProduct[]>();
-  const pending = new Set<string>();
+  const pending: ClientOrderProduct[] = [];
   for (const row of ofc) {
-    const name = categoryName.get(row.category_id)?.trim();
-    if (!name) continue;
+    const category = categoryName.get(row.category_id)?.trim();
+    if (!category) continue;
+    const product: ClientOrderProduct = {
+      factory: factoryName.get(row.factory_id) ?? null,
+      category,
+      shipRequirement: row.ship_requirement,
+    };
     if (!row.batch_id) {
-      pending.add(name);
+      pending.push(product);
       continue;
     }
     const list = byBatch.get(row.batch_id) ?? [];
-    list.push({ name, shipRequirement: row.ship_requirement });
+    list.push(product);
     byBatch.set(row.batch_id, list);
   }
 
@@ -279,7 +749,9 @@ export async function loadClientOrderDetail(
       code: b.batch_number,
       status: b.status,
       label: BATCH_STATUS_LABELS[b.status],
-      products: (byBatch.get(b.id) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
+      products: (byBatch.get(b.id) ?? []).sort(byFactoryThenCategory),
+      eta: shipping.get(b.id)?.eta ?? null,
+      deliveredOn: shipping.get(b.id)?.deliveredOn ?? null,
     }))
     .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 
@@ -291,8 +763,20 @@ export async function loadClientOrderDetail(
     status: order.status,
     scheduleRequested: order.schedule_requested,
     etaBrazil,
-    deliveredOn,
+    deliveredOn: ship.deliveredOn,
+    daysLate: daysLateOf({ bucket, etaBrazil, deliveredOn: ship.deliveredOn }),
+    progressPct: progressPctOf(
+      order.status,
+      batches.map((b) => b.status)
+    ),
+    timeline: buildTimeline(order.status, productionOn, { ...ship, etaBrazil }),
     batches: clientBatches,
-    pendingProducts: [...pending].sort((a, b) => a.localeCompare(b)),
+    pendingProducts: pending.sort(byFactoryThenCategory),
   };
+}
+
+function byFactoryThenCategory(a: ClientOrderProduct, b: ClientOrderProduct) {
+  return (
+    (a.factory ?? "").localeCompare(b.factory ?? "") || a.category.localeCompare(b.category)
+  );
 }

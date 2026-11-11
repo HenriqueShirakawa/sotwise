@@ -15,6 +15,7 @@ import type { EmailListRow, EmailRecordGroup } from "@/lib/checklist-emails-list
 import type { StepEmailRecipient, StepEmailStatus } from "@/types/database";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
 import { RecipientChip } from "@/components/checklist/recipient-chip";
+import { useLiveDelivery } from "@/components/checklist/use-live-delivery";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
   Table,
@@ -54,6 +55,14 @@ function StatusBadge({ status }: { status: StepEmailStatus | null }) {
   );
 }
 
+/** Status do envio com o que veio depois: destinatário cujo e-mail voltou
+ *  (bounce, supressão…) conta como falha, igual ao chip vermelho. */
+function deliveryStatus(row: EmailListRow): StepEmailStatus | null {
+  const failed = row.recipients.filter((r) => !r.ok || r.delivery_issue).length;
+  if (failed === 0) return row.status;
+  return failed === row.recipients.length ? "failed" : "partial";
+}
+
 function RecipientChips({ recipients }: { recipients: StepEmailRecipient[] }) {
   return (
     <div className="flex flex-wrap gap-1">
@@ -74,7 +83,7 @@ function buildColumns(timeZone: string): ColumnDef<EmailListRow>[] {
       cell: ({ row }) => (
         <span className="font-mono text-sm text-slate-800">
           {GROUP_LABEL[row.original.group]} {row.original.number}
-          {row.original.orderPoNumber && ` · Order ${row.original.orderPoNumber}`}
+          {row.original.threadClientName && ` · ${row.original.threadClientName}`}
         </span>
       ),
     },
@@ -101,7 +110,7 @@ function buildColumns(timeZone: string): ColumnDef<EmailListRow>[] {
     {
       id: "status",
       header: "Status",
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      cell: ({ row }) => <StatusBadge status={deliveryStatus(row.original)} />,
     },
     {
       id: "replies",
@@ -160,22 +169,24 @@ export function EmailsClient({
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState<EmailRecordGroup | "any">("any");
   const timeZone = companyTimeZone(company);
+  // Chips que acompanham a entrega de cada destinatário até entregue/devolvido.
+  const liveRows = useLiveDelivery(rows) ?? rows;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter((r) => {
+    return liveRows.filter((r) => {
       if (group !== "any" && r.group !== group) return false;
       if (!q) return true;
       return (
         r.subject.toLowerCase().includes(q) ||
         r.number.toLowerCase().includes(q) ||
-        (r.orderPoNumber ?? "").toLowerCase().includes(q) ||
+        (r.threadClientName ?? "").toLowerCase().includes(q) ||
         (r.clients ?? "").toLowerCase().includes(q) ||
         r.sender_name.toLowerCase().includes(q) ||
         r.recipients.some((rec) => rec.name.toLowerCase().includes(q))
       );
     });
-  }, [rows, search, group]);
+  }, [liveRows, search, group]);
 
   const columns = useMemo(() => buildColumns(timeZone), [timeZone]);
 

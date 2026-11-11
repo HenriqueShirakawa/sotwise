@@ -9,6 +9,7 @@ import {
   upsertByBubbleId, upsertByKey, upsertJunction, loadIdMap, tableCount,
   str, reqStr, bool, ref, dateOnly, tsz,
 } from "./upsert";
+import { DRY_RUN, note, printDryRunReport } from "./dry-run";
 
 type Row = Record<string, any>;
 
@@ -302,6 +303,14 @@ async function refreshOrderStatusesFromBatches() {
     }))
     .filter((order) => currentStatusByOrder.get(order.id) !== order.status);
 
+  if (DRY_RUN) {
+    note(
+      `rollup de status das orders: ${changes.length} order(s) mudariam de status pelos lotes ATUAIS do banco ` +
+        "(na carga de verdade o rollup roda depois de gravar os lotes do Bubble — o número final pode ser outro)"
+    );
+    return { fetched: statusesByOrder.size, upserted: 0 };
+  }
+
   const WRITE_BATCH = 25;
   for (let i = 0; i < changes.length; i += WRITE_BATCH) {
     const writes = changes.slice(i, i + WRITE_BATCH).map(async (order) => {
@@ -455,7 +464,8 @@ async function libMapWithNameFallback(
   }
   if (novos.length) {
     await upsertByBubbleId(table, novos);
-    console.log(`${table}: ${novos.length} criada(s) do Bubble — ${novos.map((n) => n.name).join(", ")}`);
+    console.log(`${table}: ${novos.length} ${DRY_RUN ? "seriam criada(s)" : "criada(s)"} do Bubble — ${novos.map((n) => n.name).join(", ")}`);
+    if (DRY_RUN) note(`${table}: ${novos.length} seriam criada(s) por nome — ${novos.map((n) => n.name).join(", ")}`);
     for (const [bid, id] of await loadIdMap(table)) map.set(bid, id);
   }
   return map;
@@ -807,8 +817,14 @@ const COUNT_TABLES = [
 
 async function main() {
   const phase = process.argv[2] ?? "all"; // all | base | core | preload | checklist | dates | people
+  // Várias fases numa execução: "core,preload,checklist" (o dry-run precisa disso p/ seguir a cadeia).
+  const phases = new Set(phase.split(","));
+  if (DRY_RUN && ["all", "base", "dates", "people"].some((p) => phases.has(p))) {
+    // Usuários (createUser) e os backfills gravam fora dos helpers — sem dry-run.
+    throw new Error(`Dry-run só nas fases core | preload | checklist (pediu "${phase}").`);
+  }
 
-  if (phase === "all" || phase === "base") {
+  if (phase === "all" || phases.has("base")) {
     console.log("== Camada 1: usuários + cadastros ==\n");
     const u = await importUsers();
     console.log(`users/profiles: fetched ${u.fetched}, upserted ${u.upserted}`);
@@ -816,7 +832,7 @@ async function main() {
     for (const [t, r] of Object.entries(cad)) console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}`);
   }
 
-  if (phase === "all" || phase === "core") {
+  if (phase === "all" || phases.has("core")) {
     console.log("\n== Camada 2: transacional (núcleo) ==\n");
     const core = await importTransactionalCore();
     for (const [t, r] of Object.entries(core)) {
@@ -824,7 +840,7 @@ async function main() {
     }
   }
 
-  if (phase === "all" || phase === "preload") {
+  if (phase === "all" || phases.has("preload")) {
     console.log("\n== Camada 3: pre-loading + shipments ==\n");
     const pl = await importPreloadingShipments();
     for (const [t, r] of Object.entries(pl)) {
@@ -844,12 +860,17 @@ async function main() {
     console.log(`orders (leader/requester/exporter): fetched ${bf.fetched}, upserted ${bf.upserted}`);
   }
 
-  if (phase === "all" || phase === "checklist") {
+  if (phase === "all" || phases.has("checklist")) {
     console.log("\n== Camada 4: checklist (order + pre-loading/shipment) ==\n");
     const ck = await importChecklist();
     for (const [t, r] of Object.entries(ck)) {
       console.log(`${t}: fetched ${r.fetched}, upserted ${r.upserted}${r.skipped ? `, skipped ${r.skipped}` : ""}`);
     }
+  }
+
+  if (DRY_RUN) {
+    await printDryRunReport();
+    return;
   }
 
   console.log("\n== Contagens no Supabase ==");

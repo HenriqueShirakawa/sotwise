@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { resolvePortalLocale } from "@/domain/client/locale";
 import { loadClientOrderDetail } from "@/domain/client/portal";
 import { requireClientScope } from "@/lib/dal";
+import { portalMessages } from "@/lib/portal-i18n";
 
 import { PortalOrderDetail } from "./order-detail-client";
 
-export const metadata: Metadata = { title: "Order" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: portalMessages(await resolvePortalLocale()).orders.colOrder };
+}
 
 export default async function PortalOrderDetailPage({
   params,

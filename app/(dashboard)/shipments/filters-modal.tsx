@@ -14,6 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { countActiveFilters } from "@/lib/list-state";
+import { KeepFiltersSwitch } from "@/components/keep-filters";
 
 export type Ref = { id: string; name: string };
 
@@ -30,7 +32,7 @@ import { EMPTY_FILTERS, type ShipmentFilters } from "./list-params";
 export { EMPTY_FILTERS, type ShipmentFilters };
 
 export function activeFilterCount(filters: ShipmentFilters): number {
-  return Object.values(filters).filter((v) => v !== "").length;
+  return countActiveFilters(filters);
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -86,6 +88,8 @@ export function FiltersModal({
   filters,
   onApply,
   onClear,
+  keep,
+  onKeepChange,
   clients,
   profiles,
   orders,
@@ -102,6 +106,9 @@ export function FiltersModal({
   filters: ShipmentFilters;
   onApply: (filters: ShipmentFilters) => void;
   onClear: () => void;
+  /** "Keep filters" da lista — ver components/keep-filters. */
+  keep: boolean;
+  onKeepChange: (keep: boolean) => void;
   clients: Ref[];
   profiles: Ref[];
   orders: Ref[];
@@ -318,6 +325,7 @@ export function FiltersModal({
         </div>
 
         <DialogFooter>
+          <KeepFiltersSwitch keep={keep} onChange={onKeepChange} />
           <Button variant="outline" className="sm:min-w-32" onClick={clear}>
             Clear Filters
           </Button>

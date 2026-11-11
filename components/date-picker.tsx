@@ -81,6 +81,7 @@ export function DatePicker({
   id,
   ariaLabel,
   max,
+  clearable = true,
 }: {
   /** "YYYY-MM-DD" ou null/"" quando vazio. */
   value: string | null | undefined;
@@ -93,6 +94,8 @@ export function DatePicker({
   ariaLabel?: string;
   /** Data máxima selecionável ("YYYY-MM-DD"). Dias posteriores ficam travados. */
   max?: string | null;
+  /** false esconde o "Clear" (etapa concluída não perde a Estimated date). */
+  clearable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const selected = parseIso(value);
@@ -308,17 +311,19 @@ export function DatePicker({
           >
             Today
           </button>
-          <button
-            type="button"
-            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-slate-700 disabled:opacity-40 disabled:hover:bg-transparent"
-            disabled={!selected}
-            onClick={() => {
-              onChange(null);
-              setOpen(false);
-            }}
-          >
-            Clear
-          </button>
+          {clearable ? (
+            <button
+              type="button"
+              className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-slate-700 disabled:opacity-40 disabled:hover:bg-transparent"
+              disabled={!selected}
+              onClick={() => {
+                onChange(null);
+                setOpen(false);
+              }}
+            >
+              Clear
+            </button>
+          ) : null}
         </div>
       </PopoverContent>
     </Popover>

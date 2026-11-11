@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { useOptimisticObject, useOptimisticRows } from "@/lib/use-optimistic-rows";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { uploadDirect } from "@/lib/attachments-client";
 import { triggerDownload } from "@/lib/download";
@@ -67,6 +68,11 @@ import {
   updateChecklistStep,
   createStepAttachmentTicket,
   registerStepAttachment,
+  saveBalanceDate,
+  saveDepositDate,
+  saveFactoryPlacedDate,
+  saveOrderReceivedDate,
+  savePoReceivedDate,
 } from "./actions";
 import { FactoryCategoryModal } from "./factory-category-modal";
 import { PlaceOrderFactoryGroups } from "./place-order-groups";
@@ -190,6 +196,8 @@ type OrderDetail = {
   date_po: string | null;
   /** Etapa Order: data do pedido final (a vigente, após revisões). */
   order_received_date: string | null;
+  /** Etapa PO: data gravada pelo usuário ("Set date", 11/11/2026). */
+  po_received_date: string | null;
   /** Etapa PI: último status vindo do GSS (true = emitida) + data. */
   pi_status: boolean | null;
   pi_status_date: string | null;
@@ -498,7 +506,7 @@ function TriggerCompletedOn({
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <Label className="text-xs text-muted-foreground">Completed on</Label>
+        <Label className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">Completed on</Label>
         {step.step === "po" && (
           <RevisionBadge count={step.revision_count} onClick={onRevise} />
         )}
@@ -649,10 +657,11 @@ function AttachmentsSection({
   orderId: string;
   step: ChecklistStepRow;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Remover some da lista na hora (10/11/2026); volta se o servidor recusar.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -664,9 +673,9 @@ function AttachmentsSection({
         (name, size) => createStepAttachmentTicket(orderId, step.id, name, size),
         (path) => registerStepAttachment(orderId, step.id, path, file.name)
       );
+      // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
         setOpen(true);
-        router.refresh();
       } else {
         toast.error(res.error);
       }
@@ -682,10 +691,15 @@ function AttachmentsSection({
   }
 
   function removeAttachment(a: { id: string; file_path: string }) {
-    startTransition(async () => {
-      const res = await deleteStepAttachment(orderId, a.id, a.file_path);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
+    setRemoved((prev) => new Set(prev).add(a.id));
+    void deleteStepAttachment(orderId, a.id, a.file_path).then((res) => {
+      if (res.ok) return;
+      toast.error(res.error);
+      setRemoved((prev) => {
+        const next = new Set(prev);
+        next.delete(a.id);
+        return next;
+      });
     });
   }
 
@@ -693,7 +707,7 @@ function AttachmentsSection({
     <>
       <input ref={inputRef} type="file" className="hidden" onChange={handleFile} />
       <AttachedDocuments
-        attachments={step.attachments}
+        attachments={step.attachments.filter((a) => !removed.has(a.id))}
         pending={pending}
         open={open}
         onOpenChange={setOpen}
@@ -707,17 +721,17 @@ function AttachmentsSection({
 
 export function OrderDetailClient({
   orderId,
-  order,
+  order: serverOrder,
   batches,
   ofc,
   etdByOfc,
   loadedByBatch,
   factories,
   profiles,
-  steps,
+  steps: serverSteps,
   viewPrefs,
   currentUserId,
-  placedDates,
+  placedDates: serverPlacedDates,
 }: {
   orderId: string;
   order: OrderDetail;
@@ -737,6 +751,42 @@ export function OrderDetailClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // Edição instantânea (10/11/2026): Estimated date, Responsible, Completed on e
+  // o toggle mudam na tela no clique; a gravação roda em segundo plano e a
+  // resposta da action (revalidatePath) traz a versão do servidor.
+  const [steps, runStep] = useOptimisticRows(serverSteps, (s) => s.id);
+  // Order received / Deposit / Balance date e o "Placed on" por fábrica: o
+  // popup fecha e a data aparece na hora; a gravação roda por trás.
+  const [order, runOrder] = useOptimisticObject(serverOrder);
+  const [placedDates, runPlaced] = useOptimisticObject(serverPlacedDates);
+  function saveOrderDate(step: ChecklistStep, date: string, reason: string | null) {
+    const field =
+      step === "order"
+        ? "order_received_date"
+        : step === "po"
+          ? "po_received_date"
+          : step === "balance_payment"
+            ? "balance_date"
+            : "deposit_date";
+    const call =
+      step === "order"
+        ? () => saveOrderReceivedDate(orderId, date, reason)
+        : step === "po"
+          ? () => savePoReceivedDate(orderId, date, reason)
+        : step === "balance_payment"
+          ? () => saveBalanceDate(orderId, date, reason)
+          : () => saveDepositDate(orderId, date, reason);
+    void runOrder({ [field]: date } as Partial<OrderDetail>, call).then((res) => {
+      if (!res.ok) toast.error(res.error);
+    });
+  }
+  function savePlacedDate(factoryId: string, date: string, reason: string | null) {
+    void runPlaced({ [factoryId]: date }, () =>
+      saveFactoryPlacedDate(orderId, factoryId, date, reason)
+    ).then((res) => {
+      if (!res.ok) toast.error(res.error);
+    });
+  }
   // Vindo do "Check" da To do list (?step=): abre só essa etapa e rola até
   // ela — lido uma vez só (inicializador preguiçoso do useState, não muda
   // depois de montado mesmo que a URL mude).
@@ -751,8 +801,15 @@ export function OrderDetailClient({
   const [factoryCategoryOpen, setFactoryCategoryOpen] = useState(false);
   // Popup de revisões das etapas Order/PO/PI.
   const [revisionsFor, setRevisionsFor] = useState<ChecklistStepRow | null>(null);
+  // PO tem dois popups (11/11/2026): o "Set date" (formulário) e o pill
+  // "Revisions" (lista das levas de F×C e das datas).
+  const [revisionsForm, setRevisionsForm] = useState(false);
+  function openRevisions(s: ChecklistStepRow, form = false) {
+    setRevisionsForm(form);
+    setRevisionsFor(s);
+  }
   // Contador do History no cabeçalho de cada etapa (recarrega a cada save).
-  const logCounts = useStepLogCounts({ kind: "order", orderId }, JSON.stringify(steps));
+  const logCounts = useStepLogCounts({ kind: "order", orderId }, JSON.stringify(serverSteps));
 
   useEffect(() => {
     if (!deepLinkStep) return;
@@ -862,13 +919,14 @@ export function OrderDetailClient({
     step: ChecklistStepRow,
     patch: Parameters<typeof updateChecklistStep>[2]
   ) {
-    startStepTransition(async () => {
-      const res = await updateChecklistStep(orderId, step.id, patch);
-      if (res.ok) router.refresh();
-      else toast.error(res.error);
-    });
+    // Sem router.refresh(): a action já revalida a página e devolve a tela nova
+    // na mesma resposta — o refresh era uma 2ª renderização inteira.
+    void runStep(step.id, patch, () => updateChecklistStep(orderId, step.id, patch)).then(
+      (res) => {
+        if (!res.ok) toast.error(res.error);
+      }
+    );
   }
-  const [stepPending, startStepTransition] = useTransition();
 
   return (
     <div>
@@ -1099,7 +1157,6 @@ export function OrderDetailClient({
                     {TOGGLEABLE_STEPS.has(s.step) && (
                       <Switch
                         checked={s.enabled}
-                        disabled={stepPending}
                         onCheckedChange={(checked) =>
                           saveStepField(s, { enabled: checked })
                         }
@@ -1128,7 +1185,8 @@ export function OrderDetailClient({
                           </Label>
                           <DatePicker
                             value={s.estimated_date}
-                            disabled={stepPending}
+                            // Etapa concluída não perde a estimativa (10/11/2026).
+                            clearable={!s.completed_on}
                             onChange={(v) => {
                               if (v !== (s.estimated_date ?? null))
                                 saveStepField(s, { estimated_date: v });
@@ -1171,7 +1229,7 @@ export function OrderDetailClient({
                           )}
                         </div>
                         {TRIGGER_COMPLETED_STEPS.has(s.step) ? (
-                          <TriggerCompletedOn step={s} onRevise={() => setRevisionsFor(s)} />
+                          <TriggerCompletedOn step={s} onRevise={() => openRevisions(s)} />
                         ) : LOCKED_COMPLETED_ON_STEPS.has(s.step) ? (
                           // Place the Order fecha sozinha quando toda fábrica
                           // tem "Placed on"; ETD quando a última Initial Date é
@@ -1187,9 +1245,7 @@ export function OrderDetailClient({
                                 não ficar presa com o campo travado. */}
                             <DatePicker
                               value={s.completed_on}
-                              disabled={
-                                stepPending || (!s.estimated_date && !s.completed_on)
-                              }
+                              disabled={!s.estimated_date && !s.completed_on}
                               // "Completed on" é fato consumado — nunca futuro.
                               max={todayIso()}
                               placeholder={
@@ -1231,6 +1287,14 @@ export function OrderDetailClient({
                           onOpen={() => setRevisionsFor(s)}
                         />
                       )}
+                      {s.step === "po" && (
+                        <TriggerDateField
+                          label="PO received date"
+                          // Fecha o PO junto com as F×C do GSS (11/11/2026).
+                          date={order.po_received_date}
+                          onOpen={() => openRevisions(s, true)}
+                        />
+                      )}
                       {s.step === "deposit_payment" && (
                         <TriggerDateField
                           label="Deposit date"
@@ -1266,6 +1330,7 @@ export function OrderDetailClient({
                           ofc={ofc}
                           batches={batches}
                           placedDates={placedDates}
+                          onSavePlaced={savePlacedDate}
                         />
                       ) : s.step === "etd" ? (
                         <EtdStepTable
@@ -1285,6 +1350,7 @@ export function OrderDetailClient({
                       ) : (
                         <AttachmentsSection orderId={orderId} step={s} />
                       )}
+                      {/* MAIN: e-mail por etapa fica só na dev (cb7e070, 18/09/2026). */}
                       {s.step === "po" && (
                         <Button
                           type="button"
@@ -1321,12 +1387,16 @@ export function OrderDetailClient({
           currentDate={
             revisionsFor.step === "order"
               ? order.order_received_date
-              : revisionsFor.step === "deposit_payment"
-                ? order.deposit_date
-                : revisionsFor.step === "balance_payment"
-                  ? order.balance_date
-                  : revisionsFor.completed_on
+              : revisionsFor.step === "po"
+                ? order.po_received_date
+                : revisionsFor.step === "deposit_payment"
+                  ? order.deposit_date
+                  : revisionsFor.step === "balance_payment"
+                    ? order.balance_date
+                    : revisionsFor.completed_on
           }
+          onSaveDate={(date, reason) => saveOrderDate(revisionsFor.step, date, reason)}
+          formOnly={revisionsFor.step === "po" ? revisionsForm : undefined}
         />
       )}
     </div>

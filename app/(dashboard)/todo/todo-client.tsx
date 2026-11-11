@@ -17,17 +17,19 @@ import { Filter, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { formatDateNumeric } from "@/lib/format";
+import type { ListStateSeed } from "@/lib/list-state";
 import { useOrdersRealtime } from "@/lib/use-orders-realtime";
 import { usePreLoadingRealtime } from "@/lib/use-preloading-realtime";
 import { useShipmentsRealtime } from "@/lib/use-shipments-realtime";
-import { ORDER_STATUS_LABELS } from "@/lib/status-colors";
+import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { STEP_LABELS } from "@/lib/checklist";
 import { downloadXlsx, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
 import { DownloadXlsxButton } from "@/components/download-xlsx-button";
-import type { ChecklistStep, OrderStatus } from "@/types/database";
+import type { BatchStatus, ChecklistStep } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
@@ -61,8 +63,11 @@ export type TodoRow = {
   po_number: string | null;
   pl_number: string | null;
   step: ChecklistStep;
-  /** Só nas linhas de Order (etapas de PL não têm status de PO). */
-  status: OrderStatus | null;
+  /**
+   * Status distintos dos lotes da linha, na ordem da esteira — Order: lotes da
+   * PO; PL/Shipment: lotes vinculados ao PL. Normalmente é um só.
+   */
+  batch_statuses: BatchStatus[];
   responsible: string | null;
   /** Usado só pelo filtro de Responsible — o nome já basta pra coluna. */
   responsible_id: string | null;
@@ -109,7 +114,7 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "po_number", label: "PO Number" },
   { id: "pl_number", label: "PL Number" },
   { id: "step", label: "Step" },
-  { id: "status", label: "Status PO" },
+  { id: "status", label: "Batch Status" },
   { id: "responsible", label: "Responsible" },
   { id: "date_preview", label: "Date preview" },
   { id: "client", label: "Client" },
@@ -122,7 +127,7 @@ const XLSX_COLUMNS = xlsxColumns<TodoRow>(COLUMN_OPTIONS, {
   po_number: { value: (r) => r.po_number },
   pl_number: { value: (r) => (r.pl_number ? `PL - ${r.pl_number}` : null) },
   step: { value: (r) => STEP_LABELS[r.step] },
-  status: { value: (r) => (r.status ? ORDER_STATUS_LABELS[r.status] : null) },
+  status: { value: (r) => r.batch_statuses.map((st) => BATCH_STATUS_LABELS[st]).join(", ") },
   responsible: { value: (r) => r.responsible },
   date_preview: { kind: "date", value: (r) => r.date_preview },
   client: { value: (r) => r.client },
@@ -149,19 +154,29 @@ export function TodoClient({
   clients,
   users,
   initialColumns,
+  initialListState,
 }: {
   rows: TodoRow[];
   clients: Ref[];
   /** Responsáveis presentes nas tarefas carregadas — alimenta o filtro de Responsible. */
   users: Ref[];
   initialColumns: VisibilityState;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"all" | TodoPhase>("all");
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<TodoFilters>(EMPTY_FILTERS);
+  // Aba, busca, filtros, ordenação e página: lembrados ao voltar do checklist
+  // quando o "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("todo", initialListState, {
+    tab: "all" as "all" | TodoPhase,
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [{ id: "po_number", desc: true }] as SortingState,
+    pageIndex: 0,
+  });
+  const { tab, search, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: TodoFilters) => list.update({ filters: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "po_number", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("todo", initialColumns);
 
   // Realtime: a lista reflete etapa concluída/reatribuída (Order, Pre-loading
@@ -210,7 +225,8 @@ export function TodoClient({
       if (tab !== "all" && r.phase !== tab) return false;
       if (filters.user_id && r.responsible_id !== filters.user_id) return false;
       if (filters.client_id && !r.client_ids.includes(filters.client_id)) return false;
-      if (filters.status && r.status !== filters.status) return false;
+      if (filters.status && !r.batch_statuses.includes(filters.status as BatchStatus))
+        return false;
       if (filters.step && r.step !== filters.step) return false;
       if (!inDateRange(r.date_preview, filters.date_from, filters.date_to)) return false;
       if (!q) return true;
@@ -260,11 +276,15 @@ export function TodoClient({
       },
       {
         id: "status",
-        accessorFn: (r) => (r.status ? ORDER_STATUS_LABELS[r.status] : ""),
-        header: ({ column }) => <SortableHeader label="Status PO" column={column} />,
+        accessorFn: (r) => r.batch_statuses.map((st) => BATCH_STATUS_LABELS[st]).join(", "),
+        header: ({ column }) => <SortableHeader label="Batch Status" column={column} />,
         cell: ({ row }) =>
-          row.original.status ? (
-            <StatusPill label={ORDER_STATUS_LABELS[row.original.status]} />
+          row.original.batch_statuses.length ? (
+            <div className="flex flex-wrap gap-1">
+              {row.original.batch_statuses.map((st) => (
+                <StatusPill key={st} label={BATCH_STATUS_LABELS[st]} />
+              ))}
+            </div>
           ) : (
             dash
           ),
@@ -313,11 +333,15 @@ export function TodoClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: effectiveVisibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: effectiveVisibility,
+      pagination: list.pagination(data.length),
+    },
   });
 
   // Download XLSX: a lista já tem tudo no navegador — exporta as linhas da aba,
@@ -351,11 +375,13 @@ export function TodoClient({
               key={t.id}
               type="button"
               onClick={() => {
-                setTab(t.id);
                 // Step é específico da fase — zera pra não filtrar a aba nova por
                 // uma etapa que não existe nela.
-                setFilters((f) => ({ ...f, step: "" }));
-                table.setPageIndex(0);
+                list.update((prev) => ({
+                  tab: t.id,
+                  filters: { ...prev.filters, step: "" },
+                  pageIndex: 0,
+                }));
               }}
               className={cn(
                 "shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
@@ -416,6 +442,8 @@ export function TodoClient({
         filters={filters}
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         clients={clients}
         users={users}
         phase={tab}

@@ -14,6 +14,7 @@ import {
 import { Filter, ChevronLeft, ChevronRight, ArrowUpDown, Loader2 } from "lucide-react";
 
 import { formatDate, formatDateNumeric } from "@/lib/format";
+import type { ListStateSeed } from "@/lib/list-state";
 import { BATCH_STATUS_LABELS } from "@/lib/status-colors";
 import { downloadXlsx, fetchAllRows, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
 import { DownloadXlsxButton } from "@/components/download-xlsx-button";
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { StatusPill } from "@/components/status-pill";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 import {
   ColumnsMenu,
@@ -152,6 +154,7 @@ export function EtdFactoriesClient({
   factories,
   categories,
   initialColumns,
+  initialListState,
 }: {
   rows: EtdFactoryRow[];
   total: number;
@@ -161,6 +164,7 @@ export function EtdFactoriesClient({
   factories: Ref[];
   categories: Ref[];
   initialColumns: VisibilityState;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
 
@@ -196,6 +200,47 @@ export function EtdFactoriesClient({
 
   const filters = state.filters;
   const sorting: SortingState = [state.sort];
+
+  // "Keep filters" (components/keep-filters): o estado da URL é gravado no
+  // usuário a cada mudança; abrir a lista sem nada na URL volta ao que ficou
+  // gravado (ex.: voltando do detalhe da order).
+  const list = useListState("etd-factories", initialListState, {
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [DEFAULT_SORT] as SortingState,
+    pageIndex: 0,
+  });
+  // `state` só muda de referência quando o servidor devolve uma página nova.
+  useEffect(() => {
+    list.update({
+      search: state.q,
+      filters: state.filters,
+      sorting: [state.sort],
+      pageIndex: state.page - 1,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    const saved = list.state;
+    const savedSort = saved.sorting[0];
+    const fromSaved: ListState = {
+      q: saved.search,
+      filters: { ...EMPTY_FILTERS, ...saved.filters },
+      sort:
+        savedSort && savedSort.id in SORT_COLUMNS
+          ? { id: savedSort.id as SortId, desc: savedSort.desc }
+          : DEFAULT_SORT,
+      page: saved.pageIndex + 1,
+    };
+    const target = listStateToSearch(fromSaved);
+    if (list.keep && listStateToSearch(state) === "" && target !== "") {
+      startNavigation(() => router.replace(`/etd-factories${target}`, { scroll: false }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { visibility, save: saveVisibility } = useColumnVisibility("etd-factories", initialColumns);
   const [modalTarget, setModalTarget] = useState<{
@@ -450,6 +495,8 @@ export function EtdFactoriesClient({
         filters={filters}
         onApply={(next) => navigate({ ...state, filters: next, page: 1 })}
         onClear={() => navigate({ ...state, filters: EMPTY_FILTERS, page: 1 })}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         clients={clients}
         factories={factories}
         categories={categories}

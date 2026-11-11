@@ -1,7 +1,6 @@
 "use client";
 
 import { useOptimistic, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { ArrowUpDown, ArrowUpRight, Eye } from "lucide-react";
 import { toast } from "sonner";
 
@@ -181,7 +180,6 @@ function EtdUpdateModal({
   onOpenChange: (open: boolean) => void;
   onChanged?: () => void | Promise<void>;
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [field, setField] = useState<FieldKey | "">("");
   const [dateValue, setDateValue] = useState("");
@@ -236,7 +234,6 @@ function EtdUpdateModal({
       const res = await updateEtdInfoWithReason(orderId, row.id, field, value, remarks);
       if (res.ok) {
         toast.success("ETD updated.");
-        router.refresh();
         await onChanged?.();
         const historyRes = await getEtdHistory(row.id);
         if (historyRes.ok) setHistory(historyRes.rows);
@@ -505,30 +502,23 @@ export function EtdStepTable({
   factories: Ref[];
   onChanged?: () => void | Promise<void>;
 }) {
-  const router = useRouter();
   const [, startTransition] = useTransition();
   const [modalRow, setModalRow] = useState<OfcRow | null>(null);
   const [page, setPage] = useState(0);
   const [sort, setSort] = useState<{ key: EtdSortKey; dir: "asc" | "desc" } | null>(null);
 
-  // UI otimista dos checkboxes Ready/Inspection: marca na hora e mantém durante
-  // o server action + refresh; reconcilia com o dado do servidor quando chega e
-  // reverte sozinho se a ação falhar.
+  // UI otimista (Ready/Inspection; desde 10/11/2026 também Initial date,
+  // Dispatch location e Dispatch date): muda na hora e mantém durante o server
+  // action; reconcilia com o dado do servidor quando chega e reverte sozinho se
+  // a ação falhar.
   const [optimisticEtd, addOptimistic] = useOptimistic(
     etdByOfc,
     (
       state: Record<string, EtdInfoRow>,
-      action: { ofcId: string; inspection?: boolean; ready?: boolean }
+      action: { ofcId: string; patch: Partial<EtdInfoRow> }
     ) => {
       const cur = state[action.ofcId] ?? EMPTY_ETD;
-      return {
-        ...state,
-        [action.ofcId]: {
-          ...cur,
-          ...(action.inspection !== undefined ? { inspection: action.inspection } : {}),
-          ...(action.ready !== undefined ? { ready: action.ready } : {}),
-        },
-      };
+      return { ...state, [action.ofcId]: { ...cur, ...action.patch } };
     }
   );
 
@@ -592,12 +582,10 @@ export function EtdStepTable({
 
   function save(ofcId: string, patch: Parameters<typeof upsertEtdInfo>[2]) {
     startTransition(async () => {
-      if (patch.inspection !== undefined || patch.ready !== undefined) {
-        addOptimistic({ ofcId, inspection: patch.inspection, ready: patch.ready });
-      }
+      addOptimistic({ ofcId, patch: patch as Partial<EtdInfoRow> });
       const res = await upsertEtdInfo(orderId, ofcId, patch);
+      // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
-        router.refresh();
         await onChanged?.();
       } else {
         toast.error(res.error);

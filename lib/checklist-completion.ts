@@ -130,6 +130,58 @@ export function hasStepPlan(s: { estimated_date: string | null; responsible_id: 
   return !!s.estimated_date && !!s.responsible_id;
 }
 
+/**
+ * Etapa com auto complete NÃO exige Estimated date nem Responsible (10/11/2026,
+ * card "Pontos discutidos na call de 10/11/2026", item 1): quando o gatilho
+ * conclui a etapa, a Estimated date em branco recebe a data do Completed on e o
+ * Responsible em branco recebe quem concluiu (só nesses casos — o que já estava
+ * preenchido não muda). Conclusão vinda do GSS não tem usuário do SOT: fecha com
+ * o Responsible em branco. Fica de fora a Loading Date (o popup do Confirm
+ * Loading pede os dois) e as etapas de Completed on digitado (Condition Confirm
+ * e as ocultas).
+ */
+export function isAutoCompleteStep(step: ChecklistStep): boolean {
+  return LOCKED_COMPLETED_ON_STEPS.has(step) && !CONFIRM_SHIPPING_COMPLETES.has(step);
+}
+
+/** A etapa pode fechar pelo gatilho? Auto complete: sempre (o gatilho preenche). */
+export function stepPlanReady(
+  step: ChecklistStep,
+  s: { estimated_date: string | null; responsible_id: string | null }
+): boolean {
+  return isAutoCompleteStep(step) || hasStepPlan(s);
+}
+
+/**
+ * Ao concluir pelo gatilho (item 1 do card de 10/11/2026): Estimated date em
+ * branco = a data do Completed on; Responsible em branco = quem concluiu.
+ * Devolve o pedaço do update — vazio quando os dois já estavam preenchidos ou a
+ * etapa não é de auto complete.
+ */
+export function autoCompleteFill(
+  step: ChecklistStep,
+  s: { estimated_date: string | null; responsible_id: string | null },
+  completedOn: string,
+  userId: string | null
+): { estimated_date?: string; responsible_id?: string } {
+  if (!isAutoCompleteStep(step)) return {};
+  return {
+    ...(s.estimated_date ? {} : { estimated_date: completedOn }),
+    ...(s.responsible_id || !userId ? {} : { responsible_id: userId }),
+  };
+}
+
+/** As mudanças do `autoCompleteFill` no formato do History. */
+export function autoCompleteFillChanges(fill: {
+  estimated_date?: string;
+  responsible_id?: string;
+}): Record<string, { from: null; to: string }> {
+  return {
+    ...(fill.estimated_date ? { estimated_date: { from: null, to: fill.estimated_date } } : {}),
+    ...(fill.responsible_id ? { responsible_id: { from: null, to: fill.responsible_id } } : {}),
+  };
+}
+
 /** O PL é "por cliente"? Só com 2+ clientes — com 1, vale a regra do PL todo. */
 export const isPerClient = (p: PlPerClient | undefined): p is PlPerClient =>
   (p?.total ?? 0) > 1;
@@ -140,8 +192,10 @@ function missingExtras(step: ChecklistStep, f: ChecklistFacts): string[] {
   const noDocs = (f.attachments ?? 0) === 0;
 
   if (!concludedBefore(f, PLAN_REQUIRED_FROM)) {
-    if (f.estimatedDate === null) missing.push("an estimated date");
-    if (f.responsibleId === null) missing.push("a responsible");
+    // Auto complete não exige os dois (10/11/2026) — o gatilho preenche.
+    const auto = isAutoCompleteStep(step);
+    if (f.estimatedDate === null && !auto) missing.push("an estimated date");
+    if (f.responsibleId === null && !auto) missing.push("a responsible");
   }
 
   switch (step) {
@@ -366,12 +420,34 @@ export const LOCKED_COMPLETED_ON_ERROR =
  * Retorna a mensagem de erro, ou null quando o patch é válido.
  */
 export function validateStepDates(
-  current: { estimated_date: string | null; completed_on: string | null },
-  patch: { estimated_date?: string | null; completed_on?: string | null },
+  current: {
+    estimated_date: string | null;
+    completed_on: string | null;
+    responsible_id?: string | null;
+  },
+  patch: {
+    estimated_date?: string | null;
+    completed_on?: string | null;
+    responsible_id?: string | null;
+  },
   step?: ChecklistStep
 ): string | null {
   const touchesEstimated = "estimated_date" in patch;
   const touchesCompleted = "completed_on" in patch;
+
+  // Etapa CONCLUÍDA não deixa apagar Estimated date nem Responsible (10/11/2026,
+  // pedido do usuário): trocar por outro valor pode, deixar em branco não. Vale
+  // para todas as etapas. Limpar o Completed on junto (etapa manual) libera.
+  const clearsCompleted = touchesCompleted && !patch.completed_on;
+  if (current.completed_on && !clearsCompleted) {
+    if (touchesEstimated && !patch.estimated_date && current.estimated_date) {
+      return "This step is completed — the estimated date can't be cleared.";
+    }
+    if ("responsible_id" in patch && !patch.responsible_id && current.responsible_id) {
+      return "This step is completed — the responsible can't be cleared.";
+    }
+  }
+
   if (!touchesEstimated && !touchesCompleted) return null;
 
   // "Completed on" registra um fato consumado — nunca pode ser futuro, em

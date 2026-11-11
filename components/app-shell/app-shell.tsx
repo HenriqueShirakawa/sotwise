@@ -8,6 +8,7 @@ import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { MessageFab } from "@/components/messages/message-fab";
+import { NotificationBell, useEtdNotifications } from "@/components/notifications/notification-bell";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import type { PermissionMap } from "@/domain/access/features";
 import { SidebarNav } from "./sidebar-nav";
@@ -47,8 +48,19 @@ export function AppShell({
   // uma largura existe por vez — sem conflito.
   const [railHover, setRailHover] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  // Sino de notificações (10/11/2026: saiu do topo, mora ao lado do usuário no
+  // rodapé da sidebar). Uma consulta só; cada lugar onde o sino aparece tem o
+  // seu "aberto" — a sidebar completa fica montada (escondida por CSS) abaixo
+  // de 1100px, e um estado único abriria dois popovers.
+  const notifications = useEtdNotifications();
+  const [bellOpen, setBellOpen] = useState<"full" | "rail" | "header" | null>(null);
+  const bellProps = (where: "full" | "rail" | "header") => ({
+    state: notifications,
+    open: bellOpen === where,
+    onOpenChange: (v: boolean) => setBellOpen(v ? where : null),
+  });
 
-  const sidebarInner = (onNavigate?: () => void) => (
+  const sidebarInner = (onNavigate?: () => void, bell?: "full" | "rail") => (
     <div className="flex h-full flex-col bg-white">
       <div className="flex h-[105px] shrink-0 items-center justify-center px-6">
         <SotwiseLogo className="h-16" />
@@ -74,8 +86,11 @@ export function AppShell({
           <span className="flex-1 text-left">SIA</span>
         </button>
       </div>
-      <div className="border-t p-3">
-        <UserCard fullName={fullName} email={email} role={role} />
+      <div className="flex items-center gap-1 border-t p-3">
+        <div className="min-w-0 flex-1">
+          <UserCard fullName={fullName} email={email} role={role} />
+        </div>
+        {bell ? <NotificationBell {...bellProps(bell)} side="right" align="end" /> : null}
       </div>
     </div>
   );
@@ -110,7 +125,8 @@ export function AppShell({
           </button>
         </div>
       </div>
-      <div className="flex w-full justify-center border-t p-2">
+      <div className="flex w-full flex-col items-center gap-1 border-t p-2">
+        <NotificationBell {...bellProps("rail")} side="right" align="end" />
         <span className="flex size-9 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700">
           {initials(fullName)}
         </span>
@@ -118,11 +134,15 @@ export function AppShell({
     </div>
   );
 
+  // Com o popover do sino aberto o trilho fica expandido — o popover sai do
+  // trilho (portal), e o mouseleave recolheria a sidebar fechando o sino.
+  const railExpanded = railHover || bellOpen === "rail";
+
   return (
     <div className="flex min-h-full flex-1">
       {/* Sidebar completa — só a partir de 1100px. */}
       <aside className="hidden w-64 shrink-0 border-r min-[1100px]:block">
-        {sidebarInner()}
+        {sidebarInner(undefined, "full")}
       </aside>
 
       {/* Entre 768px e 1100px a sidebar vira um trilho estreito só com ícones;
@@ -135,10 +155,14 @@ export function AppShell({
           onMouseLeave={() => setRailHover(false)}
           className={cn(
             "absolute inset-y-0 left-0 z-30 overflow-hidden border-r bg-white transition-[width] duration-200",
-            railHover ? "w-64 shadow-xl" : "w-14"
+            railExpanded ? "w-64 shadow-xl" : "w-14"
           )}
         >
-          {railHover ? <div className="h-full w-64">{sidebarInner()}</div> : sidebarRail()}
+          {railExpanded ? (
+            <div className="h-full w-64">{sidebarInner(undefined, "rail")}</div>
+          ) : (
+            sidebarRail()
+          )}
         </div>
       </aside>
 
@@ -157,6 +181,7 @@ export function AppShell({
             </SheetContent>
           </Sheet>
           <SotwiseLogo />
+          <NotificationBell {...bellProps("header")} className="ml-auto" />
         </header>
 
         {/* pb generoso: o balão de mensagens é fixo no canto inferior direito e

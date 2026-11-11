@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, History as HistoryIcon, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateNumeric, formatDateTime, todayIso } from "@/lib/format";
+import { gssActorLabel } from "@/lib/gss-user-label";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +24,7 @@ import {
   saveBalanceDate,
   saveDepositDate,
   saveOrderReceivedDate,
+  savePoReceivedDate,
   type StepRevision,
 } from "./actions";
 
@@ -38,7 +39,8 @@ import {
  *
  * O Deposit Payment entrou em 20/10 pelo card do cliente ("Deposit date"): usa o
  * mesmo popup do Order — só o formulário, porque o histórico aparece no History
- * da etapa —, mas com motivo obrigatório já na 1ª gravação.
+ * da etapa. Motivo só para trocar a data (desde 11/11/2026; antes o Deposit e o
+ * Balance pediam já na 1ª gravação).
  */
 
 export type RevisionStep = "order" | "po" | "pi" | "deposit_payment" | "balance_payment";
@@ -54,18 +56,24 @@ export const FORM_ONLY_REVISIONS: ReadonlySet<ChecklistStep> = new Set<Checklist
   "balance_payment",
 ]);
 
-/** Número em destaque com a quantidade de revisões — clicável. */
+/**
+ * Quantidade de revisões — clicável. Mesmo pill discreto do "History" do
+ * cabeçalho da etapa (11/11/2026, pedido do usuário: o número roxo chamava
+ * atenção demais).
+ */
 export function RevisionBadge({ count, onClick }: { count: number; onClick: () => void }) {
   if (count === 0) return null;
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={`${count} revision${count === 1 ? "" : "s"} — view details`}
+      aria-label={`Revisions (${count}) — view details`}
       title="View revisions"
-      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90"
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary px-2 py-px text-[11px] leading-4 text-primary transition-colors hover:bg-primary/5"
     >
-      {count}
+      <HistoryIcon className="size-3" />
+      Revisions
+      <span>{count}</span>
     </button>
   );
 }
@@ -81,7 +89,7 @@ const TITLES: Record<RevisionStep, string> = {
 /** Rótulo do campo de data dentro do formulário. */
 const DATE_LABELS: Record<RevisionStep, string> = {
   order: "Order received date",
-  po: "Completed on",
+  po: "PO received date",
   pi: "Completed on",
   deposit_payment: "Deposit date",
   balance_payment: "Balance date",
@@ -89,6 +97,7 @@ const DATE_LABELS: Record<RevisionStep, string> = {
 
 const KIND_LABELS: Record<StepRevision["kind"], string> = {
   order_received_date: "Order received date",
+  po_received_date: "PO received date",
   fxc: "Factory × Category received",
   pi_status: "PI status",
   completed_on: "Completed on",
@@ -112,6 +121,8 @@ export function StepRevisionsModal({
   stepId,
   step,
   currentDate,
+  onSaveDate,
+  formOnly: formOnlyProp,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -120,9 +131,18 @@ export function StepRevisionsModal({
   step: RevisionStep;
   /** Order: received date vigente; PO/PI: Completed on. Vazio = 1º registro. */
   currentDate: string | null;
+  /**
+   * Edição instantânea (10/11/2026): Order/Deposit/Balance entregam a data pra
+   * tela, que mostra na hora e grava por trás — o popup fecha no clique.
+   */
+  onSaveDate?: (date: string, reason: string | null) => void;
+  /**
+   * Força o modo do popup. O PO tem os dois (11/11/2026): o "Set date" abre só o
+   * formulário do PO received date; o pill "Revisions" abre só a lista.
+   */
+  formOnly?: boolean;
 }) {
-  const router = useRouter();
-  const formOnly = FORM_ONLY_REVISIONS.has(step);
+  const formOnly = formOnlyProp ?? FORM_ONLY_REVISIONS.has(step);
   const [pending, startTransition] = useTransition();
   const [rows, setRows] = useState<StepRevision[] | null>(null);
   const [adding, setAdding] = useState(false);
@@ -143,7 +163,7 @@ export function StepRevisionsModal({
   }
 
   useEffect(() => {
-    if (!openFor || FORM_ONLY_REVISIONS.has(step)) return;
+    if (!openFor || formOnly) return;
     let cancelled = false;
     getStepRevisions(openFor)
       .then((r) => !cancelled && setRows(r))
@@ -155,31 +175,37 @@ export function StepRevisionsModal({
     return () => {
       cancelled = true;
     };
-  }, [openFor, step]);
+  }, [openFor, formOnly]);
 
-  // Order grava a received date e o Deposit Payment a deposit date; o Completed
-  // on de PO/PI vem do GSS e é imutável (22/10/2026) — o popup deles é só a lista.
-  // No Deposit o motivo é sempre obrigatório (pedido do usuário); só no Order a
-  // 1ª gravação é livre.
+  // Order / PO / Deposit / Balance gravam a data deles; o Completed on é
+  // imutável (22/10/2026). Motivo só para TROCAR uma data que já existe — a 1ª
+  // gravação é livre em todas (11/11/2026, card da call de 10/11, item 4).
   const canAdd = formOnly;
-  const reasonRequired = step === "order" ? !!currentDate : true;
+  const reasonRequired = !!currentDate;
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
   function save() {
+    if (formOnly && onSaveDate) {
+      onSaveDate(date, reason.trim() || null);
+      onOpenChange(false);
+      return;
+    }
     startTransition(async () => {
-      // Só Order, Deposit e Balance Payment gravam por aqui (canAdd).
+      // Só Order, PO (received date), Deposit e Balance Payment gravam por aqui (canAdd).
       const res =
         step === "order"
           ? await saveOrderReceivedDate(orderId, date, reason.trim() || null)
-          : step === "balance_payment"
-            ? await saveBalanceDate(orderId, date, reason.trim())
-            : await saveDepositDate(orderId, date, reason.trim());
+          : step === "po"
+            ? await savePoReceivedDate(orderId, date, reason.trim() || null)
+            : step === "balance_payment"
+              ? await saveBalanceDate(orderId, date, reason.trim() || null)
+              : await saveDepositDate(orderId, date, reason.trim() || null);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
       toast.success(currentDate ? "Revision saved." : `${DATE_LABELS[step]} saved.`);
-      router.refresh();
+      // Sem router.refresh(): a action já revalida a página.
       if (formOnly) {
         onOpenChange(false);
         return;
@@ -206,7 +232,9 @@ export function StepRevisionsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-lg text-primary">{TITLES[step]}</DialogTitle>
+          <DialogTitle className="text-lg text-primary">
+            {step === "po" && formOnly ? DATE_LABELS.po : TITLES[step]}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="min-w-0 space-y-4">
@@ -241,9 +269,7 @@ export function StepRevisionsModal({
                       <Textarea
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
-                        // 1ª data do Deposit/Balance também pede motivo, mas
-                        // ainda não há o que "mudar" (QA 26/10/2026).
-                        placeholder={currentDate ? "Why is this date changing?" : "Add a note about this date"}
+                        placeholder="Why is this date changing?"
                         className="mt-1.5 bg-white"
                         rows={3}
                       />
@@ -296,7 +322,7 @@ export function StepRevisionsModal({
 
 function RevisionItem({ row, original }: { row: StepRevision; original: boolean }) {
   const [open, setOpen] = useState(false);
-  const who = row.source === "gss" ? "GSS" : (row.changed_by_name ?? "—");
+  const who = row.source === "gss" ? gssActorLabel(row.payload) : (row.changed_by_name ?? "—");
   const status = piStatusOf(row.payload.status);
   const previousStatus = piStatusOf(row.payload.previous_status);
   const items = (row.payload.items as FxcItem[] | undefined) ?? [];
@@ -309,7 +335,8 @@ function RevisionItem({ row, original }: { row: StepRevision; original: boolean 
       ? `${items.length} entr${items.length === 1 ? "y" : "ies"}`
       : `+${added.length} / −${removed.length}`;
   } else if (row.kind === "pi_status") {
-    summary = `${status ?? "—"} · ${formatDateNumeric(row.new_date)}`;
+    // Quem mudou o status fica à vista, sem abrir o item (card 05/11/2026).
+    summary = `${status ?? "—"} · ${formatDateNumeric(row.new_date)} · ${who}`;
   } else {
     summary = original
       ? formatDateNumeric(row.new_date)

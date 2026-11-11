@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { downloadXlsx, useXlsxDownload, xlsxColumns } from "@/lib/xlsx-download";
 import { DownloadXlsxButton } from "@/components/download-xlsx-button";
 import { formatDateNumeric } from "@/lib/format";
+import type { ListStateSeed } from "@/lib/list-state";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -45,6 +46,7 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataCards, labelsFromOptions } from "@/components/data-cards";
+import { useListState } from "@/components/keep-filters";
 import { ListToolbar } from "@/components/list-toolbar";
 
 import { deletePreLoading, getNextPlNumber, getSelectableBatchOptions } from "./actions";
@@ -212,10 +214,12 @@ export function PreLoadingClient({
   rows,
   today,
   initialColumns,
+  initialListState,
 }: {
   rows: PreLoadingRow[];
   today: string;
   initialColumns: VisibilityState;
+  initialListState: ListStateSeed;
 }) {
   const router = useRouter();
 
@@ -233,10 +237,18 @@ export function PreLoadingClient({
     []
   );
 
-  const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<PreLoadingFilters>(EMPTY_FILTERS);
+  // Busca, filtros, ordenação e página: lembrados ao voltar do checklist quando o
+  // "Keep filters" está ligado (ver components/keep-filters).
+  const list = useListState("pre-loading", initialListState, {
+    search: "",
+    filters: EMPTY_FILTERS,
+    sorting: [{ id: "pl_number", desc: true }] as SortingState,
+    pageIndex: 0,
+  });
+  const { search, filters, sorting } = list.state;
+  const setSearch = (value: string) => list.update({ search: value });
+  const setFilters = (value: PreLoadingFilters) => list.update({ filters: value });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [sorting, setSorting] = useState<SortingState>([{ id: "pl_number", desc: true }]);
   const { visibility, save: saveVisibility } = useColumnVisibility("pre-loading", initialColumns);
   const [toDelete, setToDelete] = useState<PreLoadingRow | null>(null);
   const [isDeleting, startDelete] = useTransition();
@@ -450,11 +462,15 @@ export function PreLoadingClient({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    onSortingChange: setSorting,
+    onSortingChange: list.onSortingChange,
+    onPaginationChange: list.onPaginationChange,
     onColumnVisibilityChange: (updater) =>
       saveVisibility(typeof updater === "function" ? updater(visibility) : updater),
-    state: { sorting, columnVisibility: visibility },
-    initialState: { pagination: { pageSize: 10 } },
+    state: {
+      sorting,
+      columnVisibility: visibility,
+      pagination: list.pagination(data.length),
+    },
   });
 
   // Download XLSX: a lista já tem tudo no navegador — exporta as linhas
@@ -562,6 +578,8 @@ export function PreLoadingClient({
         filters={filters}
         onApply={setFilters}
         onClear={() => setFilters(EMPTY_FILTERS)}
+        keep={list.keep}
+        onKeepChange={list.setKeep}
         {...options}
         pols={uniquePols}
       />
