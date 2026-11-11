@@ -775,8 +775,8 @@ export function OrderDetailClient({
         : step === "po"
           ? () => savePoReceivedDate(orderId, date, reason)
         : step === "balance_payment"
-          ? () => saveBalanceDate(orderId, date, reason ?? "")
-          : () => saveDepositDate(orderId, date, reason ?? "");
+          ? () => saveBalanceDate(orderId, date, reason)
+          : () => saveDepositDate(orderId, date, reason);
     void runOrder({ [field]: date } as Partial<OrderDetail>, call).then((res) => {
       if (!res.ok) toast.error(res.error);
     });

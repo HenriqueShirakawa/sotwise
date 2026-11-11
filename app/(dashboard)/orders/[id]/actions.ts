@@ -290,13 +290,13 @@ async function settleDepositPayment(
 
 /**
  * "Deposit date" da etapa Deposit Payment: a data em que o cliente depositou de
- * fato. Motivo é obrigatório em toda gravação; a 1ª conclui a etapa (Completed
- * on = hoje) e resolve o Deposit, promovendo os lotes In Negotiation.
+ * fato. A 1ª gravação é livre, trocar exige motivo (11/11/2026); a 1ª conclui a
+ * etapa (Completed on = hoje) e resolve o Deposit, promovendo os lotes In Negotiation.
  */
 export async function saveDepositDate(
   orderId: string,
   date: string,
-  reason: string
+  reason: string | null
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
   if (!date) return { ok: false, error: "Choose the deposit date." };
@@ -315,13 +315,13 @@ export async function saveDepositDate(
 
 /**
  * "Balance date" da etapa Balance Payment (22/10/2026, igual ao Deposit): a data
- * em que o cliente pagou o saldo. Motivo é obrigatório em toda gravação; cada
- * uma regrava o Completed on com o dia (imutável). Sem efeito nos lotes.
+ * em que o cliente pagou o saldo. A 1ª gravação é livre, trocar exige motivo
+ * (11/11/2026); cada uma regrava o Completed on com o dia (imutável). Sem efeito nos lotes.
  */
 export async function saveBalanceDate(
   orderId: string,
   date: string,
-  reason: string
+  reason: string | null
 ): Promise<ActionResult> {
   const session = await requireFeature("orders", "edit");
   if (!date) return { ok: false, error: "Choose the balance date." };

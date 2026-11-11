@@ -39,7 +39,8 @@ import {
  *
  * O Deposit Payment entrou em 20/10 pelo card do cliente ("Deposit date"): usa o
  * mesmo popup do Order — só o formulário, porque o histórico aparece no History
- * da etapa —, mas com motivo obrigatório já na 1ª gravação.
+ * da etapa. Motivo só para trocar a data (desde 11/11/2026; antes o Deposit e o
+ * Balance pediam já na 1ª gravação).
  */
 
 export type RevisionStep = "order" | "po" | "pi" | "deposit_payment" | "balance_payment";
@@ -176,13 +177,11 @@ export function StepRevisionsModal({
     };
   }, [openFor, formOnly]);
 
-  // Order grava a received date e o Deposit Payment a deposit date; o Completed
-  // on de PO/PI vem do GSS e é imutável (22/10/2026) — o popup deles é só a lista.
-  // No Deposit o motivo é sempre obrigatório (pedido do usuário); só no Order a
-  // 1ª gravação é livre.
+  // Order / PO / Deposit / Balance gravam a data deles; o Completed on é
+  // imutável (22/10/2026). Motivo só para TROCAR uma data que já existe — a 1ª
+  // gravação é livre em todas (11/11/2026, card da call de 10/11, item 4).
   const canAdd = formOnly;
-  // PO received date (11/11/2026) segue o Order: 1ª gravação livre.
-  const reasonRequired = step === "order" || step === "po" ? !!currentDate : true;
+  const reasonRequired = !!currentDate;
   const canSave = !!date && (!reasonRequired || reason.trim() !== "");
 
   function save() {
@@ -199,8 +198,8 @@ export function StepRevisionsModal({
           : step === "po"
             ? await savePoReceivedDate(orderId, date, reason.trim() || null)
             : step === "balance_payment"
-              ? await saveBalanceDate(orderId, date, reason.trim())
-              : await saveDepositDate(orderId, date, reason.trim());
+              ? await saveBalanceDate(orderId, date, reason.trim() || null)
+              : await saveDepositDate(orderId, date, reason.trim() || null);
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -270,9 +269,7 @@ export function StepRevisionsModal({
                       <Textarea
                         value={reason}
                         onChange={(e) => setReason(e.target.value)}
-                        // 1ª data do Deposit/Balance também pede motivo, mas
-                        // ainda não há o que "mudar" (QA 26/10/2026).
-                        placeholder={currentDate ? "Why is this date changing?" : "Add a note about this date"}
+                        placeholder="Why is this date changing?"
                         className="mt-1.5 bg-white"
                         rows={3}
                       />

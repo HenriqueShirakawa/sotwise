@@ -34,7 +34,7 @@ type Admin = ReturnType<typeof createAdminClient>;
  *  - **PI**: o GSS manda o status da PI (texto livre) + data. O 1º status conclui
  *    a etapa com Completed on = data dele; os seguintes são revisões.
  *  - **Deposit Payment**: o usuário grava o "Deposit date" (quando o cliente
- *    depositou de fato), sempre com motivo. A 1ª gravação conclui a etapa com
+ *    depositou de fato); motivo só para trocar (desde 11/11/2026). A 1ª gravação conclui a etapa com
  *    Completed on = o dia da gravação.
  *  - **Balance Payment** (22/10/2026): igual ao Deposit, com o "Balance date".
  *  - **Place the Order** (22/10/2026): conclui quando TODAS as fábricas do
@@ -182,11 +182,10 @@ function reasonFor(who: Who): string | null {
 
 /**
  * Grava o "Order received date". 1ª vez: conclui a etapa Order (Completed on =
- * hoje). Depois: revisão com motivo obrigatório (o GSS grava "Updated by GSS").
- * Retorna a mensagem de erro de validação, ou null.
+ * hoje). Depois: revisão com motivo obrigatório. Ver `setTriggerDate`.
  */
 export function setOrderReceivedDate(admin: Admin, orderId: string, date: string, who: Who) {
-  return setReceivedDate(admin, orderId, "order_received_date", date, who);
+  return setTriggerDate(admin, orderId, "order_received_date", date, who);
 }
 
 /**
@@ -195,28 +194,44 @@ export function setOrderReceivedDate(admin: Admin, orderId: string, date: string
  * ativas — sem elas a data fica gravada e o PO fecha quando a 1ª leva chegar.
  */
 export function setPoReceivedDate(admin: Admin, orderId: string, date: string, who: Who) {
-  return setReceivedDate(admin, orderId, "po_received_date", date, who);
+  return setTriggerDate(admin, orderId, "po_received_date", date, who);
 }
 
-/** As datas "received" que concluem etapa: coluna em `orders` → etapa + rótulo. */
-const RECEIVED_DATES = {
+/**
+ * As datas gravadas pelo usuário que concluem etapa ("Set date"): coluna em
+ * `orders` → etapa + rótulo. Regra única desde 11/11/2026 (card da call de
+ * 10/11, item 4): a 1ª gravação é livre, TROCAR exige motivo — antes o Deposit
+ * e o Balance pediam motivo já na 1ª.
+ */
+const TRIGGER_DATES = {
   order_received_date: { step: "order", label: "order received date" },
   po_received_date: { step: "po", label: "PO received date" },
+  deposit_date: { step: "deposit_payment", label: "deposit date" },
+  balance_date: { step: "balance_payment", label: "balance date" },
 } as const satisfies Record<string, { step: ChecklistStep; label: string }>;
 
-async function setReceivedDate(
+type TriggerDateField = keyof typeof TRIGGER_DATES;
+
+/**
+ * Grava uma data de gatilho da Order. Nunca futura; a 1ª gravação é o registro
+ * original, as seguintes viram revisão com motivo (o GSS grava "Updated by
+ * GSS"). Cada gravação regrava o Completed on com o DIA DA GRAVAÇÃO, não a data
+ * em si (a última atualização, imutável) — no PO só quando a Order já tem
+ * Factory × Category ativas. Retorna a mensagem de erro de validação, ou null.
+ */
+async function setTriggerDate(
   admin: Admin,
   orderId: string,
-  field: keyof typeof RECEIVED_DATES,
+  field: TriggerDateField,
   date: string,
   who: Who
 ): Promise<string | null> {
-  const { step: stepKey, label } = RECEIVED_DATES[field];
+  const { step: stepKey, label } = TRIGGER_DATES[field];
   if (date > todayIso()) return `The ${label} can't be in the future.`;
 
   const { data: order, error } = await admin
     .from("orders")
-    .select("order_received_date, po_received_date")
+    .select("order_received_date, po_received_date, deposit_date, balance_date")
     .eq("id", orderId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -225,7 +240,7 @@ async function setReceivedDate(
   const previous = order[field];
   if (previous === date) return null;
 
-  const reason = reasonFor(who);
+  const reason = previous ? reasonFor(who) : null;
   if (previous && !reason) return `A reason is required to revise the ${label}.`;
 
   const step = await readStep(admin, orderId, stepKey);
@@ -233,95 +248,7 @@ async function setReceivedDate(
 
   const { error: upError } = await admin
     .from("orders")
-    .update(field === "order_received_date" ? { order_received_date: date } : { po_received_date: date })
-    .eq("id", orderId);
-  if (upError) throw new Error(upError.message);
-
-  await insertRevision(
-    admin,
-    {
-      order_id: orderId,
-      step_id: step.id,
-      kind: field,
-      previous_date: previous,
-      new_date: date,
-      reason: previous ? reason : null,
-    },
-    who
-  );
-
-  // A troca aparece no History da etapa (é lá que a tela mostra, não num log
-  // à parte); writeStepLog ignora o que não veio de usuário.
-  await writeStepLog(admin, {
-    owner: { checklistStepId: step.id },
-    step: step.step,
-    action: "update",
-    changes: {
-      [field]: { from: previous, to: date },
-      ...(previous && reason ? { reason } : {}),
-    },
-    userId: who.userId,
-  });
-
-  // PO: sem Factory × Category ativas ainda não fecha (fecha quando chegarem).
-  if (field === "po_received_date" && (await readActiveFxc(admin, orderId)).length === 0) return null;
-
-  // Completed on = o MOMENTO da última gravação (não a data em si) — a cada troca.
-  await completeByTrigger(admin, step, todayIso(), who.userId);
-  return null;
-}
-
-// ── Deposit Payment / Balance Payment ────────────────────────────────────────
-
-/** As datas de pagamento que concluem etapa: coluna em `orders` → etapa + rótulo. */
-const PAYMENT_DATES = {
-  deposit_date: { step: "deposit_payment", label: "deposit date" },
-  balance_date: { step: "balance_payment", label: "balance date" },
-} as const satisfies Record<string, { step: ChecklistStep; label: string }>;
-
-type PaymentDateField = keyof typeof PAYMENT_DATES;
-
-/**
- * Grava uma data de pagamento da Order — o "Deposit date" (Deposit Payment, card
- * do cliente, 20/10/2026) ou o "Balance date" (Balance Payment, igual ao Deposit
- * desde 22/10/2026): a data em que o cliente pagou de fato. MOTIVO é obrigatório
- * em TODA gravação, inclusive a 1ª (decisão do usuário; difere do Order received
- * date, cujo 1º registro é livre).
- *
- * Cada gravação regrava o Completed on com o DIA DA GRAVAÇÃO, não a data do
- * pagamento (a última atualização, imutável). Retorna a mensagem de erro de
- * validação, ou null.
- */
-async function setPaymentDate(
-  admin: Admin,
-  orderId: string,
-  field: PaymentDateField,
-  date: string,
-  who: Who
-): Promise<string | null> {
-  const { step: stepKey, label } = PAYMENT_DATES[field];
-  if (date > todayIso()) return `The ${label} can't be in the future.`;
-
-  const { data: order, error } = await admin
-    .from("orders")
-    .select("deposit_date, balance_date")
-    .eq("id", orderId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!order) return "Order not found.";
-
-  const previous = order[field];
-  if (previous === date) return null;
-
-  const reason = reasonFor(who);
-  if (!reason) return `A reason is required to record the ${label}.`;
-
-  const step = await readStep(admin, orderId, stepKey);
-  if (!step) return "Checklist step not found.";
-
-  const { error: upError } = await admin
-    .from("orders")
-    .update(field === "deposit_date" ? { deposit_date: date } : { balance_date: date })
+    .update({ [field]: date } as Partial<Record<TriggerDateField, string>>)
     .eq("id", orderId);
   if (upError) throw new Error(upError.message);
 
@@ -338,28 +265,36 @@ async function setPaymentDate(
     who
   );
 
-  // A gravação aparece no History da etapa, com o motivo (badge "Correction").
+  // A troca aparece no History da etapa (é lá que a tela mostra, não num log
+  // à parte); writeStepLog ignora o que não veio de usuário.
   await writeStepLog(admin, {
     owner: { checklistStepId: step.id },
     step: step.step,
     action: "update",
-    changes: { [field]: { from: previous, to: date }, reason },
+    changes: { [field]: { from: previous, to: date }, ...(reason ? { reason } : {}) },
     userId: who.userId,
   });
 
-  // Completed on = o MOMENTO da última gravação (não a data do pagamento).
+  // PO: sem Factory × Category ativas ainda não fecha (fecha quando chegarem).
+  if (field === "po_received_date" && (await readActiveFxc(admin, orderId)).length === 0) return null;
+
   await completeByTrigger(admin, step, todayIso(), who.userId);
   return null;
 }
 
-/** "Deposit date" da etapa Deposit Payment (ver `setPaymentDate`). */
+// ── Deposit Payment / Balance Payment ────────────────────────────────────────
+
+/**
+ * "Deposit date" da etapa Deposit Payment (card do cliente, 20/10/2026): a data
+ * em que o cliente depositou de fato. Ver `setTriggerDate`.
+ */
 export function setDepositDate(admin: Admin, orderId: string, date: string, who: Who) {
-  return setPaymentDate(admin, orderId, "deposit_date", date, who);
+  return setTriggerDate(admin, orderId, "deposit_date", date, who);
 }
 
-/** "Balance date" da etapa Balance Payment (ver `setPaymentDate`). */
+/** "Balance date" da etapa Balance Payment (igual ao Deposit desde 22/10/2026). */
 export function setBalanceDate(admin: Admin, orderId: string, date: string, who: Who) {
-  return setPaymentDate(admin, orderId, "balance_date", date, who);
+  return setTriggerDate(admin, orderId, "balance_date", date, who);
 }
 
 // ── PO ───────────────────────────────────────────────────────────────────────
