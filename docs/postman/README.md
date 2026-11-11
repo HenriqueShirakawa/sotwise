@@ -141,3 +141,29 @@ Environment **"SOTWISE — GSS (prod)"** (`base_url` + `api_token`). Três pasta
 3. **Depois de preencher** (Runner) — confere que as 3 **concluíram**, testa uma revisão do Order received date (segue concluída) e `pi_status: false` (a PI reabre), e apaga a order de teste.
 
 Rodada local em 26/10/2026 (Postman CLI): pasta 1 com 22 asserções e pasta 3 com 23, 0 falhas. A collection `SOTWISE-GSS-Checklist-Order` foi ajustada à mesma regra (26/10: os passos 2, 7 e 8 agora esperam a etapa aberta; 14 requests, 35 asserções, 0 falhas no localhost).
+
+---
+
+# Postman — GSS mandando PO e PI (auto complete) — `SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json`
+
+(11/11/2026) Simula o **GSS mandando** os dados das etapas **PI** e **PO** do checklist da Order, com as regras da **dev** desde 10/11/2026 (card "Pontos discutidos na call de 10/11/2026", item 1): a etapa **conclui sozinha** sem Estimated date nem Responsible; a **Estimated date em branco recebe a data do Completed on**; vindo do GSS o **Responsible fica em branco**.
+
+Environment novo: **`SOTWISE-GSS-dev.postman_environment.json`** ("SOTWISE — GSS (dev)", `base_url` = `https://dev.sot.gssdatahub.com`). Preencha `api_token` com o token da dev. Para a dev local, troque `base_url` por `http://localhost:3000`.
+
+| Pasta | O que testa |
+|---|---|
+| 0 | Cria a order de teste `GSS-TEST-POPI-…` (nenhuma order real é tocada) |
+| 1. PI | nasce aberta → **emitida em X** (conclui, Estimated = X, quem emitiu no GSS no histórico) → mesmo status não grava → **deletada em Y com motivo** (reabre, Estimated mantida) → **reemitida em Z** (conclui, Completed = Z, Estimated segue X) → histórico X/Y/Z → data futura vira hoje → `pi_status` em texto = 400 |
+| 2. PO | nasce aberta → 1ª leva de F×C (conclui hoje, Estimated = Completed) → mesma leva não grava → lista vazia = 400 → produto inexistente = 400 |
+| 3 | Campo de outra etapa = 400, etapa desconhecida = 404, sem token = 401 |
+| 99 | Apaga a order de teste |
+
+Pela linha de comando:
+
+```bash
+postman collection run docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json -e docs/postman/SOTWISE-GSS-dev.postman_environment.json --env-var "api_token=<API_TOKEN_DA_DEV>"
+```
+
+Rodada em 11/11/2026 contra a dev local: 18 requests, 53 asserts, 0 falhas.
+
+⚠️ Só vale para a dev — a produção ainda não tem o auto complete. Quando entrar o item 2 do card (PO manual com "Set date"), a pasta 2 muda: a leva de F×C passa a só gravar.
