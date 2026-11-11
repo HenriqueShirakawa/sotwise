@@ -194,8 +194,10 @@ const GSS_AUTO_TOKEN = [
   "const url = pm.request.url.toString();",
   "if (!url.includes('/authentication/')) {",
   "  const v = (k) => pm.variables.replaceIn('{{' + k + '}}');",
+  "  // Sem environment selecionado, guarda o token nas variáveis da collection (11/11/2026).",
+  "  const store = pm.environment.name ? pm.environment : pm.collectionVariables;",
   "  const expMs = (t) => { try { const p = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'); return JSON.parse(atob(p)).exp * 1000; } catch (e) { return 0; } };",
-  "  const access = pm.environment.get('gss_access');",
+  "  const access = store.get('gss_access');",
   "  if (!access || expMs(access) - Date.now() < 30000) {",
   "    const headers = [",
   "      { key: 'Content-Type', value: 'application/json' },",
@@ -208,16 +210,16 @@ const GSS_AUTO_TOKEN = [
   "    }, (err, res) => {",
   "      if (err || res.code !== 200) { console.warn('GSS login falhou', err || res.code, res && res.text()); return; }",
   "      const j = res.json();",
-  "      pm.environment.set('gss_access', j.access);",
-  "      if (j.refresh) pm.environment.set('gss_refresh', j.refresh);",
+  "      store.set('gss_access', j.access);",
+  "      if (j.refresh) store.set('gss_refresh', j.refresh);",
   "    });",
-  "    const refresh = pm.environment.get('gss_refresh');",
+  "    const refresh = store.get('gss_refresh');",
   "    if (refresh && expMs(refresh) > Date.now()) {",
   "      pm.sendRequest({",
   "        url: v('gss_base') + '/authentication/token/refresh/', method: 'POST', header: headers,",
   "        body: { mode: 'raw', raw: JSON.stringify({ refresh }) },",
   "      }, (err, res) => {",
-  "        if (!err && res.code === 200) pm.environment.set('gss_access', res.json().access);",
+  "        if (!err && res.code === 200) store.set('gss_access', res.json().access);",
   "        else login();",
   "      });",
   "    } else login();",
@@ -228,8 +230,9 @@ const GSS_AUTO_TOKEN = [
 const GSS_SAVE_TOKENS = [
   "pm.test('200', () => pm.response.to.have.status(200));",
   "const j = pm.response.json();",
-  "if (j.access) pm.environment.set('gss_access', j.access);",
-  "if (j.refresh) pm.environment.set('gss_refresh', j.refresh);",
+  "const store = pm.environment.name ? pm.environment : pm.collectionVariables;",
+  "if (j.access) store.set('gss_access', j.access);",
+  "if (j.refresh) store.set('gss_refresh', j.refresh);",
 ];
 
 /**
@@ -502,7 +505,12 @@ async function main() {
       schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     },
     item: [buildGss(r.data), buildSotwise(openApiSpec as unknown as Json), scenarios.folder],
-    variable: scenarios.variables,
+    // Defaults sem segredo: funciona sem environment selecionado (o environment, se houver, ganha).
+    variable: [
+      { key: "base_url", value: "http://localhost:3000", type: "string" },
+      { key: "gss_base", value: "https://api.gssdatahub.com/v1", type: "string" },
+      ...scenarios.variables,
+    ],
   };
 
   writeFileSync(OUT, JSON.stringify(collection, null, 2) + "\n");
