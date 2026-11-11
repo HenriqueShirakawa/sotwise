@@ -504,7 +504,7 @@ function TriggerCompletedOn({
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <Label className="text-xs text-muted-foreground">Completed on</Label>
+        <Label className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">Completed on</Label>
         {step.step === "po" && (
           <RevisionBadge count={step.revision_count} onClick={onRevise} />
         )}

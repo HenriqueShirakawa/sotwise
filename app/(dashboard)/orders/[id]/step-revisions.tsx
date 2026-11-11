@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, History as HistoryIcon, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDateNumeric, formatDateTime, todayIso } from "@/lib/format";
@@ -54,18 +54,24 @@ export const FORM_ONLY_REVISIONS: ReadonlySet<ChecklistStep> = new Set<Checklist
   "balance_payment",
 ]);
 
-/** Número em destaque com a quantidade de revisões — clicável. */
+/**
+ * Quantidade de revisões — clicável. Mesmo pill discreto do "History" do
+ * cabeçalho da etapa (11/11/2026, pedido do usuário: o número roxo chamava
+ * atenção demais).
+ */
 export function RevisionBadge({ count, onClick }: { count: number; onClick: () => void }) {
   if (count === 0) return null;
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={`${count} revision${count === 1 ? "" : "s"} — view details`}
+      aria-label={`Revisions (${count}) — view details`}
       title="View revisions"
-      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90"
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-300 px-2 py-px text-[11px] leading-4 text-slate-700 transition-colors hover:bg-slate-50"
     >
-      {count}
+      <HistoryIcon className="size-3 text-slate-600" />
+      Revisions
+      <span>{count}</span>
     </button>
   );
 }
