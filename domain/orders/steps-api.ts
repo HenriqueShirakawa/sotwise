@@ -10,7 +10,7 @@ import {
   setOrderReceivedDate,
   type GssUser,
 } from "@/lib/checklist-revisions";
-import { todayIso } from "@/lib/format";
+
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { fail, type WriteResult } from "@/domain/api/write-result";
@@ -18,6 +18,7 @@ import type { ChecklistRevisionKind, ChecklistRevisionSource, ChecklistStep } fr
 
 import { applyOrderItems } from "./api-write";
 import { gssOrderItemSchema } from "./gss-schema";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 /**
  * Etapas do checklist da ORDER que o GSS atualiza pela API (22/10/2026):
@@ -227,7 +228,7 @@ export async function patchOrderStep(
     if (error) return fail(400, error);
   } else if (step === "pi") {
     const { pi_status, pi_status_date } = input as z.infer<typeof orderStepPatchSchemas.pi>;
-    const error = await recordPiStatus(admin, orderId, pi_status, pi_status_date ?? todayIso(), who);
+    const error = await recordPiStatus(admin, orderId, pi_status, pi_status_date ?? (await userTodayIso()), who);
     if (error) return fail(400, error);
   } else {
     const { items } = input as z.infer<typeof orderStepPatchSchemas.po>;

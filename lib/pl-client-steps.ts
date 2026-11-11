@@ -3,11 +3,12 @@ import "server-only";
 import { autoCompleteFill, autoCompleteFillChanges, stepPlanReady } from "@/lib/checklist-completion";
 import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
-import { formatDateNumeric, todayIso } from "@/lib/format";
+import { formatDateNumeric } from "@/lib/format";
 import { loadPlClientState } from "@/lib/pl-clients";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { ChecklistStep } from "@/types/database";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -135,7 +136,7 @@ export async function setClientDeliveredDate(
   who: { userId: string | null; reason?: string | null }
 ): Promise<{ error: string | null; completed: boolean }> {
   if (!date) return { error: "Choose the delivered date.", completed: false };
-  if (date > todayIso()) return { error: "The delivered date can't be in the future.", completed: false };
+  if (date > (await userTodayIso())) return { error: "The delivered date can't be in the future.", completed: false };
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_client_delivered")
@@ -190,7 +191,7 @@ export async function setClientDeliveredDate(
   let completed = false;
   if (state.clients.length > 0 && dates.every(Boolean)) {
     const latest = (dates as string[]).reduce((max, d) => (d > max ? d : max));
-    const today = todayIso();
+    const today = await userTodayIso();
     // Auto complete (10/11/2026): fecha mesmo sem Estimated date e Responsible —
     // em branco, recebem a data do Completed on e quem gravou.
     const current = step ?? { estimated_date: null, responsible_id: null };

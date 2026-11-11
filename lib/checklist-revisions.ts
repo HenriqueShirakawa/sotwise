@@ -7,7 +7,7 @@ import {
   stepPlanReady,
 } from "@/lib/checklist-completion";
 import { actorOrGssTeam } from "@/lib/gss-team";
-import { formatDateNumeric, todayIso } from "@/lib/format";
+import { formatDateNumeric } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -16,6 +16,7 @@ import type {
   ChecklistRevisionSource,
   ChecklistStep,
 } from "@/types/database";
+import { userTodayIso } from "@/lib/user-time-zone";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -227,7 +228,7 @@ async function setTriggerDate(
   who: Who
 ): Promise<string | null> {
   const { step: stepKey, label } = TRIGGER_DATES[field];
-  if (date > todayIso()) return `The ${label} can't be in the future.`;
+  if (date > (await userTodayIso())) return `The ${label} can't be in the future.`;
 
   const { data: order, error } = await admin
     .from("orders")
@@ -278,7 +279,7 @@ async function setTriggerDate(
   // PO: sem Factory × Category ativas ainda não fecha (fecha quando chegarem).
   if (field === "po_received_date" && (await readActiveFxc(admin, orderId)).length === 0) return null;
 
-  await completeByTrigger(admin, step, todayIso(), who.userId);
+  await completeByTrigger(admin, step, await userTodayIso(), who.userId);
   return null;
 }
 
@@ -385,7 +386,7 @@ export async function recordFxcDelivery(
     const step = await readStep(admin, orderId, "po");
     if (!step) return;
 
-    const today = todayIso();
+    const today = await userTodayIso();
     await insertRevision(
       admin,
       {
@@ -437,7 +438,7 @@ export async function setFactoryPlacedDate(
   who: Who
 ): Promise<string | null> {
   if (!date) return "Choose the placed-on date.";
-  if (date > todayIso()) return "The placed-on date can't be in the future.";
+  if (date > (await userTodayIso())) return "The placed-on date can't be in the future.";
 
   const [{ data: lines, error: lError }, { data: existing, error: eError }, { data: factory }] =
     await Promise.all([
@@ -503,7 +504,7 @@ export async function setFactoryPlacedDate(
   if (dError) throw new Error(dError.message);
   const datedIds = new Set((dated ?? []).map((d) => d.factory_id));
   if ([...factoryIds].every((f) => datedIds.has(f))) {
-    await completeByTrigger(admin, step, todayIso(), who.userId);
+    await completeByTrigger(admin, step, await userTodayIso(), who.userId);
   }
   return null;
 }
@@ -603,7 +604,7 @@ export async function syncOrderPreLoadingStep(
     if (stepsError) throw new Error(stepsError.message);
 
     for (const { order_id, ...step } of steps ?? []) {
-      if (ready(order_id)) await completeByTrigger(admin, step, todayIso(), userId);
+      if (ready(order_id)) await completeByTrigger(admin, step, await userTodayIso(), userId);
       else if (step.completed_on) await reopenByTrigger(admin, step, userId);
     }
   } catch (err) {
@@ -646,7 +647,7 @@ export async function completeEtdIfFilled(
     if (etdError) throw new Error(etdError.message);
     if ((etds ?? []).length < ids.length) return;
 
-    await completeByTrigger(admin, step, todayIso(), userId);
+    await completeByTrigger(admin, step, await userTodayIso(), userId);
   } catch (err) {
     console.error("[checklist-revisions] etd", err instanceof Error ? err.message : err);
   }
@@ -676,7 +677,7 @@ export async function recheckPlanStep(
   if (step.completed_on) return;
 
   if (await triggerFulfilled(admin, orderId, stepKey)) {
-    await completeByTrigger(admin, step, todayIso(), userId);
+    await completeByTrigger(admin, step, await userTodayIso(), userId);
   }
 }
 
@@ -810,7 +811,7 @@ export async function recordPiStatus(
   }
   // Cada `true` novo regrava o Completed on com a data dele (a última
   // atualização). Nunca futuro: status com data adiante fica com hoje.
-  const today = todayIso();
+  const today = await userTodayIso();
   await completeByTrigger(admin, step, date > today ? today : date, who.userId);
   return null;
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Montserrat, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { TimeZoneCookie } from "@/components/time-zone-cookie";
 
 const montserrat = Montserrat({
   variable: "--font-sans",
@@ -35,6 +36,8 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <Toaster richColors position="top-right" />
+        {/* Fuso do computador → cookie "tz" (o "hoje" de quem usa, 11/11/2026). */}
+        <TimeZoneCookie />
       </body>
     </html>
   );
