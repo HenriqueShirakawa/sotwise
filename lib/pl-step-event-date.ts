@@ -2,6 +2,7 @@ import "server-only";
 
 import { EVENT_DATE_ALLOWS_FUTURE, EVENT_DATE_STEPS } from "@/lib/checklist";
 import { autoCompleteFill, autoCompleteFillChanges, stepPlanReady } from "@/lib/checklist-completion";
+import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { todayIso } from "@/lib/format";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -62,9 +63,11 @@ export async function setPlStepEventDate(
   const today = todayIso();
   const reopen = !plan && !!existing?.completed_on && step !== "delivered";
   const completing = plan && !existing?.completed_on;
-  const fill = plan ? autoCompleteFill(step, existing ?? blank, today, who.userId) : {};
+  // Sem usuário do SOT (GSS pela API): assina o "GSS Team" (11/11/2026).
+  const actor = await actorOrGssTeam(admin, who.userId);
+  const fill = plan ? autoCompleteFill(step, existing ?? blank, today, actor) : {};
   const values = plan
-    ? { event_date: date, completed_on: today, done: true, signed_by_id: who.userId, ...fill }
+    ? { event_date: date, completed_on: today, done: true, signed_by_id: actor, ...fill }
     : reopen
       ? { event_date: date, completed_on: null, done: false, signed_by_id: null }
       : { event_date: date };

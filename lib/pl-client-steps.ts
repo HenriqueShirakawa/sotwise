@@ -1,6 +1,7 @@
 import "server-only";
 
 import { autoCompleteFill, autoCompleteFillChanges, stepPlanReady } from "@/lib/checklist-completion";
+import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { loadPlClientState } from "@/lib/pl-clients";
@@ -194,12 +195,14 @@ export async function setClientDeliveredDate(
     // em branco, recebem a data do Completed on e quem gravou.
     const current = step ?? { estimated_date: null, responsible_id: null };
     const plan = stepPlanReady("delivered", current);
-    const fill = plan ? autoCompleteFill("delivered", current, today, who.userId) : {};
+    // Sem usuário do SOT (GSS pela API): assina o "GSS Team" (11/11/2026).
+    const actor = await actorOrGssTeam(admin, who.userId);
+    const fill = plan ? autoCompleteFill("delivered", current, today, actor) : {};
     const { error: upError } = await admin
       .from("pre_loading_checklist_steps")
       .update(
         plan
-          ? { event_date: latest, completed_on: today, done: true, signed_by_id: who.userId, ...fill }
+          ? { event_date: latest, completed_on: today, done: true, signed_by_id: actor, ...fill }
           : { event_date: latest }
       )
       .eq("id", stepRow.id);
@@ -208,8 +211,8 @@ export async function setClientDeliveredDate(
     if (plan) {
       completed = !step?.completed_on;
       if (step?.completed_on !== today) changes.completed_on = { from: step?.completed_on ?? null, to: today };
-      if (step?.signed_by_id !== who.userId) {
-        changes.signed_by_id = { from: step?.signed_by_id ?? null, to: who.userId };
+      if (step?.signed_by_id !== actor) {
+        changes.signed_by_id = { from: step?.signed_by_id ?? null, to: actor };
       }
       Object.assign(changes, autoCompleteFillChanges(fill));
     }

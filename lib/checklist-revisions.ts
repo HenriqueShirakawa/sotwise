@@ -6,6 +6,7 @@ import {
   autoCompleteFillChanges,
   stepPlanReady,
 } from "@/lib/checklist-completion";
+import { actorOrGssTeam } from "@/lib/gss-team";
 import { formatDateNumeric, todayIso } from "@/lib/format";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -104,11 +105,13 @@ async function completeByTrigger(
     return;
   }
   // Estimated date em branco = a data do Completed on; Responsible em branco =
-  // quem concluiu (10/11/2026).
-  const fill = autoCompleteFill(step.step, step, completedOn, userId);
+  // quem concluiu (10/11/2026). Veio do GSS (sem usuário do SOT): quem assina e
+  // o Responsible em branco = "GSS Team" (11/11/2026, lib/gss-team).
+  const actor = await actorOrGssTeam(admin, userId);
+  const fill = autoCompleteFill(step.step, step, completedOn, actor);
   const { error } = await admin
     .from("order_checklist_steps")
-    .update({ completed_on: completedOn, done: true, signed_by_id: userId, ...fill })
+    .update({ completed_on: completedOn, done: true, signed_by_id: actor, ...fill })
     .eq("id", step.id);
   if (error) throw new Error(error.message);
   if (step.completed_on === completedOn && Object.keys(fill).length === 0) return;

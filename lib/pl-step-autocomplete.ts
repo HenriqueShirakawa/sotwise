@@ -7,6 +7,7 @@ import {
   isStepChecked,
   plStepFacts,
 } from "@/lib/checklist-completion";
+import { actorOrGssTeam } from "@/lib/gss-team";
 import { writeStepLog } from "@/lib/checklist-step-log";
 import { loadPlClientState, perClientOf } from "@/lib/pl-clients";
 import { todayIso } from "@/lib/format";
@@ -131,13 +132,15 @@ export async function autoCompletePlStep(
 
   // Incompleta: não fecha.
   if (!isStepChecked(step, facts)) return false;
-  const fill = autoCompleteFill(step, s, today, userId);
-  if (s.completed_on === today && s.signed_by_id === userId && Object.keys(fill).length === 0)
+  // Sem usuário do SOT (GSS, rollup de lote): assina o "GSS Team" (11/11/2026).
+  const actor = await actorOrGssTeam(admin, userId);
+  const fill = autoCompleteFill(step, s, today, actor);
+  if (s.completed_on === today && s.signed_by_id === actor && Object.keys(fill).length === 0)
     return false;
 
   const { error } = await admin
     .from("pre_loading_checklist_steps")
-    .update({ completed_on: today, done: true, signed_by_id: userId, ...fill })
+    .update({ completed_on: today, done: true, signed_by_id: actor, ...fill })
     .eq("id", s.id);
   if (error) return false;
 
@@ -149,7 +152,7 @@ export async function autoCompletePlStep(
     action: "auto_complete",
     changes: {
       ...(s.completed_on !== today ? { completed_on: { from: s.completed_on, to: today } } : {}),
-      ...(s.signed_by_id !== userId ? { signed_by_id: { from: s.signed_by_id, to: userId } } : {}),
+      ...(s.signed_by_id !== actor ? { signed_by_id: { from: s.signed_by_id, to: actor } } : {}),
       ...autoCompleteFillChanges(fill),
     },
     userId,
