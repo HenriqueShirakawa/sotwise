@@ -19,9 +19,11 @@
  *      sem original_docs nem inspection_report. Junta por shipments.bubble_id,
  *      que a migração já gravou. Cobre os embarques que A não alcança.
  *
- * NÃO recuperável: `shipments.shipment_model_id` — não há campo de modelo de
- * embarque em nenhum dos data types do Bubble (só a tabela `shipmentmodel`
- * solta, sem quem a referencie).
+ * Fora deste script: `shipments.shipment_model_id`. Ele É recuperável — vem de
+ * `[vistapub]shippment."[Header] Shipment Model"` (id de `shipmentmodel`,
+ * preenchido em ~40% dos embarques; o campo some do JSON quando vazio, por isso
+ * passou batido). Carregado à parte na produção em 12/11/2026 (569 shipments,
+ * casados por bubble_id) e enviado ao GSS como `shipment_model`.
  *
  * SEGURANÇA:
  *   - dry-run por padrão; grava só com `--apply`.
