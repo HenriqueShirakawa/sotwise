@@ -11,9 +11,16 @@ import { pushOrderStatuses } from "./order-status";
 import { PL_SHIPMENT_STEPS, pushPlShipment } from "./pl-shipment";
 import type { GssWriteResult } from "../client";
 
-/** As etapas do checklist do PL cujas datas vão ao GSS. */
+/**
+ * Etapas do PL que alimentam o cabeçalho do envio (13/11/2026, headerBody em
+ * pl-shipment.ts): POL, City (na Consolidation Point; "city" é a antiga),
+ * Carrier e agentes.
+ */
+const GSS_HEADER_STEPS: readonly string[] = ["port_of_loading", "consolidation_point", "city", "agents"];
+
+/** As etapas do checklist do PL cujo save manda o PL ao GSS: as datas e o cabeçalho. */
 export function isGssShipmentStep(step: ChecklistStep): boolean {
-  return (PL_SHIPMENT_STEPS as readonly string[]).includes(step);
+  return (PL_SHIPMENT_STEPS as readonly string[]).includes(step) || GSS_HEADER_STEPS.includes(step);
 }
 
 /**
