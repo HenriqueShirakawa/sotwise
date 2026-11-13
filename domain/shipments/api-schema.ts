@@ -156,8 +156,6 @@ export const patchStepSchema = z
     completed_on: apiDay.nullable().optional(),
     notes: z.string().max(5000).nullable().optional(),
     responsible_email: email("responsible").nullable().optional(),
-    consolidation_point: optionalRef,
-    city: optionalRef,
     pol: optionalRef,
     carrier: optionalRef,
     agent_brazil: optionalRef,
@@ -180,10 +178,8 @@ export type PatchStepInput = z.infer<typeof patchStepSchema>;
 
 /** Campos específicos que cada etapa aceita (os da tela). */
 export const STEP_FIELDS: Partial<Record<ChecklistStep, (keyof PatchStepInput)[]>> = {
-  // Consolidation Point + City numa etapa só (11/11/2026). A `city` em branco
-  // vem do cadastro da fábrica quando ela tem uma cidade só. `step=city` ainda é
-  // aceito (vira consolidation_point) para quem já integrou.
-  consolidation_point: ["consolidation_point", "city"],
+  // Consolidation Point + City: fechados pela API desde 13/11/2026 (vão ao GSS
+  // pelo webhook do PL) — ver patchShipmentStep.
   port_of_loading: ["pol"],
   agents: ["carrier", "agent_brazil", "agent_china", "contact_brazil", "contact_china"],
   booking: ["booking_number", "cutoff_date", "doc_cutoff_date"],

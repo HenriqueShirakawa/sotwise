@@ -56,8 +56,7 @@ const deleted = {
 const PL_STEPS = [
   // 1ª etapa do PL desde 11/11/2026: só `date` (+ `reason` para trocar).
   "shipment_plan",
-  // `city` virou campo do consolidation_point (11/11/2026); `step=city` ainda é aceito.
-  "consolidation_point",
+  // consolidation_point/city fechados pela API (13/11/2026): vão ao GSS pelo webhook.
   "port_of_loading",
   "shipping_docs",
   "agents",
@@ -623,8 +622,8 @@ export const restPaths = {
       description: [
         "Same rules as the SOTWISE screens:",
         "- `completed_on` is never in the future. Since 2026-11-11 no step needs `estimated_date`/responsible to complete except `loading_date`: what is blank is filled (estimated = the completion day; signer/responsible = GSS Team when it comes from the API).",
-        "- **Consolidation Point + City are one step since 2026-11-11** (`consolidation_point`): send `consolidation_point` (factory — SOTWISE id or gss_id) and, optionally, `city` (SOTWISE id or gss_id). Without `city`, the city comes from the factory's products in GSS: one city → filled in automatically; several → left empty for the team to choose (or send `city`); none → kept. The step completes with both. `steps/city` is still accepted and writes to this same step.",
-        "- Step-specific fields are only accepted on their step: `consolidation_point`/`city` (consolidation_point), `pol` (port_of_loading), " +
+        "- **`consolidation_point` and `city` can't be written here (405, since 2026-11-13):** they are set in SOTWISE and SOTWISE sends them to GSS with the shipment (`cons_point` + `city`). Read them in `GET /api/shipments/{id}`.",
+        "- Step-specific fields are only accepted on their step: `pol` (port_of_loading), " +
           "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (Container Cut-off)/`doc_cutoff_date` (Doc Cut-off) (booking — all three required to complete it).",
         "- A step that gets everything it needs (+ an estimated date) closes by itself.",
         "- `shipment_plan` (first Pre-loading step since 2026-11-11), `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
@@ -640,14 +639,6 @@ export const restPaths = {
           "application/json": {
             schema: ref("ShipmentStepPatch"),
             examples: {
-              consolidationPoint: {
-                summary: "Consolidation Point (city from the factory)",
-                value: { consolidation_point: "91" },
-              },
-              consolidationPointCity: {
-                summary: "Consolidation Point + City (factory with 2+ cities)",
-                value: { consolidation_point: "91", city: "68" },
-              },
               dates: { summary: "Dates", value: { estimated_date: du("2026-09-05"), completed_on: du("2026-09-06") } },
               booking: { summary: "Booking", value: { booking_number: "BK123456", cutoff_date: du("2026-07-05"), doc_cutoff_date: du("2026-07-03"), estimated_date: du("2026-07-04") } },
               reopen: { summary: "Reopen", value: { completed_on: null } },
@@ -946,8 +937,6 @@ export const restSchemas = {
       completed_on: inDayNullable,
       notes: { type: ["string", "null"] },
       responsible_email: emailInNullable,
-      consolidation_point: refNullable,
-      city: refNullable,
       pol: refNullable,
       carrier: refNullable,
       agent_brazil: refNullable,

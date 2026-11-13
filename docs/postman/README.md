@@ -171,6 +171,6 @@ Rodada em 11/11/2026 contra a dev local: 18 requests, 53 asserts, 0 falhas.
 
 **Environment com as chaves (11/11/2026):** não vai pro Git. Para montar um a partir do `.env.local` (dev local: `base_url` = `http://localhost:3000`, `api_token` = `API_TOKEN`, `gss_*` = `GSS_CF_ACCESS_CLIENT_ID` / `GSS_CF_ACCESS_CLIENT_SECRET` / `GSS_USERNAME` / `GSS_PASSWORD`), copie `SOTWISE-GSS.postman_environment.json` e preencha esses campos. O `API_TOKEN` do `.env.local` **não** vale na dev publicada (`dev.sot.gssdatahub.com` responde 401) — lá é o token da Vercel da dev.
 
-## Consolidation Point do PL (11/11/2026)
+## Consolidation Point do PL (11/11/2026 → fechado em 13/11/2026)
 
-`SOTWISE-GSS-consolidation-point.postman_collection.json` — o GSS gravando o Consolidation Point de um PL (`PATCH /api/shipments/{pl_number}/steps/consolidation_point`). Consolidation Point + City são uma etapa só: sem `city`, a cidade vem dos produtos da fábrica no GSS (uma cidade → automática; várias → em branco). Preencha `cp_pl_number`, `cp_factory_gss_id` e `cp_city_gss_id`; a pasta não cria dados. Também entra como pasta na collection completa (pasta 3). Rodado na dev local em 11/11: 4 requests, 8 asserts, 0 falhas.
+O cenário em que o GSS gravava o Consolidation Point de um PL saiu: o endpoint `PATCH /api/shipments/{pl_number}/steps/consolidation_point` (e `…/steps/city`) responde `405` desde 13/11/2026. O Consolidation Point é preenchido no SOTWISE e vai para o GSS no envio do PL (`cons_point` + `city` = a cidade da etapa).

@@ -18,7 +18,6 @@ import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { fail, isUuid, type Fail, type WriteResult } from "@/domain/api/write-result";
 import { resolveBatchKey } from "@/domain/batches/api-read";
-import { cityForConsolidationPoint } from "@/lib/consolidation-city";
 import { resolveProfileByEmail } from "@/domain/orders/api-write";
 import {
   createPreLoadingRecord,
@@ -438,8 +437,6 @@ export async function deleteShipment(
 
 /** Coluna de cada referência das etapas → tabela do cadastro. */
 const STEP_REFS: Partial<Record<keyof PatchStepInput, { column: string; table: RefTable; label: string }>> = {
-  consolidation_point: { column: "consolidation_point_id", table: "factories", label: "consolidation point" },
-  city: { column: "city_id", table: "cities", label: "city" },
   pol: { column: "pol_id", table: "pols", label: "port of loading" },
   carrier: { column: "carrier_id", table: "carriers", label: "carrier" },
   agent_brazil: { column: "agent_brazil_id", table: "agents", label: "agent" },
@@ -464,6 +461,13 @@ const COMPLETION_FACT_COLUMNS = [
   "doc_cutoff_date",
 ];
 
+/** Etapas fechadas pela API desde 13/11/2026 (o SOTWISE envia ao GSS). */
+export const isClosedApiStep = (step: string): boolean =>
+  step === "consolidation_point" || step === "city";
+
+export const CLOSED_STEP_ERROR =
+  "Consolidation Point and City are set in SOTWISE and sent to GSS by the shipment webhook (cons_point + city). They can't be written through this API.";
+
 export async function patchShipmentStep(
   admin: AdminClient,
   actor: { userId: string | null; isAdmin: boolean },
@@ -471,9 +475,12 @@ export async function patchShipmentStep(
   step: string,
   input: PatchStepInput
 ): Promise<WriteResult<ShipmentRead>> {
-  // City virou campo do Consolidation Point (11/11/2026): `step=city` segue
-  // aceito e grava na etapa unificada.
-  if (step === "city") step = "consolidation_point";
+  // Consolidation Point + City (13/11/2026, card da call de 10/11): FECHADO pela
+  // API. O endpoint de 11/11 foi mal interpretado — o dado nasce no SOTWISE
+  // (tela) e VAI para o GSS pelo webhook do PL (`cons_point` + `city`, ver
+  // lib/gss/outbound/pl-shipment); o GSS não grava aqui. A rota responde 405
+  // antes de ler o body; esta trava cobre quem chamar a função direto.
+  if (isClosedApiStep(step)) return fail(400, CLOSED_STEP_ERROR);
   if (!(PL_CHECKLIST_STEPS as string[]).includes(step)) {
     return fail(404, `Unknown step '${step}'. Steps: ${PL_CHECKLIST_STEPS.join(", ")}.`);
   }
@@ -533,21 +540,11 @@ export async function patchShipmentStep(
 
   const { data: existing, error: readError } = await admin
     .from("pre_loading_checklist_steps")
-    .select("id, estimated_date, completed_on, responsible_id, city_id")
+    .select("id, estimated_date, completed_on, responsible_id")
     .eq("pre_loading_id", id)
     .eq("step", checklistStep)
     .maybeSingle();
   if (readError) return fail(500, readError.message);
-
-  // Trocou o Consolidation Point sem mandar a City: ela vem do cadastro da
-  // fábrica (uma cidade só) ou fica em branco para escolher (11/11/2026).
-  if (checklistStep === "consolidation_point" && "consolidation_point_id" in patch && !("city_id" in patch)) {
-    patch.city_id = await cityForConsolidationPoint(
-      admin,
-      (patch.consolidation_point_id as string | null) ?? null,
-      existing?.city_id ?? null
-    );
-  }
 
   // "Completed on" exige "Estimated date" e nunca é futura — mesma trava das telas.
   const dateError = validateStepDates(

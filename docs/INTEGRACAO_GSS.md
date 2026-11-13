@@ -1118,7 +1118,7 @@ concluída das etapas abaixo atualiza; se o PL não existe lá, cria antes.
 Pendentes do lado do GSS: campos `estimated_loading_date` e `etd` (pedidos ao
 time deles), escrita de **OrderBatch** (sem isso não há `batch_ids` — o GSS não
 tem nenhum lote; `/orders/batch-totals/` volta `[]`), porto **Qingdao** (o GSS
-tem 27 portos, sem ele). Consolidation point não mapeia (lá é cidade, aqui é
+tem 27 portos, sem ele). Consolidation point: desde 13/11/2026 vai `cons_point` = a city da etapa (lá é cidade, aqui é
 fábrica).
 
 **O que foi construído e onde difere do desenho de 01/10:**
