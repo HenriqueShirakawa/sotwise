@@ -201,7 +201,7 @@ export async function applyChecklistFields(
   orderId: string,
   input: Pick<
     GssOrderHeaderInput,
-    "order_received_date" | "pi_status" | "pi_status_date" | "revision_reason"
+    "order_received_date" | "pi_status" | "pi_status_date" | "pi_cancel_reason" | "revision_reason"
   >
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const who = { source: "gss" as const, userId: null, reason: input.revision_reason ?? null };
@@ -213,9 +213,14 @@ export async function applyChecklistFields(
   if (input.pi_status_date !== undefined && input.pi_status === undefined) {
     return { ok: false, error: "pi_status_date requires pi_status." };
   }
+  if (input.pi_cancel_reason !== undefined && input.pi_status !== "canceled") {
+    return { ok: false, error: 'pi_cancel_reason only goes with pi_status "canceled".' };
+  }
   if (input.pi_status !== undefined) {
     const date = input.pi_status_date ?? (await userTodayIso());
-    const error = await recordPiStatus(admin, orderId, input.pi_status, date, who);
+    const error = await recordPiStatus(admin, orderId, input.pi_status, date, who, {
+      cancelReason: input.pi_cancel_reason ?? null,
+    });
     if (error) return { ok: false, error };
   }
   return { ok: true };

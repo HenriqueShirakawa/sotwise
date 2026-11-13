@@ -5,6 +5,23 @@ import { apiDay } from "@/lib/api-dates";
 /** Unix (s) ou "YYYY-MM-DD" (legado) → "YYYY-MM-DD"; omitido/null passam. */
 const optionalDate = apiDay.nullish();
 
+/**
+ * Status da PI no GSS: `true` emitida, `false` não emitida e, desde 13/11/2026,
+ * `"canceled"` (PI apagada no GSS — reabre a etapa). Aceita "cancelled".
+ */
+export const piStatusSchema = z.union(
+  [
+    z.boolean(),
+    z
+      .string()
+      .trim()
+      .toLowerCase()
+      .pipe(z.enum(["canceled", "cancelled"]))
+      .transform(() => "canceled" as const),
+  ],
+  { error: 'pi_status must be true, false or "canceled".' }
+);
+
 /** gss_id de uma biblioteca (traduzido para o UUID interno no endpoint). */
 const optionalGssRef = z.string().trim().min(1).nullish();
 
@@ -64,8 +81,11 @@ export const gssOrderSchema = z.object({
   // é o motivo delas (sem ele grava "Updated by GSS"). Não aceitam null: a 1ª
   // data nunca se perde.
   order_received_date: apiDay.optional(),
-  pi_status: z.boolean({ error: "pi_status must be true or false." }).optional(),
+  pi_status: piStatusSchema.optional(),
   pi_status_date: apiDay.optional(),
+  // Motivo do cancelamento da PI (texto livre do GSS, 13/11/2026) — só com
+  // pi_status "canceled"; aparece na etapa PI.
+  pi_cancel_reason: z.string().trim().max(2000, "pi_cancel_reason is too long.").optional(),
   revision_reason: z.string().trim().max(500, "revision_reason is too long.").optional(),
   // Linhas Factory×Category da order (order_factory_category). Opcional: pode
   // vir vazio ou omitido. Ver gssOrderItemSchema.

@@ -240,7 +240,7 @@ export const restPaths = {
       summary: "Update an order checklist step",
       description: [
         "Sends the data that completes the step — same rules as the SOTWISE screens:",
-        "- `order`: `order_received_date`. `pi`: `pi_status` boolean — `true` (PI issued) completes the step, `false` is only recorded (never reopens) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay). Since 2026-11-11 the items alone do NOT complete `po`: a SOTWISE user also sets the **PO received date** on the screen; the step completes once both are there.",
+        "- `order`: `order_received_date`. `pi`: `pi_status` — `true` (PI issued) completes the step, `false` is recorded and reopens a completed step, `\"canceled\"` (PI deleted in GSS, since 2026-11-13) reopens the step and shows it as Canceled with the optional `cancel_reason` (free text) — + `pi_status_date` (default today). `po`: `items[]` (Factory × Category by `supplier_category_gss_id`; new pairs are added, existing ones stay). Since 2026-11-11 the items alone do NOT complete `po`: a SOTWISE user also sets the **PO received date** on the screen; the step completes once both are there.",
         "- The first value completes the step; later changes become revisions (the original is kept). `reason` is the revision reason (default: \"Updated by GSS\").",
         "- `completed_on` is always the day of the LAST update (for `pi`, the status date) and can't be set directly. A repeated, identical value changes nothing.",
         "- Fields of another step → 400.",
@@ -263,6 +263,15 @@ export const restPaths = {
                 value: {
                   pi_status: true,
                   pi_status_date: du("2026-10-21"),
+                  changed_by: { name: "Jane Doe", email: "jane.doe@example.com" },
+                },
+              },
+              piCanceled: {
+                summary: "PI deleted in GSS (with the reason)",
+                value: {
+                  pi_status: "canceled",
+                  pi_status_date: du("2026-11-13"),
+                  cancel_reason: "PI issued with the wrong price list",
                   changed_by: { name: "Jane Doe", email: "jane.doe@example.com" },
                 },
               },
@@ -861,8 +870,12 @@ export const restSchemas = {
       completed_on: { ...nullableDate, description: "Day of the last update of the step's data (null = open)." },
       done: { type: "boolean" },
       order_received_date: { ...nullableDate, description: "`order` only — current value." },
-      pi_status: { type: ["boolean", "null"], description: "`pi` only — `true` = PI issued." },
+      pi_status: {
+        oneOf: [{ type: ["boolean", "null"] }, { type: "string", enum: ["canceled"] }],
+        description: "`pi` only — `true` = PI issued; `\"canceled\"` = deleted in GSS (since 2026-11-13).",
+      },
       pi_status_date: { ...nullableDate, description: "`pi` only." },
+      cancel_reason: { type: ["string", "null"], description: "`pi` only — reason sent with `\"canceled\"`." },
       po_received_date: { ...nullableDate, description: "`po` only — date set by a SOTWISE user (completes the step together with the items)." },
       items: {
         type: "array",
@@ -899,8 +912,12 @@ export const restSchemas = {
     description: "Only the fields of the step in the path (plus `reason`).",
     properties: {
       order_received_date: { ...inDay, description: "`order` — required there; never in the future." },
-      pi_status: { type: "boolean", description: "`pi` — required there. `true` = PI issued (completes the step); `false` = not yet (recorded only)." },
+      pi_status: {
+        oneOf: [{ type: "boolean" }, { type: "string", enum: ["canceled"] }],
+        description: "`pi` — required there. `true` = PI issued (completes the step); `false` = not yet (recorded only); `\"canceled\"` = PI deleted in GSS (reopens the step; since 2026-11-13).",
+      },
       pi_status_date: { ...inDay, description: "`pi` — default today." },
+      cancel_reason: { type: "string", maxLength: 2000, description: "`pi` — why the PI was canceled (free text, optional). Only with `pi_status: \"canceled\"`." },
       items: {
         type: "array",
         minItems: 1,

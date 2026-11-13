@@ -103,8 +103,9 @@ Content-Type: application/json
 | `requester_email` | e-mail | não | E-mail do Requester (usuário SOTWISE). |
 | `is_active` | boolean | não | Marca de ativo/inativo — só uma marca, não exclui nem esconde (§0.1). Omitido → não muda; order nova nasce `true`. |
 | `order_received_date` | dia (Unix) | não | Data em que o pedido **final** do cliente foi recebido. A 1ª conclui a etapa **Order** do checklist; mudanças depois viram revisões (a 1ª data nunca se perde). Não aceita `null`. Também no `PATCH /api/orders/{id}`. |
-| `pi_status` | boolean | não | Status da **PI** no GSS: `true` = PI emitida (conclui a etapa **PI**, Completed on = `pi_status_date`); `false` = ainda não (só grava; etapa concluída nunca reabre). Cada status/data seguinte vira revisão. Mesmo status + mesma data de novo → nada muda. Também no `PATCH`. |
+| `pi_status` | boolean ou `"canceled"` | não | Status da **PI** no GSS: `true` = PI emitida (conclui a etapa **PI**, Completed on = `pi_status_date`); `false` = ainda não (só grava; etapa concluída reabre); **`"canceled"` = PI apagada no GSS** (13/11/2026: reabre a etapa, Completed on vazio, e a tela mostra **Canceled** com o motivo). Cada status/data seguinte vira revisão. Mesmo status + mesma data de novo → nada muda. Também no `PATCH` e em `PATCH /api/orders/{id}/steps/pi` (lá o motivo vai em `cancel_reason`). |
 | `pi_status_date` | dia (Unix) | não | Data do `pi_status` (default: hoje). Exige `pi_status`. |
+| `pi_cancel_reason` | string (≤2000) | não | **Motivo do cancelamento da PI** (texto livre). Só junto com `pi_status: "canceled"`; aparece na etapa PI e no History. |
 | `revision_reason` | string (≤500) | não | Motivo gravado junto da revisão dos campos acima. Default: `"Updated by GSS"`. |
 | `items` | array | não | Linhas **Factory × Category** — ver abaixo. A 1ª leva conclui a etapa **PO** do checklist; cada leva que muda o conjunto fica registrada (o que entrou/saiu). |
 

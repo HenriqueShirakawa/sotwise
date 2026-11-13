@@ -755,20 +755,53 @@ async function triggerFulfilled(admin: Admin, orderId: string, step: ChecklistSt
 
 // ── PI ───────────────────────────────────────────────────────────────────────
 
+/** Status da PI que o GSS manda: emitida, não emitida ou CANCELADA (13/11/2026). */
+export type PiStatusValue = boolean | "canceled";
+
+/**
+ * Último status da PI (13/11/2026): o `canceled` não cabe em `orders.pi_status`
+ * (boolean — lá vira `false`), então vem da revisão mais recente.
+ */
+export async function latestPiStatus(
+  admin: Admin,
+  stepId: string
+): Promise<{ status: PiStatusValue | null; reason: string | null }> {
+  const { data, error } = await admin
+    .from("checklist_step_revisions")
+    .select("payload, reason")
+    .eq("step_id", stepId)
+    .eq("kind", "pi_status")
+    .order("changed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const s = (data?.payload as { status?: unknown } | null)?.status;
+  const status: PiStatusValue | null =
+    s === "canceled" ? "canceled" : typeof s === "boolean" ? s : typeof s === "string" && s ? true : null;
+  return { status, reason: data?.reason ?? null };
+}
+
 /**
  * Status da PI vindo do GSS (boolean, 22/10/2026) + data. `true` conclui a PI
  * com Completed on = a data do status; `false` só grava (histórico) — não
- * conclui nem reabre. A 1ª gravação é o registro original, as seguintes viram
- * revisões. Mesmo status e mesma data de novo → nada.
+ * conclui, e reabre se já estava concluída. A 1ª gravação é o registro
+ * original, as seguintes viram revisões. Mesmo status e mesma data de novo →
+ * nada.
+ *
+ * `"canceled"` (13/11/2026): a PI foi apagada no GSS. Grava `pi_status = false`,
+ * reabre a etapa (Completed on vazio) e guarda na revisão o motivo que o GSS
+ * mandou (`cancelReason`, opcional; sem ele, o `reason`/"Updated by GSS").
  */
 export async function recordPiStatus(
   admin: Admin,
   orderId: string,
-  status: boolean,
+  status: PiStatusValue,
   date: string,
-  who: Who
+  who: Who,
+  { cancelReason = null }: { cancelReason?: string | null } = {}
 ): Promise<string | null> {
-  const clean = status;
+  const canceled = status === "canceled";
+  const clean = canceled ? false : status;
 
   const { data: order, error } = await admin
     .from("orders")
@@ -777,10 +810,15 @@ export async function recordPiStatus(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!order) return "Order not found.";
-  if (order.pi_status === clean && order.pi_status_date === date) return null;
 
   const step = await readStep(admin, orderId, "pi");
   if (!step) return "Checklist step not found.";
+
+  // O status anterior vem da última revisão: `false` no banco pode ser "não
+  // emitida" ou "cancelada".
+  const last = await latestPiStatus(admin, step.id);
+  const previous: PiStatusValue | null = last.status ?? order.pi_status;
+  if (previous === status && order.pi_status_date === date) return null;
 
   const { error: upError } = await admin
     .from("orders")
@@ -789,6 +827,7 @@ export async function recordPiStatus(
   if (upError) throw new Error(upError.message);
 
   const first = order.pi_status === null && !order.pi_status_date;
+  const motive = canceled ? cancelReason?.trim() || reasonFor(who) : first ? null : reasonFor(who);
   await insertRevision(
     admin,
     {
@@ -797,8 +836,12 @@ export async function recordPiStatus(
       kind: "pi_status",
       previous_date: order.pi_status_date,
       new_date: date,
-      payload: { status: clean, previous_status: order.pi_status },
-      reason: first ? null : reasonFor(who),
+      payload: {
+        status,
+        previous_status: previous,
+        ...(canceled && cancelReason?.trim() ? { cancel_reason: cancelReason.trim() } : {}),
+      },
+      reason: motive,
     },
     who
   );
