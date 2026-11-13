@@ -306,15 +306,22 @@ function AttachmentsSection({
  * Shipping Docs de PL com 2+ clientes (21/10/2026): uma linha por cliente, com
  * os documentos dele e a data do 1º anexo. A etapa fecha quando todos têm ao
  * menos um. Documento antigo, sem cliente, aparece à parte e vale para todos.
+ *
+ * `optional` (Shipment Plan, 13/11/2026): mesma linha por cliente, mas o anexo
+ * não é exigido — sem a bolinha âmbar de "falta".
  */
 function ClientDocsGroups({
   preLoadingId,
+  step = "shipping_docs",
   clients,
   attachments,
+  optional = false,
 }: {
   preLoadingId: string;
+  step?: ChecklistStep;
   clients: Ref[];
   attachments: StepAttachment[];
+  optional?: boolean;
 }) {
   const general = attachments.filter((a) => !a.client_id);
   return (
@@ -329,19 +336,26 @@ function ClientDocsGroups({
           <div key={c.id} className="space-y-2 border-t px-3 py-2.5 first:border-t-0">
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span className="flex min-w-0 items-center gap-2">
-                {/* Verde = cliente já tem documento; âmbar = ainda falta. */}
+                {/* Verde = cliente já tem documento; âmbar = ainda falta
+                    (cinza quando o anexo é opcional). */}
                 <span
-                  className={`size-2 shrink-0 rounded-full ${docs.length ? "bg-emerald-500" : "bg-amber-400"}`}
+                  className={`size-2 shrink-0 rounded-full ${
+                    docs.length ? "bg-emerald-500" : optional ? "bg-slate-300" : "bg-amber-400"
+                  }`}
                 />
                 <span className="truncate font-medium text-slate-800">{c.name}</span>
               </span>
               <span className="text-xs text-muted-foreground">
-                {firstAt ? `Attached on ${formatDate(firstAt)}` : "No document yet"}
+                {firstAt
+                  ? `Attached on ${formatDate(firstAt)}`
+                  : optional
+                    ? "No document (optional)"
+                    : "No document yet"}
               </span>
             </div>
             <AttachmentsSection
               preLoadingId={preLoadingId}
-              step="shipping_docs"
+              step={step}
               attachments={docs}
               clientId={c.id}
             />
@@ -350,10 +364,12 @@ function ClientDocsGroups({
       })}
       {general.length > 0 && (
         <div className="space-y-2 border-t px-3 py-2.5">
-          <p className="text-xs text-muted-foreground">Without client — counts for all clients</p>
+          <p className="text-xs text-muted-foreground">
+            {optional ? "Without client" : "Without client — counts for all clients"}
+          </p>
           <AttachmentsSection
             preLoadingId={preLoadingId}
-            step="shipping_docs"
+            step={step}
             attachments={general}
             canAttach={false}
           />
@@ -1002,9 +1018,19 @@ export function PlChecklistClient({
                         clients={perClient.clients}
                         attachments={s.attachments}
                       />
-                    ) : s.step === "agents" || s.step === "shipment_plan" ? (
+                    ) : s.step === "shipment_plan" && perClient.clients.length > 0 ? (
+                      // Anexo opcional, uma linha por cliente (13/11/2026); a
+                      // etapa fecha só pelo Set date.
+                      <ClientDocsGroups
+                        preLoadingId={preLoading.id}
+                        step="shipment_plan"
+                        clients={perClient.clients}
+                        attachments={s.attachments}
+                        optional
+                      />
+                    ) : s.step === "agents" ? (
                       // Sem documento nenhum: Agents desde 29/10/2026 (fecha
-                      // pelos agentes); Shipment Plan só tem a data (11/11/2026).
+                      // pelos agentes).
                       null
                     ) : (
                       !CONFIRM_SHIPPING_COMPLETES.has(s.step) && (

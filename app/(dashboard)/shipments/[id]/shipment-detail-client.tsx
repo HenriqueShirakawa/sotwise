@@ -361,10 +361,10 @@ function AttachmentsSection({
 }
 
 /** Bolinha verde = cliente já cumpriu; âmbar = ainda falta. */
-function ClientDot({ done }: { done: boolean }) {
-  return (
-    <span className={`size-2 shrink-0 rounded-full ${done ? "bg-emerald-500" : "bg-amber-400"}`} />
-  );
+function ClientDot({ done, optional = false }: { done: boolean; optional?: boolean }) {
+  // Cinza quando falta, mas o documento é opcional (Shipment Plan).
+  const color = done ? "bg-emerald-500" : optional ? "bg-slate-300" : "bg-amber-400";
+  return <span className={`size-2 shrink-0 rounded-full ${color}`} />;
 }
 
 function firstAttachedAt(docs: StepAttachment[]): string | null {
@@ -389,6 +389,7 @@ function ClientDocsGroups({
   readOnly,
   isDone,
   extra,
+  optional = false,
 }: {
   shipmentId: string;
   preLoadingId: string;
@@ -398,6 +399,8 @@ function ClientDocsGroups({
   readOnly: boolean;
   isDone: (clientId: string, docs: StepAttachment[]) => boolean;
   extra?: (client: Ref) => React.ReactNode;
+  /** Anexo opcional (Shipment Plan, 13/11/2026): não marca "falta". */
+  optional?: boolean;
 }) {
   const general = attachments.filter((a) => !a.client_id);
   return (
@@ -409,11 +412,15 @@ function ClientDocsGroups({
           <div key={c.id} className="space-y-2 border-t px-3 py-2.5 first:border-t-0">
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span className="flex min-w-0 items-center gap-2">
-                <ClientDot done={isDone(c.id, docs)} />
+                <ClientDot done={isDone(c.id, docs)} optional={optional} />
                 <span className="truncate font-medium text-slate-800">{c.name}</span>
               </span>
               <span className="text-xs text-muted-foreground">
-                {firstAt ? `Attached on ${formatDate(firstAt)}` : "No document yet"}
+                {firstAt
+                  ? `Attached on ${formatDate(firstAt)}`
+                  : optional
+                    ? "No document (optional)"
+                    : "No document yet"}
               </span>
             </div>
             {extra?.(c)}
@@ -430,7 +437,9 @@ function ClientDocsGroups({
       })}
       {general.length > 0 && (
         <div className="space-y-2 border-t px-3 py-2.5">
-          <p className="text-xs text-muted-foreground">Without client — counts for all clients</p>
+          <p className="text-xs text-muted-foreground">
+            {optional ? "Without client" : "Without client — counts for all clients"}
+          </p>
           <AttachmentsSection
             shipmentId={shipmentId}
             preLoadingId={preLoadingId}
@@ -1070,6 +1079,18 @@ export function ShipmentDetailClient({
                             disabled={readOnly}
                           />
                         )}
+                      />
+                    ) : s.step === "shipment_plan" && perClient.clients.length > 0 ? (
+                      // Anexo opcional, uma linha por cliente (13/11/2026).
+                      <ClientDocsGroups
+                        shipmentId={shipment.id}
+                        preLoadingId={shipment.pre_loading_id}
+                        step="shipment_plan"
+                        clients={perClient.clients}
+                        attachments={s.attachments}
+                        readOnly={readOnly}
+                        isDone={(_, docs) => docs.length > 0}
+                        optional
                       />
                     ) : s.step === "agents" ? (
                       // Agents sem documento nenhum desde 29/10/2026.

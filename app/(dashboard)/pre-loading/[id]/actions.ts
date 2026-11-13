@@ -21,6 +21,7 @@ import { scheduleClientNotificationDispatch } from "@/domain/client/notification
 import { requireFeature } from "@/lib/dal";
 import { confirmShippingRecord, type ConfirmShippingInput } from "@/domain/shipments/confirm";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
+import { isOptionalClientDocStep, takesClientDoc } from "@/lib/pl-clients";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
 import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
@@ -301,7 +302,8 @@ export async function registerPreLoadingAttachment(
   step: ChecklistStep,
   filePath: string,
   fileName: string,
-  /** Shipping Docs de PL com 2+ clientes: o cliente do documento (21/10/2026). */
+  /** Cliente do documento: Shipping Docs de PL com 2+ clientes (21/10/2026) e
+   *  o anexo opcional do Shipment Plan (13/11/2026). */
   clientId: string | null = null
 ): Promise<ActionResult> {
   const session = await requireFeature("pre_loading", "edit");
@@ -315,7 +317,7 @@ export async function registerPreLoadingAttachment(
 
   const { error: insertError } = await admin.from("step_attachments").insert({
     pre_loading_step_id: stepRow.id,
-    client_id: step === "shipping_docs" ? clientId : null,
+    client_id: takesClientDoc(step) ? clientId : null,
     file_path: filePath,
     file_name: fileName,
     uploaded_by: session.userId,
@@ -331,16 +333,17 @@ export async function registerPreLoadingAttachment(
     action: "attachment_added",
     changes: {
       file_name: fileName,
-      ...(step === "shipping_docs" && clientId ? { client_id: clientId } : {}),
+      ...(takesClientDoc(step) && clientId ? { client_id: clientId } : {}),
     },
     userId: session.userId,
   });
 
   // O anexo pode ser o que faltava pra etapa fechar (ver lib/pl-step-autocomplete).
   // Documento novo é atualização da etapa: fecha ou regrava o Completed on.
-  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
-    refresh: true,
-  });
+  // Anexo opcional (Shipment Plan, fecha pelo Set date) não mexe na etapa.
+  const completed = isOptionalClientDocStep(step)
+    ? false
+    : await autoCompletePlStep(admin, preLoadingId, step, session.userId, { refresh: true });
 
   revalidatePath("/pre-loading/[id]", "page");
   if (completed) {
@@ -392,7 +395,8 @@ export async function deletePreLoadingStepAttachment(
   await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
 
   // Sem o documento a etapa pode deixar de valer: reabre (lib/pl-step-autocomplete).
-  const reopened = removed
+  const reopened =
+    removed && !isOptionalClientDocStep(removed.step)
     ? await autoCompletePlStep(admin, preLoadingId, removed.step, session.userId, { refresh: true })
     : false;
 

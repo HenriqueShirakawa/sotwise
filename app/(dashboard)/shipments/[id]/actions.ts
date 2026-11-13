@@ -30,7 +30,7 @@ import {
   setClientDeliveredDate,
   setClientOriginalDocs,
 } from "@/lib/pl-client-steps";
-import { isClientDocStep } from "@/lib/pl-clients";
+import { isOptionalClientDocStep, takesClientDoc } from "@/lib/pl-clients";
 import { broadcastShipmentPing } from "@/lib/shipments-realtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isGssShipmentStep, sendOrderStatusToGss, sendPlShipmentToGss } from "@/lib/gss/outbound/schedule";
@@ -383,7 +383,7 @@ export async function registerShipmentAttachment(
     file_path: filePath,
     file_name: fileName,
     uploaded_by: session.userId,
-    client_id: isClientDocStep(step) ? clientId : null,
+    client_id: takesClientDoc(step) ? clientId : null,
   });
   if (insertError) {
     await admin.storage.from(DOCUMENTS_BUCKET).remove([filePath]);
@@ -396,16 +396,17 @@ export async function registerShipmentAttachment(
     action: "attachment_added",
     changes: {
       file_name: fileName,
-      ...(isClientDocStep(step) && clientId ? { client_id: clientId } : {}),
+      ...(takesClientDoc(step) && clientId ? { client_id: clientId } : {}),
     },
     userId: session.userId,
   });
 
   // O anexo pode ser o que faltava pra etapa fechar (BL, Original Docs…); com
   // ela já concluída, documento novo regrava o Completed on (22/10/2026).
-  const completed = await autoCompletePlStep(admin, preLoadingId, step, session.userId, {
-    refresh: true,
-  });
+  // Anexo opcional (Shipment Plan, fecha pelo Set date) não mexe na etapa.
+  const completed = isOptionalClientDocStep(step)
+    ? false
+    : await autoCompletePlStep(admin, preLoadingId, step, session.userId, { refresh: true });
 
   revalidateShipmentViews();
   if (completed) {
@@ -473,7 +474,7 @@ export async function deleteShipmentStepAttachment(
 
   // Sem o documento a etapa (BL, Original Docs…) pode deixar de valer: reabre.
   const reopened =
-    attStep && attPreLoadingId
+    attStep && attPreLoadingId && !isOptionalClientDocStep(attStep)
       ? await autoCompletePlStep(admin, attPreLoadingId, attStep, session.userId, { refresh: true })
       : false;
 

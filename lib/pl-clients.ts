@@ -14,6 +14,17 @@ export type ClientDocStep = (typeof CLIENT_DOC_STEPS)[number];
 export const isClientDocStep = (step: string): step is ClientDocStep =>
   (CLIENT_DOC_STEPS as readonly string[]).includes(step);
 
+/**
+ * Shipment Plan (13/11/2026, card da call de 10/11): anexo OPCIONAL, uma linha
+ * por cliente do PL. Não entra na regra da etapa — ela fecha só pelo "Set
+ * date" —, então anexar/remover não mexe no Completed on.
+ */
+export const isOptionalClientDocStep = (step: string): boolean => step === "shipment_plan";
+
+/** O anexo dessa etapa guarda o cliente (obrigatório ou opcional). */
+export const takesClientDoc = (step: string): boolean =>
+  isClientDocStep(step) || isOptionalClientDocStep(step);
+
 /** Original Docs de um cliente: Tracking number OU Telex release (22/10/2026). */
 export type ClientOriginalDocs = { tracking_number: string | null; telex_release: boolean };
 
