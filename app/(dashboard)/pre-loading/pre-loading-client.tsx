@@ -326,6 +326,9 @@ export function PreLoadingClient({
         return false;
       if (!inDateRange(r.loading_date, filters.loading_from, filters.loading_to)) return false;
       if (!inDateRange(r.cutoff, filters.cutoff_from, filters.cutoff_to)) return false;
+      // Booking Status = a coluna da lista (etapa Booking concluída), 13/11/2026.
+      if (filters.booking === "yes" && !r.booking_confirmed) return false;
+      if (filters.booking === "no" && r.booking_confirmed) return false;
       if (!q) return true;
       return r.pl_number.toLowerCase().includes(q);
     });
