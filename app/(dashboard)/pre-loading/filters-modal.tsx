@@ -41,6 +41,9 @@ export type PreLoadingFilters = {
   loading_to: string;
   cutoff_from: string;
   cutoff_to: string;
+  /** Doc Cut-off da etapa Booking (13/11/2026). */
+  doc_cutoff_from: string;
+  doc_cutoff_to: string;
   /** Booking Status (card "Filtro novo na lista de PL", 13/11/2026): "" = todos. */
   booking: "" | "yes" | "no";
 };
@@ -60,6 +63,8 @@ export const EMPTY_FILTERS: PreLoadingFilters = {
   loading_to: "",
   cutoff_from: "",
   cutoff_to: "",
+  doc_cutoff_from: "",
+  doc_cutoff_to: "",
   booking: "",
 };
 
@@ -286,6 +291,20 @@ export function FiltersModal({
                   value={draft.cutoff_to}
                   onChange={(v) => set("cutoff_to", v ?? "")}
                   ariaLabel="Container cut-off to"
+                />
+              </div>
+            </Field>
+            <Field label="Doc Cut-off">
+              <div className="grid grid-cols-2 gap-3">
+                <DatePicker
+                  value={draft.doc_cutoff_from}
+                  onChange={(v) => set("doc_cutoff_from", v ?? "")}
+                  ariaLabel="Doc cut-off from"
+                />
+                <DatePicker
+                  value={draft.doc_cutoff_to}
+                  onChange={(v) => set("doc_cutoff_to", v ?? "")}
+                  ariaLabel="Doc cut-off to"
                 />
               </div>
             </Field>
