@@ -92,7 +92,9 @@ export type PlShipmentState = {
 export type PlShipmentHeader = {
   /** Etapa Port of Loading → `pol` (porto). */
   polGssId: number | null;
-  /** Etapa Consolidation Point, campo City → `city`. */
+  /** Etapa Consolidation Point, campo City → `city` E `cons_point` (13/11/2026:
+   *  no GSS o Consolidation Point é uma CIDADE; a nossa fábrica não tem par lá,
+   *  então vai a cidade dela). */
   cityGssId: number | null;
   /** Carrier do embarque (ou o da etapa Agents antes do Confirm) → `carrier`. */
   carrierGssId: number | null;
@@ -249,9 +251,12 @@ async function userEmail(db: DB, userId: string | null): Promise<string | null> 
  * apagar lá o que alguém preencheu direto no GSS. `customer_reference` e `pod`
  * iam só na criação; agora vão sempre.
  *
- * Fora por enquanto: `cons_point` (o GSS pede uma CIDADE e o nosso
- * Consolidation Point é uma fábrica), `bl_number`, `tracking_number`,
- * `inspection_no`, `notes` e `agents_note` (sem campo correspondente aqui).
+ * `cons_point` (13/11/2026): o GSS pede uma CIDADE e o nosso Consolidation Point
+ * é uma fábrica — vai a cidade da etapa unificada (a mesma do `city`). O GSS
+ * não grava mais o Consolidation Point no SOTWISE pela API (endpoint fechado).
+ *
+ * Fora por enquanto: `bl_number`, `tracking_number`, `inspection_no`, `notes`
+ * e `agents_note` (sem campo correspondente aqui).
  */
 export function headerBody(state: PlShipmentState): Record<string, unknown> {
   const h = state.header;
@@ -261,7 +266,10 @@ export function headerBody(state: PlShipmentState): Record<string, unknown> {
   if (state.podGssId !== null) body.pod = state.podGssId;
   if (!h) return body;
   if (h.polGssId !== null) body.pol = h.polGssId;
-  if (h.cityGssId !== null) body.city = h.cityGssId;
+  if (h.cityGssId !== null) {
+    body.cons_point = h.cityGssId;
+    body.city = h.cityGssId;
+  }
   if (h.carrierGssId !== null) body.carrier = h.carrierGssId;
   if (h.originAgentGssId !== null) body.origin_agent = h.originAgentGssId;
   if (h.destinationAgentGssId !== null) body.destination_agent = h.destinationAgentGssId;

@@ -5,7 +5,7 @@ import { SHIPMENT_STEPS } from "@/lib/checklist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveShipmentKey } from "@/domain/shipments/api-read";
 import { patchStepSchema } from "@/domain/shipments/api-schema";
-import { patchShipmentStep } from "@/domain/shipments/api-write";
+import { CLOSED_STEP_ERROR, isClosedApiStep, patchShipmentStep } from "@/domain/shipments/api-write";
 import type { ChecklistStep } from "@/types/database";
 
 /**
@@ -13,7 +13,7 @@ import type { ChecklistStep } from "@/types/database";
  *
  *   PATCH /api/shipments/{id}/steps/{step}
  *
- * `{step}`: consolidation_point, city, port_of_loading, shipping_docs, agents,
+ * `{step}`: shipment_plan, port_of_loading, shipping_docs, agents,
  * booking, loading_date (Pre-loading) | shipping_date, bl, original_docs,
  * inspection_report, eta_brazil, ata_brazil, delivered (Shipment — só depois
  * do Confirm Shipping). Mesmas regras das telas: "Completed on" não é futura e
@@ -27,6 +27,8 @@ type Ctx = { params: Promise<{ id: string; step: string }> };
 
 export async function PATCH(request: NextRequest, ctx: Ctx): Promise<Response> {
   const { id: key, step } = await ctx.params;
+  // Consolidation Point / City: fechados desde 13/11/2026 (vão ao GSS pelo webhook).
+  if (isClosedApiStep(step)) return json({ error: CLOSED_STEP_ERROR }, 405);
   // Etapa de Shipment = feature shipments (como a tela de Shipment); as do PL = pre_loading.
   const isShipmentStep = SHIPMENT_STEPS.includes(step as ChecklistStep);
   const auth = await authorize(isShipmentStep ? "shipments" : "pre_loading", "edit");

@@ -460,8 +460,8 @@ function buildSotwise(spec: Json): PmItem {
 
 const SCENARIOS = [
   resolve("docs/postman/SOTWISE-GSS-PO-PI-autocomplete.postman_collection.json"),
-  // 11/11/2026: GSS gravando o Consolidation Point (+ City) de um PL.
-  resolve("docs/postman/SOTWISE-GSS-consolidation-point.postman_collection.json"),
+  // O cenário "GSS grava o Consolidation Point" (11/11) saiu em 13/11/2026: o
+  // endpoint foi fechado (o SOTWISE é quem manda o cons_point ao GSS).
 ];
 
 function buildScenarios(): { folder: PmItem; variables: Json[] } {
