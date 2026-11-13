@@ -73,6 +73,8 @@ export type EtdFactoryRow = {
   last_updated: string | null;
   batch_status: BatchStatus;
   ready_parts: boolean;
+  /** Ready parts (13/11/2026): data real em que ficou pronto. */
+  ready_date: string | null;
   gap_of_ready: number | null;
   inspection: boolean;
   dispatch_location: string | null;
@@ -111,10 +113,10 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "shipment_req", label: "Shipment Req." },
   { id: "initial_date", label: "Initial Date" },
   { id: "current_date", label: "Current Date" },
+  { id: "ready_parts", label: "Ready Parts" },
   { id: "days_delay", label: "Days Delay" },
   { id: "last_updated", label: "Last Updated" },
   { id: "batch_status", label: "Status Batches" },
-  { id: "ready_parts", label: "Ready Parts" },
   { id: "gap_of_ready", label: "Gap of Ready" },
   { id: "inspection", label: "Insp." },
   { id: "dispatch_location", label: "Dispatch loc." },
@@ -124,6 +126,13 @@ const COLUMN_OPTIONS: ColumnOption[] = [
 const CARD_LABELS = labelsFromOptions(COLUMN_OPTIONS);
 
 const yesNo = (v: boolean) => (v ? "Yes" : "No");
+
+/**
+ * Ready Parts (13/11/2026) é a data real em que ficou pronto. Linha antiga com
+ * o sim/não marcado e sem data (Bubble/GSS) aparece como "Yes".
+ */
+const readyPartsText = (r: EtdFactoryRow) =>
+  r.ready_date ? formatDateNumeric(r.ready_date) : r.ready_parts ? "Yes" : "—";
 
 /** Colunas do Download XLSX — mesmo valor que cada célula mostra. */
 const XLSX_COLUMNS = xlsxColumns<EtdFactoryRow>(COLUMN_OPTIONS, {
@@ -138,7 +147,7 @@ const XLSX_COLUMNS = xlsxColumns<EtdFactoryRow>(COLUMN_OPTIONS, {
   days_delay: { value: (r) => r.days_delay },
   last_updated: { kind: "timestamp", value: (r) => r.last_updated },
   batch_status: { value: (r) => BATCH_STATUS_LABELS[r.batch_status] },
-  ready_parts: { value: (r) => yesNo(r.ready_parts) },
+  ready_parts: { value: (r) => (r.ready_date ? formatDateNumeric(r.ready_date) : r.ready_parts ? "Yes" : null) },
   gap_of_ready: { value: (r) => r.gap_of_ready },
   inspection: { value: (r) => yesNo(r.inspection) },
   dispatch_location: { value: (r) => r.dispatch_location },
@@ -358,6 +367,13 @@ export function EtdFactoriesClient({
         ),
       },
       {
+        accessorKey: "ready_parts",
+        header: ({ column }) => <SortableHeader label="Ready Parts" column={column} />,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-slate-600">{readyPartsText(row.original)}</span>
+        ),
+      },
+      {
         accessorKey: "days_delay",
         header: ({ column }) => <SortableHeader label="Days Delay" column={column} />,
         sortingFn: (a, b) => numOrMin(a.original.days_delay) - numOrMin(b.original.days_delay),
@@ -380,11 +396,6 @@ export function EtdFactoriesClient({
             BATCH_STATUS_LABELS[b.original.batch_status]
           ),
         cell: ({ row }) => <StatusPill label={BATCH_STATUS_LABELS[row.original.batch_status]} />,
-      },
-      {
-        accessorKey: "ready_parts",
-        header: ({ column }) => <SortableHeader label="Ready Parts" column={column} />,
-        cell: ({ row }) => (row.original.ready_parts ? "Yes" : "No"),
       },
       {
         accessorKey: "gap_of_ready",

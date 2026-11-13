@@ -26,8 +26,14 @@ export function daysDelay(
 }
 
 /**
- * Gap of Ready = hoje − ready_date. Só faz sentido nas linhas com `ready`
- * marcado; recalculado a cada leitura (nunca materializado no banco).
+ * Gap of Ready = hoje − Ready parts (a data real em que as peças ficaram
+ * prontas, `ready_date` — 13/11/2026). Sem data, não há gap (linha antiga
+ * marcada sem data fica vazia). `ready` acompanha a data em toda gravação.
+ * Recalculado a cada leitura (nunca materializado no banco).
+ *
+ * Conta DIAS DE CALENDÁRIO (o dia de hoje em São Paulo − a data): antes
+ * arredondava a diferença em horas e, depois do meio-dia UTC, somava um dia
+ * a mais (pronto em 11/11, visto em 13/11 à tarde = 3 em vez de 2).
  */
 export function gapOfReady(
   ready: boolean | null | undefined,
@@ -37,8 +43,17 @@ export function gapOfReady(
   if (!ready || !readyDate) return null;
   const parsed = Date.parse(readyDate);
   if (Number.isNaN(parsed)) return null;
-  return Math.round((todayMs - parsed) / DAY_MS);
+  const today = Date.parse(TODAY_FORMAT.format(new Date(todayMs)));
+  return Math.round((today - parsed) / DAY_MS);
 }
+
+/** "YYYY-MM-DD" do instante em São Paulo — o mesmo fuso padrão de lib/format. */
+const TODAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 /**
  * "Atrasado" na ETD = Days Delay > 0 (confirmado com o cliente em 13/08/2026,

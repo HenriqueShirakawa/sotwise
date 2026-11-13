@@ -80,6 +80,7 @@ export function buildEtdRows(list: EtdListRow[]): EtdFactoryRow[] {
     last_updated: r.last_updated,
     batch_status: r.batch_status,
     ready_parts: r.ready_parts,
+    ready_date: r.ready_date,
     gap_of_ready: gapOfReady(r.ready_parts, r.ready_date, todayMs),
     inspection: r.inspection,
     dispatch_location: r.dispatch_location,

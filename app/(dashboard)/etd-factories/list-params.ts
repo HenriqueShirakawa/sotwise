@@ -54,7 +54,8 @@ export const SORT_COLUMNS = {
   days_delay: ["days_delay"],
   last_updated: ["last_updated"],
   batch_status: ["batch_status_label"],
-  ready_parts: ["ready_parts"],
+  // Ready parts virou data (13/11/2026): ordena pela data; sem data, pelo sim/não.
+  ready_parts: ["ready_date", "ready_parts"],
   gap_of_ready: ["gap_of_ready"],
   inspection: ["inspection"],
   dispatch_location: ["dispatch_location"],

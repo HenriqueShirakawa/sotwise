@@ -86,6 +86,12 @@ export type GssEtdRead = {
   current_date: number | null;
   ready_parts: boolean;
   /**
+   * Ready parts (13/11/2026): data real em que as peças ficaram prontas, Unix
+   * (s) às 12:00 UTC. `null` sem data — inclusive linha antiga com
+   * `ready_parts` true que nunca recebeu data.
+   */
+  ready_date: number | null;
+  /**
    * `etd_info.is_active` — SÓ uma marca (13/10), não esconde nada. Linha ainda
    * sem etd_info sai `true` (o default da coluna).
    */
@@ -105,6 +111,7 @@ type OfcRow = {
     initial_date: DateStr | null;
     current_date: DateStr | null;
     ready: boolean;
+    ready_date: DateStr | null;
     is_active: boolean;
   }>;
 };
@@ -145,7 +152,7 @@ export async function listGssEtdEntries(
     .from("order_factory_category")
     .select(
       `id, factory_id, category_id, created_at, ${batchJoin}(batch_number, status), ` +
-        "orders!inner(po_number), etd_info(initial_date, current_date, ready, is_active)" +
+        "orders!inner(po_number), etd_info(initial_date, current_date, ready, ready_date, is_active)" +
         flagJoin,
       { count: "exact" }
     )
@@ -188,6 +195,7 @@ export async function listGssEtdEntries(
       initial_date: dayToUnix(etd?.initial_date),
       current_date: dayToUnix(etd?.current_date),
       ready_parts: etd?.ready ?? false,
+      ready_date: dayToUnix(etd?.ready_date),
       is_active: etd?.is_active ?? true,
     };
   });

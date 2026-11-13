@@ -195,6 +195,7 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   etd_initial_date: { label: "Initial date", kind: "text" },
   etd_current_date: { label: "ETD", kind: "text" },
   etd_ready: { label: "Ready", kind: "text" },
+  etd_ready_date: { label: "Ready parts", kind: "text" },
   etd_inspection: { label: "Inspection", kind: "text" },
   etd_dispatch_date: { label: "Dispatch date", kind: "text" },
 };
