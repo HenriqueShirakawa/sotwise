@@ -5,10 +5,12 @@ import { z } from "zod";
 
 import { apiDay, dayToUnix } from "@/lib/api-dates";
 import {
+  latestPiStatus,
   recordFxcDelivery,
   recordPiStatus,
   setOrderReceivedDate,
   type GssUser,
+  type PiStatusValue,
 } from "@/lib/checklist-revisions";
 
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
@@ -17,7 +19,7 @@ import { fail, type WriteResult } from "@/domain/api/write-result";
 import type { ChecklistRevisionKind, ChecklistRevisionSource, ChecklistStep } from "@/types/database";
 
 import { applyOrderItems } from "./api-write";
-import { gssOrderItemSchema } from "./gss-schema";
+import { gssOrderItemSchema, piStatusSchema } from "./gss-schema";
 import { userTodayIso } from "@/lib/user-time-zone";
 
 /**
@@ -45,6 +47,7 @@ export const isOrderApiStep = (s: string): s is OrderApiStep =>
   (ORDER_API_STEPS as readonly string[]).includes(s);
 
 const reason = z.string().trim().max(500, "reason is too long.").optional();
+const cancelReason = z.string().trim().max(2000, "cancel_reason is too long.").optional();
 
 /**
  * Quem fez a mudança no GSS (09/11/2026) — aparece no History da etapa como
@@ -79,15 +82,23 @@ export function normalizeChangedBy(raw: unknown): GssUser | null {
 /** Corpo do PATCH de cada etapa — campo desconhecido → 400. */
 export const orderStepPatchSchemas = {
   order: z.strictObject({ order_received_date: apiDay, reason, changed_by: changedBy }),
-  pi: z.strictObject({
-    /** true = PI emitida (conclui a etapa); false = ainda não (só grava). */
-    pi_status: z.boolean({ error: "pi_status must be true or false." }),
-    /** Ausente → hoje. */
-    pi_status_date: apiDay.optional(),
-    reason,
-    /** Usuário do GSS que mudou o status — vai pro History da etapa PI. */
-    changed_by: changedBy,
-  }),
+  pi: z
+    .strictObject({
+      /** true = PI emitida (conclui a etapa); false = ainda não (só grava);
+       *  "canceled" = apagada no GSS (reabre a etapa, 13/11/2026). */
+      pi_status: piStatusSchema,
+      /** Ausente → hoje. */
+      pi_status_date: apiDay.optional(),
+      /** Motivo do cancelamento (texto livre do GSS) — só com "canceled". */
+      cancel_reason: cancelReason,
+      reason,
+      /** Usuário do GSS que mudou o status — vai pro History da etapa PI. */
+      changed_by: changedBy,
+    })
+    .refine((v) => v.cancel_reason === undefined || v.pi_status === "canceled", {
+      message: 'cancel_reason only goes with pi_status "canceled".',
+      path: ["cancel_reason"],
+    }),
   po: z.strictObject({
     /** Linhas Factory × Category — as novas entram; as que já existem ficam. */
     items: z.array(gssOrderItemSchema).min(1, "Send at least one item."),
@@ -115,8 +126,10 @@ export type OrderStepRead = {
   done: boolean;
   /** O dado vigente da etapa. */
   order_received_date?: Unix | null;
-  pi_status?: boolean | null;
+  pi_status?: PiStatusValue | null;
   pi_status_date?: Unix | null;
+  /** PI cancelada no GSS: o motivo que veio (null nos outros status). */
+  cancel_reason?: string | null;
   /** PO: a data gravada pelo usuário no SOT ("Set date", 11/11/2026). */
   po_received_date?: Unix | null;
   /** PO: as Factory × Category ativas da order. */
@@ -173,8 +186,12 @@ export async function readOrderStep(
     if (oError) throw new Error(oError.message);
     if (step === "order") out.order_received_date = dayToUnix(order?.order_received_date ?? null);
     else {
-      out.pi_status = order?.pi_status ?? null;
+      // "canceled" (13/11/2026) mora na última revisão — no banco é `false`.
+      const last = await latestPiStatus(admin, row.id);
+      const canceled = last.status === "canceled";
+      out.pi_status = canceled ? "canceled" : (order?.pi_status ?? null);
       out.pi_status_date = dayToUnix(order?.pi_status_date ?? null);
+      out.cancel_reason = canceled ? last.reason : null;
     }
   } else {
     const { data: order, error: oError } = await admin
@@ -227,8 +244,15 @@ export async function patchOrderStep(
     const error = await setOrderReceivedDate(admin, orderId, order_received_date, who);
     if (error) return fail(400, error);
   } else if (step === "pi") {
-    const { pi_status, pi_status_date } = input as z.infer<typeof orderStepPatchSchemas.pi>;
-    const error = await recordPiStatus(admin, orderId, pi_status, pi_status_date ?? (await userTodayIso()), who);
+    const { pi_status, pi_status_date, cancel_reason } = input as z.infer<typeof orderStepPatchSchemas.pi>;
+    const error = await recordPiStatus(
+      admin,
+      orderId,
+      pi_status,
+      pi_status_date ?? (await userTodayIso()),
+      who,
+      { cancelReason: cancel_reason ?? null }
+    );
     if (error) return fail(400, error);
   } else {
     const { items } = input as z.infer<typeof orderStepPatchSchemas.po>;

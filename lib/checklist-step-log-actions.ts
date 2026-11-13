@@ -35,7 +35,7 @@ async function gssReceivedDateRevisions(admin: Admin, stepIds: string[]) {
 }
 
 const piStatusText = (v: unknown): string | null =>
-  v === true ? "Issued" : v === false ? "Not issued" : null;
+  v === true ? "Issued" : v === false ? "Not issued" : v === "canceled" ? "Canceled" : null;
 
 /** Revisão do GSS → as linhas de "o que mudou" do History. */
 function gssRevisionChanges(rev: {

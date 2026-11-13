@@ -107,13 +107,18 @@ export const orderChecklistFieldsIn = {
       "Order step: date the client's final order was received. The first one completes the step; later changes are kept as revisions (the original is never lost). Not nullable.",
   },
   pi_status: {
-    type: "boolean",
+    oneOf: [{ type: "boolean" }, { type: "string", enum: ["canceled"] }],
     description:
-      "PI step: `true` = PI issued in GSS (completes the step, Completed on = `pi_status_date`); `false` = not issued yet (recorded only; a completed step never reopens). Each later status/date is kept as a revision. Same status + date again → no-op.",
+      "PI step: `true` = PI issued in GSS (completes the step, Completed on = `pi_status_date`); `false` = not issued yet (recorded only; a completed step reopens); `\"canceled\"` = the PI was deleted in GSS (since 2026-11-13: reopens the step, shown as Canceled with `pi_cancel_reason`). Each later status/date is kept as a revision. Same status + date again → no-op.",
   },
   pi_status_date: {
     ...inDay,
     description: "Date of `pi_status` (default: today). Requires `pi_status`.",
+  },
+  pi_cancel_reason: {
+    type: "string",
+    maxLength: 2000,
+    description: "Why the PI was canceled/deleted in GSS (free text, optional). Only with `pi_status: \"canceled\"`; shown on the PI step.",
   },
   revision_reason: {
     type: "string",
@@ -796,7 +801,7 @@ export const integrationSchemas = {
       client_reference: { type: ["string", "null"] },
       date_po: nullableDate,
       order_received_date: { ...nullableDate, description: "Order step — current value (after revisions)." },
-      pi_status: { type: ["boolean", "null"], description: "PI step — last status received from GSS (`true` = PI issued)." },
+      pi_status: { type: ["boolean", "null"], description: "PI step — last status received from GSS (`true` = PI issued). A canceled PI reads `false` here; `GET /api/orders/{id}/steps/pi` shows `"canceled"` + `cancel_reason`." },
       pi_status_date: nullableDate,
       order_type: ref("LibraryRefNamed"),
       client: ref("LibraryRefNamed"),

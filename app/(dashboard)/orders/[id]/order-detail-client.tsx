@@ -201,8 +201,11 @@ type OrderDetail = {
   /** Etapa PO: data gravada pelo usuário ("Set date", 11/11/2026). */
   po_received_date: string | null;
   /** Etapa PI: último status vindo do GSS (true = emitida) + data. */
-  pi_status: boolean | null;
+  /** "canceled" = PI apagada no GSS (13/11/2026). */
+  pi_status: boolean | "canceled" | null;
   pi_status_date: string | null;
+  /** Motivo que o GSS mandou ao cancelar a PI. */
+  pi_cancel_reason: string | null;
   /** Etapa Deposit Payment: data em que o cliente depositou (a vigente). */
   deposit_date: string | null;
   /** Etapa Balance Payment: data em que o cliente pagou o saldo (22/10/2026). */
@@ -622,26 +625,35 @@ function PreLoadingBatchesTable({ batches }: { batches: BatchRow[] }) {
 function PiStatusField({
   status,
   date,
+  cancelReason,
   revisions,
   onOpen,
 }: {
-  status: boolean | null;
+  status: boolean | "canceled" | null;
   date: string | null;
+  cancelReason: string | null;
   revisions: number;
   onOpen: () => void;
 }) {
+  const canceled = status === "canceled";
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-white px-3 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">PI status (GSS)</p>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-800">
+          <span className={`text-sm font-medium ${canceled ? "text-red-600" : "text-slate-800"}`}>
             {status === null
               ? "Not received yet"
               : `${piStatusLabel(status)} · ${formatDateNumeric(date)}`}
           </span>
           <RevisionBadge count={revisions} onClick={onOpen} />
         </div>
+        {/* PI apagada no GSS: o motivo que veio de lá (13/11/2026). */}
+        {canceled && cancelReason && (
+          <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">
+            <span className="font-medium">Reason:</span> {cancelReason}
+          </p>
+        )}
       </div>
       {status !== null && (
         <Button type="button" variant="ghost" size="sm" onClick={onOpen}>
@@ -1310,6 +1322,7 @@ export function OrderDetailClient({
                         <PiStatusField
                           status={order.pi_status}
                           date={order.pi_status_date}
+                          cancelReason={order.pi_cancel_reason}
                           revisions={s.revision_count}
                           onOpen={() => setRevisionsFor(s)}
                         />

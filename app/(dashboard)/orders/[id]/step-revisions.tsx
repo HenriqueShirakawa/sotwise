@@ -105,12 +105,19 @@ const KIND_LABELS: Record<StepRevision["kind"], string> = {
   balance_date: "Balance date",
 };
 
-/** Status da PI (boolean desde 22/10/2026) como aparece na tela. */
-export const piStatusLabel = (status: boolean) => (status ? "Issued" : "Not issued");
+/** Status da PI (boolean desde 22/10/2026; "canceled" desde 13/11) como aparece na tela. */
+export const piStatusLabel = (status: boolean | "canceled") =>
+  status === "canceled" ? "Canceled" : status ? "Issued" : "Not issued";
 
 /** Status do histórico; texto livre de antes de 22/10 conta como emitida. */
 const piStatusOf = (v: unknown): string | null =>
-  typeof v === "boolean" ? piStatusLabel(v) : typeof v === "string" && v ? piStatusLabel(true) : null;
+  v === "canceled"
+    ? piStatusLabel("canceled")
+    : typeof v === "boolean"
+      ? piStatusLabel(v)
+      : typeof v === "string" && v
+        ? piStatusLabel(true)
+        : null;
 
 type FxcItem = { factory: string; category: string };
 

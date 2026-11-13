@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { TRIGGER_COMPLETED_STEPS } from "@/lib/checklist-completion";
-import { summarizeRevisionsByStep } from "@/lib/checklist-revisions";
+import { latestPiStatus, summarizeRevisionsByStep } from "@/lib/checklist-revisions";
 import { requireFeature } from "@/lib/dal";
 import { fetchAll } from "@/lib/fetch-all";
 import { isUuid } from "@/lib/slugs";
@@ -162,6 +162,11 @@ export default async function OrderDetailPage({
     admin,
     stepRows.filter((s) => TRIGGER_COMPLETED_STEPS.has(s.step)).map((s) => s.id)
   );
+  // PI cancelada no GSS (13/11/2026): o "canceled" e o motivo moram na última
+  // revisão (no banco o status fica `false`).
+  const piStep = stepByKey.get("pi");
+  const piLatest = piStep ? await latestPiStatus(admin, piStep.id) : null;
+  const piCanceled = piLatest?.status === "canceled";
 
   const steps: ChecklistStepRow[] = STEP_ORDER.filter((key) => stepByKey.has(key)).map(
     (key) => {
@@ -296,8 +301,9 @@ export default async function OrderDetailPage({
           date_po: order.date_po,
           order_received_date: order.order_received_date,
           po_received_date: order.po_received_date,
-          pi_status: order.pi_status,
+          pi_status: piCanceled ? "canceled" : order.pi_status,
           pi_status_date: order.pi_status_date,
+          pi_cancel_reason: piCanceled ? (piLatest?.reason ?? null) : null,
           deposit_date: order.deposit_date,
           balance_date: order.balance_date,
           status: order.status,
