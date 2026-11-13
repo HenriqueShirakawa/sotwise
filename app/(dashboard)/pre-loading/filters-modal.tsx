@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchSelect } from "@/components/search-select";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -34,6 +41,8 @@ export type PreLoadingFilters = {
   loading_to: string;
   cutoff_from: string;
   cutoff_to: string;
+  /** Booking Status (card "Filtro novo na lista de PL", 13/11/2026): "" = todos. */
+  booking: "" | "yes" | "no";
 };
 
 export const EMPTY_FILTERS: PreLoadingFilters = {
@@ -51,6 +60,7 @@ export const EMPTY_FILTERS: PreLoadingFilters = {
   loading_to: "",
   cutoff_from: "",
   cutoff_to: "",
+  booking: "",
 };
 
 export function activeFilterCount(filters: PreLoadingFilters): number {
@@ -229,6 +239,24 @@ export function FiltersModal({
                 options={factories}
                 placeholder="Enter consolidation point"
               />
+            </Field>
+          </Section>
+
+          <Section title="Booking">
+            <Field label="Booking Status">
+              <Select
+                value={draft.booking || "all"}
+                onValueChange={(v) => set("booking", v === "all" ? "" : (v as "yes" | "no"))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose one..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="yes">Yes</SelectItem>
+                  <SelectItem value="no">No</SelectItem>
+                </SelectContent>
+              </Select>
             </Field>
           </Section>
 
