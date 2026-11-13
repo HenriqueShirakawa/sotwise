@@ -80,6 +80,33 @@ export type PlShipmentState = {
   /** `gss_id` dos lotes do PL (os que vieram do GSS). Ausente = não enviar
    *  `batch_ids` (o CLI push-pl-shipments monta os lotes por conta própria). */
   batchGssIds?: number[];
+  /** Cabeçalho do embarque (13/11/2026) — ver headerBody. Ausente = não manda. */
+  header?: PlShipmentHeader;
+};
+
+/**
+ * Cabeçalho do PL/Shipment que o GSS passou a aceitar (13/11/2026: o PL 1519
+ * estava com tudo isso `null` lá). Cadastro vai pelo `gss_id` (sem vínculo =
+ * `null` aqui = não vai); pessoa vai pelo e-mail.
+ */
+export type PlShipmentHeader = {
+  /** Etapa Port of Loading → `pol` (porto). */
+  polGssId: number | null;
+  /** Etapa Consolidation Point, campo City → `city`. */
+  cityGssId: number | null;
+  /** Carrier do embarque (ou o da etapa Agents antes do Confirm) → `carrier`. */
+  carrierGssId: number | null;
+  /** Etapa Agents: China → `origin_agent`; Brasil → `destination_agent`. */
+  originAgentGssId: number | null;
+  destinationAgentGssId: number | null;
+  /** Leader/Signer do embarque (antes do Confirm, os do PL) → `*_email`. */
+  leaderEmail: string | null;
+  signerEmail: string | null;
+};
+
+const toGssId = (v: string | null | undefined): number | null => {
+  const n = Number(v);
+  return v && Number.isInteger(n) && n > 0 ? n : null;
 };
 
 export async function loadPlShipmentState(
@@ -88,13 +115,15 @@ export async function loadPlShipmentState(
 ): Promise<{ state: PlShipmentState } | { skip: string }> {
   const { data: pl, error } = await db
     .from("pre_loadings")
-    .select("id, pl_number, client_reference, deleted_at, pods(gss_id)")
+    .select("id, pl_number, client_reference, deleted_at, leader_id, responsible_signer_id, pods(gss_id)")
     .eq("id", preLoadingId)
     .maybeSingle<{
       id: string;
       pl_number: string;
       client_reference: string | null;
       deleted_at: string | null;
+      leader_id: string | null;
+      responsible_signer_id: string | null;
       pods: { gss_id: string | null } | null;
     }>();
   if (error) throw new Error(`pre_loadings: ${error.message}`);
@@ -105,11 +134,23 @@ export async function loadPlShipmentState(
 
   const { data: shipment, error: shipmentError } = await db
     .from("shipments")
-    .select("status, shipment_models(name)")
+    .select("status, leader_id, signer_id, shipment_models(name), carriers(gss_id)")
     .eq("pre_loading_id", preLoadingId)
     .is("deleted_at", null)
-    .maybeSingle<{ status: string; shipment_models: { name: string } | null }>();
+    .maybeSingle<{
+      status: string;
+      leader_id: string | null;
+      signer_id: string | null;
+      shipment_models: { name: string } | null;
+      carriers: { gss_id: string | null } | null;
+    }>();
   if (shipmentError) throw new Error(`shipments: ${shipmentError.message}`);
+
+  const header = await loadHeader(db, preLoadingId, {
+    shipmentCarrierGssId: toGssId(shipment?.carriers?.gss_id),
+    leaderId: shipment?.leader_id ?? pl.leader_id,
+    signerId: shipment?.signer_id ?? pl.responsible_signer_id,
+  });
 
   const { data: steps, error: stepsError } = await db
     .from("pre_loading_checklist_steps")
@@ -150,6 +191,7 @@ export async function loadPlShipmentState(
       plNumber,
       clientReference: pl.client_reference,
       podGssId: Number.isFinite(podGssId) ? podGssId : null,
+      header,
       shipmentStatus: shipment?.status ?? null,
       // Só existe depois do Confirm Loading; antes não se manda nada.
       shipmentModel: shipment ? (shipment.shipment_models?.name?.trim() || null) : undefined,
@@ -157,6 +199,94 @@ export async function loadPlShipmentState(
       batchGssIds,
     },
   };
+}
+
+async function loadHeader(
+  db: DB,
+  preLoadingId: string,
+  from: { shipmentCarrierGssId: number | null; leaderId: string | null; signerId: string | null }
+): Promise<PlShipmentHeader> {
+  type Ref = { gss_id: string | null } | null;
+  const { data: steps, error } = await db
+    .from("pre_loading_checklist_steps")
+    .select(
+      "step, pols(gss_id), cities(gss_id), carriers(gss_id), " +
+        "agent_china:agents!pre_loading_checklist_steps_agent_china_id_fkey(gss_id), " +
+        "agent_brazil:agents!pre_loading_checklist_steps_agent_brazil_id_fkey(gss_id)"
+    )
+    .eq("pre_loading_id", preLoadingId)
+    .in("step", ["port_of_loading", "consolidation_point", "city", "agents"])
+    .returns<{ step: string; pols: Ref; cities: Ref; carriers: Ref; agent_china: Ref; agent_brazil: Ref }[]>();
+  if (error) throw new Error(`pre_loading_checklist_steps (cabeçalho): ${error.message}`);
+  const byStep = new Map((steps ?? []).map((s) => [s.step, s]));
+  const agents = byStep.get("agents");
+
+  return {
+    polGssId: toGssId(byStep.get("port_of_loading")?.pols?.gss_id),
+    // A City mora na etapa Consolidation Point desde 11/11; "city" é a etapa antiga.
+    cityGssId:
+      toGssId(byStep.get("consolidation_point")?.cities?.gss_id) ??
+      toGssId(byStep.get("city")?.cities?.gss_id),
+    carrierGssId: from.shipmentCarrierGssId ?? toGssId(agents?.carriers?.gss_id),
+    originAgentGssId: toGssId(agents?.agent_china?.gss_id),
+    destinationAgentGssId: toGssId(agents?.agent_brazil?.gss_id),
+    leaderEmail: await userEmail(db, from.leaderId),
+    signerEmail: await userEmail(db, from.signerId),
+  };
+}
+
+/** E-mail de login do usuário (auth.users) — o GSS casa pessoa por e-mail. */
+async function userEmail(db: DB, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const { data, error } = await db.auth.admin.getUserById(userId);
+  if (error) return null;
+  return data.user?.email?.trim().toLowerCase() || null;
+}
+
+/**
+ * 4º PATCH: o cabeçalho (13/11/2026). Só vai o que temos E sabemos traduzir
+ * para o GSS — vazio aqui ou cadastro sem `gss_id` fica de fora, para não
+ * apagar lá o que alguém preencheu direto no GSS. `customer_reference` e `pod`
+ * iam só na criação; agora vão sempre.
+ *
+ * Fora por enquanto: `cons_point` (o GSS pede uma CIDADE e o nosso
+ * Consolidation Point é uma fábrica), `bl_number`, `tracking_number`,
+ * `inspection_no`, `notes` e `agents_note` (sem campo correspondente aqui).
+ */
+export function headerBody(state: PlShipmentState): Record<string, unknown> {
+  const h = state.header;
+  const body: Record<string, unknown> = {};
+  const ref = state.clientReference?.trim();
+  if (ref) body.customer_reference = ref.slice(0, 100);
+  if (state.podGssId !== null) body.pod = state.podGssId;
+  if (!h) return body;
+  if (h.polGssId !== null) body.pol = h.polGssId;
+  if (h.cityGssId !== null) body.city = h.cityGssId;
+  if (h.carrierGssId !== null) body.carrier = h.carrierGssId;
+  if (h.originAgentGssId !== null) body.origin_agent = h.originAgentGssId;
+  if (h.destinationAgentGssId !== null) body.destination_agent = h.destinationAgentGssId;
+  if (h.leaderEmail) body.leader_email = h.leaderEmail;
+  if (h.signerEmail) body.signer_email = h.signerEmail;
+  return body;
+}
+
+/**
+ * Envia o cabeçalho. O GSS desfaz o request inteiro quando recusa um campo
+ * (e-mail que não existe lá, id apagado…): no 400 com erro por campo, tira
+ * esses campos e manda o resto UMA vez — o recusado fica no log de chamadas.
+ */
+async function pushHeader(state: PlShipmentState, ctx: { source: string; ref: string }): Promise<void> {
+  const body = headerBody(state);
+  if (!Object.keys(body).length) return;
+  const path = `/shipments/${state.plNumber}/`;
+  const first = await gssRequest("PATCH", path, body, ctx);
+  if (first.kind !== "permanent" || first.status !== 400) return;
+  const errors = first.data as Record<string, unknown> | null;
+  if (!errors || typeof errors !== "object") return;
+  const rest = Object.fromEntries(Object.entries(body).filter(([k]) => !(k in errors)));
+  if (Object.keys(rest).length && Object.keys(rest).length < Object.keys(body).length) {
+    await gssRequest("PATCH", path, rest, ctx);
+  }
 }
 
 /**
@@ -226,7 +356,14 @@ export type GssCall = { method: "PATCH" | "POST"; path: string; body: Record<str
 export type PlShipmentPush =
   | { outcome: "skipped"; reason: string }
   /** Modo dry: o que seria enviado, sem chamar o GSS. */
-  | { outcome: "planned"; patch: GssCall; meta: GssCall | null; createIfMissing: GssCall | null }
+  | {
+      outcome: "planned";
+      patch: GssCall;
+      meta: GssCall | null;
+      createIfMissing: GssCall | null;
+      /** 4º PATCH (cabeçalho), quando há o que mandar. */
+      header?: GssCall | null;
+    }
   /** A chamada principal (datas, ou o POST de criação) e o que o GSS respondeu;
    *  `meta` é o 2º PATCH (status + lotes), quando houve. */
   | {
@@ -273,7 +410,16 @@ export async function pushPlShipment(
     ? { method: "POST", path: "/shipments/", body: createBody(state, status) }
     : null;
 
-  if (opts.dry) return { outcome: "planned", patch, meta, createIfMissing: create };
+  if (opts.dry) {
+    const headerFields = headerBody(state);
+    return {
+      outcome: "planned",
+      patch,
+      meta,
+      createIfMissing: create,
+      header: Object.keys(headerFields).length ? { method: "PATCH", path, body: headerFields } : null,
+    };
+  }
 
   const patched = await gssRequest(patch.method, patch.path, patch.body, ctx);
   if (!(patched.kind === "permanent" && patched.status === 404)) {
@@ -284,6 +430,7 @@ export async function pushPlShipment(
     }
     const metaResult = await gssRequest(meta.method, meta.path, meta.body, ctx);
     await pushShipmentModel(state, ctx);
+    await pushHeader(state, ctx);
     return {
       outcome: "called",
       call: patch,
