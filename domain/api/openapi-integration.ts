@@ -801,7 +801,7 @@ export const integrationSchemas = {
       client_reference: { type: ["string", "null"] },
       date_po: nullableDate,
       order_received_date: { ...nullableDate, description: "Order step — current value (after revisions)." },
-      pi_status: { type: ["boolean", "null"], description: "PI step — last status received from GSS (`true` = PI issued). A canceled PI reads `false` here; `GET /api/orders/{id}/steps/pi` shows `"canceled"` + `cancel_reason`." },
+      pi_status: { type: ["boolean", "null"], description: "PI step — last status received from GSS (`true` = PI issued). A canceled PI reads `false` here; `GET /api/orders/{id}/steps/pi` shows `\"canceled\"` + `cancel_reason`." },
       pi_status_date: nullableDate,
       order_type: ref("LibraryRefNamed"),
       client: ref("LibraryRefNamed"),
