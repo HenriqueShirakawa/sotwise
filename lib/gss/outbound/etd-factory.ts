@@ -9,7 +9,10 @@
  *   Category   → category      (`categories.gss_id`; idem)
  *   Initial    → initial_date  (Unix s, 12:00Z — mesma regra das datas do PL)
  *   Current    → current_date
- *   Ready?     → ready_parts
+ *   Ready parts→ ready_parts   (13/11/2026 a tela guarda a DATA em que ficou
+ *                               pronto; o GSS só tem o sim/não — vai `ready`,
+ *                               que acompanha a data. Quando o GSS criar um campo
+ *                               de data, mandar `etd_info.ready_date` aqui.)
  *
  * Insp., Dispatch loc. e Dispatch date não têm campo no GSS e não vão.
  *

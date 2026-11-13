@@ -26,8 +26,10 @@ export function daysDelay(
 }
 
 /**
- * Gap of Ready = hoje − ready_date. Só faz sentido nas linhas com `ready`
- * marcado; recalculado a cada leitura (nunca materializado no banco).
+ * Gap of Ready = hoje − Ready parts (a data real em que as peças ficaram
+ * prontas, `ready_date` — 13/11/2026). Sem data, não há gap (linha antiga
+ * marcada sem data fica vazia). `ready` acompanha a data em toda gravação.
+ * Recalculado a cada leitura (nunca materializado no banco).
  *
  * Conta DIAS DE CALENDÁRIO (o dia de hoje em São Paulo − a data): antes
  * arredondava a diferença em horas e, depois do meio-dia UTC, somava um dia

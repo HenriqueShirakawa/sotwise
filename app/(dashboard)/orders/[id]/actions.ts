@@ -514,7 +514,7 @@ export async function deleteStepAttachment(
  */
 const ETD_AUDITED_PATCH_FIELDS = [
   "inspection",
-  "ready",
+  "ready_date",
   "initial_date",
   "dispatch_location_id",
   "dispatch_date",
@@ -524,11 +524,33 @@ type EtdLogValues = {
   initial_date?: string | null;
   current_date?: string | null;
   ready?: boolean | null;
+  ready_date?: string | null;
   inspection?: boolean | null;
   dispatch_date?: string | null;
 };
 
-const ETD_STEP_LOG_FIELDS = ["initial_date", "current_date", "ready", "inspection", "dispatch_date"] as const;
+const ETD_STEP_LOG_FIELDS = [
+  "initial_date",
+  "current_date",
+  "ready",
+  "ready_date",
+  "inspection",
+  "dispatch_date",
+] as const;
+
+/**
+ * Ready parts (13/11/2026): a data REAL em que as peças ficaram prontas. Só
+ * depois do Initial Date e nunca no futuro. Retorna a mensagem de erro ou null.
+ */
+async function readyDateError(
+  readyDate: string | null,
+  initialDate: string | null | undefined
+): Promise<string | null> {
+  if (!readyDate) return null;
+  if (!initialDate) return "Fill in the Initial Date before Ready parts.";
+  if (readyDate > (await userTodayIso())) return "Ready parts can't be a future date.";
+  return null;
+}
 
 /**
  * Mudanças numa linha do ETD também entram no History da etapa ETD (QA do card
@@ -582,17 +604,19 @@ async function logEtdOnStep(
 
 /**
  * Upsert dos dados de ETD de UMA entrada Factory x Category (linha da etapa
- * ETD). `current_date`/`ready_date` são preenchidos automaticamente na
- * primeira vez que `initial_date`/`ready` são setados (ver docs/regras_de_negocio.md §3.7.4).
- * Assim como o modal, grava histórico — aqui sem motivo declarado, marcado
- * como `source: "row"`.
+ * ETD). `current_date` é preenchido automaticamente na primeira vez que
+ * `initial_date` é setado (ver docs/regras_de_negocio.md §3.7.4).
+ * Ready parts (13/11/2026) é a data real em que ficou pronto: na linha só se
+ * preenche uma vez (depois do Initial Date) e marca `ready`; trocar é pelo
+ * modal, com motivo. Assim como o modal, grava histórico — aqui sem motivo
+ * declarado, marcado como `source: "row"`.
  */
 export async function upsertEtdInfo(
   orderId: string,
   ofcId: string,
   patch: {
     inspection?: boolean;
-    ready?: boolean;
+    ready_date?: string | null;
     initial_date?: string | null;
     dispatch_location_id?: string | null;
     dispatch_date?: string | null;
@@ -611,9 +635,19 @@ export async function upsertEtdInfo(
     .eq("order_factory_category_id", ofcId)
     .maybeSingle();
 
-  // Ready/Inspection só vão de não-marcado pra marcado — uma vez true, travam.
-  if (patch.ready !== undefined && existing?.ready) {
-    return { ok: false, error: "Ready is already locked." };
+  // Ready parts: na linha só preenche (uma vez); trocar ou limpar é pelo
+  // "ETD update", com motivo. Linha antiga com Ready marcado e SEM data (veio
+  // do Bubble/GSS) ainda pode receber a data aqui.
+  if (patch.ready_date !== undefined) {
+    if (existing?.ready_date) {
+      return { ok: false, error: "Ready parts is already set. Change it in ETD update, with a reason." };
+    }
+    if (!patch.ready_date) return { ok: false, error: "Select the Ready parts date." };
+    const readyError = await readyDateError(
+      patch.ready_date,
+      patch.initial_date ?? existing?.initial_date
+    );
+    if (readyError) return { ok: false, error: readyError };
   }
   if (patch.inspection !== undefined && existing?.inspection) {
     return { ok: false, error: "Inspection is already locked." };
@@ -633,9 +667,8 @@ export async function upsertEtdInfo(
   if (patch.initial_date && !existing?.current_date) {
     update.current_date = patch.initial_date;
   }
-  if (patch.ready === true && !existing?.ready_date) {
-    update.ready_date = await userTodayIso();
-  }
+  // `ready` (o sim/não que o GSS recebe) acompanha a data.
+  if (patch.ready_date) update.ready = true;
 
   const { data: saved, error } = await admin
     .from("etd_info")
@@ -664,7 +697,7 @@ export async function upsertEtdInfo(
   revalidatePath("/etd-factories");
   await broadcastEtdPing({ order_ids: [orderId] });
   // Inspection e Dispatch não têm campo no GSS — só datas e Ready vão.
-  if (patch.initial_date !== undefined || patch.ready !== undefined) sendEtdToGss([ofcId]);
+  if (patch.initial_date !== undefined || patch.ready_date !== undefined) sendEtdToGss([ofcId]);
   return { ok: true };
 }
 
@@ -741,6 +774,15 @@ export async function updateEtdInfoWithReason(
   if (field === "ready" && value === true && !existing?.ready_date) {
     update.ready_date = await userTodayIso();
   }
+  // Ready parts (13/11/2026): trocar a data ou limpar, sempre com motivo.
+  // `ready` acompanha — sem data, as peças deixam de contar como prontas.
+  if (field === "ready_date") {
+    const readyDate = typeof value === "string" && value ? value : null;
+    const readyError = await readyDateError(readyDate, existing?.initial_date);
+    if (readyError) return { ok: false, error: readyError };
+    update.ready_date = readyDate;
+    update.ready = readyDate !== null;
+  }
 
   const { data: saved, error } = await admin
     .from("etd_info")
@@ -759,7 +801,7 @@ export async function updateEtdInfoWithReason(
   revalidatePath("/orders");
   revalidatePath("/etd-factories");
   await broadcastEtdPing({ order_ids: [orderId] });
-  if (field === "current_date" || field === "ready") sendEtdToGss([ofcId]);
+  if (field === "current_date" || field === "ready" || field === "ready_date") sendEtdToGss([ofcId]);
   return { ok: true };
 }
 

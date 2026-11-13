@@ -10,6 +10,7 @@ export type EtdHistorySnapshot = {
   field:
     | "current_date"
     | "ready"
+    | "ready_date"
     | "inspection"
     | "initial_date"
     | "dispatch_location_id"
@@ -22,6 +23,11 @@ export type EtdHistorySnapshot = {
   source?: "modal" | "row" | "api";
   inspection: boolean;
   ready: boolean;
+  /**
+   * Ready parts (13/11/2026): data real em que as peças ficaram prontas.
+   * Ausente nas linhas gravadas antes disso.
+   */
+  ready_date?: string | null;
   remarks: string | null;
   initial_date: string | null;
   current_date: string | null;
@@ -34,6 +40,7 @@ export type EtdSavedState = {
   id: string;
   inspection: boolean;
   ready: boolean;
+  ready_date: string | null;
   remarks: string | null;
   initial_date: string | null;
   current_date: string | null;
@@ -42,7 +49,7 @@ export type EtdSavedState = {
 };
 
 export const ETD_SAVED_COLUMNS =
-  "id, inspection, ready, remarks, initial_date, current_date, dispatch_location_id, dispatch_date";
+  "id, inspection, ready, ready_date, remarks, initial_date, current_date, dispatch_location_id, dispatch_date";
 
 /**
  * Grava uma linha de `etd_history` por campo alterado, com o snapshot completo
@@ -78,6 +85,7 @@ export async function writeEtdHistory(
         source,
         inspection: saved.inspection,
         ready: saved.ready,
+        ready_date: saved.ready_date,
         remarks: saved.remarks,
         initial_date: saved.initial_date,
         current_date: saved.current_date,

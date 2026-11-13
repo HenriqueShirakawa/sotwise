@@ -4,7 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 import { ArrowUpDown, ArrowUpRight, Eye } from "lucide-react";
 import { toast } from "sonner";
 
-import { formatDateNumeric, formatDateTime } from "@/lib/format";
+import { formatDateNumeric, formatDateTime, todayIso } from "@/lib/format";
 import { SearchSelect } from "@/components/search-select";
 import { DatePicker } from "@/components/date-picker";
 import { Button } from "@/components/ui/button";
@@ -52,9 +52,11 @@ const EMPTY_ETD: EtdInfoRow = {
 
 // Initial Date não entra: é a data original prometida pela fábrica e não se
 // corrige depois de preenchida (06/11/2026). Mudança de prazo vai no Current Date.
+// Ready parts (13/11/2026) virou data — a real em que as peças ficaram prontas —
+// e se troca por aqui, com motivo, como o Current Date.
 const EDITABLE_FIELDS = [
   { value: "current_date", label: "Current Date" },
-  { value: "ready", label: "Ready" },
+  { value: "ready_date", label: "Ready parts" },
   { value: "inspection", label: "Inspection" },
   { value: "dispatch_location_id", label: "Dispatch Location" },
   { value: "dispatch_date", label: "Dispatch Date" },
@@ -66,6 +68,7 @@ type FieldKey = (typeof EDITABLE_FIELDS)[number]["value"];
 const HISTORY_FIELD_LABELS: Record<string, string> = {
   current_date: "Current Date",
   ready: "Ready",
+  ready_date: "Ready parts",
   inspection: "Inspection",
   initial_date: "Initial Date",
   dispatch_location_id: "Dispatch Location",
@@ -77,12 +80,12 @@ const ETD_PAGE_SIZE = 10;
 
 type EtdSortKey =
   | "inspection"
-  | "ready"
   | "factory"
   | "category"
   | "batch"
   | "initial_date"
   | "current_date"
+  | "ready_date"
   | "dispatch_location"
   | "dispatch_date";
 
@@ -151,6 +154,15 @@ function ChangedCell({ field, source }: { field: string; source?: "modal" | "row
   );
 }
 
+/**
+ * Ready parts no histórico: a data quando há; linha antiga (só o sim/não, sem
+ * data) mostra "Yes".
+ */
+function readyPartsText(h: { ready: boolean; ready_date?: string | null }): string {
+  if (h.ready_date) return formatDateNumeric(h.ready_date);
+  return h.ready ? "Yes" : "—";
+}
+
 /** Campo do histórico em formato card (só abaixo de sm). */
 function HistoryField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -211,13 +223,15 @@ function EtdUpdateModal({
     }
   }
 
-  const canSave = !!row && !!field && remarks.trim() !== "";
+  // Ready parts só depois do Initial Date (13/11/2026).
+  const readyBlocked = field === "ready_date" && !etd.initial_date;
+  const canSave = !!row && !!field && remarks.trim() !== "" && !readyBlocked;
 
   function selectField(next: FieldKey) {
     setField(next);
-    if (next === "ready") setBoolValue(etd.ready);
-    else if (next === "inspection") setBoolValue(etd.inspection);
+    if (next === "inspection") setBoolValue(etd.inspection);
     else if (next === "current_date") setDateValue(etd.current_date ?? "");
+    else if (next === "ready_date") setDateValue(etd.ready_date ?? "");
     else if (next === "dispatch_date") setDateValue(etd.dispatch_date ?? "");
     else if (next === "dispatch_location_id") setLocationId(etd.dispatch_location_id ?? "");
   }
@@ -225,7 +239,7 @@ function EtdUpdateModal({
   function save() {
     if (!row || !field) return;
     const value: string | boolean | null =
-      field === "ready" || field === "inspection"
+      field === "inspection"
         ? boolValue
         : field === "dispatch_location_id"
           ? locationId || null
@@ -298,14 +312,32 @@ function EtdUpdateModal({
                   className="mt-1.5 bg-white"
                 />
               </div>
-            ) : field === "ready" || field === "inspection" ? (
+            ) : field === "ready_date" ? (
+              <div>
+                <Label className="text-foreground">Ready parts</Label>
+                {/* A data real em que as peças ficaram prontas: nunca no futuro.
+                    Limpar volta a linha para "não pronta". */}
+                <DatePicker
+                  value={dateValue}
+                  onChange={(v) => setDateValue(v ?? "")}
+                  disabled={readyBlocked}
+                  max={todayIso()}
+                  className="mt-1.5 bg-white"
+                />
+                {readyBlocked && (
+                  <p className="mt-1.5 text-xs text-destructive">
+                    Fill in the Initial Date before Ready parts.
+                  </p>
+                )}
+              </div>
+            ) : field === "inspection" ? (
               <div>
                 <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm">
                   <Checkbox
                     checked={boolValue}
                     onCheckedChange={(checked) => setBoolValue(!!checked)}
                   />
-                  {field === "ready" ? "Ready" : "Inspection"}
+                  Inspection
                 </label>
               </div>
             ) : field === "dispatch_location_id" ? (
@@ -367,15 +399,13 @@ function EtdUpdateModal({
                       <HistoryField label="Insp.">
                         <Checkbox checked={h.inspection} disabled className="disabled:opacity-100" />
                       </HistoryField>
-                      <HistoryField label="Ready?">
-                        <Checkbox checked={h.ready} disabled className="disabled:opacity-100" />
-                      </HistoryField>
                       <HistoryField label="Initial date">
                         {formatDateNumeric(h.initial_date)}
                       </HistoryField>
                       <HistoryField label="Current date">
                         {formatDateNumeric(h.current_date)}
                       </HistoryField>
+                      <HistoryField label="Ready parts">{readyPartsText(h)}</HistoryField>
                       <HistoryField label="Dispatch lo.">
                         {h.dispatch_location_name ?? "—"}
                       </HistoryField>
@@ -396,12 +426,12 @@ function EtdUpdateModal({
                 <TableRow>
                   <TableHead>Changed</TableHead>
                   <TableHead>Insp.</TableHead>
-                  <TableHead>Ready?</TableHead>
                   <TableHead>Remarks</TableHead>
                   <TableHead>Factory</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Initial date</TableHead>
                   <TableHead>Current date</TableHead>
+                  <TableHead>Ready parts</TableHead>
                   <TableHead>Dispatch lo.</TableHead>
                   <TableHead>Dispatch da.</TableHead>
                   <TableHead>Date/Time</TableHead>
@@ -430,15 +460,13 @@ function EtdUpdateModal({
                         <Checkbox checked={h.inspection} disabled className="disabled:opacity-100" />
                       </TableCell>
                       <TableCell>
-                        <Checkbox checked={h.ready} disabled className="disabled:opacity-100" />
-                      </TableCell>
-                      <TableCell>
                         <RemarksCell remarks={h.remarks} />
                       </TableCell>
                       <TableCell>{row?.factory_name}</TableCell>
                       <TableCell>{row?.category_name}</TableCell>
                       <TableCell>{formatDateNumeric(h.initial_date)}</TableCell>
                       <TableCell>{formatDateNumeric(h.current_date)}</TableCell>
+                      <TableCell>{readyPartsText(h)}</TableCell>
                       <TableCell>{h.dispatch_location_name ?? "—"}</TableCell>
                       <TableCell>{formatDateNumeric(h.dispatch_date)}</TableCell>
                       <TableCell className="text-slate-500">
@@ -530,8 +558,8 @@ export function EtdStepTable({
     switch (key) {
       case "inspection":
         return etd.inspection ? 1 : 0;
-      case "ready":
-        return etd.ready ? 1 : 0;
+      case "ready_date":
+        return etd.ready_date ?? "";
       case "factory":
         return r.factory_name;
       case "category":
@@ -607,7 +635,6 @@ export function EtdStepTable({
         <TableHeader>
           <TableRow>
             <SortableTableHead label="Insp." sortKey="inspection" sort={sort} onSort={toggleSort} />
-            <SortableTableHead label="Ready?" sortKey="ready" sort={sort} onSort={toggleSort} />
             <SortableTableHead label="Factory" sortKey="factory" sort={sort} onSort={toggleSort} />
             <SortableTableHead label="Category" sortKey="category" sort={sort} onSort={toggleSort} />
             <SortableTableHead label="Batch" sortKey="batch" sort={sort} onSort={toggleSort} />
@@ -620,6 +647,12 @@ export function EtdStepTable({
             <SortableTableHead
               label="Current Date"
               sortKey="current_date"
+              sort={sort}
+              onSort={toggleSort}
+            />
+            <SortableTableHead
+              label="Ready parts"
+              sortKey="ready_date"
               sort={sort}
               onSort={toggleSort}
             />
@@ -654,14 +687,6 @@ export function EtdStepTable({
                     onCheckedChange={(checked) => save(r.id, { inspection: !!checked })}
                   />
                 </TableCell>
-                <TableCell>
-                  <Checkbox
-                    checked={etd.ready}
-                    disabled={etd.ready}
-                    className="disabled:opacity-100"
-                    onCheckedChange={(checked) => save(r.id, { ready: !!checked })}
-                  />
-                </TableCell>
                 <TableCell className="font-medium text-slate-800">{r.factory_name}</TableCell>
                 <TableCell>{r.category_name}</TableCell>
                 <TableCell>{r.batch_id ? (batchNumberById.get(r.batch_id) ?? "—") : "—"}</TableCell>
@@ -679,6 +704,29 @@ export function EtdStepTable({
                 </TableCell>
                 <TableCell className="text-slate-500">
                   {formatDateNumeric(etd.current_date)}
+                </TableCell>
+                <TableCell>
+                  {/* Ready parts (13/11/2026): a data real em que ficou pronto.
+                      Preenche uma vez, depois do Initial Date; trocar é pelo
+                      "ETD update" (↗), com motivo — como o Current Date. */}
+                  {etd.ready_date ? (
+                    <span className="whitespace-nowrap text-slate-500">
+                      {formatDateNumeric(etd.ready_date)}
+                    </span>
+                  ) : (
+                    <DatePicker
+                      value={null}
+                      disabled={!etd.initial_date}
+                      max={todayIso()}
+                      clearable={false}
+                      placeholder={etd.ready ? "Ready (no date)" : "dd/mm/yyyy"}
+                      ariaLabel="Ready parts"
+                      className="w-36"
+                      onChange={(v) => {
+                        if (v) save(r.id, { ready_date: v });
+                      }}
+                    />
+                  )}
                 </TableCell>
                 <TableCell className="w-40">
                   <SearchSelect

@@ -23,9 +23,13 @@ import { getGssEtdEntry, type GssEtdRead } from "./gss-read";
  *  - `initial_date` só grava enquanto vazia (a tela trava o campo depois);
  *  - o 1º `initial_date` copia para `current_date` (a data que a fábrica
  *    prometeu, não a de hoje);
- *  - `ready_parts` false→true é livre (grava `ready_date` = hoje);
- *  - CORREÇÃO — mudar um `current_date` já preenchido ou desmarcar
- *    `ready_parts` — exige `remarks` (o motivo, como no modal);
+ *  - `ready_date` (13/11/2026) é a data REAL em que as peças ficaram prontas:
+ *    só com Initial Date preenchido, nunca no futuro; marca `ready_parts`
+ *    junto (null limpa os dois);
+ *  - `ready_parts` false→true sem data grava `ready_date` = hoje (o GSS só
+ *    tem o sim/não); também exige Initial Date;
+ *  - CORREÇÃO — mudar um `current_date` ou `ready_date` já preenchido, ou
+ *    desmarcar `ready_parts` — exige `remarks` (o motivo, como no modal);
  *  - `current_date` não muda com o lote já embarcado (fora de In Negotiation/
  *    In Production);
  *  - toda mudança de data/ready grava `etd_history` (source `api`);
@@ -44,6 +48,7 @@ export const patchEtdSchema = z
     initial_date: apiDay.optional(),
     current_date: apiDay.optional(),
     ready_parts: z.boolean().optional(),
+    ready_date: apiDay.nullable().optional(),
     remarks: z.string().trim().min(1, "remarks cannot be empty.").max(2000).optional(),
     is_active: isActiveBody.optional(),
   })
@@ -52,8 +57,19 @@ export const patchEtdSchema = z
       v.initial_date !== undefined ||
       v.current_date !== undefined ||
       v.ready_parts !== undefined ||
+      v.ready_date !== undefined ||
       v.is_active !== undefined,
-    { message: "Send at least one of 'initial_date', 'current_date', 'ready_parts' or 'is_active'." }
+    {
+      message:
+        "Send at least one of 'initial_date', 'current_date', 'ready_parts', 'ready_date' or 'is_active'.",
+    }
+  )
+  .refine(
+    (v) =>
+      v.ready_date === undefined ||
+      v.ready_parts === undefined ||
+      v.ready_parts === (v.ready_date !== null),
+    { message: "'ready_parts' must match 'ready_date' (a date means true, null means false)." }
   );
 
 export type PatchEtdInput = z.infer<typeof patchEtdSchema>;
@@ -113,10 +129,28 @@ export async function patchEtd(
     changed.push("current_date");
   }
 
-  if (input.ready_parts !== undefined && input.ready_parts !== (existing?.ready ?? false)) {
+  const initialAfter = update.initial_date ?? existing?.initial_date ?? null;
+
+  if (input.ready_date !== undefined && input.ready_date !== (existing?.ready_date ?? null)) {
+    if (input.ready_date) {
+      if (!initialAfter) return fail(409, "Fill in the initial_date before ready_date.");
+      if (input.ready_date > today()) return fail(400, "ready_date can't be a future date.");
+    }
+    // Trocar ou limpar uma data existente é correção. Dar a 1ª data a uma
+    // linha antiga marcada sem data (Bubble/GSS) não é — igual à tela.
+    if (existing?.ready_date || (existing?.ready && input.ready_date === null)) isCorrection = true;
+    update.ready_date = input.ready_date;
+    update.ready = input.ready_date !== null;
+    changed.push("ready_date");
+  } else if (input.ready_parts !== undefined && input.ready_parts !== (existing?.ready ?? false)) {
+    if (input.ready_parts && !initialAfter) {
+      return fail(409, "Fill in the initial_date before ready_parts.");
+    }
     if (!input.ready_parts) isCorrection = true;
     update.ready = input.ready_parts;
     if (input.ready_parts && !existing?.ready_date) update.ready_date = today();
+    // Desmarcar tira a data junto: sem data, as peças não estão prontas.
+    if (!input.ready_parts) update.ready_date = null;
     changed.push("ready");
   }
 
@@ -128,7 +162,7 @@ export async function patchEtd(
   if (isCorrection && !input.remarks) {
     return fail(
       400,
-      "remarks is required to correct an ETD (changing a filled current_date or unchecking ready_parts)."
+      "remarks is required to correct an ETD (changing a filled current_date or ready_date, or unchecking ready_parts)."
     );
   }
 
