@@ -167,6 +167,10 @@ export const patchStepSchema = z
     cutoff_date: apiDay.nullable().optional(),
     /** Booking: Doc Cut-off (22/10/2026). */
     doc_cutoff_date: apiDay.nullable().optional(),
+    /** Booking: container (13/11/2026) — opcionais. */
+    container_pickup_date: apiDay.nullable().optional(),
+    doc_delivery_date: apiDay.nullable().optional(),
+    container_return_date: apiDay.nullable().optional(),
     /** Shipping Date / ETA / ATA / Delivered: a data do fato (21/10/2026). */
     date: apiDay.optional(),
     /** Motivo — obrigatório ao trocar uma `date` já gravada. */
@@ -182,7 +186,14 @@ export const STEP_FIELDS: Partial<Record<ChecklistStep, (keyof PatchStepInput)[]
   // pelo webhook do PL) — ver patchShipmentStep.
   port_of_loading: ["pol"],
   agents: ["carrier", "agent_brazil", "agent_china", "contact_brazil", "contact_china"],
-  booking: ["booking_number", "cutoff_date", "doc_cutoff_date"],
+  booking: [
+    "booking_number",
+    "cutoff_date",
+    "doc_cutoff_date",
+    "container_pickup_date",
+    "doc_delivery_date",
+    "container_return_date",
+  ],
   // Concluem pela data do fato — o `completed_on` delas não é aceito.
   // Shipment Plan (11/11/2026): só o "Set date", igual às datas do fato.
   shipment_plan: ["date", "reason"],

@@ -137,6 +137,10 @@ export type PlStepRow = {
   /** Etapa Booking: Container Cut-off e Doc Cut-off — obrigatórios (22/10/2026). */
   cutoff_date: string | null;
   doc_cutoff_date: string | null;
+  /** Etapa Booking: container (13/11/2026) — opcionais. */
+  container_pickup_date: string | null;
+  doc_delivery_date: string | null;
+  container_return_date: string | null;
   /** Shipment Plan (11/11/2026): a data do "Set date". */
   event_date: string | null;
 };
@@ -1009,6 +1013,28 @@ export function PlChecklistClient({
                             className="mt-1 bg-white"
                           />
                         </div>
+                        {/* Container (13/11/2026): retirada, entrega dos
+                            documentos e prazo de devolução carregado no porto.
+                            Opcionais — não mudam a conclusão da etapa. */}
+                        {(
+                          [
+                            ["container_pickup_date", "Container pickup"],
+                            ["doc_delivery_date", "Docs delivered"],
+                            ["container_return_date", "Container return deadline"],
+                          ] as const
+                        ).map(([field, label]) => (
+                          <div key={field}>
+                            <Label className="text-xs text-muted-foreground">{label}</Label>
+                            <DatePicker
+                              value={s[field]}
+                              ariaLabel={label}
+                              onChange={(v) => {
+                                if (v !== (s[field] ?? null)) save(s.step, { [field]: v });
+                              }}
+                              className="mt-1 bg-white"
+                            />
+                          </div>
+                        ))}
                       </div>
                     )}
 

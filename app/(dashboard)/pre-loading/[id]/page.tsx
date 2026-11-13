@@ -53,6 +53,9 @@ type StepRow = {
   booking_number: string | null;
   cutoff_date: string | null;
   doc_cutoff_date: string | null;
+  container_pickup_date: string | null;
+  doc_delivery_date: string | null;
+  container_return_date: string | null;
   event_date: string | null;
 };
 
@@ -78,6 +81,9 @@ function emptyStep(step: ChecklistStep): PlStepRow {
     booking_number: null,
     cutoff_date: null,
     doc_cutoff_date: null,
+    container_pickup_date: null,
+    doc_delivery_date: null,
+    container_return_date: null,
     event_date: null,
   };
 }
@@ -138,7 +144,8 @@ export default async function PreLoadingChecklistPage({
       .select(
         "id, step, done, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
-          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date, event_date"
+          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date, " +
+          "container_pickup_date, doc_delivery_date, container_return_date, event_date"
       )
       .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),

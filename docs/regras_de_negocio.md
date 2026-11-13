@@ -1266,7 +1266,7 @@ Toda etapa exige `completed_on`. A coluna "+ além da data" é o que se soma a i
 | 13 | Port of Loading | port of loading escolhido — cadastro de **portos** (`pols`), **não** de fábricas |
 | 14 | Shipping Docs | documento — **com 2+ clientes no PL, um documento POR cliente** (ver nota abaixo) |
 | 15 | Agents | os 5: carrier agent, agent Brazil, agent China, contact Brazil, contact China (**sem documento** desde 29/10/2026 — nem o botão de anexo nem documento antigo aparecem) |
-| 16 | Booking | booking number — **com 2+ clientes no PL, um Booking number POR cliente** (ver nota abaixo) |
+| 16 | Booking | booking number — **com 2+ clientes no PL, um Booking number POR cliente** (ver nota abaixo) — **13/11/2026:** a etapa ganhou 3 datas OPCIONAIS do container, fora da regra de conclusão: **Container pickup** (retirada), **Docs delivered** (entrega dos documentos) e **Container return deadline** (prazo de devolução carregado no porto) — colunas `container_pickup_date`/`doc_delivery_date`/`container_return_date` (migration `20261113120000`); aparecem na tela do PL, no Shipment, como colunas da lista de PL e no PATCH da API (`steps/booking`). A lista de PL também ganhou filtro de Booking Status (Yes/No) e range de Doc Cut-off. |
 
 > ⚠️ **26/10/2026 — o Booking voltou a ter UM Booking number por PL** (pedido do usuário: "é um ÚNICO APENAS"), qualquer que seja o nº de clientes; a etapa fecha com ele + os dois cut-offs. A parte de Booking abaixo foi desfeita (a tabela `pre_loading_client_bookings` ficou sem uso; só tinha o PL de teste 1473). Shipping Docs segue por cliente.
 >

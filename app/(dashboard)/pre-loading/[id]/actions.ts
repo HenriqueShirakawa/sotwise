@@ -53,6 +53,10 @@ export type StepPatch = Partial<{
   booking_number: string | null;
   cutoff_date: string | null;
   doc_cutoff_date: string | null;
+  /** Booking: container (13/11/2026) — opcionais, fora da regra de conclusão. */
+  container_pickup_date: string | null;
+  doc_delivery_date: string | null;
+  container_return_date: string | null;
 }>;
 
 /** Campos que entram na regra de conclusão — só eles disparam a auto-conclusão. */

@@ -521,6 +521,10 @@ export async function patchShipmentStep(
   if (input.booking_number !== undefined) patch.booking_number = input.booking_number;
   if (input.cutoff_date !== undefined) patch.cutoff_date = input.cutoff_date;
   if (input.doc_cutoff_date !== undefined) patch.doc_cutoff_date = input.doc_cutoff_date;
+  // Container (13/11/2026): opcionais, fora da regra de conclusão.
+  if (input.container_pickup_date !== undefined) patch.container_pickup_date = input.container_pickup_date;
+  if (input.doc_delivery_date !== undefined) patch.doc_delivery_date = input.doc_delivery_date;
+  if (input.container_return_date !== undefined) patch.container_return_date = input.container_return_date;
   if (input.responsible_email !== undefined) {
     const person = await resolvePerson(admin, input.responsible_email);
     if (!person.ok) return person;

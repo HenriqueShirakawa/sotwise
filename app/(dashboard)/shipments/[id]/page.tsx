@@ -69,6 +69,11 @@ type StepRow = {
   contact_brazil_id: string | null;
   contact_china_id: string | null;
   booking_number: string | null;
+  cutoff_date: string | null;
+  doc_cutoff_date: string | null;
+  container_pickup_date: string | null;
+  doc_delivery_date: string | null;
+  container_return_date: string | null;
   event_date: string | null;
 };
 
@@ -141,7 +146,8 @@ export default async function ShipmentDetailPage({
       .select(
         "id, step, estimated_date, responsible_id, completed_on, signed_by_id, notes, " +
           "consolidation_point_id, city_id, pol_id, carrier_id, agent_brazil_id, " +
-          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date, event_date"
+          "agent_china_id, contact_brazil_id, contact_china_id, booking_number, cutoff_date, doc_cutoff_date, " +
+          "container_pickup_date, doc_delivery_date, container_return_date, event_date"
       )
       .eq("pre_loading_id", pl.id)
       .returns<StepRow[]>(),
@@ -405,8 +411,19 @@ export default async function ShipmentDetailPage({
       case "port_of_loading":
         return one("Port of loading", name(polNameById, s.pol_id));
       // Um Booking number só por PL (26/10/2026).
-      case "booking":
-        return one("Booking number", s.booking_number || null);
+      // + os cut-offs e as datas do container (13/11/2026), o que tiver valor.
+      case "booking": {
+        const date = (label: string, v: string | null) => one(label, v ? formatDateNumeric(v) : null) ?? [];
+        const fields = [
+          ...(one("Booking number", s.booking_number || null) ?? []),
+          ...date("Container Cut-off", s.cutoff_date),
+          ...date("Doc Cut-off", s.doc_cutoff_date),
+          ...date("Container pickup", s.container_pickup_date),
+          ...date("Docs delivered", s.doc_delivery_date),
+          ...date("Container return deadline", s.container_return_date),
+        ];
+        return fields.length ? fields : null;
+      }
       // A data real do carregamento, informada no popup do Confirm Shipping
       // (o Completed on da etapa é o dia da confirmação).
       case "loading_date":
