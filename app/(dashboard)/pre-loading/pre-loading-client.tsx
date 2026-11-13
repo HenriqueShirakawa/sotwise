@@ -82,6 +82,11 @@ export type PreLoadingRow = {
   cutoff: string | null;
   /** Doc Cut-off da etapa Booking (YYYY-MM-DD) — 22/10/2026. */
   doc_cutoff: string | null;
+  /** Container da etapa Booking (13/11/2026): retirada, entrega dos documentos
+   *  e prazo de devolução carregado no porto. */
+  container_pickup: string | null;
+  doc_delivery: string | null;
+  container_return: string | null;
   total_pos: number;
   order_ids: string[];
   batch_ids: string[];
@@ -126,6 +131,9 @@ const COLUMN_OPTIONS: ColumnOption[] = [
   { id: "booking_confirmed", label: "Booking Status" },
   { id: "cutoff", label: "Container Cut-off" },
   { id: "doc_cutoff", label: "Doc Cut-off" },
+  { id: "container_pickup", label: "Container Pickup" },
+  { id: "doc_delivery", label: "Docs Delivered" },
+  { id: "container_return", label: "Container Return" },
   { id: "total_pos", label: "Total PO's" },
 ];
 
@@ -145,6 +153,9 @@ const XLSX_COLUMNS = xlsxColumns<PreLoadingRow>(COLUMN_OPTIONS, {
   booking_confirmed: { value: (r) => (r.booking_confirmed ? "Yes" : "No") },
   cutoff: { kind: "date", value: (r) => r.cutoff },
   doc_cutoff: { kind: "date", value: (r) => r.doc_cutoff },
+  container_pickup: { kind: "date", value: (r) => r.container_pickup },
+  doc_delivery: { kind: "date", value: (r) => r.doc_delivery },
+  container_return: { kind: "date", value: (r) => r.container_return },
   total_pos: { value: (r) => r.total_pos },
 });
 
@@ -421,6 +432,25 @@ export function PreLoadingClient({
           </span>
         ),
       },
+      // Container da etapa Booking (13/11/2026).
+      ...(
+        [
+          ["container_pickup", "Container Pickup"],
+          ["doc_delivery", "Docs Delivered"],
+          ["container_return", "Container Return"],
+        ] as const
+      ).map(
+        ([id, label]): ColumnDef<PreLoadingRow> => ({
+          id,
+          accessorFn: (r) => r[id] ?? "",
+          header: ({ column }) => <SortableHeader label={label} column={column} />,
+          cell: ({ row }) => (
+            <span className="whitespace-nowrap text-slate-600">
+              {formatDateNumeric(row.original[id])}
+            </span>
+          ),
+        })
+      ),
       {
         accessorKey: "total_pos",
         header: ({ column }) => <SortableHeader label="Total PO's" column={column} />,

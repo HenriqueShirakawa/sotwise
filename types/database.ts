@@ -1268,6 +1268,11 @@ export type Database = {
           /** Booking: Container Cut-off (cutoff_date) e Doc Cut-off — 22/10/2026. */
           cutoff_date: DateStr | null;
           doc_cutoff_date: DateStr | null;
+          /** Booking: container (13/11/2026) — retirada, entrega dos documentos e
+           *  prazo de devolução carregado no porto. Opcionais. */
+          container_pickup_date: DateStr | null;
+          doc_delivery_date: DateStr | null;
+          container_return_date: DateStr | null;
           /** Shipping Date / ETA / ATA / Delivered: a data do fato (21/10/2026). */
           event_date: DateStr | null;
           created_at: Timestamp;
@@ -1295,6 +1300,9 @@ export type Database = {
           booking_number?: string | null;
           cutoff_date?: DateStr | null;
           doc_cutoff_date?: DateStr | null;
+          container_pickup_date?: DateStr | null;
+          doc_delivery_date?: DateStr | null;
+          container_return_date?: DateStr | null;
           event_date?: DateStr | null;
           created_at?: Timestamp;
           updated_at?: Timestamp;

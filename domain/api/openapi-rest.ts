@@ -623,7 +623,7 @@ export const restPaths = {
         "- `completed_on` is never in the future. Since 2026-11-11 no step needs `estimated_date`/responsible to complete except `loading_date`: what is blank is filled (estimated = the completion day; signer/responsible = GSS Team when it comes from the API).",
         "- **Consolidation Point + City are one step since 2026-11-11** (`consolidation_point`): send `consolidation_point` (factory — SOTWISE id or gss_id) and, optionally, `city` (SOTWISE id or gss_id). Without `city`, the city comes from the factory's products in GSS: one city → filled in automatically; several → left empty for the team to choose (or send `city`); none → kept. The step completes with both. `steps/city` is still accepted and writes to this same step.",
         "- Step-specific fields are only accepted on their step: `consolidation_point`/`city` (consolidation_point), `pol` (port_of_loading), " +
-          "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (Container Cut-off)/`doc_cutoff_date` (Doc Cut-off) (booking — all three required to complete it).",
+          "`carrier`/`agent_brazil`/`agent_china`/`contact_brazil`/`contact_china` (agents), `booking_number`/`cutoff_date` (Container Cut-off)/`doc_cutoff_date` (Doc Cut-off) (booking — all three required to complete it; optional container dates: `container_pickup_date`, `doc_delivery_date`, `container_return_date`).",
         "- A step that gets everything it needs (+ an estimated date) closes by itself.",
         "- `shipment_plan` (first Pre-loading step since 2026-11-11), `shipping_date`, `eta_brazil`, `ata_brazil` and `delivered` take `date` (the shipping / ETA / ATA / delivery date) instead of `completed_on`: " +
           "the first `date` completes the step (`completed_on` = that day); changing it later needs `reason`. Only `eta_brazil` accepts a future date.",
@@ -954,6 +954,9 @@ export const restSchemas = {
       booking_number: { type: ["string", "null"], maxLength: 100 },
       cutoff_date: { ...inDayNullable, description: "`booking` — Container Cut-off." },
       doc_cutoff_date: { ...inDayNullable, description: "`booking` — Doc Cut-off." },
+      container_pickup_date: { ...inDayNullable, description: "`booking` — container pickup (optional, since 2026-11-13; doesn't affect completion)." },
+      doc_delivery_date: { ...inDayNullable, description: "`booking` — documents delivered (optional, since 2026-11-13)." },
+      container_return_date: { ...inDayNullable, description: "`booking` — deadline to return the loaded container at the port (optional, since 2026-11-13)." },
       date: { ...inDay, description: "shipping_date / eta_brazil / ata_brazil / delivered only." },
       reason: { type: "string", maxLength: 2000, description: "Required when changing a `date` already set." },
     },

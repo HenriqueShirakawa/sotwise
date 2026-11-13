@@ -42,6 +42,10 @@ type StepRow = {
   booking_number: string | null;
   cutoff_date: string | null;
   doc_cutoff_date: string | null;
+  // Container (13/11/2026). Ausentes antes da migration 20261113120000.
+  container_pickup_date?: string | null;
+  doc_delivery_date?: string | null;
+  container_return_date?: string | null;
 };
 
 export const metadata = { title: "Pre-Loading" };
@@ -121,6 +125,10 @@ export default async function PreLoadingPage() {
       // Container Cut-off e Doc Cut-off da etapa Booking (22/10/2026).
       cutoff: steps.booking?.cutoff_date ?? null,
       doc_cutoff: steps.booking?.doc_cutoff_date ?? null,
+      // Container da etapa Booking (13/11/2026).
+      container_pickup: steps.booking?.container_pickup_date ?? null,
+      doc_delivery: steps.booking?.doc_delivery_date ?? null,
+      container_return: steps.booking?.container_return_date ?? null,
       // "Booking Status" = etapa "Booking" do checklist concluída — que exige
       // o booking number (único por PL) além da data (ver lib/checklist-completion).
       booking_confirmed: steps.booking

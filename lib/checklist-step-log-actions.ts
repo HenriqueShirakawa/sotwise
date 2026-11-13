@@ -187,6 +187,9 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   booking_number: { label: "Booking number", kind: "text" },
   cutoff_date: { label: "Container cut-off", kind: "date" },
   doc_cutoff_date: { label: "Doc cut-off", kind: "date" },
+  container_pickup_date: { label: "Container pickup", kind: "date" },
+  doc_delivery_date: { label: "Docs delivered", kind: "date" },
+  container_return_date: { label: "Container return deadline", kind: "date" },
   // Por cliente (22/10/2026): "Cliente: valor".
   client_tracking_number: { label: "Tracking number", kind: "text" },
   client_telex_release: { label: "Telex release", kind: "text" },
