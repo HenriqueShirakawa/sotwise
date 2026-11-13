@@ -39,7 +39,10 @@ export function etdListQuery(
   }
   if (f.empty_dates === "yes") query = query.is("initial_date", null);
   if (f.empty_dates === "no") query = query.not("initial_date", "is", null);
-  if (f.ready_parts) query = query.eq("ready_parts", f.ready_parts === "yes");
+  // Ready parts (13/11/2026): Yes = coluna preenchida (data, ou "Yes" de linha
+  // antiga marcada sem data); No = coluna vazia. Filtra o que a tela mostra.
+  if (f.ready_parts === "yes") query = query.or("ready_date.not.is.null,ready_parts.eq.true");
+  if (f.ready_parts === "no") query = query.is("ready_date", null).eq("ready_parts", false);
   if (state.q) query = query.ilike("po_number", `%${state.q}%`);
   // Vazio no começo na ordem crescente e no fim na decrescente, como a lista
   // antiga (que tratava vazio como o menor valor).
