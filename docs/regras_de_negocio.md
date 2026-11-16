@@ -2603,7 +2603,7 @@ O card do Notion ("Integração WeChat") pede também **fornecedores**: automati
 - **IP fixo:** a Service Account só entrega o `access_token` a IPs da IP白名单, e a Vercel não tem IP fixo. As chamadas passam por um relay numa VPS (`relay/wechat/`, `WECHAT_RELAY_URL`). O token usa o `stable_token`, que não derruba o token de outras instâncias da Vercel. O 测试号 não tem lista de IP e dispensa o relay.
 - **Rastro:** `wechat_message_log` guarda os envios (sent/failed, com o canal custom/template) e as entradas (accepted/rejected/ignored). O dedup é pelo MsgId (nos eventos, remetente + hora + evento), porque o WeChat reenvia o mesmo callback até 3 vezes.
 - **Pré-requisito:** Service Account **verificada** (认证), o que exige uma empresa chinesa (GSS China ou cliente) e taxa anual. Para testar antes disso, o **测试号** (mp.weixin.qq.com/debug/cgi-bin/sandbox) libera AppID/AppSecret, QR com código, mensagem de atendimento e template livre.
-- Envs em `.env.example` (`WECHAT_*`). `WECHAT_DISABLED=true` desliga tudo. Para testar sem conta: `npx tsx scripts/wechat-selftest.ts`.
+- Envs em `.env.example` (`WECHAT_*`). `WECHAT_DISABLED=true` desliga tudo. Para testar sem conta: `npm test` (`lib/wechat/wechat.test.ts`).
 
 Código: `lib/wechat/` (client, crypto, bind, template, notify, inbound, parse-reply), `app/api/wechat/callback/route.ts`, `app/(dashboard)/users/wechat-actions.ts` + `wechat-link.tsx`, e `createMessage` em `lib/messages.ts`, que é a porta única usada pela tela e pelo WeChat. Migration `20261104120000_wechat_messages.sql`.
 
@@ -2629,7 +2629,7 @@ O card "Integração WeChat" mudou de rumo: agora é o **fornecedor** que inform
 - **Próximas etapas:** (2) aviso automático quando o Placed on da fábrica for preenchido; (3) botão "Ask ready parts" na linha do ETD no SOT. A automação do Ready parts fica para depois, se der certo.
 - **Pré-requisito de produção:** Mini Program registrado e verificado por empresa chinesa (o mesmo bloqueio da fase 1). Para testar, usar o 测试号 do Mini Program.
 
-Código: `lib/wechat-mp/` (client, session, supplier), `app/api/mp/` (login, bind, lines, lines/{id}), `app/(dashboard)/registration/factories/wechat-actions.ts` + `wechat-contacts.tsx`, e o Mini Program em `miniprogram/` (README com o passo a passo). Migration `20261116120000_factory_wechat_contacts.sql`. Envs `WECHAT_MP_*` em `.env.example`. Autoteste: `npx tsx scripts/wechat-mp-selftest.ts`.
+Código: `lib/wechat-mp/` (client, session, supplier), `app/api/mp/` (login, bind, lines, lines/{id}), `app/(dashboard)/registration/factories/wechat-actions.ts` + `wechat-contacts.tsx`, e o Mini Program em `miniprogram/` (README com o passo a passo). Migration `20261116120000_factory_wechat_contacts.sql`. Envs `WECHAT_MP_*` em `.env.example`. Autoteste: `npm test` (`lib/wechat-mp/session.test.ts`).
 
 ## 7. Controle de acesso — a validar com o cliente
 

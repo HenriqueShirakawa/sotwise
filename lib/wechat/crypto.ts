@@ -12,7 +12,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEq
  *  - AES-256-CBC, padding PKCS#7 em blocos de 32 bytes
  *  - texto claro = random(16) | len(msg) em 4 bytes big-endian | msg | AppID
  *
- * Funções puras — scripts/wechat-selftest.ts cobre a ida e volta sem conta.
+ * Funções puras — lib/wechat/wechat.test.ts cobre a ida e volta sem conta.
  */
 
 const BLOCK = 32;

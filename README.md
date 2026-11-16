@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SOTWISE (SOT)
 
-## Getting Started
+Sistema operacional de importação da AGK: Orders, lotes, ETD por fábrica,
+Pre-Loading, Shipments e o checklist de etapas de cada um. Integra com o GSS
+(fonte das orders e dos lotes), com e-mail (Resend) e com WeChat.
 
-First, run the development server:
+- **Produção:** https://sot.gssdatahub.com (branch `main`)
+- **Dev:** https://dev.sot.gssdatahub.com (branch `dev`)
+
+Um push em qualquer uma das duas branches faz deploy na Vercel.
+
+## Stack
+
+- Next.js 16 (App Router, Server Actions, `proxy.ts`). **Leia `AGENTS.md`**:
+  esta versão tem APIs diferentes das versões anteriores.
+- React 19, Tailwind 4, shadcn/ui (Radix), TanStack Table
+- Supabase (Postgres + Auth + Storage + Realtime). RLS é deny-all: o app lê
+  e grava pelo admin client no servidor, e a autorização fica na DAL
+  (`lib/dal.ts`) e em `lib/api-auth.ts`.
+- Anthropic SDK (assistente "SIA", `app/api/copilot`)
+
+## Como rodar
+
+Requer Node 22+.
 
 ```bash
+npm ci
+cp .env.example .env.local   # preencha com as chaves do Supabase de dev (AGK)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+A dev usa o Supabase AGK e **nunca** escreve no GSS (bloqueado em
+`lib/gss/client.ts`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Comando             | O que faz                                          |
+| ------------------- | -------------------------------------------------- |
+| `npm run dev`       | servidor local                                     |
+| `npm run lint`      | ESLint                                             |
+| `npm run typecheck` | `tsc --noEmit`                                     |
+| `npm test`          | testes unitários (vitest), sem rede nem banco      |
+| `npm run test:watch`| testes em modo watch                               |
+| `npm run check`     | lint + typecheck + testes (rode antes de push)     |
+| `npm run build`     | build de produção                                  |
 
-## Learn More
+Os testes ficam ao lado do código (`lib/**/*.test.ts`) e cobrem as regras
+puras: rollup de status da Order, conclusão das etapas do checklist, ETD, datas
+da API e o payload enviado ao GSS. Regra nova ou corrigida ganha teste junto.
 
-To learn more about Next.js, take a look at the following resources:
+O CI (`.github/workflows/ci.yml`) roda lint, typecheck, testes e build em todo
+push na `dev` e na `main` e em pull requests.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Estrutura
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+app/          rotas (App Router): (auth), (dashboard), (client), api/
+components/   UI compartilhada (shadcn em components/ui)
+domain/       regras de negócio e contratos da API (OpenAPI, copilot)
+lib/          infraestrutura: supabase, gss, email, wechat, dal, api-auth
+types/        tipos gerados do banco (database.ts)
+supabase/     migrations (aplicadas em ordem; ver abaixo)
+scripts/      ferramentas de linha de comando (migração, sync GSS, postman)
+miniprogram/  Mini Program do WeChat para fornecedores (outro runtime)
+relay/        relay de IP fixo para a API do WeChat
+docs/         documentação (regras de negócio, API, integração GSS, deploy)
+```
 
-## Deploy on Vercel
+## Banco e migrations
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`supabase/migrations/` é a fonte do schema: os scripts de
+`scripts/migrate-project/` recriam um banco do zero rodando todas em ordem.
+Não apague nem edite uma migration já aplicada; crie uma nova. Uma migration
+nova precisa ser aplicada nos dois projetos (dev = AGK, produção = SOT-VISTA)
+**antes** do deploy do código que depende dela.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Documentação
+
+- [`docs/regras_de_negocio.md`](docs/regras_de_negocio.md): fonte de verdade
+  das regras; atualize a cada decisão nova
+- [`docs/INTEGRACAO_GSS.md`](docs/INTEGRACAO_GSS.md): sync, webhooks e cron do GSS
+- [`docs/API.md`](docs/API.md) e `/api/docs` (Swagger) para a API REST
+- [`docs/DEPLOY.md`](docs/DEPLOY.md): Vercel, domínios e variáveis
+- [`docs/SCHEMA.md`](docs/SCHEMA.md): modelo de dados
+
+## Segurança
+
+O repositório é **público**. Nunca versione `.env*` (exceto `.env.example`),
+dumps SQL, planilhas exportadas ou qualquer dado de cliente. Segredos ficam
+só na Vercel e no `.env.local`.

@@ -2,7 +2,7 @@ import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
 /**
  * Sessão do Mini Program e código de convite — funções puras (sem
- * `server-only`), cobertas por scripts/wechat-mp-selftest.ts.
+ * `server-only`), cobertas por lib/wechat-mp/session.test.ts.
  *
  * Sessão = "<payload base64url>.<hmac>" com o OpenID e o vencimento. O
  * Mini Program guarda e manda em `Authorization: Bearer ...`. Sem banco: quem
