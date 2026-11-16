@@ -111,6 +111,49 @@ const toGssId = (v: string | null | undefined): number | null => {
   return v && Number.isInteger(n) && n > 0 ? n : null;
 };
 
+const normName = (s: string | null | undefined): string =>
+  (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim().replace(/\s+/g, " ");
+
+type NamedRef = { name: string | null; gss_id: string | null } | null | undefined;
+type LinkTable = "pols" | "carriers" | "agents";
+
+/**
+ * `gss_id` do cadastro; sem vínculo, o de outro cadastro com o MESMO nome
+ * (16/11/2026). O Bubble deixou o mesmo porto/agente repetido (ex.: 5 "Ningbo")
+ * e `gss_id` é único, então só uma das linhas recebe o vínculo no sync — as
+ * gêmeas pegam emprestado. Nome ambíguo (gêmeas com `gss_id` diferentes) não
+ * manda nada.
+ */
+async function resolveGssId(
+  db: DB,
+  cache: Map<LinkTable, Map<string, number | null>>,
+  table: LinkTable,
+  ref: NamedRef
+): Promise<number | null> {
+  const own = toGssId(ref?.gss_id);
+  if (own !== null || !ref?.name) return own;
+  let byName = cache.get(table);
+  if (!byName) {
+    const { data, error } = await db
+      .from(table)
+      .select("name, gss_id")
+      .not("gss_id", "is", null)
+      .is("deleted_at", null)
+      .returns<{ name: string; gss_id: string }[]>();
+    if (error) throw new Error(`${table} (vínculo por nome): ${error.message}`);
+    byName = new Map();
+    for (const row of data ?? []) {
+      const key = normName(row.name);
+      const id = toGssId(row.gss_id);
+      if (!key || id === null) continue;
+      const prev = byName.get(key);
+      byName.set(key, prev === undefined || prev === id ? id : null);
+    }
+    cache.set(table, byName);
+  }
+  return byName.get(normName(ref.name)) ?? null;
+}
+
 export async function loadPlShipmentState(
   db: DB,
   preLoadingId: string
@@ -136,7 +179,7 @@ export async function loadPlShipmentState(
 
   const { data: shipment, error: shipmentError } = await db
     .from("shipments")
-    .select("status, leader_id, signer_id, shipment_models(name), carriers(gss_id)")
+    .select("status, leader_id, signer_id, shipment_models(name), carriers(name, gss_id)")
     .eq("pre_loading_id", preLoadingId)
     .is("deleted_at", null)
     .maybeSingle<{
@@ -144,12 +187,12 @@ export async function loadPlShipmentState(
       leader_id: string | null;
       signer_id: string | null;
       shipment_models: { name: string } | null;
-      carriers: { gss_id: string | null } | null;
+      carriers: { name: string | null; gss_id: string | null } | null;
     }>();
   if (shipmentError) throw new Error(`shipments: ${shipmentError.message}`);
 
   const header = await loadHeader(db, preLoadingId, {
-    shipmentCarrierGssId: toGssId(shipment?.carriers?.gss_id),
+    shipmentCarrier: shipment?.carriers ?? null,
     leaderId: shipment?.leader_id ?? pl.leader_id,
     signerId: shipment?.signer_id ?? pl.responsible_signer_id,
   });
@@ -206,32 +249,36 @@ export async function loadPlShipmentState(
 async function loadHeader(
   db: DB,
   preLoadingId: string,
-  from: { shipmentCarrierGssId: number | null; leaderId: string | null; signerId: string | null }
+  from: { shipmentCarrier: NamedRef; leaderId: string | null; signerId: string | null }
 ): Promise<PlShipmentHeader> {
   type Ref = { gss_id: string | null } | null;
+  type Named = { name: string | null; gss_id: string | null } | null;
   const { data: steps, error } = await db
     .from("pre_loading_checklist_steps")
     .select(
-      "step, pols(gss_id), cities(gss_id), carriers(gss_id), " +
-        "agent_china:agents!pre_loading_checklist_steps_agent_china_id_fkey(gss_id), " +
-        "agent_brazil:agents!pre_loading_checklist_steps_agent_brazil_id_fkey(gss_id)"
+      "step, pols(name, gss_id), cities(gss_id), carriers(name, gss_id), " +
+        "agent_china:agents!pre_loading_checklist_steps_agent_china_id_fkey(name, gss_id), " +
+        "agent_brazil:agents!pre_loading_checklist_steps_agent_brazil_id_fkey(name, gss_id)"
     )
     .eq("pre_loading_id", preLoadingId)
     .in("step", ["port_of_loading", "consolidation_point", "city", "agents"])
-    .returns<{ step: string; pols: Ref; cities: Ref; carriers: Ref; agent_china: Ref; agent_brazil: Ref }[]>();
+    .returns<{ step: string; pols: Named; cities: Ref; carriers: Named; agent_china: Named; agent_brazil: Named }[]>();
   if (error) throw new Error(`pre_loading_checklist_steps (cabeçalho): ${error.message}`);
   const byStep = new Map((steps ?? []).map((s) => [s.step, s]));
   const agents = byStep.get("agents");
+  const cache = new Map<LinkTable, Map<string, number | null>>();
 
   return {
-    polGssId: toGssId(byStep.get("port_of_loading")?.pols?.gss_id),
+    polGssId: await resolveGssId(db, cache, "pols", byStep.get("port_of_loading")?.pols),
     // A City mora na etapa Consolidation Point desde 11/11; "city" é a etapa antiga.
     cityGssId:
       toGssId(byStep.get("consolidation_point")?.cities?.gss_id) ??
       toGssId(byStep.get("city")?.cities?.gss_id),
-    carrierGssId: from.shipmentCarrierGssId ?? toGssId(agents?.carriers?.gss_id),
-    originAgentGssId: toGssId(agents?.agent_china?.gss_id),
-    destinationAgentGssId: toGssId(agents?.agent_brazil?.gss_id),
+    carrierGssId:
+      (await resolveGssId(db, cache, "carriers", from.shipmentCarrier)) ??
+      (await resolveGssId(db, cache, "carriers", agents?.carriers)),
+    originAgentGssId: await resolveGssId(db, cache, "agents", agents?.agent_china),
+    destinationAgentGssId: await resolveGssId(db, cache, "agents", agents?.agent_brazil),
     leaderEmail: await userEmail(db, from.leaderId),
     signerEmail: await userEmail(db, from.signerId),
   };
