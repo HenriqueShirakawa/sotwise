@@ -1,0 +1,37 @@
+page {
+  background: #f6f4fa;
+  color: #1f1a2e;
+  font-size: 28rpx;
+}
+.container { padding: 24rpx; }
+.card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(31, 26, 46, 0.06);
+}
+.muted { color: #7a7389; font-size: 24rpx; }
+.title { font-size: 30rpx; font-weight: 600; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 16rpx; }
+.badge {
+  display: inline-block;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  background: #efe6fb;
+  color: #640bb7;
+}
+.badge.warn { background: #fff3e0; color: #b45309; }
+.badge.ok { background: #e7f6ec; color: #15803d; }
+button.primary { background: #640bb7; color: #fff; }
+button.ghost { background: #fff; color: #640bb7; border: 1rpx solid #640bb7; }
+.field { margin-top: 16rpx; }
+.input {
+  border: 1rpx solid #ddd6e8;
+  border-radius: 12rpx;
+  padding: 16rpx;
+  background: #fff;
+  margin-top: 8rpx;
+}
+.error { color: #b91c1c; font-size: 24rpx; margin-top: 12rpx; }

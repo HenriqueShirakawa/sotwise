@@ -1,0 +1,75 @@
+<view class="container">
+  <view wx:if="{{loading}}" class="muted">加载中 · Loading…</view>
+  <view wx:elif="{{error}}" class="card">
+    <view class="error">{{error}}</view>
+    <button class="ghost" style="margin-top:16rpx" bindtap="load">重试 · Retry</button>
+  </view>
+  <block wx:else>
+    <view class="muted" style="margin-bottom:16rpx">
+      {{factories}} · {{lines.length}} 行 lines · {{pendingCount}} 待填写 pending
+    </view>
+
+    <view wx:if="{{!lines.length}}" class="card muted">暂无未完成的订单 · No open lines.</view>
+
+    <view wx:for="{{lines}}" wx:key="id" class="card">
+      <view class="row">
+        <view class="title">PO {{item.po_number}}<text wx:if="{{item.lote}}"> · {{item.lote}}</text></view>
+        <text wx:if="{{!item.initial_date}}" class="badge warn">待填写 ETD</text>
+        <text wx:elif="{{item.ready_parts}}" class="badge ok">已备好 Ready</text>
+        <text wx:else class="badge">生产中 In production</text>
+      </view>
+      <view class="muted" style="margin-top:6rpx">{{item.factory}} · {{item.category}}</view>
+      <view class="muted">要求出货 Ship requirement: {{item.shipLabel}}</view>
+
+      <!-- Sem Initial Date: é o que ele precisa responder. -->
+      <picker wx:if="{{!item.initial_date}}" mode="date" start="{{today}}" data-id="{{item.id}}" bindchange="onInitial">
+        <button class="primary" style="margin-top:20rpx">填写交货期 · Set ETD</button>
+      </picker>
+
+      <block wx:else>
+        <view class="row" style="margin-top:16rpx">
+          <view>
+            <view class="muted">初始 Initial</view>
+            <view>{{item.initialLabel}}</view>
+          </view>
+          <view>
+            <view class="muted">当前 Current</view>
+            <view>{{item.currentLabel}}</view>
+          </view>
+          <view>
+            <view class="muted">备好 Ready</view>
+            <view>{{item.readyLabel}}</view>
+          </view>
+        </view>
+        <view class="row" style="margin-top:20rpx">
+          <button size="mini" class="ghost" data-id="{{item.id}}" data-kind="delay" bindtap="openForm">延期 Delay</button>
+          <button wx:if="{{!item.ready_parts}}" size="mini" class="primary" data-id="{{item.id}}" data-kind="ready" bindtap="openForm">已备好 Parts ready</button>
+          <button wx:else size="mini" class="ghost" data-id="{{item.id}}" data-kind="undo" bindtap="openForm">撤销 Undo ready</button>
+        </view>
+      </block>
+    </view>
+  </block>
+
+  <!-- Formulário de atraso / Ready parts / desfazer (motivo quando o SOT exige). -->
+  <view wx:if="{{form}}" class="sheet-mask" bindtap="closeForm">
+    <view class="sheet" catchtap="noop">
+      <view class="title">{{form.title}}</view>
+      <view class="muted" style="margin-top:6rpx">PO {{form.po}} · {{form.category}}</view>
+
+      <picker wx:if="{{form.kind !== 'undo'}}" mode="date" value="{{form.date}}" start="{{form.start}}" end="{{form.end}}" bindchange="onFormDate">
+        <view class="input">{{form.date ? form.dateLabel : '选择日期 · Pick a date'}}</view>
+      </picker>
+
+      <view wx:if="{{form.needsReason}}" class="field">
+        <view class="muted">原因 · Reason</view>
+        <textarea class="input" style="width:auto;height:160rpx" maxlength="2000" value="{{form.remarks}}" bindinput="onFormRemarks" />
+      </view>
+
+      <view wx:if="{{form.error}}" class="error">{{form.error}}</view>
+      <view class="row" style="margin-top:24rpx">
+        <button size="mini" class="ghost" bindtap="closeForm">取消 Cancel</button>
+        <button size="mini" class="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="submitForm">确认 Confirm</button>
+      </view>
+    </view>
+  </view>
+</view>

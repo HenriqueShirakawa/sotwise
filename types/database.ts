@@ -1542,6 +1542,60 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["wechat_message_log"]["Insert"]>;
         Relationships: [];
       };
+      /** Contato do fornecedor no Mini Program, ligado à FÁBRICA (16/11/2026).
+       * Migration 20261116120000_factory_wechat_contacts.sql. */
+      factory_wechat_contacts: {
+        Row: {
+          id: UUID;
+          factory_id: UUID;
+          mp_openid: string;
+          unionid: string | null;
+          name: string;
+          is_active: boolean;
+          linked_at: Timestamp;
+          invited_by: UUID | null;
+          unlinked_at: Timestamp | null;
+          unlinked_by: UUID | null;
+        };
+        Insert: {
+          id?: UUID;
+          factory_id: UUID;
+          mp_openid: string;
+          unionid?: string | null;
+          name: string;
+          is_active?: boolean;
+          linked_at?: Timestamp;
+          invited_by?: UUID | null;
+          unlinked_at?: Timestamp | null;
+          unlinked_by?: UUID | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["factory_wechat_contacts"]["Insert"]>;
+        Relationships: [];
+      };
+      factory_wechat_invites: {
+        Row: {
+          id: UUID;
+          factory_id: UUID;
+          code: string;
+          created_by: UUID | null;
+          created_at: Timestamp;
+          expires_at: Timestamp;
+          used_at: Timestamp | null;
+          used_by_contact_id: UUID | null;
+        };
+        Insert: {
+          id?: UUID;
+          factory_id: UUID;
+          code: string;
+          created_by?: UUID | null;
+          created_at?: Timestamp;
+          expires_at: Timestamp;
+          used_at?: Timestamp | null;
+          used_by_contact_id?: UUID | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["factory_wechat_invites"]["Insert"]>;
+        Relationships: [];
+      };
       /** O que o cron trouxe do GSS para Orders e Lotes (lib/gss/sync-orders.ts).
        * Tela: /access/gss/sync. Migration 20261027120000_gss_sync_log.sql. */
       gss_sync_log: {

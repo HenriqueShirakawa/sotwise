@@ -1,0 +1,11 @@
+{
+  "pages": ["pages/lines/index", "pages/bind/index"],
+  "window": {
+    "navigationBarTitleText": "SOT",
+    "navigationBarBackgroundColor": "#640BB7",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F6F4FA"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

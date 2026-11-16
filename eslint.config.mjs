@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Mini Program do WeChat: outro runtime (globais wx/App/Page), compilado
+    // pelo 微信开发者工具, não pelo Next.
+    "miniprogram/**",
   ]),
   // Tooling de migração (Bubble → Supabase): já cumpriu o papel e lida com
   // payloads dinâmicos do Bubble — `any` é tolerado aqui, não no código do app.

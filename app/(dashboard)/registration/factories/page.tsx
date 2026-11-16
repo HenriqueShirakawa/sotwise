@@ -8,7 +8,7 @@ import { FactoriesClient } from "./factories-client";
 export const metadata = { title: "Factories" };
 
 export default async function FactoriesPage() {
-  await requireFeature("registration");
+  const session = await requireFeature("registration");
 
   const admin = createAdminClient();
   // A paginação da tela é feita no cliente, sobre a lista inteira — sem o
@@ -29,7 +29,7 @@ export default async function FactoriesPage() {
         title="Factories"
         description="Manufacturing sites available to orders."
       />
-      <FactoriesClient data={data} />
+      <FactoriesClient data={data} canEditWechat={session.permissions.registration.edit} />
     </div>
   );
 }

@@ -1,0 +1,29 @@
+<view class="container">
+  <view class="card">
+    <view class="title">绑定工厂 · Link your factory</view>
+    <view class="muted" style="margin-top:8rpx">
+      请输入 SOT 团队发给您的邀请码。Enter the invite code the SOT team sent you.
+    </view>
+
+    <view class="field">
+      <view class="muted">邀请码 · Invite code</view>
+      <input class="input" value="{{invite}}" maxlength="12" placeholder="ABCD2345" bindinput="onInvite" />
+    </view>
+    <view class="field">
+      <view class="muted">您的姓名 · Your name</view>
+      <input class="input" value="{{name}}" maxlength="80" placeholder="张三 / Zhang San" bindinput="onName" />
+    </view>
+
+    <view wx:if="{{error}}" class="error">{{error}}</view>
+
+    <button class="primary" style="margin-top:24rpx" loading="{{busy}}" disabled="{{busy}}" bindtap="submit">
+      绑定 · Link
+    </button>
+  </view>
+
+  <view wx:if="{{contacts.length}}" class="card">
+    <view class="muted">已绑定 · Already linked</view>
+    <view wx:for="{{contacts}}" wx:key="id" style="margin-top:8rpx">{{item.factory_name}} · {{item.name}}</view>
+    <button class="ghost" style="margin-top:16rpx" bindtap="goLines">查看订单 · See my lines</button>
+  </view>
+</view>

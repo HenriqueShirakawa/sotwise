@@ -19,8 +19,11 @@ export type EtdHistorySnapshot = {
    * Por onde a alteração passou. Ausente nas linhas gravadas antes de a edição
    * na linha passar a ser auditada — nessa época só o modal escrevia histórico,
    * então `undefined` se lê como "modal". `api` = integração (GSS).
+   * `supplier` (16/11/2026) = o contato da fábrica, pelo Mini Program do WeChat.
    */
-  source?: "modal" | "row" | "api";
+  source?: "modal" | "row" | "api" | "supplier";
+  /** Nome do contato da fábrica quando `source` = `supplier` (ele não é usuário do SOT). */
+  supplier_contact?: string;
   inspection: boolean;
   ready: boolean;
   /**
@@ -63,7 +66,8 @@ export async function writeEtdHistory(
   saved: EtdSavedState,
   fields: EtdHistorySnapshot["field"][],
   source: NonNullable<EtdHistorySnapshot["source"]>,
-  userId: string | null
+  userId: string | null,
+  supplierContact?: string
 ): Promise<string | null> {
   if (fields.length === 0) return null;
 
@@ -83,6 +87,7 @@ export async function writeEtdHistory(
       changed_fields: {
         field,
         source,
+        ...(supplierContact ? { supplier_contact: supplierContact } : {}),
         inspection: saved.inspection,
         ready: saved.ready,
         ready_date: saved.ready_date,

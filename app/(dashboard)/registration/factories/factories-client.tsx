@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Trash2, X, Loader2 } from "lucide-react";
+import { Pencil, Trash2, X, Loader2, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { formatDate } from "@/lib/format";
@@ -16,16 +16,18 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 import { createFactories, updateFactory, deleteFactory } from "./actions";
+import { FactoryWechatContacts } from "./wechat-contacts";
 
 type Factory = { id: string; name: string; created_at: string };
 
-export function FactoriesClient({ data }: { data: Factory[] }) {
+export function FactoriesClient({ data, canEditWechat }: { data: Factory[]; canEditWechat: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Factory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Factory | null>(null);
+  const [wechatTarget, setWechatTarget] = useState<Factory | null>(null);
 
   const columns: ColumnDef<Factory>[] = [
     { accessorKey: "name", header: "Name" },
@@ -44,6 +46,15 @@ export function FactoriesClient({ data }: { data: Factory[] }) {
       enableGlobalFilter: false,
       cell: ({ row }) => (
         <div className="flex justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="WeChat contacts"
+            title="WeChat contacts"
+            onClick={() => setWechatTarget(row.original)}
+          >
+            <MessageCircle />
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -130,6 +141,16 @@ export function FactoriesClient({ data }: { data: Factory[] }) {
           onCreate={handleCreate}
           onEdit={handleEdit}
         />
+      </FormDrawer>
+
+      <FormDrawer
+        open={!!wechatTarget}
+        onOpenChange={(open) => !open && setWechatTarget(null)}
+        title={wechatTarget ? `WeChat · ${wechatTarget.name}` : "WeChat"}
+      >
+        {wechatTarget ? (
+          <FactoryWechatContacts key={wechatTarget.id} factoryId={wechatTarget.id} canEdit={canEditWechat} />
+        ) : null}
       </FormDrawer>
 
       <ConfirmDialog

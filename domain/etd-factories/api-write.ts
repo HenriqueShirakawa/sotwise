@@ -76,11 +76,19 @@ export type PatchEtdInput = z.infer<typeof patchEtdSchema>;
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * Quem grava quando não é usuário do SOT nem o GSS: o contato da fábrica pelo
+ * Mini Program do WeChat (16/11/2026, docs §6.17). Mesmas regras; só muda a
+ * origem gravada no `etd_history`.
+ */
+export type EtdWriteVia = { source: "supplier"; contactName: string };
+
 export async function patchEtd(
   admin: AdminClient,
   actorId: string | null,
   lineId: UUID,
-  input: PatchEtdInput
+  input: PatchEtdInput,
+  via?: EtdWriteVia
 ): Promise<WriteResult<GssEtdRead>> {
   const { data: line, error: lineError } = await admin
     .from("order_factory_category")
@@ -177,7 +185,14 @@ export async function patchEtd(
 
     // Histórico é só de data/ready — a marca `is_active` sozinha não entra.
     if (changed.length > 0) {
-      const historyError = await writeEtdHistory(admin, saved, changed, "api", actorId);
+      const historyError = await writeEtdHistory(
+        admin,
+        saved,
+        changed,
+        via?.source ?? "api",
+        actorId,
+        via?.contactName
+      );
       if (historyError) return fail(500, historyError);
     }
     if (changed.includes("initial_date")) {

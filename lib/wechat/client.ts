@@ -71,6 +71,10 @@ async function call(
   }
 }
 
+/** A mesma chamada (com relay de IP fixo, se houver) para o Mini Program — lib/wechat-mp/client.ts. */
+export const wechatCall = call;
+export type { WechatResponse };
+
 // access_token vale 7200s. Cache por instância da função; renova 5 min antes.
 // `stable_token` devolve o MESMO token enquanto ele vale: várias instâncias da
 // Vercel pedindo ao mesmo tempo não derrubam o token umas das outras (o

@@ -2613,6 +2613,24 @@ Código: `lib/wechat/` (client, crypto, bind, template, notify, inbound, parse-r
 
 O GSS criou `shipment_model` no `/v1/shipments/` (texto, até 100 caracteres; a doc deles fala em "ID", mas não há tabela de modelos na API — os 1.513 shipments de lá estavam com o campo vazio em 09/11). O envio do PL (`lib/gss/outbound/pl-shipment.ts`) manda o **nome** do Shipment Model do embarque (Air, Courier, FCL, Hand Carrier, LCL) num **3º PATCH separado**, depois de datas e status/lotes — se o GSS recusar o campo, não desfaz os outros. Só existe depois do Confirm Loading (antes do embarque não vai nada). Na dev, como todo envio ao GSS, fica bloqueado em `lib/gss/client.ts`.
 
+---
+
+### 6.17 WeChat fase 2: o fornecedor responde ETD pelo Mini Program (16/11/2026, só na `dev`)
+
+O card "Integração WeChat" mudou de rumo: agora é o **fornecedor** que informa a ETD pelo WeChat, e a resposta grava sozinha no SOT. Decisões do usuário (16/11):
+
+- **Canal: Mini Program (小程序)**, uma conta do WeChat separada da Service Account da fase 1. O OpenID da mesma pessoa é diferente em cada conta.
+- **Vínculo por FÁBRICA**, não por order nem por cliente. O contato vincula uma vez e vê as linhas Factory×Category de todas as orders daquela fábrica. Uma fábrica pode ter vários contatos, e um WeChat pode atender mais de uma fábrica. O fornecedor **não tem login no SOT**: a visão dele é o próprio Mini Program.
+- **Convite:** em Registration → Factories, o ícone WeChat gera um código de 8 caracteres (sem 0/O/1/I/L) e, quando o WeChat permite, um QR do Mini Program. O código é de uso único e vale 7 dias. O contato digita o código e o nome no Mini Program. Desvincular na mesma tela vale na hora.
+- **1:1 com o contato, 1 pedido por linha F×C.**
+- **O que ele faz no Mini Program:** informa a **Initial Date** (só se vazia, com confirmação), avisa **atraso** (novo Current Date + motivo obrigatório) e confirma **Ready parts** (data real, nunca futura; desfazer pede motivo).
+- **Linhas que ele vê:** linha ativa, order em In Negotiation/In Production/Pre-loading, lote ausente ou em In Negotiation/In Production/Preloading, `etd_info.is_active` diferente de false. As linhas sem Initial Date aparecem primeiro.
+- **Mesmas regras da tela:** a gravação passa pelo `patchEtd` (`domain/etd-factories/api-write.ts`), o mesmo da API. O `etd_history` grava a origem `supplier` com o nome do contato, e o histórico mostra "WeChat · nome".
+- **Próximas etapas:** (2) aviso automático quando o Placed on da fábrica for preenchido; (3) botão "Ask ready parts" na linha do ETD no SOT. A automação do Ready parts fica para depois, se der certo.
+- **Pré-requisito de produção:** Mini Program registrado e verificado por empresa chinesa (o mesmo bloqueio da fase 1). Para testar, usar o 测试号 do Mini Program.
+
+Código: `lib/wechat-mp/` (client, session, supplier), `app/api/mp/` (login, bind, lines, lines/{id}), `app/(dashboard)/registration/factories/wechat-actions.ts` + `wechat-contacts.tsx`, e o Mini Program em `miniprogram/` (README com o passo a passo). Migration `20261116120000_factory_wechat_contacts.sql`. Envs `WECHAT_MP_*` em `.env.example`. Autoteste: `npx tsx scripts/wechat-mp-selftest.ts`.
+
 ## 7. Controle de acesso — a validar com o cliente
 
 > ✅ **Decisões tomadas** (ver abaixo). O sistema atual (Bubble) não usa RLS; a migração começa impondo permissões na **camada de aplicação**.

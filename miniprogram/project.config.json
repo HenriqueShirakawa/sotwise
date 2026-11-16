@@ -1,0 +1,14 @@
+{
+  "description": "SOT supplier Mini Program — fornecedor responde ETD / atraso / Ready parts (docs §6.17)",
+  "appid": "wx0000000000000000",
+  "projectname": "sot-supplier",
+  "compileType": "miniprogram",
+  "libVersion": "3.4.0",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "urlCheck": false
+  },
+  "condition": {}
+}
