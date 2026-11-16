@@ -8,7 +8,11 @@ import { SotwiseLogo } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { MessageFab } from "@/components/messages/message-fab";
-import { NotificationBell, useEtdNotifications } from "@/components/notifications/notification-bell";
+import {
+  EtdDailyPopup,
+  NotificationBell,
+  useEtdNotifications,
+} from "@/components/notifications/notification-bell";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import type { PermissionMap } from "@/domain/access/features";
 import { SidebarNav } from "./sidebar-nav";
@@ -206,6 +210,7 @@ export function AppShell({
       {/* Balão de mensagens — escondido enquanto o painel do copilot está aberto,
           para não cobrir o campo de pergunta no canto inferior direito. */}
       {copilotOpen ? null : <MessageFab initialUnread={unreadMessages} />}
+      <EtdDailyPopup state={notifications} />
     </div>
   );
 }
