@@ -64,3 +64,10 @@ dup-report.xlsx
 
 # Postman: collection gerada por scripts/postman/build-swagger-collection.ts
 docs/postman/SOTWISE-x-GSS-Swagger.postman_collection.json
+
+# scripts descartáveis de investigação (scripts/.tmp-*.ts) — nunca versionar
+/scripts/.tmp-*
+
+# planilhas/relatórios gerados na raiz: têm dados de clientes e o repo é público
+/*.xlsx
+/*.csv

@@ -162,7 +162,7 @@ async function main() {
     let rows: Row[];
     try {
       rows = await fetchAll<Row>(lib, "id, name, gss_id", (q) => q.is("deleted_at", null));
-    } catch (e) {
+    } catch {
       // tabela pode não ter gss_id — tenta sem
       try {
         rows = (await fetchAll<{ id: string; name: string | null }>(lib, "id, name", (q) =>

@@ -1,13 +1,24 @@
 name: CI
 
+# `dev` e `main` fazem deploy na Vercel a cada push (dev.sot / sot.gssdatahub.com),
+# então o CI roda nas duas: um erro de lint/tipo/teste aparece aqui antes de
+# alguém notar em produção.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # Placeholders só para o `next build` passar. O CI NÃO conecta a lugar
       # nenhum: as páginas com dados são dinâmicas (cookies/sessão) e não são
@@ -27,6 +38,8 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
