@@ -108,7 +108,9 @@ export function NotificationBell({
           <Bell className="size-[18px]" />
           {unread.length > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
-              {unread.length > 99 ? "99+" : unread.length}
+              {/* Acima de 9 vira "+9" (16/11/2026, pedido do usuário); o número
+                  exato fica no aria-label e na lista. */}
+              {unread.length > 9 ? "+9" : unread.length}
             </span>
           )}
         </button>
