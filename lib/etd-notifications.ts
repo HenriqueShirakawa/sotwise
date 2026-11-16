@@ -1,6 +1,6 @@
 import "server-only";
 
-
+import { fetchAll } from "@/lib/fetch-all";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { userTodayIso } from "@/lib/user-time-zone";
 
@@ -17,7 +17,11 @@ type Admin = ReturnType<typeof createAdminClient>;
  *    lida), enquanto a pendência existir.
  *  - Pendência = linha ativa da ETD Factories (lote em produção/pre-loading,
  *    view `etd_list`) com Initial Date ≤ hoje e Ready parts = não, de Order
- *    cuja etapa ETD está ligada e ainda não concluída.
+ *    com a etapa ETD ligada.
+ *  - NÃO depende da etapa ETD estar aberta (16/11/2026, pedido do usuário: "Initial
+ *    Date atrasada = notificação"). A etapa ETD se conclui sozinha quando todas
+ *    as linhas recebem Initial Date — antes da data vencer —, então exigir a
+ *    etapa aberta fazia o sino nunca tocar em Order nova.
  *  - Uma notificação por Order por dia (agrupa as fábricas).
  *
  * Sem tabela própria: a lista é calculada na hora a partir do dado (sempre bate
@@ -69,17 +73,6 @@ export async function loadEtdNotifications(
 ): Promise<EtdNotification[]> {
   const today = await userTodayIso();
 
-  const { data: steps, error } = await admin
-    .from("order_checklist_steps")
-    .select("order_id")
-    .eq("step", "etd")
-    .eq("responsible_id", userId)
-    .eq("enabled", true)
-    .is("completed_on", null);
-  if (error) throw new Error(`order_checklist_steps: ${error.message}`);
-  const orderIds = [...new Set((steps ?? []).map((s) => s.order_id as string))];
-  if (orderIds.length === 0) return [];
-
   type Line = {
     order_id: string;
     po_number: string;
@@ -87,18 +80,35 @@ export async function loadEtdNotifications(
     factory: string;
     initial_date: string;
   };
-  const lines: Line[] = [];
-  for (let i = 0; i < orderIds.length; i += CHUNK) {
-    const { data, error: lError } = await admin
+  // Começa pelas linhas atrasadas (poucas: ~130 no banco todo em 16/11/2026) e
+  // só depois filtra pelas Orders do usuário — uma pessoa chega a ser
+  // Responsible de 400+ etapas ETD, quase todas sem linha atrasada.
+  const overdue = await fetchAll<Line>((from, to) =>
+    admin
       .from("etd_list")
       .select("order_id, po_number, client, factory, initial_date")
-      .in("order_id", orderIds.slice(i, i + CHUNK))
       .lte("initial_date", today)
       .eq("ready_parts", false)
-      .returns<Line[]>();
-    if (lError) throw new Error(`etd_list: ${lError.message}`);
-    lines.push(...(data ?? []));
+      .order("id")
+      .range(from, to)
+      .returns<Line[]>()
+  );
+  const candidateIds = [...new Set(overdue.map((l) => l.order_id))];
+  if (candidateIds.length === 0) return [];
+
+  const mine = new Set<string>();
+  for (let i = 0; i < candidateIds.length; i += CHUNK) {
+    const { data: steps, error } = await admin
+      .from("order_checklist_steps")
+      .select("order_id")
+      .eq("step", "etd")
+      .eq("responsible_id", userId)
+      .eq("enabled", true)
+      .in("order_id", candidateIds.slice(i, i + CHUNK));
+    if (error) throw new Error(`order_checklist_steps: ${error.message}`);
+    for (const s of steps ?? []) mine.add(s.order_id as string);
   }
+  const lines = overdue.filter((l) => mine.has(l.order_id));
 
   const read = readEtdReadKeys(uiPreferences);
   const byOrder = new Map<string, Line[]>();
