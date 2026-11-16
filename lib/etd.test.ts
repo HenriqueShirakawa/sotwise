@@ -30,12 +30,13 @@ describe("isEtdLate", () => {
 });
 
 describe("gapOfReady", () => {
-  // Contagem por dia de calendário em São Paulo (pronto 11/11, visto 13/11 à
-  // tarde = 2) só existe na dev; a main ainda arredonda horas. Os casos de
-  // calendário entram aqui junto com essa correção.
-  it("conta os dias desde a data de Ready parts", () => {
-    // 13/11 00:00 em São Paulo.
-    expect(gapOfReady(true, "2026-11-11", Date.parse("2026-11-13T03:00:00Z"))).toBe(2);
+  it("conta dias de CALENDÁRIO em São Paulo: pronto 11/11, visto 13/11 à tarde = 2", () => {
+    expect(gapOfReady(true, "2026-11-11", Date.parse("2026-11-13T18:00:00Z"))).toBe(2);
+  });
+
+  it("à noite em São Paulo (já dia seguinte em UTC) ainda conta o dia de São Paulo", () => {
+    // 13/11 22:00 em São Paulo = 14/11 01:00 UTC.
+    expect(gapOfReady(true, "2026-11-11", Date.parse("2026-11-14T01:00:00Z"))).toBe(2);
   });
 
   it("sem Ready parts ou sem data não há gap", () => {
