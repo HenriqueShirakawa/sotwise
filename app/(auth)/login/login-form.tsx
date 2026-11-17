@@ -16,7 +16,7 @@ import {
   requestPasswordReset,
   type AuthActionState,
 } from "@/lib/auth/actions";
-import { SotwiseLogo } from "@/components/brand/sotwise-logo";
+import { SotwiseLogo, SotwiseTagline } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -50,6 +50,7 @@ export function LoginForm({
     <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl shadow-slate-200/60 sm:p-10">
       <div className="flex flex-col items-center text-center">
         <SotwiseLogo />
+        <SotwiseTagline className="mt-2 max-w-xs text-[10.5px]" />
         <h1 className="mt-6 text-2xl font-semibold text-slate-900">
           Log in to your account
         </h1>
