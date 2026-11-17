@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Bot, Menu } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { SotwiseLogo } from "@/components/brand/sotwise-logo";
+import { SotwiseLogo, SotwiseTagline } from "@/components/brand/sotwise-logo";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { MessageFab } from "@/components/messages/message-fab";
@@ -66,8 +66,9 @@ export function AppShell({
 
   const sidebarInner = (onNavigate?: () => void, bell?: "full" | "rail") => (
     <div className="flex h-full flex-col bg-white">
-      <div className="flex h-[105px] shrink-0 items-center justify-center px-6">
-        <SotwiseLogo className="h-16" />
+      <div className="flex h-[105px] shrink-0 flex-col items-center justify-center gap-1 px-5">
+        <SotwiseLogo className="h-14" />
+        <SotwiseTagline />
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-2">
         <SidebarNav permissions={permissions} onNavigate={onNavigate} />
