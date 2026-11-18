@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import type { PreLoadingInput } from "@/domain/pre-loadings/schema";
+import { plBatchRuleError, type PreLoadingInput } from "@/domain/pre-loadings/schema";
 import type { BatchStatus } from "@/types/database";
 import { formatDateNumeric } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -276,9 +276,14 @@ export function PreLoadingFormModal({
   const plNumber = editing ? editing.pl_number : nextPlNumber;
   const createDate = editing ? editing.created_date : today;
 
+  // PL precisa de no mínimo 1 lote (call de 10/11/2026); na edição só trava
+  // quando o PL tinha lote e o usuário desmarca todos.
+  const batchError = plBatchRuleError(selected, editing ? editing.batch_ids.length : null);
+
   const canSubmit =
     form.client_ids.length > 0 &&
     clientsWithoutBatch.length === 0 &&
+    !batchError &&
     !!form.client_reference.trim() &&
     !!form.pod_id &&
     !!form.leader_id &&
@@ -533,6 +538,7 @@ export function PreLoadingFormModal({
               <p className="text-sm text-muted-foreground">
                 Page {pageIndex + 1} of {pageCount}
                 {selected.length > 0 && ` · ${selected.length} selected`}
+                {batchError && <span className="text-destructive"> · {batchError}</span>}
               </p>
               <div className="flex items-center gap-2">
                 <Button

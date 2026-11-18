@@ -21,6 +21,7 @@ import {
   syncPreLoadingRelations,
 } from "@/domain/pre-loadings/write";
 import {
+  plBatchRuleError,
   preLoadingSchema,
   type ActionResult,
   type CreateResult,
@@ -57,6 +58,10 @@ export async function createPreLoading(input: PreLoadingInput): Promise<CreateRe
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
   const d = parsed.data;
+
+  // Pelo menos 1 lote (call de 10/11/2026).
+  const batchError = plBatchRuleError(d.batch_ids, null);
+  if (batchError) return { ok: false, error: batchError };
 
   // Estimated date + Responsible de todas as etapas do Pre-loading são
   // obrigatórios na criação pela tela (09/11/2026 — mesma transição do
@@ -149,6 +154,9 @@ export async function updatePreLoading(
     .from("pre_loading_batches")
     .select("batch_id")
     .eq("pre_loading_id", id);
+  // Não deixa tirar o último lote (PL legado já sem lote segue editável).
+  const batchError = plBatchRuleError(d.batch_ids, (beforeLinks ?? []).length);
+  if (batchError) return { ok: false, error: batchError };
   const removedBatchIds = (beforeLinks ?? []).map((l) => l.batch_id).filter((b) => !d.batch_ids.includes(b));
   // pl_number e created_date são imutáveis (auto-gerados) — não entram no update.
   const { error } = await admin
