@@ -1844,6 +1844,8 @@ Fluxo do modal, em ordem:
 5. **Pre-loading steps** (só na criação, 09/11/2026 — pedido do usuário: a mesma transição do popup do Confirm Shipping, agora ao criar o PL) — uma linha por etapa do Pre-loading (Consolidation Point, City, Port of Loading, Shipping Docs, Agents, Booking, Loading Date) com **Estimated date e Responsible, obrigatórios** (`CREATE_PRELOADING_ESTIMATE_STEPS`, lib/checklist.ts; conferido também no servidor em `createPreLoading`). As etapas do PL já nascem com esses valores e cada uma ganha a entrada no History. A edição do PL não mostra o bloco (ajuste é na própria etapa) e o `POST /api/shipments` (GSS) segue criando o PL com as etapas vazias.
 6. Botão **Create** (habilitado só com os obrigatórios preenchidos) ou **Cancel**.
 
+- ✅ **PL precisa de no mínimo 1 lote (18/11/2026 — regra da call de 10/11; o QA de 17/11 achou o Create deixando passar sem lote, PL 1507).** Sem lote marcado o Create fica desabilitado e aparece "Select at least one batch." ao lado da paginação. Na **edição**, desmarcar todos os lotes trava o Save com a mesma mensagem; PL antigo que já estava sem lote (legado) continua editável, para dar pra corrigir o cabeçalho. Conferido também no servidor (`createPreLoading`/`updatePreLoading`, regra em `plBatchRuleError` de `domain/pre-loadings/schema.ts`). O `POST /api/shipments` (GSS) não mudou.
+
 > Observação: a coluna "PO / Batch Number" usa o formato `PO / lote` na seleção, enquanto a rua ETD Factories exibe o lote como `1310 .010`. São representações diferentes do mesmo par (Order + batch).
 
 #### 3.9.4 Detalhe do Pre-loading

@@ -34,6 +34,25 @@ export const preLoadingSchema = z.object({
 
 export type PreLoadingInput = z.infer<typeof preLoadingSchema>;
 
+export const PL_NEEDS_BATCH_MESSAGE = "Select at least one batch.";
+
+/**
+ * O PL precisa de no mínimo 1 lote (call de 10/11/2026; achado do QA de 17/11:
+ * o Create deixava passar sem lote). Na criação, sem lote não grava. Na edição,
+ * não deixa tirar o último lote. PL antigo que já está sem lote (legado do
+ * Bubble) continua editável, senão ninguém consegue corrigir o cabeçalho dele.
+ *
+ * `previousBatchCount` = lotes que o PL tinha antes da edição; `null` = criação.
+ */
+export function plBatchRuleError(
+  batchIds: readonly string[],
+  previousBatchCount: number | null
+): string | null {
+  if (batchIds.length > 0) return null;
+  if (previousBatchCount === null || previousBatchCount > 0) return PL_NEEDS_BATCH_MESSAGE;
+  return null;
+}
+
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
 /** Como o ActionResult, mas devolve o id e o pl_number do registro criado — o
