@@ -275,7 +275,10 @@ export function EtdDailyPopup({ state }: { state: EtdNotificationsState }) {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <NotificationList items={pending} allOrders={allOrders} onOpen={openItem} />
         </div>
-        <DialogFooter className="border-t px-5 py-3">
+        {/* O DialogFooter padrão tem -mx-4 -mb-4 para encostar nas bordas de um
+            DialogContent com p-4; aqui o conteúdo é p-0, então zera a margem —
+            senão a faixa do rodapé sai 16px pelos lados e por baixo (QA 19/11). */}
+        <DialogFooter className="mx-0 mb-0 border-t px-5 py-3">
           {unread.length > 0 && (
             <Button
               variant="outline"
