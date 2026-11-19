@@ -62,7 +62,11 @@ import { ViewPartsModal, type PartRow } from "./view-parts-modal";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { LOCKED_COMPLETED_ON_STEPS } from "@/lib/checklist-completion";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
-import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
+import {
+  notifyStepLogChanged,
+  StepLogButton,
+  useStepLogCounts,
+} from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 
@@ -315,6 +319,7 @@ function AttachmentsSection({
       // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
         setOpen(true);
+        notifyStepLogChanged();
       } else {
         toast.error(res.error);
       }
@@ -332,7 +337,10 @@ function AttachmentsSection({
   function remove(a: StepAttachment) {
     setRemoved((prev) => new Set(prev).add(a.id));
     void deleteShipmentStepAttachment(shipmentId, a.id, a.file_path).then((res) => {
-      if (res.ok) return;
+      if (res.ok) {
+        notifyStepLogChanged();
+        return;
+      }
       toast.error(res.error);
       setRemoved((prev) => {
         const next = new Set(prev);

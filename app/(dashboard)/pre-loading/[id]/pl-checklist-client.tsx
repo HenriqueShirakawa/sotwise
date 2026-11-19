@@ -65,7 +65,11 @@ import { ViewBatchLinesModal } from "./view-batch-lines-modal";
 import { EventDateField } from "../../shipments/[id]/event-date-field";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { StepEmailSection } from "@/components/checklist/step-email-section";
-import { StepLogButton, useStepLogCounts } from "@/components/checklist/step-log-section";
+import {
+  notifyStepLogChanged,
+  StepLogButton,
+  useStepLogCounts,
+} from "@/components/checklist/step-log-section";
 
 export type Ref = { id: string; name: string };
 /** Um `pol` é a junção (cidade, porto): a cidade distingue linhas de mesmo nome
@@ -263,6 +267,7 @@ function AttachmentsSection({
       // Sem router.refresh(): a action já revalida a página.
       if (res.ok) {
         setOpen(true);
+        notifyStepLogChanged();
       } else {
         toast.error(res.error);
       }
@@ -280,7 +285,10 @@ function AttachmentsSection({
   function remove(a: StepAttachment) {
     setRemoved((prev) => new Set(prev).add(a.id));
     void deletePreLoadingStepAttachment(preLoadingId, a.id, a.file_path).then((res) => {
-      if (res.ok) return;
+      if (res.ok) {
+        notifyStepLogChanged();
+        return;
+      }
       toast.error(res.error);
       setRemoved((prev) => {
         const next = new Set(prev);
