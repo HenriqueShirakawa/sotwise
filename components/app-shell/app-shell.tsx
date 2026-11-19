@@ -142,7 +142,9 @@ export function AppShell({
     <div className="flex min-h-full flex-1">
       {/* Sidebar completa — só a partir de 1100px. */}
       <aside className="hidden w-64 shrink-0 border-r min-[1100px]:block">
-        {sidebarInner(undefined, "full")}
+        {/* Presa na tela (19/11/2026, QA da Bruna): o sino fica no rodapé da
+            sidebar e, em tela longa, só aparecia rolando até o fim. */}
+        <div className="sticky top-0 h-dvh">{sidebarInner(undefined, "full")}</div>
       </aside>
 
       {/* Entre 768px e 1100px a sidebar vira um trilho estreito só com ícones;
@@ -150,19 +152,22 @@ export function AppShell({
           sidebar completa, sem empurrar a página. Reserva a largura do trilho
           no fluxo e sobrepõe o resto. */}
       <aside className="relative hidden w-14 shrink-0 md:max-[1099px]:block">
-        <div
-          onMouseEnter={() => setRailHover(true)}
-          onMouseLeave={() => setRailHover(false)}
-          className={cn(
-            "absolute inset-y-0 left-0 z-30 overflow-hidden border-r bg-white transition-[width] duration-200",
-            railExpanded ? "w-64 shadow-xl" : "w-14"
-          )}
-        >
-          {railExpanded ? (
-            <div className="h-full w-64">{sidebarInner(undefined, "rail")}</div>
-          ) : (
-            sidebarRail()
-          )}
+        {/* Trilho também preso na tela (sino visível sem rolar). */}
+        <div className="sticky top-0 z-30 h-dvh">
+          <div
+            onMouseEnter={() => setRailHover(true)}
+            onMouseLeave={() => setRailHover(false)}
+            className={cn(
+              "absolute inset-y-0 left-0 z-30 overflow-hidden border-r bg-white transition-[width] duration-200",
+              railExpanded ? "w-64 shadow-xl" : "w-14"
+            )}
+          >
+            {railExpanded ? (
+              <div className="h-full w-64">{sidebarInner(undefined, "rail")}</div>
+            ) : (
+              sidebarRail()
+            )}
+          </div>
         </div>
       </aside>
 
