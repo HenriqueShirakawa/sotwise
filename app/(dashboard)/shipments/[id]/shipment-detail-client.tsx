@@ -14,6 +14,7 @@ import {
   Eye,
   Info,
   Lock,
+  PencilLine,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -59,6 +60,7 @@ import { Switch } from "@/components/ui/switch";
 import { isPerClient, type PlPerClient } from "@/lib/checklist-completion";
 import { EventDateField } from "./event-date-field";
 import { ViewPartsModal, type PartRow } from "./view-parts-modal";
+import { CorrectShipmentModal } from "./correct-shipment-modal";
 import { LockedCompletedOn } from "@/components/checklist/locked-completed-on";
 import { LOCKED_COMPLETED_ON_STEPS } from "@/lib/checklist-completion";
 import {
@@ -564,6 +566,7 @@ export function ShipmentDetailClient({
   dates,
   canDelete,
   canEditInherited,
+  canCorrect,
   viewPrefs,
   currentUserId,
   perClient,
@@ -577,6 +580,8 @@ export function ShipmentDetailClient({
   canDelete: boolean;
   /** Admin/owner: libera as etapas herdadas do Pre-loading para edição. */
   canEditInherited: boolean;
+  /** Admin/owner: "Correct shipment" — reabre o popup do Confirm e os lotes (19/11/2026). */
+  canCorrect: boolean;
   /** Preferências de visualização do usuário — não restringem nada. */
   viewPrefs: ViewPrefs;
   currentUserId: string;
@@ -613,6 +618,7 @@ export function ShipmentDetailClient({
   );
   const [partsOf, setPartsOf] = useState<ShipmentBatchRow | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -697,6 +703,16 @@ export function ShipmentDetailClient({
             >
               <Trash2 />
               Delete shipment
+            </Button>
+          ) : null}
+          {canCorrect ? (
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl"
+              onClick={() => setCorrecting(true)}
+            >
+              <PencilLine />
+              Correct shipment
             </Button>
           ) : null}
         </div>
@@ -816,6 +832,14 @@ export function ShipmentDetailClient({
           ))
         )}
       </div>
+
+      {correcting && (
+        <CorrectShipmentModal
+          shipmentId={shipment.id}
+          profiles={profiles}
+          onClose={() => setCorrecting(false)}
+        />
+      )}
 
       <ViewPartsModal
         open={!!partsOf}

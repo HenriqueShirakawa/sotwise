@@ -22,7 +22,16 @@ import { isPathInDir, issueUploadTicket } from "@/lib/attachments-server";
 import { scheduleClientNotificationDispatch } from "@/domain/client/notifications";
 import { requireFeature } from "@/lib/dal";
 import { applyDeliveredRule } from "@/domain/shipments/delivered";
+import {
+  correctShipmentRecord,
+  loadAddableBatches,
+  loadShipmentCorrectionState,
+  type CorrectionBatch,
+  type ShipmentCorrectionState,
+} from "@/domain/shipments/correct";
+import type { ShipmentCorrectionInput } from "@/domain/shipments/correction";
 import { broadcastOrderStatusPing } from "@/lib/orders-realtime";
+import { broadcastPreLoadingPing } from "@/lib/preloading-realtime";
 import { autoCompletePlStep } from "@/lib/pl-step-autocomplete";
 import { setPlStepEventDate } from "@/lib/pl-step-event-date";
 import {
@@ -531,5 +540,75 @@ export async function deleteShipment(shipmentId: string): Promise<ActionResult> 
     sendOrderStatusToGss(changedOrderIds);
   }
   await scheduleClientNotificationDispatch();
+  return { ok: true };
+}
+
+/**
+ * "Correct shipment" (19/11/2026): admin/owner reabre os campos do popup do
+ * Confirm e os lotes do embarque. Regra em domain/shipments/correction.ts,
+ * gravação em domain/shipments/correct.ts.
+ */
+async function requireShipmentCorrector() {
+  const session = await requireFeature("shipments", "edit");
+  return session.isAdmin || session.isOwner ? session : null;
+}
+
+const CORRECTOR_DENIED = "Only an admin can correct a shipment.";
+
+/** Dados do modal: estado atual, opções dos selects e lotes que podem entrar. */
+export async function loadShipmentCorrection(shipmentId: string): Promise<
+  | {
+      ok: true;
+      state: ShipmentCorrectionState;
+      carriers: { id: string; name: string }[];
+      shipmentModels: { id: string; name: string }[];
+      addable: CorrectionBatch[];
+    }
+  | { ok: false; error: string }
+> {
+  if (!(await requireShipmentCorrector())) return { ok: false, error: CORRECTOR_DENIED };
+  const admin = createAdminClient();
+  const loaded = await loadShipmentCorrectionState(admin, shipmentId);
+  if (!loaded.ok) return loaded;
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  const [carriers, models, addable] = await Promise.all([
+    admin.from("carriers").select("id, name").is("deleted_at", null),
+    admin.from("shipment_models").select("id, name").is("deleted_at", null),
+    loadAddableBatches(admin),
+  ]);
+  return {
+    ok: true,
+    state: loaded.state,
+    carriers: (carriers.data ?? []).sort(byName),
+    shipmentModels: (models.data ?? []).sort(byName),
+    addable,
+  };
+}
+
+export async function correctShipment(
+  shipmentId: string,
+  input: ShipmentCorrectionInput
+): Promise<ActionResult> {
+  const session = await requireShipmentCorrector();
+  if (!session) return { ok: false, error: CORRECTOR_DENIED };
+  const admin = createAdminClient();
+
+  const result = await correctShipmentRecord(admin, shipmentId, input, session.userId);
+  if (!result.ok) return result;
+
+  revalidateShipmentViews();
+  revalidatePath("/pre-loading/[id]", "page");
+  revalidatePath("/pre-loading");
+  revalidatePath("/orders");
+  revalidatePath("/todo");
+  await broadcastShipmentPing();
+  if (result.batches_changed) {
+    // Lote que saiu volta à lista de seleção do Create/Edit PL.
+    await broadcastPreLoadingPing();
+    await scheduleClientNotificationDispatch();
+  }
+  // Cabeçalho + Loading Date + lotes (batch_ids e o status de cada um, inclusive
+  // dos que saíram) → GSS, igual ao Edit PL.
+  sendPlShipmentToGss(result.pre_loading_id, { removedBatchIds: result.removed_batch_ids });
   return { ok: true };
 }
