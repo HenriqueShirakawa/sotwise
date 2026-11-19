@@ -2094,6 +2094,23 @@ Abre a partir de cada linha da tabela de batches. Mostra o **status de carregame
 >
 > Sem regra definida, editar aqui pode gerar lotes órfãos ou inconsistência no rollup de status da Order. **Precisa ser validado com o cliente** — ver seção 8.
 
+##### "Correct shipment" — corrigir o embarque depois do Confirm (19/11/2026)
+
+Pedido do usuário: "o pessoal passa de PL para shipment e erra um monte de coisas". Antes, o único conserto era **excluir o Shipment** (desfaz o Confirm, perde o que foi preenchido no Shipment, só admin, bloqueado se entregue). Agora o botão **"Correct shipment"** no topo do Shipment reabre o que o popup do Confirm gravou:
+
+- **Quem:** admin e owner (com `edit` da feature Shipments). Os demais não veem o botão e o servidor recusa.
+- **Campos (os mesmos do popup do Confirm, todos obrigatórios):** Container Number, Seal No., **Loading Date** (a data REAL — `event_date` da etapa Loading Date; nunca futura), Leader's Shipment, Leader's Pre-Loading, Carrier, Shipment Model, Signer. O **Completed on** da Loading Date continua sendo o dia do Confirm.
+- **Lotes:**
+  - **Tirar:** só lote **In Transit** (lote já entregue fica). O lote volta a **In Production** (o gatilho zera `quantities_confirmed`) e fica livre para outro PL. O embarque nunca fica sem lote.
+  - **Pôr:** mesma régua do Confirm — lote **In Production**, ativo, fora de qualquer PL vivo e com **`quantities_confirmed = true`** (confirmado pelo GSS). Entra direto em **In Transit** (não passa por Pre-loading, senão o gatilho zeraria a confirmação).
+  - Embarque **Delivered**: lotes travados; o cabeçalho ainda pode ser corrigido.
+  - Trocar lotes refaz o que o Edit PL faz: clientes do PL = clientes das Orders dos lotes, etapa Pre-Loading da Order (lote que sai reabre; lote que entra conclui com a data do dia), rollup do status das Orders (+ webhook ao GSS e aviso ao cliente do portal). As etapas por cliente (Shipping Docs, BL, Original Docs) só são rechecadas quando o **conjunto de clientes** do PL muda — no teste de 19/11/2026 (PL 1208, legado do Bubble) o recheck incondicional reabriu Shipping Docs e BL já concluídos sem cliente nenhum ter mudado.
+- **Motivo obrigatório.** A correção inteira vira **uma entrada "Correction"** no History da etapa **Loading Date** (de → para de cada campo + "Batches removed" / "Batches added" + Reason).
+- **GSS:** depois de salvar, o PL vai de novo ao GSS (cabeçalho, Loading Date, `batch_ids` e o status de cada lote, inclusive dos que saíram) — mesmo envio do Edit PL. Na dev, bloqueado como todo envio.
+- **Sem migration/RPC:** a validação inteira roda antes da 1ª escrita (`domain/shipments/correction.ts`, com teste); a gravação (`domain/shipments/correct.ts`) vai em ordem: lotes → cabeçalho → History → cascata.
+- **Onde revisitar os PLs embarcados:** a lista de **Shipments** (todo PL embarcado está lá, busca por PL number). A lista de Pre-loading segue só com os abertos (a view `pre_loadings_list` tira os embarcados; um filtro "mostrar embarcados" exigiria migration).
+- "Delete shipment" continua existindo para o caso extremo (desfazer o Confirm inteiro).
+
 #### 3.10.4 Checklist do Shipment — timeline completa (14 etapas)
 
 > ✅ **Não existe checklist próprio de Shipment.** A tela exibe o **mesmo checklist contínuo** do Pre-loading, com as **14 etapas** (#11–24). As 7 primeiras (fase preloading) aparecem já concluídas ✓; as 7 seguintes (fase shipment) são preenchidas aqui. Ver modelagem unificada em 3.9.5.

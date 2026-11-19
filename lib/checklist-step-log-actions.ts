@@ -158,7 +158,8 @@ type Lookup =
   | "carriers"
   | "agents"
   | "contacts"
-  | "clients";
+  | "clients"
+  | "shipment_models";
 
 /** Rótulo e tipo de cada coluna do log, na ordem em que aparecem na tela. */
 const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }> = {
@@ -190,6 +191,16 @@ const FIELDS: Record<string, { label: string; kind: FieldKind; lookup?: Lookup }
   container_pickup_date: { label: "Container pickup", kind: "date" },
   doc_delivery_date: { label: "Docs delivered", kind: "date" },
   container_return_date: { label: "Container return deadline", kind: "date" },
+  // Correct shipment (19/11/2026): campos do popup do Confirm, no History da
+  // etapa Loading Date (o event_date dela já sai como "Loading date").
+  container_number: { label: "Container number", kind: "text" },
+  seal_number: { label: "Seal number", kind: "text" },
+  shipment_leader_id: { label: "Leader's shipment", kind: "text", lookup: "profiles" },
+  preloading_leader_id: { label: "Leader's pre-loading", kind: "text", lookup: "profiles" },
+  shipment_model_id: { label: "Shipment model", kind: "text", lookup: "shipment_models" },
+  signer_id: { label: "Signer", kind: "text", lookup: "profiles" },
+  batches_removed: { label: "Batches removed", kind: "text" },
+  batches_added: { label: "Batches added", kind: "text" },
   // Por cliente (22/10/2026): "Cliente: valor".
   client_tracking_number: { label: "Tracking number", kind: "text" },
   client_telex_release: { label: "Telex release", kind: "text" },

@@ -544,6 +544,8 @@ export default async function ShipmentDetailPage({
         // Entregue não se desfaz (a action recusa igual): o botão some.
         canDelete={permissions.shipments.delete && shipment.status !== "delivered"}
         canEditInherited={isAdmin || isOwner}
+        // "Correct shipment" (19/11/2026): só admin/owner — a action recusa igual.
+        canCorrect={permissions.shipments.edit && (isAdmin || isOwner)}
         viewPrefs={readViewPrefs(profile.ui_preferences)}
         currentUserId={userId}
         perClient={{
