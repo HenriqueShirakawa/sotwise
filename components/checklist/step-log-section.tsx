@@ -30,16 +30,34 @@ import {
  * junto do "Emails sent", poluía demais).
  */
 
+const STEP_LOG_CHANGED = "sot:step-log-changed";
+
+/**
+ * Avisa os contadores de History da tela que entrou log novo. Usado onde a
+ * gravação não muda a linha da etapa (anexar/remover documento — QA da Bruna
+ * 19/11/2026: o "History 3" só virava 4 ao reabrir a tela).
+ */
+export function notifyStepLogChanged() {
+  window.dispatchEvent(new Event(STEP_LOG_CHANGED));
+}
+
 /**
  * Contador de History de todas as etapas da tela, numa consulta só.
- * `refreshKey` muda quando o checklist muda (save → revalidate) — aí recarrega.
+ * Recarrega quando `refreshKey` muda (save → revalidate) e a cada
+ * `notifyStepLogChanged()`.
  */
 export function useStepLogCounts(
   scope: StepLogScope,
   refreshKey: string
 ): Partial<Record<ChecklistStep, number>> {
   const [counts, setCounts] = useState<Partial<Record<ChecklistStep, number>>>({});
+  const [tick, setTick] = useState(0);
   const scopeKey = JSON.stringify(scope);
+  useEffect(() => {
+    const bump = () => setTick((t) => t + 1);
+    window.addEventListener(STEP_LOG_CHANGED, bump);
+    return () => window.removeEventListener(STEP_LOG_CHANGED, bump);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     loadStepLogCounts(JSON.parse(scopeKey) as StepLogScope)
@@ -48,7 +66,7 @@ export function useStepLogCounts(
     return () => {
       cancelled = true;
     };
-  }, [scopeKey, refreshKey]);
+  }, [scopeKey, refreshKey, tick]);
   return counts;
 }
 
