@@ -80,7 +80,7 @@ describe("createBody", () => {
 });
 
 describe("headerBody", () => {
-  it("só manda o que tem gss_id/valor", () => {
+  it("só manda o que tem gss_id/valor; a cidade vai em city E cons_point", () => {
     const body = headerBody(
       state({
         header: {
@@ -94,8 +94,7 @@ describe("headerBody", () => {
         },
       })
     );
-    // Na main o cons_point ainda não vai (só a dev manda a cidade nele).
-    expect(body).toEqual({ pol: 3, city: 9, origin_agent: 4, leader_email: "leader@example.com" });
+    expect(body).toEqual({ pol: 3, city: 9, cons_point: 9, origin_agent: 4, leader_email: "leader@example.com" });
   });
 
   it("sem cabeçalho, só referência/POD", () => {
